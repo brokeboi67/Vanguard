@@ -13,10 +13,17 @@ function UI.Init(S, ParentGUI)
 		math.clamp(ACC.B * 0.18 + 0.05, 0, 1)
 	)
 
-	local W_FULL = 680
-	local W_COMPACT = 458
-	local H = 440
+	local Cam = workspace.CurrentCamera
+	local W_FULL, W_COMPACT, H = 720, 520, 500
 	local RS = game:GetService("RunService")
+
+	local function refreshLayout()
+		local vp = Cam.ViewportSize
+		W_FULL = math.clamp(math.floor(vp.X * 0.54), 600, 780)
+		W_COMPACT = math.clamp(math.floor(vp.X * 0.42), 500, 580)
+		H = math.clamp(math.floor(vp.Y * 0.64), 460, 580)
+	end
+	refreshLayout()
 
 	local C = function(class, props)
 		local inst = Instance.new(class)
@@ -255,7 +262,7 @@ function UI.Init(S, ParentGUI)
 
 	local Content = C("Frame", {
 		Name = "Content",
-		Size = UDim2.new(0, 268, 1, -82),
+		Size = UDim2.new(0, 300, 1, -82),
 		Position = UDim2.new(0, 162, 0, 58),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
@@ -588,8 +595,9 @@ function UI.Init(S, ParentGUI)
 	end
 
 	local function ApplyLayout(showPreview, animate)
+		refreshLayout()
 		local targetW = showPreview and W_FULL or W_COMPACT
-		local targetContentW = showPreview and 268 or (W_COMPACT - 162 - 16)
+		local targetContentW = showPreview and math.floor(W_FULL * 0.42) or (W_COMPACT - 172)
 
 		CancelTweens(layoutTweens)
 
@@ -761,13 +769,30 @@ function UI.Init(S, ParentGUI)
 
 	local function MakeSection(page, title, order)
 		C("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 12),
+			Size = UDim2.new(1, -4, 0, 14),
 			BackgroundTransparency = 1,
 			Text = title,
 			Font = Enum.Font.GothamBold,
-			TextSize = 8,
+			TextSize = 9,
 			TextColor3 = Color3.fromRGB(75, 75, 85),
 			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+	end
+
+	local function MakeHint(page, text, order)
+		C("TextLabel", {
+			Size = UDim2.new(1, -8, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Text = text,
+			Font = Enum.Font.Gotham,
+			TextSize = 9,
+			TextColor3 = Color3.fromRGB(88, 88, 98),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
 			LayoutOrder = order,
 			ZIndex = 5,
 			Parent = page,
@@ -843,8 +868,9 @@ function UI.Init(S, ParentGUI)
 	end
 
 	local function MakeChoice(page, label, key, options, order)
+		local rowH = #options >= 4 and 64 or (#options >= 3 and 60 or 52)
 		local Row = C("Frame", {
-			Size = UDim2.new(1, 0, 0, 52),
+			Size = UDim2.new(1, 0, 0, rowH),
 			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
 			BorderSizePixel = 0,
 			LayoutOrder = order,
@@ -868,8 +894,8 @@ function UI.Init(S, ParentGUI)
 		})
 
 		local BtnWrap = C("Frame", {
-			Size = UDim2.new(1, -24, 0, 22),
-			Position = UDim2.new(0, 12, 0, 26),
+			Size = UDim2.new(1, -24, 0, 24),
+			Position = UDim2.new(0, 12, 0, rowH - 30),
 			BackgroundTransparency = 1,
 			ZIndex = 6,
 			Parent = Row,
@@ -882,14 +908,15 @@ function UI.Init(S, ParentGUI)
 		})
 
 		local btns = {}
+		local btnScale = 1 / #options
 		for i, opt in ipairs(options) do
 			local active = S[key] == opt.value
 			local B = C("TextButton", {
-				Size = UDim2.new(0.5, -2, 1, 0),
+				Size = UDim2.new(btnScale, -3, 1, 0),
 				BackgroundColor3 = active and ACC_SOFT or Color3.fromRGB(24, 24, 30),
 				Text = opt.label,
 				Font = Enum.Font.GothamSemibold,
-				TextSize = 10,
+				TextSize = #options >= 3 and 9 or 10,
 				TextColor3 = active and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120),
 				AutoButtonColor = false,
 				BorderSizePixel = 0,
@@ -918,6 +945,71 @@ function UI.Init(S, ParentGUI)
 				UpdPreview()
 			end)
 		end
+	end
+
+	local bindListening = false
+
+	local function MakeBind(page, label, key, order)
+		local Row = C("TextButton", {
+			Size = UDim2.new(1, 0, 0, 36),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			Text = "",
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+
+		C("TextLabel", {
+			Size = UDim2.new(1, -80, 1, 0),
+			Position = UDim2.new(0, 12, 0, 0),
+			BackgroundTransparency = 1,
+			Text = label,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(200, 200, 208),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		local KeyLbl = C("TextLabel", {
+			Size = UDim2.new(0, 56, 0, 22),
+			Position = UDim2.new(1, -64, 0.5, -11),
+			BackgroundColor3 = Color3.fromRGB(24, 24, 30),
+			Text = S[key] or "None",
+			Font = Enum.Font.GothamBold,
+			TextSize = 10,
+			TextColor3 = ACC,
+			ZIndex = 6,
+			Parent = Row,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = KeyLbl })
+
+		Row.MouseButton1Click:Connect(function()
+			if bindListening then
+				return
+			end
+			bindListening = true
+			KeyLbl.Text = "…"
+			KeyLbl.TextColor3 = Color3.fromRGB(200, 200, 120)
+			local conn
+			conn = UIS.InputBegan:Connect(function(input, processed)
+				if processed then
+					return
+				end
+				if input.KeyCode ~= Enum.KeyCode.Unknown then
+					S[key] = input.KeyCode.Name
+					KeyLbl.Text = S[key]
+					KeyLbl.TextColor3 = ACC
+					bindListening = false
+					conn:Disconnect()
+				end
+			end)
+		end)
 	end
 
 	local function MakeSlider(page, label, key, min, max, order, opts)
@@ -1059,33 +1151,43 @@ function UI.Init(S, ParentGUI)
 	MakeTog(T1, "Health Text", "HealthText", 11)
 	MakeTog(T1, "Weapon ESP", "Weapon", 12)
 	MakeSection(T1, "ADVANCED", 13)
-	MakeTog(T1, "Skeleton", "Skel", 14)
-	MakeTog(T1, "Tracers", "Trace", 15)
-	MakeTog(T1, "Chams Fill", "Chams", 16)
-	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 17)
+	MakeTog(T1, "Render Bots", "RenderBots", 14)
+	MakeTog(T1, "Skeleton", "Skel", 15)
+	MakeTog(T1, "Tracers", "Trace", 16)
+	MakeTog(T1, "Chams Fill", "Chams", 17)
+	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 18)
 
 	MakeSection(T3, "AIMBOT", 1)
-	MakeTog(T3, "Aimbot (RMB)", "Aimbot", 2)
-	MakeTog(T3, "Silent Aim", "Silent", 3)
-	MakeTog(T3, "Triggerbot", "Trigger", 4)
-	MakeTog(T3, "Backtrack", "Backtrack", 5)
-	MakeSlider(T3, "Backtrack Delay", "BacktrackMs", 50, 500, 6, { suffix = "ms", step = 10 })
-	MakeSection(T3, "TARGETING", 7)
-	MakeTog(T3, "Visible Check", "VisibleCheck", 8)
+	MakeTog(T3, "Aimbot (hold RMB)", "Aimbot", 2)
+	MakeTog(T3, "Silent Aim (flick)", "Silent", 3)
+	MakeHint(T3, "Przy kliknięciu LPM kamera na 1 klatkę celuje w target — bez ruszania widoku na stałe.", 4)
+	MakeTog(T3, "Triggerbot", "Trigger", 5)
+	MakeBind(T3, "Trigger Hold Key", "TriggerKey", 6)
+	MakeHint(T3, "Triggerbot działa tylko gdy trzymasz przypisany klawisz.", 7)
+	MakeSection(T3, "TARGETING", 8)
+	MakeTog(T3, "Visible Check", "VisibleCheck", 9)
+	MakeTog(T3, "Target Bots", "AimBots", 10)
 	MakeChoice(T3, "Target Priority", "TargetMode", {
 		{ label = "FOV", value = "FOV" },
-		{ label = "Distance", value = "Distance" },
-		{ label = "Health", value = "Health" },
-	}, 9)
-	MakeSection(T3, "FOV & SMOOTH", 10)
-	MakeTog(T3, "Show FOV Circle", "ShowFOV", 11)
-	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 12, { suffix = "px", step = 5 })
-	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 13, {
+		{ label = "Dist", value = "Distance" },
+		{ label = "HP", value = "Health" },
+	}, 11)
+	MakeChoice(T3, "Hit Part", "HitPart", {
+		{ label = "Head", value = "Head" },
+		{ label = "Torso", value = "Torso" },
+		{ label = "Random", value = "Random" },
+		{ label = "Closest", value = "Closest" },
+	}, 12)
+	MakeSection(T3, "FOV & SMOOTH", 13)
+	MakeTog(T3, "Show FOV Circle", "ShowFOV", 14)
+	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 15, { suffix = "px", step = 5 })
+	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 16, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 14)
+	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 17)
+	MakeHint(T3, "Spowalnia ruch celownika i dodaje lekki losowy szum — wygląda bardziej jak ręka, mniej jak snap.", 18)
 
 	MakeSection(T2, "FILTERS", 1)
 	MakeTog(T2, "Team Colors", "RealTeamColor", 2)
@@ -1183,6 +1285,11 @@ function UI.Init(S, ParentGUI)
 		MenuRoot.GroupTransparency = 1
 		MenuScale.Scale = 0.985
 		SetMenuOpen(true)
+	end)
+
+	Cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+		refreshLayout()
+		ApplyLayout(previewVisible, false)
 	end)
 end
 
