@@ -15,7 +15,8 @@ function UI.Init(S, ParentGUI)
 
 	local W_FULL = 680
 	local W_COMPACT = 458
-	local H = 420
+	local H = 440
+	local RS = game:GetService("RunService")
 
 	local C = function(class, props)
 		local inst = Instance.new(class)
@@ -347,7 +348,34 @@ function UI.Init(S, ParentGUI)
 		Parent = M_Box,
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 2), Parent = M_Cham })
-	C("UIStroke", { Thickness = S.Th, Color = ACC, Parent = M_Box })
+	local M_BoxStroke = C("UIStroke", { Thickness = S.Th, Color = ACC, Parent = M_Box })
+
+	local M_Corners = {}
+	for i = 1, 8 do
+		M_Corners[i] = C("Frame", {
+			BackgroundColor3 = ACC,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 7,
+			Parent = M_Box,
+		})
+	end
+
+	local function UpdPrevCorner(w, h)
+		local th = 2
+		local len = math.min(w, h) * 0.24
+		local specs = {
+			{ 0, 0, len, th }, { 0, 0, th, len },
+			{ w - len, 0, len, th }, { w - th, 0, th, len },
+			{ 0, h - th, len, th }, { 0, h - len, th, len },
+			{ w - len, h - th, len, th }, { w - th, h - len, th, len },
+		}
+		for i, spec in ipairs(specs) do
+			M_Corners[i].Size = UDim2.new(0, spec[3], 0, spec[4])
+			M_Corners[i].Position = UDim2.new(0, spec[1], 0, spec[2])
+		end
+	end
+	UpdPrevCorner(72, 118)
 
 	local M_Nm = C("TextLabel", {
 		Size = UDim2.new(1, 20, 0, 14),
@@ -358,6 +386,31 @@ function UI.Init(S, ParentGUI)
 		TextSize = 10,
 		TextColor3 = ACC,
 		ZIndex = 7,
+		Parent = M_Box,
+	})
+
+	local M_Wpn = C("TextLabel", {
+		Size = UDim2.new(1, 24, 0, 12),
+		Position = UDim2.new(0.5, -48, 1, 4),
+		BackgroundTransparency = 1,
+		Text = "AK-47",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = Color3.fromRGB(170, 170, 180),
+		ZIndex = 7,
+		Parent = M_Box,
+	})
+
+	local M_HT = C("TextLabel", {
+		Size = UDim2.new(0, 30, 0, 12),
+		Position = UDim2.new(0, -36, 0.5, -6),
+		BackgroundTransparency = 1,
+		Text = "85 HP",
+		Font = Enum.Font.GothamBold,
+		TextSize = 8,
+		TextColor3 = Color3.fromRGB(210, 210, 218),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 8,
 		Parent = M_Box,
 	})
 
@@ -434,16 +487,36 @@ function UI.Init(S, ParentGUI)
 	end
 
 	local function UpdPreview()
-		M_Box.Visible = S.Box or S.Name or S.Health or S.Trace or S.Skel or S.Chams
+		local showBox = S.Box
+		M_Box.Visible = showBox or S.Name or S.Health or S.HealthText or S.Weapon or S.Trace or S.Skel or S.Chams
 		M_Cham.Visible = S.Chams
+		if S.Chams and S.ChamsRainbow then
+			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
+		else
+			M_Cham.BackgroundColor3 = ACC
+		end
 		M_Nm.Visible = S.Name
+		M_Wpn.Visible = S.Weapon
 		M_Tr.Visible = S.Trace
 		M_HB.Visible = S.Health
-		M_Box:FindFirstChildOfClass("UIStroke").Enabled = S.Box or S.Chams
+		M_HT.Visible = S.HealthText
+		local corner = showBox and S.BoxType == "Corner"
+		M_BoxStroke.Enabled = showBox and not corner
+		for _, c in ipairs(M_Corners) do
+			c.Visible = corner
+		end
 		UpdSkelPreview()
 	end
 	UpdPreview()
-	M_Box:GetPropertyChangedSignal("AbsoluteSize"):Connect(UpdSkelPreview)
+	M_Box:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		UpdSkelPreview()
+		UpdPrevCorner(M_Box.AbsoluteSize.X, M_Box.AbsoluteSize.Y)
+	end)
+	RS.RenderStepped:Connect(function()
+		if S.Chams and S.ChamsRainbow and M_Cham.Visible then
+			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
+		end
+	end)
 
 	local Footer = C("Frame", {
 		Size = UDim2.new(1, 0, 0, 32),
@@ -741,19 +814,210 @@ function UI.Init(S, ParentGUI)
 		end)
 	end
 
+	local function MakeChoice(page, label, key, options, order)
+		local Row = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 52),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+
+		C("TextLabel", {
+			Size = UDim2.new(1, -16, 0, 14),
+			Position = UDim2.new(0, 12, 0, 8),
+			BackgroundTransparency = 1,
+			Text = label,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(200, 200, 208),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		local BtnWrap = C("Frame", {
+			Size = UDim2.new(1, -24, 0, 22),
+			Position = UDim2.new(0, 12, 0, 26),
+			BackgroundTransparency = 1,
+			ZIndex = 6,
+			Parent = Row,
+		})
+		C("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Padding = UDim.new(0, 4),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = BtnWrap,
+		})
+
+		local btns = {}
+		for i, opt in ipairs(options) do
+			local active = S[key] == opt.value
+			local B = C("TextButton", {
+				Size = UDim2.new(0.5, -2, 1, 0),
+				BackgroundColor3 = active and ACC_SOFT or Color3.fromRGB(24, 24, 30),
+				Text = opt.label,
+				Font = Enum.Font.GothamSemibold,
+				TextSize = 10,
+				TextColor3 = active and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120),
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+				ZIndex = 7,
+				Parent = BtnWrap,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
+			if active then
+				C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.5, Parent = B })
+			end
+			btns[opt.value] = B
+			B.MouseButton1Click:Connect(function()
+				S[key] = opt.value
+				for val, btn in pairs(btns) do
+					local on = val == opt.value
+					btn.BackgroundColor3 = on and ACC_SOFT or Color3.fromRGB(24, 24, 30)
+					btn.TextColor3 = on and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120)
+					local stroke = btn:FindFirstChildOfClass("UIStroke")
+					if on and not stroke then
+						C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.5, Parent = btn })
+					elseif not on and stroke then
+						stroke:Destroy()
+					end
+				end
+				UpdPreview()
+			end)
+		end
+	end
+
+	local function MakeSlider(page, label, key, min, max, order)
+		local Row = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 52),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+
+		local ValLbl = C("TextLabel", {
+			Size = UDim2.new(0, 56, 0, 14),
+			Position = UDim2.new(1, -64, 0, 8),
+			BackgroundTransparency = 1,
+			Text = tostring(S[key]) .. "m",
+			Font = Enum.Font.GothamBold,
+			TextSize = 10,
+			TextColor3 = ACC,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		C("TextLabel", {
+			Size = UDim2.new(1, -72, 0, 14),
+			Position = UDim2.new(0, 12, 0, 8),
+			BackgroundTransparency = 1,
+			Text = label,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(200, 200, 208),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		local Track = C("TextButton", {
+			Size = UDim2.new(1, -24, 0, 6),
+			Position = UDim2.new(0, 12, 0, 32),
+			BackgroundColor3 = Color3.fromRGB(28, 28, 36),
+			Text = "",
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = Row,
+		})
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Track })
+
+		local Fill = C("Frame", {
+			Size = UDim2.new((S[key] - min) / (max - min), 0, 1, 0),
+			BackgroundColor3 = ACC,
+			BorderSizePixel = 0,
+			ZIndex = 7,
+			Parent = Track,
+		})
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Fill })
+
+		local Knob = C("Frame", {
+			Size = UDim2.new(0, 10, 0, 10),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.new((S[key] - min) / (max - min), 0, 0.5, 0),
+			BackgroundColor3 = Color3.fromRGB(245, 245, 250),
+			BorderSizePixel = 0,
+			ZIndex = 8,
+			Parent = Track,
+		})
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Knob })
+
+		local draggingSlider = false
+
+		local function setValue(raw)
+			local pct = math.clamp(raw, 0, 1)
+			local val = math.floor(min + (max - min) * pct + 0.5)
+			S[key] = val
+			ValLbl.Text = val .. "m"
+			Fill.Size = UDim2.new(pct, 0, 1, 0)
+			Knob.Position = UDim2.new(pct, 0, 0.5, 0)
+		end
+
+		local function fromInput(x)
+			if Track.AbsoluteSize.X < 1 then return end
+			local rel = math.clamp((x - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+			setValue(rel)
+		end
+
+		Track.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				draggingSlider = true
+				fromInput(input.Position.X)
+			end
+		end)
+		UIS.InputChanged:Connect(function(input)
+			if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
+				fromInput(input.Position.X)
+			end
+		end)
+		UIS.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				draggingSlider = false
+			end
+		end)
+	end
+
 	local T1 = MakeTab("Visuals", true, true)
 	local T2 = MakeTab("Settings", false, false)
 
 	MakeSection(T1, "CORE", 1)
 	MakeTog(T1, "Master ESP", "ESP", 2)
-	MakeSection(T1, "OVERLAYS", 3)
-	MakeTog(T1, "Bounding Boxes", "Box", 4)
-	MakeTog(T1, "Player Names", "Name", 5)
-	MakeTog(T1, "Health Bars", "Health", 6)
-	MakeSection(T1, "ADVANCED", 7)
-	MakeTog(T1, "Skeleton", "Skel", 8)
-	MakeTog(T1, "Tracers", "Trace", 9)
-	MakeTog(T1, "Chams Fill", "Chams", 10)
+	MakeSlider(T1, "Distance Limit", "MaxDist", 50, 1500, 3)
+	MakeSection(T1, "OVERLAYS", 4)
+	MakeTog(T1, "Bounding Boxes", "Box", 5)
+	MakeChoice(T1, "Box Type", "BoxType", {
+		{ label = "Full", value = "Full" },
+		{ label = "Corner", value = "Corner" },
+	}, 6)
+	MakeTog(T1, "Player Names", "Name", 7)
+	MakeTog(T1, "Health Bars", "Health", 8)
+	MakeTog(T1, "Health Text", "HealthText", 9)
+	MakeTog(T1, "Weapon ESP", "Weapon", 10)
+	MakeSection(T1, "ADVANCED", 11)
+	MakeTog(T1, "Skeleton", "Skel", 12)
+	MakeTog(T1, "Tracers", "Trace", 13)
+	MakeTog(T1, "Chams Fill", "Chams", 14)
+	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 15)
 
 	MakeSection(T2, "FILTERS", 1)
 	MakeTog(T2, "Team Colors", "RealTeamColor", 2)
