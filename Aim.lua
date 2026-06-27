@@ -13,8 +13,12 @@ function Aim.Init(S, ParentGUI)
 
 	local jitterSeed = math.random() * 100
 	local lastTrigger = 0
+	local triggerToggled = false
 	local botList = {}
 	local botScanAt = 0
+
+	local silentRestore = nil
+	local silentPhase = 0
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
 
@@ -40,7 +44,7 @@ function Aim.Init(S, ParentGUI)
 	C("UIStroke", { Color = S.V, Thickness = 1, Transparency = 0.3, Parent = FOVC })
 
 	local function updFOV()
-		local d = S.FOV * 2
+		local d = math.max(S.FOV * 2, 4)
 		FOVC.Size = UDim2.new(0, d, 0, d)
 		FOVC.Visible = S.ShowFOV and (S.Aimbot or S.Silent or S.Trigger)
 	end
@@ -106,7 +110,10 @@ function Aim.Init(S, ParentGUI)
 					table.insert(pool, p)
 				end
 			end
-			return pool[math.random(1, #pool)] or char:FindFirstChild("HumanoidRootPart")
+			if #pool == 0 then
+				return char:FindFirstChild("HumanoidRootPart")
+			end
+			return pool[math.random(1, #pool)]
 		else
 			local best, bestD = nil, math.huge
 			for _, n in ipairs(AIM_PARTS) do
@@ -141,7 +148,7 @@ function Aim.Init(S, ParentGUI)
 	local function collectTargets()
 		local list = {}
 		for _, plr in ipairs(Players:GetPlayers()) do
-			if isEnemyPlayer(plr) then
+			if isEnemyPlayer(plr) and plr.Character then
 				table.insert(list, { char = plr.Character, plr = plr })
 			end
 		end
@@ -161,10 +168,11 @@ function Aim.Init(S, ParentGUI)
 
 	local function getBestTarget()
 		local best, bestScore = nil, math.huge
+		local fov = math.max(S.FOV, 1)
 
 		for _, entry in ipairs(collectTargets()) do
 			local char = entry.char
-			if not char then
+			if not char or not char.Parent then
 				continue
 			end
 			local part = resolveHitPart(char)
@@ -173,7 +181,7 @@ function Aim.Init(S, ParentGUI)
 			end
 
 			local dist2d = screenDist(part)
-			if dist2d > S.FOV then
+			if dist2d > fov then
 				continue
 			end
 			if not isVisible(part, char) then
@@ -204,6 +212,9 @@ function Aim.Init(S, ParentGUI)
 	end
 
 	local function aimCamera(targetPos)
+		if silentPhase > 0 then
+			return
+		end
 		local goal = CFrame.new(Cam.CFrame.Position, targetPos)
 		local alpha = math.clamp((1 - S.Smooth) * 0.22, 0.012, 0.45)
 		if S.AimCurve then
@@ -213,22 +224,29 @@ function Aim.Init(S, ParentGUI)
 		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
 	end
 
-	local function silentFlick(targetPos)
-		local saved = Cam.CFrame
-		Cam.CFrame = CFrame.new(saved.Position, targetPos)
-		RunService.RenderStepped:Wait()
-		Cam.CFrame = saved
-	end
-
-	local function triggerKeyDown()
+	local function getTriggerKey()
 		if not S.TriggerKey or S.TriggerKey == "" or S.TriggerKey == "None" then
-			return true
+			return nil
 		end
 		local ok, key = pcall(function()
 			return Enum.KeyCode[S.TriggerKey]
 		end)
-		if not ok or not key then
+		if ok then
+			return key
+		end
+		return nil
+	end
+
+	local function triggerArmed()
+		if not S.Trigger then
 			return false
+		end
+		if S.TriggerMode == "Toggle" then
+			return triggerToggled
+		end
+		local key = getTriggerKey()
+		if not key then
+			return true
 		end
 		return UIS:IsKeyDown(key)
 	end
@@ -283,22 +301,45 @@ function Aim.Init(S, ParentGUI)
 	end
 
 	UIS.InputBegan:Connect(function(input, processed)
-		if processed or not S.Silent then
-			return
+		local key = getTriggerKey()
+		if S.TriggerMode == "Toggle" and key and input.KeyCode == key and not processed then
+			triggerToggled = not triggerToggled
 		end
+
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
 			return
 		end
-		local tgt = getBestTarget()
-		if tgt then
-			silentFlick(tgt.part.Position)
+		if not S.Silent then
+			return
 		end
+
+		local tgt = getBestTarget()
+		if not tgt then
+			return
+		end
+
+		silentRestore = Cam.CFrame
+		Cam.CFrame = CFrame.new(silentRestore.Position, tgt.part.Position)
+		silentPhase = 1
 	end)
 
 	RS.RenderStepped:Connect(function()
 		updFOV()
 
-		if S.Aimbot and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+		if silentPhase == 1 then
+			silentPhase = 2
+		elseif silentPhase == 2 and silentRestore then
+			Cam.CFrame = silentRestore
+			silentRestore = nil
+			silentPhase = 0
+		end
+
+		if S.Aimbot and not S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+			local tgt = getBestTarget()
+			if tgt then
+				aimCamera(tgt.part.Position)
+			end
+		elseif S.Aimbot and S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) and silentPhase == 0 then
 			local tgt = getBestTarget()
 			if tgt then
 				aimCamera(tgt.part.Position)
@@ -307,10 +348,11 @@ function Aim.Init(S, ParentGUI)
 	end)
 
 	RS.Heartbeat:Connect(function()
-		if not S.Trigger or not triggerKeyDown() then
+		if not triggerArmed() then
 			return
 		end
-		if tick() - lastTrigger < 0.1 then
+		local delaySec = math.max(S.TriggerDelay or 0, 1) / 1000
+		if tick() - lastTrigger < delaySec then
 			return
 		end
 		if rayHostile() then

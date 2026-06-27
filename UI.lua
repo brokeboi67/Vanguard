@@ -586,6 +586,9 @@ function UI.Init(S, ParentGUI)
 	local menuOpen = false
 	local menuTweens = {}
 	local layoutTweens = {}
+	local tabBusy = false
+	local savedMouseBehavior = nil
+	local savedMouseIcon = nil
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -594,7 +597,7 @@ function UI.Init(S, ParentGUI)
 		table.clear(list)
 	end
 
-	local function ApplyLayout(showPreview, animate)
+	local function ApplyLayout(showPreview, animate, keepPosition)
 		refreshLayout()
 		local targetW = showPreview and W_FULL or W_COMPACT
 		local targetContentW = showPreview and math.floor(W_FULL * 0.42) or (W_COMPACT - 172)
@@ -603,10 +606,12 @@ function UI.Init(S, ParentGUI)
 
 		local info = TweenInfo.new(animate and 0.22 or 0, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-		table.insert(layoutTweens, TweenPlay(MenuRoot, info, {
-			Size = UDim2.new(0, targetW, 0, H),
-			Position = centerPos(targetW),
-		}))
+		local menuProps = { Size = UDim2.new(0, targetW, 0, H) }
+		if not keepPosition then
+			menuProps.Position = centerPos(targetW)
+		end
+
+		table.insert(layoutTweens, TweenPlay(MenuRoot, info, menuProps))
 		table.insert(layoutTweens, TweenPlay(Content, info, {
 			Size = UDim2.new(0, targetContentW, 1, -82),
 		}))
@@ -645,46 +650,44 @@ function UI.Init(S, ParentGUI)
 	end
 
 	local function SwitchTab(btn, pageWrap, showPreview)
-		if ActiveTabBtn == btn then return end
+		if ActiveTabBtn == btn or tabBusy then
+			return
+		end
+		tabBusy = true
 
 		local oldWrap = ActivePageWrap
 		local oldBtn = ActiveTabBtn
-		local outInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
-		local inInfo = TweenInfo.new(0.26, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local inInfo = TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-		if oldBtn then StyleTab(oldBtn, false) end
+		if oldBtn then
+			StyleTab(oldBtn, false)
+		end
 		StyleTab(btn, true)
 
 		if showPreview ~= previewVisible then
-			ApplyLayout(showPreview, true)
+			ApplyLayout(showPreview, true, true)
+		end
+
+		if oldWrap and oldWrap ~= pageWrap then
+			oldWrap.Visible = false
+			oldWrap.GroupTransparency = 1
+			oldWrap.Position = UDim2.new(0, 0, 0, 0)
+			local oldScale = oldWrap:FindFirstChild("PageScale")
+			if oldScale then
+				oldScale.Scale = 1
+			end
 		end
 
 		ActiveTabBtn = btn
 		ActivePageWrap = pageWrap
 
-		if oldWrap and oldWrap ~= pageWrap then
-			local oldScale = oldWrap:FindFirstChild("PageScale")
-			TweenPlay(oldWrap, outInfo, {
-				GroupTransparency = 1,
-				Position = UDim2.new(0, -22, 0, 0),
-			})
-			if oldScale then
-				TweenPlay(oldScale, outInfo, { Scale = 0.94 })
-			end
-			task.delay(0.2, function()
-				if oldWrap ~= ActivePageWrap then
-					oldWrap.Visible = false
-					oldWrap.Position = UDim2.new(0, 0, 0, 0)
-					if oldScale then oldScale.Scale = 1 end
-				end
-			end)
-		end
-
 		pageWrap.Visible = true
 		pageWrap.GroupTransparency = 1
-		pageWrap.Position = UDim2.new(0, 22, 0, 0)
+		pageWrap.Position = UDim2.new(0, 6, 0, 0)
 		local newScale = pageWrap:FindFirstChild("PageScale")
-		if newScale then newScale.Scale = 0.94 end
+		if newScale then
+			newScale.Scale = 0.98
+		end
 		TweenPlay(pageWrap, inInfo, {
 			GroupTransparency = 0,
 			Position = UDim2.new(0, 0, 0, 0),
@@ -692,6 +695,10 @@ function UI.Init(S, ParentGUI)
 		if newScale then
 			TweenPlay(newScale, inInfo, { Scale = 1 })
 		end
+
+		task.delay(0.18, function()
+			tabBusy = false
+		end)
 	end
 
 	local function MakeTab(name, default, showPreview, layoutOrder)
@@ -1162,57 +1169,86 @@ function UI.Init(S, ParentGUI)
 	MakeTog(T3, "Silent Aim (flick)", "Silent", 3)
 	MakeHint(T3, "Przy kliknięciu LPM kamera na 1 klatkę celuje w target — bez ruszania widoku na stałe.", 4)
 	MakeTog(T3, "Triggerbot", "Trigger", 5)
-	MakeBind(T3, "Trigger Hold Key", "TriggerKey", 6)
-	MakeHint(T3, "Triggerbot działa tylko gdy trzymasz przypisany klawisz.", 7)
-	MakeSection(T3, "TARGETING", 8)
-	MakeTog(T3, "Visible Check", "VisibleCheck", 9)
-	MakeTog(T3, "Target Bots", "AimBots", 10)
+	MakeChoice(T3, "Trigger Mode", "TriggerMode", {
+		{ label = "Hold", value = "Hold" },
+		{ label = "Toggle", value = "Toggle" },
+	}, 6)
+	MakeBind(T3, "Trigger Key", "TriggerKey", 7)
+	MakeSlider(T3, "Trigger Delay", "TriggerDelay", 1, 500, 8, { suffix = "ms", step = 1 })
+	MakeHint(T3, "Hold = działa gdy trzymasz klawisz. Toggle = włącz/wyłącz klawiszem.", 9)
+	MakeSection(T3, "TARGETING", 10)
+	MakeTog(T3, "Visible Check", "VisibleCheck", 11)
+	MakeTog(T3, "Target Bots", "AimBots", 12)
 	MakeChoice(T3, "Target Priority", "TargetMode", {
 		{ label = "FOV", value = "FOV" },
 		{ label = "Dist", value = "Distance" },
 		{ label = "HP", value = "Health" },
-	}, 11)
+	}, 13)
 	MakeChoice(T3, "Hit Part", "HitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 12)
-	MakeSection(T3, "FOV & SMOOTH", 13)
-	MakeTog(T3, "Show FOV Circle", "ShowFOV", 14)
-	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 15, { suffix = "px", step = 5 })
-	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 16, {
+	}, 14)
+	MakeSection(T3, "FOV & SMOOTH", 15)
+	MakeTog(T3, "Show FOV Circle", "ShowFOV", 16)
+	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 17, { suffix = "px", step = 5 })
+	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 18, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 17)
-	MakeHint(T3, "Spowalnia ruch celownika i dodaje lekki losowy szum — wygląda bardziej jak ręka, mniej jak snap.", 18)
+	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 19)
+	MakeHint(T3, "Spowalnia ruch celownika i dodaje lekki losowy szum — wygląda bardziej jak ręka, mniej jak snap.", 20)
 
-	MakeSection(T2, "FILTERS", 1)
-	MakeTog(T2, "Team Colors", "RealTeamColor", 2)
-	MakeTog(T2, "Hide Teammates", "Team", 3)
-	MakeTog(T2, "Line of Sight", "LoS", 4)
+	MakeSection(T2, "MOVEMENT", 1)
+	MakeTog(T2, "Bunny Hop", "BHop", 2)
+	MakeHint(T2, "Auto-skok tylko gdy się poruszasz (WASD). Stojąc w miejscu — nic nie robi.", 3)
+	MakeSection(T2, "FILTERS", 4)
+	MakeTog(T2, "Team Colors", "RealTeamColor", 5)
+	MakeTog(T2, "Hide Teammates", "Team", 6)
+	MakeTog(T2, "Line of Sight", "LoS", 7)
 
 	ApplyLayout(true, false)
 
 	-- // Menu show / hide
 	local function SetMenuOpen(open)
-		if open == menuOpen then return end
+		if open == menuOpen then
+			return
+		end
 		menuOpen = open
 
 		CancelTweens(menuTweens)
 		MenuRoot.Visible = true
 
+		local LP = game:GetService("Players").LocalPlayer
 		local showInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 		local hideInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 
 		if open then
+			savedMouseBehavior = UIS.MouseBehavior
+			savedMouseIcon = UIS.MouseIconEnabled
+			UIS.MouseBehavior = Enum.MouseBehavior.Default
+			UIS.MouseIconEnabled = true
+			pcall(function()
+				LP.MouseIconEnabled = true
+			end)
+
 			MenuScale.Scale = 0.985
 			MenuRoot.GroupTransparency = 1
 			table.insert(menuTweens, TweenPlay(MenuRoot, showInfo, { GroupTransparency = 0 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, showInfo, { Scale = 1 }))
 		else
+			if savedMouseBehavior then
+				UIS.MouseBehavior = savedMouseBehavior
+			end
+			if savedMouseIcon ~= nil then
+				UIS.MouseIconEnabled = savedMouseIcon
+			end
+			pcall(function()
+				LP.MouseIconEnabled = savedMouseIcon ~= false
+			end)
+
 			table.insert(menuTweens, TweenPlay(MenuRoot, hideInfo, { GroupTransparency = 1 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, hideInfo, { Scale = 0.985 }))
 			task.delay(0.12, function()
@@ -1289,7 +1325,7 @@ function UI.Init(S, ParentGUI)
 
 	Cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 		refreshLayout()
-		ApplyLayout(previewVisible, false)
+		ApplyLayout(previewVisible, false, true)
 	end)
 end
 

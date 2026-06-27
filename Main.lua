@@ -7,6 +7,7 @@ end
 local Settings = Get("Settings.lua")
 local ESP      = Get("ESP.lua")
 local Aim      = Get("Aim.lua")
+local Movement = Get("Movement.lua")
 local UI       = Get("UI.lua")
 
 -- Głowne GUI (podobnie jak w poprzednim loaderze)
@@ -22,6 +23,7 @@ GUI.Parent = CG
 -- Start
 ESP.Init(Settings, GUI)
 Aim.Init(Settings, GUI)
+Movement.Init(Settings)
 UI.Init(Settings, GUI)
 
 print("VANGUARD: Loaded from GitHub!")

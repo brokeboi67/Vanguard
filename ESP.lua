@@ -112,6 +112,10 @@ function ESP.Init(S, ParentGUI)
 		end
 	end
 
+	local function isBotKey(key)
+		return typeof(key) == "Instance" and key:IsA("Model")
+	end
+
 	local function GetColor(plr, c, ray, isBot)
 		if S.Chams and S.ChamsRainbow then
 			return Rainbow()
@@ -154,6 +158,9 @@ function ESP.Init(S, ParentGUI)
 	end
 
 	local function hideAll(ch)
+		if not ch then
+			return
+		end
 		ch.B.Visible = false
 		ch.T.Visible = false
 		ch.WT.Visible = false
@@ -161,29 +168,83 @@ function ESP.Init(S, ParentGUI)
 		ch.HB.Visible = false
 		ch.HT.Visible = false
 		ch.CHM.Enabled = false
+		if ch.Cr then
+			HideCorner(ch.Cr)
+		end
+		if ch.BO then
+			ch.BO.Enabled = false
+		end
 		for _, bn in pairs(ch.Sk) do
 			bn.Visible = false
 		end
 	end
 
+	local function destroyCache(key)
+		local ch = Cache[key]
+		if not ch then
+			return
+		end
+		pcall(function() ch.B:Destroy() end)
+		pcall(function() ch.T:Destroy() end)
+		pcall(function() ch.WT:Destroy() end)
+		pcall(function() ch.HB:Destroy() end)
+		pcall(function() ch.HT:Destroy() end)
+		pcall(function() ch.CHM:Destroy() end)
+		pcall(function() ch.Tr:Destroy() end)
+		for _, bn in pairs(ch.Sk) do
+			pcall(function() bn:Destroy() end)
+		end
+		Cache[key] = nil
+	end
+
+	local function hideAllCaches()
+		for _, ch in pairs(Cache) do
+			hideAll(ch)
+		end
+	end
+
+	local function purgeBotCaches()
+		for key in pairs(Cache) do
+			if isBotKey(key) then
+				destroyCache(key)
+			end
+		end
+		table.clear(botList)
+	end
+
 	local function renderEntity(key, c, plr, displayName, isBot)
+		if not c or not c.Parent then
+			hideAll(Cache[key])
+			destroyCache(key)
+			return
+		end
+
 		local h = c:FindFirstChild("Humanoid")
 		local hrp = c:FindFirstChild("HumanoidRootPart")
 		local ch = ensureCache(key)
 
 		local teamOk = not S.Team or isBot or not plr or not plr.Team or plr.Team ~= LP.Team
-		local val = c and h and hrp and h.Health > 0 and teamOk
+		local val = h and hrp and h.Health > 0 and teamOk
 
 		if val then
-			local cf, sz = c:GetBoundingBox()
-			local dist = (Cam.CFrame.Position - cf.Position).Magnitude
-			if dist > S.MaxDist then
+			local ok, cf = pcall(function()
+				return c:GetBoundingBox()
+			end)
+			if ok then
+				local dist = (Cam.CFrame.Position - cf.Position).Magnitude
+				if dist > S.MaxDist then
+					val = false
+				end
+			else
 				val = false
 			end
 		end
 
 		if not val then
 			hideAll(ch)
+			if isBot then
+				destroyCache(key)
+			end
 			return
 		end
 
@@ -203,15 +264,7 @@ function ESP.Init(S, ParentGUI)
 
 		local rp, onScreen = Cam:WorldToViewportPoint(cf.Position)
 		if not onScreen then
-			ch.B.Visible = false
-			ch.T.Visible = false
-			ch.WT.Visible = false
-			ch.Tr.Visible = false
-			ch.HB.Visible = false
-			ch.HT.Visible = false
-			for _, bn in pairs(ch.Sk) do
-				bn.Visible = false
-			end
+			hideAll(ch)
 			return
 		end
 
@@ -236,10 +289,12 @@ function ESP.Init(S, ParentGUI)
 			end
 		else
 			ch.B.Visible = false
+			HideCorner(ch.Cr)
+			ch.BO.Enabled = false
 		end
 
 		local label = displayName or (plr and plr.Name) or c.Name
-		if isBot and S.RenderBots then
+		if isBot then
 			label = "[BOT] " .. label
 		end
 
@@ -328,14 +383,29 @@ function ESP.Init(S, ParentGUI)
 		end
 	end
 
+	local lastRenderBots = S.RenderBots
+	local lastESP = S.ESP
+
 	RS.RenderStepped:Connect(function()
+		if lastESP and not S.ESP then
+			hideAllCaches()
+		end
+		if lastRenderBots and not S.RenderBots then
+			purgeBotCaches()
+		end
+		lastESP = S.ESP
+		lastRenderBots = S.RenderBots
+
 		ESP_C.Visible = S.ESP
 		if not S.ESP then
 			return
 		end
 
+		local active = {}
+
 		for _, plr in pairs(P:GetPlayers()) do
 			if plr ~= LP then
+				active[plr] = true
 				renderEntity(plr, plr.Character, plr, plr.Name, false)
 			end
 		end
@@ -345,30 +415,34 @@ function ESP.Init(S, ParentGUI)
 				botScanAt = tick()
 				refreshBots()
 			end
-			for _, model in ipairs(botList) do
-				if model.Parent then
+			local i = 1
+			while i <= #botList do
+				local model = botList[i]
+				if model.Parent and isBotModel(model) then
+					active[model] = true
 					renderEntity(model, model, nil, model.Name, true)
+					i += 1
+				else
+					destroyCache(model)
+					table.remove(botList, i)
+				end
+			end
+		else
+			purgeBotCaches()
+		end
+
+		for key, ch in pairs(Cache) do
+			if not active[key] then
+				hideAll(ch)
+				if isBotKey(key) then
+					destroyCache(key)
 				end
 			end
 		end
 	end)
 
 	P.PlayerRemoving:Connect(function(plr)
-		local ch = Cache[plr]
-		if not ch then
-			return
-		end
-		ch.B:Destroy()
-		ch.T:Destroy()
-		ch.WT:Destroy()
-		ch.HB:Destroy()
-		ch.HT:Destroy()
-		ch.CHM:Destroy()
-		ch.Tr:Destroy()
-		for _, bn in pairs(ch.Sk) do
-			bn:Destroy()
-		end
-		Cache[plr] = nil
+		destroyCache(plr)
 	end)
 end
 

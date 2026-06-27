@@ -28,6 +28,8 @@ local Settings = {
 	Silent = false,
 	Trigger = false,
 	TriggerKey = "V",
+	TriggerMode = "Hold",
+	TriggerDelay = 100,
 	VisibleCheck = true,
 	ShowFOV = true,
 	FOV = 80,
@@ -36,6 +38,9 @@ local Settings = {
 	TargetMode = "FOV",
 	HitPart = "Head",
 	AimBots = true,
+
+	-- MOVEMENT
+	BHop = false,
 }
 
 return Settings
