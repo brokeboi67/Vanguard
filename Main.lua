@@ -1,4 +1,4 @@
-local repo = "https://raw.githubusercontent.com/TWOJA_NAZWA_UZYTKOWNIKA/NAZWA_REPOZYTORIUM/main/"
+local repo = "https://raw.githubusercontent.com/ihatelgbt2-art/Test/main/"
 
 local function Get(file)
     return loadstring(game:HttpGet(repo .. file))()
