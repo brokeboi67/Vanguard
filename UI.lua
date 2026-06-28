@@ -1515,7 +1515,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 	local T3 = MakeTab("Legit", false, false, 2)
 	local TR = MakeTab("Rage", false, false, 3)
 	local T2 = MakeTab("Settings", false, false, 4)
-	local T4 = MakeTab("Config", false, false, 5)
+	local TM = MakeTab("Misc", false, false, 5)
+	local T4 = MakeTab("Config", false, false, 6)
 
 	local VCore = MakeCard(T1, "ESP", nil, 1)
 	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
@@ -1621,6 +1622,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 		{ label = "Closest", value = "Closest" },
 	}, 5)
 	MakeSlider(RTarget, "Max Distance", "RageMaxDist", 50, 1500, 6, { suffix = "m", step = 25 })
+
+	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Client-side — powiększa części ciała innych graczy.", 1)
+	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })
+	MakeSlider(MHit, "Head Scale", "HeadSizeScale", 1, 6, 2, {
+		suffix = "x",
+		step = 0.1,
+		fmt = function(v) return string.format("%.1fx", v) end,
+	})
+	MakeTog(MHit, "Hitbox Size", "HitboxSize", 3, { flat = true })
+	MakeSlider(MHit, "Hitbox Scale", "HitboxSizeScale", 1, 5, 4, {
+		suffix = "x",
+		step = 0.1,
+		fmt = function(v) return string.format("%.1fx", v) end,
+	})
+	MakeTog(MHit, "Include Friends / Team", "MiscAffectFriends", 5, { flat = true })
+	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 6)
 
 	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 1)
 	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })

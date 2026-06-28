@@ -10,11 +10,13 @@ pcall(function()
 	Config.Autoload(Settings)
 end)
 
+local Util      = Get("Util.lua")
 local ESP      = Get("ESP.lua")
 local TeamFriends = Get("TeamFriends.lua")
 local Aim      = Get("Aim.lua")
 local Rage     = Get("Rage.lua")
 local Movement = Get("Movement.lua")
+local Misc     = Get("Misc.lua")
 local Features = Get("Features.lua")
 local UI       = Get("UI.lua")
 
@@ -35,9 +37,10 @@ GUI.Parent = CG
 
 -- Start
 ESP.Init(Settings, GUI, TeamFriends)
-Aim.Init(Settings, GUI, TeamFriends)
-Rage.Init(Settings, GUI, TeamFriends)
+Aim.Init(Settings, GUI, TeamFriends, Util)
+Rage.Init(Settings, GUI, TeamFriends, Util)
 Movement.Init(Settings)
+Misc.Init(Settings, TeamFriends, Util)
 Features.Init(Settings, GUI)
 UI.Init(Settings, GUI, Config, TeamFriends)
 

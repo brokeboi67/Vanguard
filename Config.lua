@@ -142,6 +142,21 @@ function Config.EnforceRules(S)
 	if S.AutoStrafe == nil then
 		S.AutoStrafe = false
 	end
+	if S.HeadSize == nil then
+		S.HeadSize = false
+	end
+	if S.HeadSizeScale == nil then
+		S.HeadSizeScale = 2
+	end
+	if S.HitboxSize == nil then
+		S.HitboxSize = false
+	end
+	if S.HitboxSizeScale == nil then
+		S.HitboxSizeScale = 1.5
+	end
+	if S.MiscAffectFriends == nil then
+		S.MiscAffectFriends = false
+	end
 	if S.ChamsRainbow then
 		S.LoS = false
 		S.RealTeamColor = false

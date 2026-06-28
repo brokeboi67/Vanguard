@@ -2,7 +2,7 @@
 
 local Aim = {}
 
-function Aim.Init(S, ParentGUI, TF)
+function Aim.Init(S, ParentGUI, TF, Util)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
@@ -191,9 +191,7 @@ function Aim.Init(S, ParentGUI, TF)
 		if Players:GetPlayerFromCharacter(model) then
 			return false
 		end
-		local hum = model:FindFirstChildOfClass("Humanoid")
-		local hrp = model:FindFirstChild("HumanoidRootPart")
-		return hum and hrp and isAliveHumanoid(hum)
+		return Util.isAimableCharacter(model)
 	end
 
 	local function refreshBots()
@@ -202,15 +200,30 @@ function Aim.Init(S, ParentGUI, TF)
 			return
 		end
 		table.clear(botList)
-		for _, inst in ipairs(workspace:GetDescendants()) do
-			if inst:IsA("Model") and isBotModel(inst) then
-				table.insert(botList, inst)
+		local function tryAdd(model)
+			if model:IsA("Model") and isBotModel(model) then
+				table.insert(botList, model)
+			end
+		end
+		for _, child in ipairs(workspace:GetChildren()) do
+			tryAdd(child)
+		end
+		for _, folderName in ipairs({ "Characters", "Entities", "NPCs", "Bots" }) do
+			local folder = workspace:FindFirstChild(folderName)
+			if folder then
+				for _, child in ipairs(folder:GetChildren()) do
+					tryAdd(child)
+				end
 			end
 		end
 	end
 
 	local function screenDist(part)
-		local pos, onScreen = Cam:WorldToViewportPoint(part.Position)
+		local pos3 = Util.getPartPosition(part)
+		if not pos3 then
+			return math.huge
+		end
+		local pos, onScreen = Cam:WorldToViewportPoint(pos3)
 		if not onScreen then
 			return math.huge
 		end
@@ -222,34 +235,43 @@ function Aim.Init(S, ParentGUI, TF)
 		if not S.VisibleCheck then
 			return true
 		end
+		local partPos = Util.getPartPosition(part)
+		if not partPos then
+			return false
+		end
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-		local hit = workspace:Raycast(Cam.CFrame.Position, part.Position - Cam.CFrame.Position, params)
-		return hit and hit.Instance:IsDescendantOf(char)
+		local hit = workspace:Raycast(Cam.CFrame.Position, partPos - Cam.CFrame.Position, params)
+		if not hit then
+			return true
+		end
+		return hit.Instance:IsDescendantOf(char)
 	end
 
 	local function resolveHitPart(char)
 		if S.HitPart == "Head" then
-			return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+			return Util.resolveBodyPart(char, "Head") or Util.resolveBodyPart(char, "HumanoidRootPart")
 		elseif S.HitPart == "Torso" then
-			return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+			return Util.resolveBodyPart(char, "UpperTorso")
+				or Util.resolveBodyPart(char, "Torso")
+				or Util.resolveBodyPart(char, "HumanoidRootPart")
 		elseif S.HitPart == "Random" then
 			local pool = {}
 			for _, n in ipairs(AIM_PARTS) do
-				local p = char:FindFirstChild(n)
+				local p = Util.resolveBodyPart(char, n)
 				if p then
 					table.insert(pool, p)
 				end
 			end
 			if #pool == 0 then
-				return char:FindFirstChild("HumanoidRootPart")
+				return Util.resolveBodyPart(char, "HumanoidRootPart")
 			end
 			return pool[math.random(1, #pool)]
 		else
 			local best, bestD = nil, math.huge
 			for _, n in ipairs(AIM_PARTS) do
-				local p = char:FindFirstChild(n)
+				local p = Util.resolveBodyPart(char, n)
 				if p then
 					local d = screenDist(p)
 					if d < bestD then
@@ -258,7 +280,7 @@ function Aim.Init(S, ParentGUI, TF)
 					end
 				end
 			end
-			return best or char:FindFirstChild("Head")
+			return best or Util.resolveBodyPart(char, "Head")
 		end
 	end
 
@@ -318,7 +340,7 @@ function Aim.Init(S, ParentGUI, TF)
 			return nil
 		end
 
-		local dist3d = (Cam.CFrame.Position - part.Position).Magnitude
+		local dist3d = (Cam.CFrame.Position - tgt.part.Position).Magnitude
 		if dist3d > S.MaxDist then
 			return nil
 		end
@@ -478,7 +500,10 @@ function Aim.Init(S, ParentGUI, TF)
 	end)
 
 	RS.Heartbeat:Connect(function()
-		tryTriggerShot()
+		if S.MenuOpen then
+			return
+		end
+		pcall(tryTriggerShot)
 	end)
 end
 

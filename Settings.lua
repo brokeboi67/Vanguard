@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.8.0",
+	Version = "2.8.1",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -85,6 +85,13 @@ local Settings = {
 	-- FRIENDS
 	FriendClick = true,
 	FriendIds = {},
+
+	-- MISC
+	HeadSize = false,
+	HeadSizeScale = 2,
+	HitboxSize = false,
+	HitboxSizeScale = 1.5,
+	MiscAffectFriends = false,
 
 	-- UI runtime
 	MenuOpen = false,

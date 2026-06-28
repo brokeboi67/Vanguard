@@ -2,7 +2,7 @@
 
 local Rage = {}
 
-function Rage.Init(S, ParentGUI, TF)
+function Rage.Init(S, ParentGUI, TF, Util)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
@@ -39,8 +39,12 @@ function Rage.Init(S, ParentGUI, TF)
 		if not S.RageVisibleCheck then
 			return true
 		end
+		local partPos = Util.getPartPosition(part)
+		if not partPos then
+			return false
+		end
 		local origin = Cam.CFrame.Position
-		local dir = part.Position - origin
+		local dir = partPos - origin
 		local dist = dir.Magnitude
 		if dist < 0.05 then
 			return true
@@ -206,9 +210,7 @@ function Rage.Init(S, ParentGUI, TF)
 		if Players:GetPlayerFromCharacter(model) then
 			return false
 		end
-		local hum = model:FindFirstChildOfClass("Humanoid")
-		local hrp = model:FindFirstChild("HumanoidRootPart")
-		return hum and hrp and isAliveHumanoid(hum)
+		return Util.isAimableCharacter(model)
 	end
 
 	local function refreshBots()
@@ -217,9 +219,20 @@ function Rage.Init(S, ParentGUI, TF)
 			return
 		end
 		table.clear(botList)
-		for _, inst in ipairs(workspace:GetDescendants()) do
-			if inst:IsA("Model") and isBotModel(inst) then
-				table.insert(botList, inst)
+		local function tryAdd(model)
+			if model:IsA("Model") and isBotModel(model) then
+				table.insert(botList, model)
+			end
+		end
+		for _, child in ipairs(workspace:GetChildren()) do
+			tryAdd(child)
+		end
+		for _, folderName in ipairs({ "Characters", "Entities", "NPCs", "Bots" }) do
+			local folder = workspace:FindFirstChild(folderName)
+			if folder then
+				for _, child in ipairs(folder:GetChildren()) do
+					tryAdd(child)
+				end
 			end
 		end
 	end
@@ -266,18 +279,21 @@ function Rage.Init(S, ParentGUI, TF)
 		if not part then
 			return math.huge
 		end
-		local origin = Cam.CFrame.Position
-		return (origin - part.Position).Magnitude
+		local partPos = Util.getPartPosition(part)
+		if not partPos then
+			return math.huge
+		end
+		return (Cam.CFrame.Position - partPos).Magnitude
 	end
 
 	local function getRageAimPart(char)
 		if S.RageHitPart == "Head" then
-			local head = char:FindFirstChild("Head")
+			local head = Util.resolveBodyPart(char, "Head")
 			if head and isPartVisibleFromCamera(head, char) then
 				return head
 			end
 			for _, name in ipairs(AIM_PARTS) do
-				local p = char:FindFirstChild(name)
+				local p = Util.resolveBodyPart(char, name)
 				if p and isPartVisibleFromCamera(p, char) then
 					return p
 				end
@@ -285,7 +301,7 @@ function Rage.Init(S, ParentGUI, TF)
 			return nil
 		elseif S.RageHitPart == "Torso" then
 			for _, name in ipairs({ "UpperTorso", "Torso", "HumanoidRootPart" }) do
-				local p = char:FindFirstChild(name)
+				local p = Util.resolveBodyPart(char, name)
 				if isPartVisibleFromCamera(p, char) then
 					return p
 				end
@@ -294,7 +310,7 @@ function Rage.Init(S, ParentGUI, TF)
 		elseif S.RageHitPart == "Random" then
 			local pool = {}
 			for _, n in ipairs(AIM_PARTS) do
-				local p = char:FindFirstChild(n)
+				local p = Util.resolveBodyPart(char, n)
 				if p and isPartVisibleFromCamera(p, char) then
 					table.insert(pool, p)
 				end
@@ -306,7 +322,7 @@ function Rage.Init(S, ParentGUI, TF)
 		else
 			local best, bestD = nil, math.huge
 			for _, n in ipairs(AIM_PARTS) do
-				local p = char:FindFirstChild(n)
+				local p = Util.resolveBodyPart(char, n)
 				if p and isPartVisibleFromCamera(p, char) then
 					local d = worldDist(p)
 					if d < bestD then
@@ -378,7 +394,7 @@ function Rage.Init(S, ParentGUI, TF)
 		elseif not S.RageBots then
 			return nil
 		end
-		local part = hit.Instance:IsA("BasePart") and hit.Instance or getRageAimPart(model)
+		local part = hit.Instance:IsA("BasePart") and hit.Instance or Util.resolveBodyPart(model, "Head") or Util.resolveBodyPart(model, "HumanoidRootPart")
 		if not part then
 			return nil
 		end
@@ -556,7 +572,7 @@ function Rage.Init(S, ParentGUI, TF)
 		if S.MenuOpen then
 			return
 		end
-		tryRageShot()
+		pcall(tryRageShot)
 	end)
 
 	LP.CharacterAdded:Connect(function()
