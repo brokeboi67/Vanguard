@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.5.0",
+	Version = "2.5.1",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -17,6 +17,7 @@ local Settings = {
 	ChamsRainbow = false,
 	RenderBots = false,
 	Team = false,
+	ExcludeTeam = true,
 	RealTeamColor = true,
 	LoS = false,
 	MaxDist = 500,
@@ -57,7 +58,6 @@ local Settings = {
 	RageDelay = 80,
 	ShowRageHud = true,
 	RageHudMinimal = true,
-	RageThirdPerson = false,
 	RageHitPart = "Head",
 	RageVisibleCheck = true,
 	RageBots = true,

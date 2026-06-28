@@ -116,6 +116,10 @@ function ESP.Init(S, ParentGUI)
 		return typeof(key) == "Instance" and key:IsA("Model")
 	end
 
+	local function isTeammate(plr)
+		return plr and plr.Team and LP.Team and plr.Team == LP.Team
+	end
+
 	local losParams = RaycastParams.new()
 	losParams.FilterType = Enum.RaycastFilterType.Exclude
 
@@ -248,8 +252,17 @@ function ESP.Init(S, ParentGUI)
 
 	local function renderEntity(key, c, plr, displayName, isBot)
 		if not c or not c.Parent then
-			hideAll(Cache[key])
+			if Cache[key] then
+				hideAll(Cache[key])
+			end
 			destroyCache(key)
+			return
+		end
+
+		if not isBot and S.Team and isTeammate(plr) then
+			if Cache[key] then
+				hideAll(Cache[key])
+			end
 			return
 		end
 
@@ -257,8 +270,7 @@ function ESP.Init(S, ParentGUI)
 		local hrp = c:FindFirstChild("HumanoidRootPart")
 		local ch = ensureCache(key)
 
-		local teamOk = not S.Team or isBot or not plr or not plr.Team or plr.Team ~= LP.Team
-		local val = h and hrp and h.Health > 0 and teamOk
+		local val = h and hrp and h.Health > 0
 
 		if val then
 			local ok, cf = pcall(function()

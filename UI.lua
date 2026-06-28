@@ -43,84 +43,92 @@ function UI.Init(S, ParentGUI, ConfigModule)
 		return UDim2.new(0.5, -w / 2, 0.5, -H / 2)
 	end
 
-	-- // Loading overlay
+	-- // Loading overlay — minimalist top bar
 	local Loader = C("Frame", {
 		Name = "Loader",
 		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.5,
+		BackgroundColor3 = Color3.fromRGB(8, 8, 10),
+		BackgroundTransparency = 0.08,
 		BorderSizePixel = 0,
 		ZIndex = 100,
 		Parent = ParentGUI,
 	})
 
-	local LoaderCard = C("Frame", {
-		Size = UDim2.new(0, 400, 0, 220),
-		Position = UDim2.new(0.5, -200, 0.5, -110),
-		BackgroundColor3 = Color3.fromRGB(14, 14, 17),
+	local LoaderTop = C("Frame", {
+		Name = "LoaderTop",
+		Size = UDim2.new(1, 0, 0, 52),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundColor3 = Color3.fromRGB(12, 12, 15),
+		BackgroundTransparency = 0.15,
 		BorderSizePixel = 0,
 		ZIndex = 101,
 		Parent = Loader,
 	})
-	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = LoaderCard })
-	C("UIStroke", { Color = Color3.fromRGB(40, 40, 48), Thickness = 1, Parent = LoaderCard })
+
+	C("Frame", {
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(38, 38, 46),
+		BorderSizePixel = 0,
+		ZIndex = 102,
+		Parent = LoaderTop,
+	})
 
 	C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 40),
-		Position = UDim2.new(0, 0, 0, 32),
+		Size = UDim2.new(0, 140, 0, 16),
+		Position = UDim2.new(0, 20, 0, 12),
 		BackgroundTransparency = 1,
 		Text = "VANGUARD",
 		Font = Enum.Font.GothamBlack,
-		TextSize = 28,
-		TextColor3 = Color3.fromRGB(240, 240, 245),
+		TextSize = 13,
+		TextColor3 = Color3.fromRGB(235, 235, 240),
+		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 102,
-		Parent = LoaderCard,
+		Parent = LoaderTop,
 	})
 
 	local LoaderStatus = C("TextLabel", {
-		Size = UDim2.new(1, -40, 0, 14),
-		Position = UDim2.new(0, 20, 0, 130),
+		Size = UDim2.new(1, -180, 0, 14),
+		Position = UDim2.new(0, 20, 0, 30),
 		BackgroundTransparency = 1,
-		Text = "Initializing…",
+		Text = "Initializing",
 		Font = Enum.Font.Gotham,
-		TextSize = 11,
-		TextColor3 = Color3.fromRGB(120, 120, 130),
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(105, 105, 115),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 102,
-		Parent = LoaderCard,
+		Parent = LoaderTop,
 	})
 
 	local LoaderPct = C("TextLabel", {
-		Size = UDim2.new(0, 40, 0, 14),
-		Position = UDim2.new(1, -60, 0, 130),
+		Size = UDim2.new(0, 44, 0, 14),
+		Position = UDim2.new(1, -64, 0, 30),
 		BackgroundTransparency = 1,
 		Text = "0%",
 		Font = Enum.Font.GothamBold,
-		TextSize = 11,
+		TextSize = 10,
 		TextColor3 = ACC,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 102,
-		Parent = LoaderCard,
+		Parent = LoaderTop,
 	})
 
 	local Track = C("Frame", {
-		Size = UDim2.new(1, -40, 0, 4),
-		Position = UDim2.new(0, 20, 0, 158),
-		BackgroundColor3 = Color3.fromRGB(30, 30, 36),
+		Size = UDim2.new(1, 0, 0, 2),
+		Position = UDim2.new(0, 0, 1, -2),
+		BackgroundColor3 = Color3.fromRGB(24, 24, 30),
 		BorderSizePixel = 0,
-		ZIndex = 102,
-		Parent = LoaderCard,
+		ZIndex = 103,
+		Parent = LoaderTop,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Track })
 
 	local Fill = C("Frame", {
 		Size = UDim2.new(0, 0, 1, 0),
 		BackgroundColor3 = ACC,
 		BorderSizePixel = 0,
-		ZIndex = 103,
+		ZIndex = 104,
 		Parent = Track,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Fill })
 
 	-- // Main menu
 	local MenuRoot = C("CanvasGroup", {
@@ -1442,26 +1450,29 @@ function UI.Init(S, ParentGUI, ConfigModule)
 
 	MakeSection(T1, "CORE", 1)
 	MakeTog(T1, "Master ESP", "ESP", 2)
-	MakeSection(T1, "DISTANCE", 3)
-	MakeTog(T1, "Show Distance", "DistView", 4)
-	MakeSlider(T1, "Distance Limit", "MaxDist", 50, 1500, 5)
-	MakeSection(T1, "OVERLAYS", 6)
-	MakeTog(T1, "Bounding Boxes", "Box", 7)
+	MakeSection(T1, "FILTERS", 3)
+	MakeTog(T1, "Hide Teammates", "Team", 4)
+	MakeHint(T1, "Ukrywa ESP (box, chams, skeleton itd.) dla graczy z tej samej drużyny. Działa niezależnie od Team Colors / LoS.", 5)
+	MakeSection(T1, "DISTANCE", 6)
+	MakeTog(T1, "Show Distance", "DistView", 7)
+	MakeSlider(T1, "Distance Limit", "MaxDist", 50, 1500, 8)
+	MakeSection(T1, "OVERLAYS", 9)
+	MakeTog(T1, "Bounding Boxes", "Box", 10)
 	MakeChoice(T1, "Box Type", "BoxType", {
 		{ label = "Full", value = "Full" },
 		{ label = "Corner", value = "Corner" },
-	}, 8)
-	MakeTog(T1, "Player Names", "Name", 9)
-	MakeTog(T1, "Health Bars", "Health", 10)
-	MakeTog(T1, "Health Text", "HealthText", 11)
-	MakeTog(T1, "Weapon ESP", "Weapon", 12)
-	MakeSection(T1, "ADVANCED", 13)
-	MakeTog(T1, "Render Bots", "RenderBots", 14)
-	MakeTog(T1, "Skeleton", "Skel", 15)
-	MakeTog(T1, "Tracers", "Trace", 16)
-	MakeTog(T1, "Chams Fill", "Chams", 17)
-	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 18)
-	MakeHint(T1, "Chams Rainbow, Team Colors i Line of Sight wykluczają się — włączenie jednego wyłącza pozostałe.", 19)
+	}, 11)
+	MakeTog(T1, "Player Names", "Name", 12)
+	MakeTog(T1, "Health Bars", "Health", 13)
+	MakeTog(T1, "Health Text", "HealthText", 14)
+	MakeTog(T1, "Weapon ESP", "Weapon", 15)
+	MakeSection(T1, "ADVANCED", 16)
+	MakeTog(T1, "Render Bots", "RenderBots", 17)
+	MakeTog(T1, "Skeleton", "Skel", 18)
+	MakeTog(T1, "Tracers", "Trace", 19)
+	MakeTog(T1, "Chams Fill", "Chams", 20)
+	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 21)
+	MakeHint(T1, "Chams Rainbow, Team Colors i Line of Sight wykluczają się — włączenie jednego wyłącza pozostałe.", 22)
 
 	MakeSection(T3, "AIMBOT", 1)
 	MakeTog(T3, "Aimbot (hold RMB)", "Aimbot", 2)
@@ -1480,30 +1491,32 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	MakeHint(T3, "Włączone = mała kropka po prawej (jasna = aktywny, szara = czeka). Wyłączone = pełna etykieta tekstowa.", 12)
 	MakeHint(T3, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem, potem strzela w FOV.", 13)
 	MakeSection(T3, "TARGETING", 14)
-	MakeTog(T3, "Visible Check", "VisibleCheck", 15)
-	MakeTog(T3, "Target Bots", "AimBots", 16)
+	MakeTog(T3, "Exclude Teammates", "ExcludeTeam", 15)
+	MakeTog(T3, "Visible Check", "VisibleCheck", 16)
+	MakeTog(T3, "Target Bots", "AimBots", 17)
 	MakeChoice(T3, "Target Priority", "TargetMode", {
 		{ label = "FOV", value = "FOV" },
 		{ label = "Dist", value = "Distance" },
 		{ label = "HP", value = "Health" },
-	}, 17)
+	}, 18)
 	MakeChoice(T3, "Hit Part", "HitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 18)
-	MakeSection(T3, "FOV & SMOOTH", 19)
-	MakeTog(T3, "Show FOV Circle", "ShowFOV", 20)
-	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 21, { suffix = "px", step = 5 })
-	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 22, {
+	}, 19)
+	MakeHint(T3, "Exclude Teammates = nie celuj/strzelaj w graczy z tej samej drużyny (wymaga przypisanych Team).", 20)
+	MakeSection(T3, "FOV & SMOOTH", 21)
+	MakeTog(T3, "Show FOV Circle", "ShowFOV", 22)
+	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 23, { suffix = "px", step = 5 })
+	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 24, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 23)
-	MakeHint(T3, "Smoothing działa tylko z Aimbot (RMB). Silent nie używa smoothingu.", 24)
-	MakeHint(T3, "Master Rage (zakładka Rage) wyłącza wszystkie funkcje Legit.", 25)
+	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 25)
+	MakeHint(T3, "Smoothing działa tylko z Aimbot (RMB). Silent nie używa smoothingu.", 26)
+	MakeHint(T3, "Master Rage (zakładka Rage) wyłącza wszystkie funkcje Legit.", 27)
 
 	MakeSection(TR, "MASTER", 1)
 	MakeTog(TR, "Master Rage", "MasterRage", 2)
@@ -1527,29 +1540,27 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	MakeSlider(TR, "Rage Delay", "RageDelay", 1, 500, 17, { suffix = "ms", step = 1 })
 	MakeTog(TR, "Rage Status HUD", "ShowRageHud", 18)
 	MakeTog(TR, "Minimal Rage HUD", "RageHudMinimal", 19)
-	MakeHint(TR, "Ragebot skanuje 360° bez FOV. Widoczny cel → obrót postaci + silent aim.", 20)
+	MakeHint(TR, "Ragebot skanuje bez FOV. Strzela tylko gdy wybrany hitbox jest widoczny z kamery.", 20)
 	MakeHint(TR, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem.", 21)
 	MakeSection(TR, "TARGETING", 22)
-	MakeTog(TR, "Visible Check", "RageVisibleCheck", 23)
-	MakeTog(TR, "Target Bots", "RageBots", 24)
+	MakeTog(TR, "Exclude Teammates", "ExcludeTeam", 23)
+	MakeTog(TR, "Visible Check", "RageVisibleCheck", 24)
+	MakeTog(TR, "Target Bots", "RageBots", 25)
 	MakeChoice(TR, "Hit Part", "RageHitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 25)
-	MakeSlider(TR, "Max Distance", "RageMaxDist", 50, 1500, 26, { suffix = "m", step = 25 })
-	MakeSection(TR, "CAMERA", 27)
-	MakeTog(TR, "Force Third Person", "RageThirdPerson", 28)
-	MakeHint(TR, "Third person do podglądu anti-aim. Przywraca poprzedni tryb kamery po wyłączeniu.", 29)
+	}, 26)
+	MakeSlider(TR, "Max Distance", "RageMaxDist", 50, 1500, 27, { suffix = "m", step = 25 })
 
 	MakeSection(T2, "MOVEMENT", 1)
 	MakeTog(T2, "Bunny Hop", "BHop", 2)
 	MakeHint(T2, "Auto-skok tylko gdy się poruszasz (WASD). Stojąc w miejscu — nic nie robi.", 3)
 	MakeSection(T2, "FILTERS", 4)
 	MakeTog(T2, "Team Colors", "RealTeamColor", 5)
-	MakeTog(T2, "Hide Teammates", "Team", 6)
-	MakeTog(T2, "Line of Sight", "LoS", 7)
+	MakeTog(T2, "Line of Sight", "LoS", 6)
+	MakeHint(T2, "Hide Teammates jest w zakładce Visuals. Exclude Teammates — w Legit / Rage.", 7)
 
 	MakeSection(T2, "HUD", 8)
 	MakeTog(T2, "Crosshair Dot", "Crosshair", 9)
@@ -1942,28 +1953,33 @@ function UI.Init(S, ParentGUI, ConfigModule)
 
 	-- // Loading
 	task.spawn(function()
+		LoaderTop.Position = UDim2.new(0, 0, 0, -52)
+		TweenPlay(LoaderTop, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0, 0, 0, 0),
+		})
+
 		local steps = {
-			{ text = "Loading modules…", pct = 0.3 },
-			{ text = "Initializing ESP…", pct = 0.6 },
-			{ text = "Preparing UI…", pct = 0.85 },
-			{ text = "Done", pct = 1 },
+			{ text = "Loading modules", pct = 0.25 },
+			{ text = "Initializing ESP", pct = 0.55 },
+			{ text = "Preparing interface", pct = 0.82 },
+			{ text = "Ready", pct = 1 },
 		}
 
 		for _, step in ipairs(steps) do
 			LoaderStatus.Text = step.text
 			LoaderPct.Text = math.floor(step.pct * 100) .. "%"
-			TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			TweenPlay(Fill, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				Size = UDim2.new(step.pct, 0, 1, 0),
 			})
-			task.wait(0.3)
+			task.wait(0.22)
 		end
 
-		task.wait(0.1)
-		TweenPlay(LoaderCard, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-			Position = UDim2.new(0.5, -200, 0.5, -105),
+		task.wait(0.08)
+		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+			Position = UDim2.new(0, 0, 0, -56),
 		})
-		TweenPlay(Loader, TweenInfo.new(0.2), { BackgroundTransparency = 1 })
-		task.wait(0.2)
+		TweenPlay(Loader, TweenInfo.new(0.28), { BackgroundTransparency = 1 })
+		task.wait(0.28)
 		Loader:Destroy()
 
 		if ConfigModule then

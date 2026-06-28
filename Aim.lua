@@ -262,6 +262,10 @@ function Aim.Init(S, ParentGUI)
 		end
 	end
 
+	local function isTeammate(plr)
+		return plr and plr.Team and LP.Team and plr.Team == LP.Team
+	end
+
 	local function isEnemyPlayer(plr)
 		if plr == LP then
 			return false
@@ -270,7 +274,7 @@ function Aim.Init(S, ParentGUI)
 		if not isAliveChar(char) then
 			return false
 		end
-		if S.Team and plr.Team and LP.Team and plr.Team == LP.Team then
+		if S.ExcludeTeam and isTeammate(plr) then
 			return false
 		end
 		return true

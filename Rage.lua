@@ -18,12 +18,9 @@ function Rage.Init(S, ParentGUI)
 	local botScanAt = 0
 	local savedAutoRotate = true
 	local aaActive = false
-	local savedCameraMode = nil
-	local thirdPersonActive = false
 	local rageShootingUntil = 0
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
-	local SCAN_ANGLES = 24
 
 	local function C(class, props)
 		local i = Instance.new(class)
@@ -31,6 +28,36 @@ function Rage.Init(S, ParentGUI)
 			i[k] = v
 		end
 		return i
+	end
+
+	local function isTeammate(plr)
+		return plr and plr.Team and LP.Team and plr.Team == LP.Team
+	end
+
+	local function isPartVisibleFromCamera(part, char)
+		if not part or not char then
+			return false
+		end
+		if not S.RageVisibleCheck then
+			return true
+		end
+		local origin = Cam.CFrame.Position
+		local dir = part.Position - origin
+		local dist = dir.Magnitude
+		if dist < 0.05 then
+			return true
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
+		local hit = workspace:Raycast(origin, dir, params)
+		if not hit then
+			return false
+		end
+		if hit.Instance == part or hit.Instance:IsDescendantOf(part) then
+			return true
+		end
+		return false
 	end
 
 	local RageHud = C("Frame", {
@@ -207,7 +234,7 @@ function Rage.Init(S, ParentGUI)
 		if not isAliveChar(char) then
 			return false
 		end
-		if S.Team and plr.Team and LP.Team and plr.Team == LP.Team then
+		if S.ExcludeTeam and isTeammate(plr) then
 			return false
 		end
 		return true
@@ -242,73 +269,35 @@ function Rage.Init(S, ParentGUI)
 		return (origin - part.Position).Magnitude
 	end
 
-	local function rayVisible(origin, part, char)
-		if not S.RageVisibleCheck then
-			return true
-		end
-		local dir = part.Position - origin
-		if dir.Magnitude < 0.01 then
-			return true
-		end
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		local exclude = {}
-		if LP.Character then
-			table.insert(exclude, LP.Character)
-		end
-		params.FilterDescendantsInstances = exclude
-		local hit = workspace:Raycast(origin, dir, params)
-		return hit and hit.Instance:IsDescendantOf(char)
-	end
-
-	local function isVisible360(part, char)
-		if not S.RageVisibleCheck then
-			return true
-		end
-
-		local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-		local basePos = hrp and hrp.Position or Cam.CFrame.Position
-
-		if rayVisible(Cam.CFrame.Position, part, char) then
-			return true
-		end
-
-		for i = 0, SCAN_ANGLES - 1 do
-			local angle = (i / SCAN_ANGLES) * math.pi * 2
-			local ring = Vector3.new(math.cos(angle) * 2.5, 0, math.sin(angle) * 2.5)
-			for _, yOff in ipairs({ 0, 1.2, 2.2 }) do
-				local origin = basePos + ring + Vector3.new(0, yOff, 0)
-				if rayVisible(origin, part, char) then
-					return true
+	local function getRageAimPart(char)
+		if S.RageHitPart == "Head" then
+			local p = char:FindFirstChild("Head")
+			return isPartVisibleFromCamera(p, char) and p or nil
+		elseif S.RageHitPart == "Torso" then
+			for _, name in ipairs({ "UpperTorso", "Torso", "HumanoidRootPart" }) do
+				local p = char:FindFirstChild(name)
+				if isPartVisibleFromCamera(p, char) then
+					return p
 				end
 			end
-		end
-
-		return false
-	end
-
-	local function resolveHitPart(char)
-		if S.RageHitPart == "Head" then
-			return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-		elseif S.RageHitPart == "Torso" then
-			return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
+			return nil
 		elseif S.RageHitPart == "Random" then
 			local pool = {}
 			for _, n in ipairs(AIM_PARTS) do
 				local p = char:FindFirstChild(n)
-				if p then
+				if p and isPartVisibleFromCamera(p, char) then
 					table.insert(pool, p)
 				end
 			end
 			if #pool == 0 then
-				return char:FindFirstChild("HumanoidRootPart")
+				return nil
 			end
 			return pool[math.random(1, #pool)]
 		else
 			local best, bestD = nil, math.huge
 			for _, n in ipairs(AIM_PARTS) do
 				local p = char:FindFirstChild(n)
-				if p then
+				if p and isPartVisibleFromCamera(p, char) then
 					local d = worldDist(p)
 					if d < bestD then
 						bestD = d
@@ -316,7 +305,7 @@ function Rage.Init(S, ParentGUI)
 					end
 				end
 			end
-			return best or char:FindFirstChild("Head")
+			return best
 		end
 	end
 
@@ -326,12 +315,8 @@ function Rage.Init(S, ParentGUI)
 			return nil
 		end
 
-		local part = resolveHitPart(char)
+		local part = getRageAimPart(char)
 		if not part then
-			return nil
-		end
-
-		if not isVisible360(part, char) then
 			return nil
 		end
 
@@ -461,33 +446,6 @@ function Rage.Init(S, ParentGUI)
 		hrp.CFrame = baseCF * CFrame.Angles(pitch, yaw + spin, 0)
 	end
 
-	local function restoreThirdPerson()
-		if not thirdPersonActive then
-			return
-		end
-		thirdPersonActive = false
-		if savedCameraMode ~= nil then
-			pcall(function()
-				LP.CameraMode = savedCameraMode
-			end)
-			savedCameraMode = nil
-		end
-	end
-
-	local function applyThirdPerson()
-		if not S.MasterRage or not S.RageThirdPerson then
-			restoreThirdPerson()
-			return
-		end
-		if not thirdPersonActive then
-			savedCameraMode = LP.CameraMode
-			thirdPersonActive = true
-		end
-		pcall(function()
-			LP.CameraMode = Enum.CameraMode.Classic
-		end)
-	end
-
 	UIS.InputBegan:Connect(function(input)
 		if S.MenuOpen then
 			return
@@ -511,10 +469,8 @@ function Rage.Init(S, ParentGUI)
 
 		if S.MasterRage then
 			applyAntiAim()
-			applyThirdPerson()
 		else
 			restoreAntiAim()
-			restoreThirdPerson()
 		end
 	end)
 

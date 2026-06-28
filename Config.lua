@@ -116,6 +116,12 @@ function Config.EnforceRules(S)
 	if S.TriggerHudMinimal == nil then
 		S.TriggerHudMinimal = true
 	end
+	if S.ExcludeTeam == nil then
+		S.ExcludeTeam = true
+	end
+	if S.RageHudMinimal == nil then
+		S.RageHudMinimal = true
+	end
 	if S.ChamsRainbow then
 		S.LoS = false
 		S.RealTeamColor = false
