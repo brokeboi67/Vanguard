@@ -199,23 +199,93 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			table.clear(botList)
 			return
 		end
-		table.clear(botList)
-		local function tryAdd(model)
-			if model:IsA("Model") and isBotModel(model) then
-				table.insert(botList, model)
-			end
+		if tick() - botScanAt > 1.5 then
+			botScanAt = tick()
+			Util.refreshBotList(botList, true, LP)
 		end
-		for _, child in ipairs(workspace:GetChildren()) do
-			tryAdd(child)
-		end
-		for _, folderName in ipairs({ "Characters", "Entities", "NPCs", "Bots" }) do
-			local folder = workspace:FindFirstChild(folderName)
-			if folder then
-				for _, child in ipairs(folder:GetChildren()) do
-					tryAdd(child)
+	end
+
+	local silentJob = nil
+
+	local function resolveHitPart(char)
+		if S.HitPart == "Head" then
+			return Util.resolveAimPart(char, "Head") or Util.resolveAimPart(char, "HumanoidRootPart")
+		elseif S.HitPart == "Torso" then
+			return Util.resolveAimPart(char, "UpperTorso")
+				or Util.resolveAimPart(char, "Torso")
+				or Util.resolveAimPart(char, "HumanoidRootPart")
+		elseif S.HitPart == "Random" then
+			local pool = {}
+			for _, n in ipairs(AIM_PARTS) do
+				local p = Util.resolveAimPart(char, n)
+				if p then
+					table.insert(pool, p)
 				end
 			end
+			if #pool == 0 then
+				return Util.resolveAimPart(char, "HumanoidRootPart")
+			end
+			return pool[math.random(1, #pool)]
+		else
+			local best, bestD = nil, math.huge
+			for _, n in ipairs(AIM_PARTS) do
+				local p = Util.resolveAimPart(char, n)
+				if p then
+					local d = screenDist(p)
+					if d < bestD then
+						bestD = d
+						best = p
+					end
+				end
+			end
+			return best or Util.resolveAimPart(char, "Head")
 		end
+	end
+
+	local function isEnemyPlayer(plr)
+		if plr == LP then
+			return false
+		end
+		local char = plr.Character
+		if not isAliveChar(char) then
+			return false
+		end
+		if TF and TF.shouldExclude(S, LP, plr) then
+			return false
+		end
+		if not TF and S.ExcludeTeam and plr.Team and LP.Team and plr.Team == LP.Team then
+			return false
+		end
+		return true
+	end
+
+	local function findCrosshairEntry()
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
+		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * (S.MaxDist or 500), params)
+		if not hit or not hit.Instance then
+			return nil
+		end
+		local model = hit.Instance:FindFirstAncestorOfClass("Model")
+		if not model or not isAliveChar(model) then
+			return nil
+		end
+		if LP.Character and model == LP.Character then
+			return nil
+		end
+		local plr = Players:GetPlayerFromCharacter(model)
+		if plr then
+			if not isEnemyPlayer(plr) then
+				return nil
+			end
+			return { char = model, plr = plr }
+		end
+		if S.AimBots then
+			return { char = model, plr = nil }
+		end
+		return nil
 	end
 
 	local function screenDist(part)
@@ -249,58 +319,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return hit.Instance:IsDescendantOf(char)
 	end
 
-	local function resolveHitPart(char)
-		if S.HitPart == "Head" then
-			return Util.resolveBodyPart(char, "Head") or Util.resolveBodyPart(char, "HumanoidRootPart")
-		elseif S.HitPart == "Torso" then
-			return Util.resolveBodyPart(char, "UpperTorso")
-				or Util.resolveBodyPart(char, "Torso")
-				or Util.resolveBodyPart(char, "HumanoidRootPart")
-		elseif S.HitPart == "Random" then
-			local pool = {}
-			for _, n in ipairs(AIM_PARTS) do
-				local p = Util.resolveBodyPart(char, n)
-				if p then
-					table.insert(pool, p)
-				end
-			end
-			if #pool == 0 then
-				return Util.resolveBodyPart(char, "HumanoidRootPart")
-			end
-			return pool[math.random(1, #pool)]
-		else
-			local best, bestD = nil, math.huge
-			for _, n in ipairs(AIM_PARTS) do
-				local p = Util.resolveBodyPart(char, n)
-				if p then
-					local d = screenDist(p)
-					if d < bestD then
-						bestD = d
-						best = p
-					end
-				end
-			end
-			return best or Util.resolveBodyPart(char, "Head")
-		end
-	end
-
-	local function isEnemyPlayer(plr)
-		if plr == LP then
-			return false
-		end
-		local char = plr.Character
-		if not isAliveChar(char) then
-			return false
-		end
-		if TF and TF.shouldExclude(S, LP, plr) then
-			return false
-		end
-		if not TF and S.ExcludeTeam and plr.Team and LP.Team and plr.Team == LP.Team then
-			return false
-		end
-		return true
-	end
-
 	local function collectTargets()
 		local list = {}
 		for _, plr in ipairs(Players:GetPlayers()) do
@@ -309,10 +327,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			end
 		end
 		if S.AimBots then
-			if tick() - botScanAt > 1.5 then
-				botScanAt = tick()
-				refreshBots()
-			end
+			refreshBots()
 			for _, model in ipairs(botList) do
 				if model.Parent and isAliveChar(model) then
 					table.insert(list, { char = model, plr = nil })
@@ -352,7 +367,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		local hum = char:FindFirstChild("Humanoid")
 		local score
 		if S.TargetMode == "Distance" then
-		 score = dist3d
+			score = dist3d
 		elseif S.TargetMode == "Health" then
 			score = hum and hum.Health or math.huge
 		else
@@ -363,6 +378,14 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	end
 
 	local function getBestTarget()
+		local crossEntry = findCrosshairEntry()
+		if crossEntry then
+			local crossCand = scoreTarget(crossEntry)
+			if crossCand then
+				return crossCand
+			end
+		end
+
 		local best, bestScore = nil, math.huge
 		for _, entry in ipairs(collectTargets()) do
 			local cand = scoreTarget(entry)
@@ -379,13 +402,13 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			local part = triggerLock.part
 			local char = triggerLock.char
 			if part and part.Parent and char and isAliveChar(char) and isVisible(part, char) then
-				if screenDist(part) <= math.max(S.FOV, 1) then
+				if screenDist(part) <= math.max(S.FOV, 1) * 1.2 then
 					return triggerLock
 				end
 			end
 		end
 		triggerLock = getBestTarget()
-		triggerLockUntil = tick() + 0.25
+		triggerLockUntil = tick() + 0.5
 		return triggerLock
 	end
 
@@ -407,20 +430,45 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end)
 	end
 
-	local function silentShot(targetPos)
-		local saved = Cam.CFrame
-		Cam.CFrame = CFrame.new(saved.Position, targetPos)
-		RS.RenderStepped:Wait()
-		fireClick()
-		RS.RenderStepped:Wait()
-		Cam.CFrame = saved
+	local function queueSilentShot(targetPos, hum)
+		if silentJob then
+			return
+		end
+		silentJob = {
+			pos = targetPos,
+			hum = hum,
+			saved = Cam.CFrame,
+			stage = "aim",
+			ticks = 0,
+		}
 	end
 
-	local function shootAt(targetPos)
-		if S.Silent then
-			silentShot(targetPos)
-		else
-			fireClick()
+	local function processSilentJob()
+		if not silentJob then
+			return
+		end
+		local job = silentJob
+		if job.stage == "aim" then
+			Cam.CFrame = CFrame.new(Cam.CFrame.Position, job.pos)
+			job.ticks += 1
+			if job.ticks >= 3 then
+				job.stage = "fire"
+				job.ticks = 0
+			end
+		elseif job.stage == "fire" then
+			Util.fireAtWorld(VIM, Cam, job.pos)
+			S.LastShotAt = tick()
+			if job.hum then
+				S.LastShotHum = job.hum
+			end
+			job.stage = "restore"
+			job.ticks = 0
+		elseif job.stage == "restore" then
+			Cam.CFrame = job.saved
+			job.ticks += 1
+			if job.ticks >= 1 then
+				silentJob = nil
+			end
 		end
 	end
 
@@ -453,14 +501,14 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
 		end
 		if S.Silent then
-			silentShot(targetPos)
+			Util.performSilentShot(RS, Cam, VIM, targetPos, 3)
 		else
-			fireClick()
+			Util.fireAtWorld(VIM, Cam, targetPos)
 		end
 	end
 
 	UIS.InputBegan:Connect(function(input, processed)
-		if S.MenuOpen or S.MasterRage then
+		if S.MenuOpen or S.MasterRage or processed then
 			return
 		end
 
@@ -474,16 +522,13 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
-		if input.UserInputType == Enum.UserInputType.MouseButton1 and S.Silent then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and S.Silent and not S.Trigger then
 			local tgt = getBestTarget()
 			if tgt and tgt.part then
 				local pos = Util.getPartPosition(tgt.part)
 				if pos then
-					S.LastShotAt = tick()
-					if tgt.char then
-						S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
-					end
-					silentShot(pos)
+					local hum = tgt.char and tgt.char:FindFirstChildOfClass("Humanoid")
+					queueSilentShot(pos, hum)
 				end
 			end
 		end
@@ -492,6 +537,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	RS.RenderStepped:Connect(function()
 		updFOV()
 		updTriggerHud()
+		processSilentJob()
 
 		if not S.Trigger then
 			triggerToggled = false

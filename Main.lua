@@ -38,7 +38,7 @@ GUI.DisplayOrder = 10
 GUI.Parent = CG
 
 -- Start
-ESP.Init(Settings, GUI, TeamFriends)
+ESP.Init(Settings, GUI, TeamFriends, Util)
 Aim.Init(Settings, GUI, TeamFriends, Util)
 Rage.Init(Settings, GUI, TeamFriends, Util)
 Movement.Init(Settings)

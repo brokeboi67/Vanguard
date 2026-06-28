@@ -1628,7 +1628,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 	}, 5)
 	MakeSlider(RTarget, "Max Distance", "RageMaxDist", 50, 1500, 6, { suffix = "m", step = 25 })
 
-	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Client-side — powiększa części ciała innych graczy.", 1)
+	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Niewidoczne hitboxy — nie powiększa modelu postaci.", 1)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })
 	MakeSlider(MHit, "Head Scale", "HeadSizeScale", 1, 6, 2, {
 		suffix = "x",

@@ -2,7 +2,7 @@
 
 local ESP = {}
 
-function ESP.Init(S, ParentGUI, TF)
+function ESP.Init(S, ParentGUI, TF, Util)
 	local P = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local LP = P.LocalPlayer
@@ -89,7 +89,7 @@ function ESP.Init(S, ParentGUI, TF)
 	end
 
 	local function isBotModel(model)
-		if not model:IsA("Model") then
+		if not Util then
 			return false
 		end
 		if LP.Character and model == LP.Character then
@@ -98,17 +98,14 @@ function ESP.Init(S, ParentGUI, TF)
 		if P:GetPlayerFromCharacter(model) then
 			return false
 		end
-		local hum = model:FindFirstChildOfClass("Humanoid")
-		local hrp = model:FindFirstChild("HumanoidRootPart")
-		return hum and hrp and hum.Health > 0
+		return Util.isAimableCharacter(model)
 	end
 
 	local function refreshBots()
-		table.clear(botList)
-		for _, inst in ipairs(workspace:GetDescendants()) do
-			if inst:IsA("Model") and isBotModel(inst) then
-				table.insert(botList, inst)
-			end
+		if Util then
+			Util.refreshBotList(botList, true, LP)
+		else
+			table.clear(botList)
 		end
 	end
 
@@ -273,11 +270,11 @@ function ESP.Init(S, ParentGUI, TF)
 			return
 		end
 
-		local h = c:FindFirstChild("Humanoid")
-		local hrp = c:FindFirstChild("HumanoidRootPart")
+		local h = c:FindFirstChildOfClass("Humanoid")
+		local hrp = Util and Util.resolveBodyPart(c, "HumanoidRootPart") or c:FindFirstChild("HumanoidRootPart")
 		local ch = ensureCache(key)
 
-		local val = h and hrp and h.Health > 0
+		local val = h and hrp and hrp:IsA("BasePart") and h.Health > 0
 
 		if val then
 			local ok, cf = pcall(function()

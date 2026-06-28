@@ -2,25 +2,23 @@
 
 local Misc = {}
 
+local VG_PREFIX = "VG_HBX_"
+
 function Misc.Init(S, TF, Util)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local LP = Players.LocalPlayer
 
-	local origSizes = {}
 	local trackedChars = {}
 	local botList = {}
 	local botScanAt = 0
 
-	local HEAD_NAMES = { "Head" }
-	local HITBOX_NAMES = {
+	local HEAD_SLOTS = { "Head" }
+	local HITBOX_SLOTS = {
 		"HumanoidRootPart",
 		"UpperTorso",
 		"Torso",
 		"LowerTorso",
-		"Hitbox",
-		"HeadHB",
-		"RootHitbox",
 	}
 
 	local function isAliveChar(char)
@@ -29,65 +27,6 @@ function Misc.Init(S, TF, Util)
 		end
 		local hum = char:FindFirstChildOfClass("Humanoid")
 		return hum and hum.Health > 0
-	end
-
-	local function isBotModel(model)
-		if not model:IsA("Model") then
-			return false
-		end
-		if LP.Character and model == LP.Character then
-			return false
-		end
-		if Players:GetPlayerFromCharacter(model) then
-			return false
-		end
-		return Util.isAimableCharacter(model)
-	end
-
-	local function refreshBots()
-		if S.MiscBots == false then
-			table.clear(botList)
-			return
-		end
-		table.clear(botList)
-		local function tryAdd(model)
-			if model:IsA("Model") and isBotModel(model) then
-				table.insert(botList, model)
-			end
-		end
-		for _, child in ipairs(workspace:GetChildren()) do
-			tryAdd(child)
-		end
-		for _, folderName in ipairs({ "Characters", "Entities", "NPCs", "Bots" }) do
-			local folder = workspace:FindFirstChild(folderName)
-			if folder then
-				for _, child in ipairs(folder:GetChildren()) do
-					tryAdd(child)
-				end
-			end
-		end
-	end
-
-	local function rememberSize(part)
-		if not origSizes[part] then
-			origSizes[part] = part.Size
-		end
-	end
-
-	local function restorePart(part)
-		local orig = origSizes[part]
-		if orig and part.Parent then
-			part.Size = orig
-		end
-	end
-
-	local function restoreChar(char)
-		for part, _ in pairs(origSizes) do
-			if part.Parent and part:IsDescendantOf(char) then
-				restorePart(part)
-			end
-		end
-		trackedChars[char] = nil
 	end
 
 	local function shouldAffect(plr)
@@ -109,14 +48,42 @@ function Misc.Init(S, TF, Util)
 		return true
 	end
 
-	local function scalePart(part, mul)
-		if not part or not part:IsA("BasePart") then
-			return
+	local function clearExpands(char)
+		for _, ch in ipairs(char:GetChildren()) do
+			if ch:IsA("BasePart") and string.sub(ch.Name, 1, #VG_PREFIX) == VG_PREFIX then
+				ch:Destroy()
+			end
 		end
-		rememberSize(part)
-		part.Size = origSizes[part] * mul
-		part.CanCollide = false
-		part.Massless = true
+		for _, inst in ipairs(char:GetDescendants()) do
+			if inst:IsA("BasePart") and string.sub(inst.Name, 1, #VG_PREFIX) == VG_PREFIX then
+				inst:Destroy()
+			end
+		end
+		trackedChars[char] = nil
+	end
+
+	local function ensureExpand(char, anchor, slotName, mul)
+		if not anchor or not anchor:IsA("BasePart") or not anchor.Parent then
+			return nil
+		end
+		local boxName = VG_PREFIX .. slotName
+		local box = char:FindFirstChild(boxName)
+		if not box then
+			box = Instance.new("Part")
+			box.Name = boxName
+			box.Anchored = false
+			box.CanCollide = false
+			box.CanQuery = true
+			box.CanTouch = false
+			box.Massless = true
+			box.Transparency = 1
+			box.CastShadow = false
+			box.Material = Enum.Material.SmoothPlastic
+			box.Parent = char
+		end
+		box.Size = anchor.Size * mul
+		box.CFrame = anchor.CFrame
+		return box
 	end
 
 	local function applyChar(char, plr)
@@ -124,59 +91,100 @@ function Misc.Init(S, TF, Util)
 			return
 		end
 		if plr and not shouldAffect(plr) then
-			restoreChar(char)
+			clearExpands(char)
 			return
 		end
 
 		local headMul = math.clamp(S.HeadSizeScale or 2, 1, 6)
 		local boxMul = math.clamp(S.HitboxSizeScale or 1.5, 1, 5)
+		local any = false
 
-		if not S.HeadSize then
-			for _, name in ipairs(HEAD_NAMES) do
-				local part = Util.resolveBodyPart(char, name)
-				if part then
-					restorePart(part)
+		if S.HeadSize then
+			for _, name in ipairs(HEAD_SLOTS) do
+				local anchor = Util.resolveBodyPart(char, name)
+				if anchor and ensureExpand(char, anchor, name, headMul) then
+					any = true
 				end
 			end
-		else
-			for _, name in ipairs(HEAD_NAMES) do
-				local part = Util.resolveBodyPart(char, name)
-				if part then
-					scalePart(part, headMul)
+		end
+
+		if S.HitboxSize then
+			for _, name in ipairs(HITBOX_SLOTS) do
+				local anchor = Util.resolveBodyPart(char, name)
+				if anchor and ensureExpand(char, anchor, name, boxMul) then
+					any = true
+				end
+			end
+			for _, inst in ipairs(char:GetDescendants()) do
+				if inst:IsA("BasePart") and inst.Name:lower():find("hitbox", 1, true) then
+					local slot = "X_" .. inst.Name
+					if ensureExpand(char, inst, slot, boxMul) then
+						any = true
+					end
+				end
+			end
+		end
+
+		if not S.HeadSize and not S.HitboxSize then
+			clearExpands(char)
+			return
+		end
+
+		if not S.HeadSize then
+			for _, name in ipairs(HEAD_SLOTS) do
+				local box = char:FindFirstChild(VG_PREFIX .. name)
+				if box then
+					box:Destroy()
 				end
 			end
 		end
 
 		if not S.HitboxSize then
-			for _, name in ipairs(HITBOX_NAMES) do
-				local part = Util.resolveBodyPart(char, name)
-				if part then
-					restorePart(part)
+			for _, name in ipairs(HITBOX_SLOTS) do
+				local box = char:FindFirstChild(VG_PREFIX .. name)
+				if box then
+					box:Destroy()
 				end
 			end
 			for _, inst in ipairs(char:GetDescendants()) do
-				if inst:IsA("BasePart") and inst.Name:lower():find("hitbox", 1, true) then
-					restorePart(inst)
-				end
-			end
-		else
-			for _, name in ipairs(HITBOX_NAMES) do
-				local part = Util.resolveBodyPart(char, name)
-				if part then
-					scalePart(part, boxMul)
-				end
-			end
-			for _, inst in ipairs(char:GetDescendants()) do
-				if inst:IsA("BasePart") and inst.Name:lower():find("hitbox", 1, true) then
-					scalePart(inst, boxMul)
+				if inst:IsA("BasePart") and string.sub(inst.Name, 1, #VG_PREFIX) == VG_PREFIX then
+					if string.find(inst.Name, "X_", #VG_PREFIX + 1, true) then
+						inst:Destroy()
+					end
 				end
 			end
 		end
 
-		if S.HeadSize or S.HitboxSize then
+		if any then
 			trackedChars[char] = true
-		else
-			trackedChars[char] = nil
+		end
+	end
+
+	local function resyncExpands(char)
+		if not trackedChars[char] then
+			return
+		end
+		local headMul = math.clamp(S.HeadSizeScale or 2, 1, 6)
+		local boxMul = math.clamp(S.HitboxSizeScale or 1.5, 1, 5)
+		if S.HeadSize then
+			for _, name in ipairs(HEAD_SLOTS) do
+				local anchor = Util.resolveBodyPart(char, name)
+				local box = char:FindFirstChild(VG_PREFIX .. name)
+				if anchor and box and box:IsA("BasePart") then
+					box.Size = anchor.Size * headMul
+					box.CFrame = anchor.CFrame
+				end
+			end
+		end
+		if S.HitboxSize then
+			for _, name in ipairs(HITBOX_SLOTS) do
+				local anchor = Util.resolveBodyPart(char, name)
+				local box = char:FindFirstChild(VG_PREFIX .. name)
+				if anchor and box and box:IsA("BasePart") then
+					box.Size = anchor.Size * boxMul
+					box.CFrame = anchor.CFrame
+				end
+			end
 		end
 	end
 
@@ -184,7 +192,7 @@ function Misc.Init(S, TF, Util)
 		if not S.HeadSize and not S.HitboxSize then
 			for char in pairs(trackedChars) do
 				if char.Parent then
-					restoreChar(char)
+					clearExpands(char)
 				end
 			end
 			table.clear(trackedChars)
@@ -194,17 +202,19 @@ function Misc.Init(S, TF, Util)
 		for _, plr in ipairs(Players:GetPlayers()) do
 			if plr.Character then
 				applyChar(plr.Character, plr)
+				resyncExpands(plr.Character)
 			end
 		end
 
 		if S.MiscBots ~= false then
 			if tick() - botScanAt > 1.5 then
 				botScanAt = tick()
-				refreshBots()
+				Util.refreshBotList(botList, true, LP)
 			end
 			for _, model in ipairs(botList) do
 				if model.Parent and isAliveChar(model) then
 					applyChar(model, nil)
+					resyncExpands(model)
 				end
 			end
 		end
@@ -217,7 +227,7 @@ function Misc.Init(S, TF, Util)
 			end)
 			char.AncestryChanged:Connect(function(_, parent)
 				if not parent then
-					restoreChar(char)
+					clearExpands(char)
 				end
 			end)
 		end)
@@ -227,7 +237,7 @@ function Misc.Init(S, TF, Util)
 		plr.CharacterAdded:Connect(function(char)
 			char.AncestryChanged:Connect(function(_, parent)
 				if not parent then
-					restoreChar(char)
+					clearExpands(char)
 				end
 			end)
 		end)

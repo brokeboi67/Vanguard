@@ -218,22 +218,9 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			table.clear(botList)
 			return
 		end
-		table.clear(botList)
-		local function tryAdd(model)
-			if model:IsA("Model") and isBotModel(model) then
-				table.insert(botList, model)
-			end
-		end
-		for _, child in ipairs(workspace:GetChildren()) do
-			tryAdd(child)
-		end
-		for _, folderName in ipairs({ "Characters", "Entities", "NPCs", "Bots" }) do
-			local folder = workspace:FindFirstChild(folderName)
-			if folder then
-				for _, child in ipairs(folder:GetChildren()) do
-					tryAdd(child)
-				end
-			end
+		if tick() - botScanAt > 1.5 then
+			botScanAt = tick()
+			Util.refreshBotList(botList, true, LP)
 		end
 	end
 
@@ -262,10 +249,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			end
 		end
 		if S.RageBots then
-			if tick() - botScanAt > 1.5 then
-				botScanAt = tick()
-				refreshBots()
-			end
+			refreshBots()
 			for _, model in ipairs(botList) do
 				if model.Parent and isAliveChar(model) then
 					table.insert(list, { char = model, plr = nil })
@@ -288,12 +272,12 @@ function Rage.Init(S, ParentGUI, TF, Util)
 
 	local function getRageAimPart(char)
 		if S.RageHitPart == "Head" then
-			local head = Util.resolveBodyPart(char, "Head")
+			local head = Util.resolveAimPart(char, "Head")
 			if head and isPartVisibleFromCamera(head, char) then
 				return head
 			end
 			for _, name in ipairs(AIM_PARTS) do
-				local p = Util.resolveBodyPart(char, name)
+				local p = Util.resolveAimPart(char, name)
 				if p and isPartVisibleFromCamera(p, char) then
 					return p
 				end
@@ -301,7 +285,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			return nil
 		elseif S.RageHitPart == "Torso" then
 			for _, name in ipairs({ "UpperTorso", "Torso", "HumanoidRootPart" }) do
-				local p = Util.resolveBodyPart(char, name)
+				local p = Util.resolveAimPart(char, name)
 				if isPartVisibleFromCamera(p, char) then
 					return p
 				end
@@ -310,7 +294,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		elseif S.RageHitPart == "Random" then
 			local pool = {}
 			for _, n in ipairs(AIM_PARTS) do
-				local p = Util.resolveBodyPart(char, n)
+				local p = Util.resolveAimPart(char, n)
 				if p and isPartVisibleFromCamera(p, char) then
 					table.insert(pool, p)
 				end
@@ -322,7 +306,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		else
 			local best, bestD = nil, math.huge
 			for _, n in ipairs(AIM_PARTS) do
-				local p = Util.resolveBodyPart(char, n)
+				local p = Util.resolveAimPart(char, n)
 				if p and isPartVisibleFromCamera(p, char) then
 					local d = worldDist(p)
 					if d < bestD then
@@ -394,7 +378,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		elseif not S.RageBots then
 			return nil
 		end
-		local part = hit.Instance:IsA("BasePart") and hit.Instance or Util.resolveBodyPart(model, "Head") or Util.resolveBodyPart(model, "HumanoidRootPart")
+		local part = hit.Instance:IsA("BasePart") and hit.Instance or Util.resolveAimPart(model, "Head") or Util.resolveAimPart(model, "HumanoidRootPart")
 		if not part then
 			return nil
 		end
@@ -449,15 +433,6 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		end)
 	end
 
-	local function rageSilentShot(targetPos)
-		local saved = Cam.CFrame
-		Cam.CFrame = CFrame.new(saved.Position, targetPos)
-		RS.RenderStepped:Wait()
-		fireClick()
-		RS.RenderStepped:Wait()
-		Cam.CFrame = saved
-	end
-
 	local function tryRageShot()
 		if S.MenuOpen or not rageArmed() then
 			return
@@ -475,18 +450,23 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
+		local targetPos = Util.getPartPosition(tgt.part)
+		if not targetPos then
+			return
+		end
+
 		lastRageShot = tick()
 		S.LastShotAt = tick()
 		if tgt.char then
 			S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
 		end
 
-		rageShootingUntil = tick() + 0.1
-		rotateCharacterTo(tgt.part.Position)
+		rageShootingUntil = tick() + 0.12
+		rotateCharacterTo(targetPos)
 		if S.RageSilent ~= false then
-			rageSilentShot(tgt.part.Position)
+			Util.performSilentShot(RS, Cam, VIM, targetPos, 3)
 		else
-			fireClick()
+			Util.fireAtWorld(VIM, Cam, targetPos)
 		end
 	end
 
