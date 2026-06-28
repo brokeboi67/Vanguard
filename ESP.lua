@@ -117,7 +117,7 @@ function ESP.Init(S, ParentGUI)
 	end
 
 	local function GetColor(plr, c, ray, isBot)
-		if S.Chams and S.ChamsRainbow then
+		if S.Chams and S.ChamsRainbow and not S.LoS then
 			return Rainbow()
 		end
 		if isBot then

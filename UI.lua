@@ -1199,7 +1199,8 @@ function UI.Init(S, ParentGUI)
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
 	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 19)
-	MakeHint(T3, "Spowalnia ruch celownika i dodaje lekki losowy szum — wygląda bardziej jak ręka, mniej jak snap.", 20)
+	MakeTog(T3, "Show Aim Status Popup", "ShowStatus", 20)
+	MakeHint(T3, "Spowalnia ruch celownika i dodaje lekki losowy szum — wygląda bardziej jak ręka, mniej jak snap.", 21)
 
 	MakeSection(T2, "MOVEMENT", 1)
 	MakeTog(T2, "Bunny Hop", "BHop", 2)

@@ -43,6 +43,47 @@ function Aim.Init(S, ParentGUI)
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = FOVC })
 	C("UIStroke", { Color = S.V, Thickness = 1, Transparency = 0.3, Parent = FOVC })
 
+	local StatusPanel = C("TextButton", {
+		Name = "AimStatusPopup",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.new(0, 340, 0, 28),
+		BackgroundColor3 = Color3.fromRGB(20, 20, 25),
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+		Text = "",
+		ZIndex = 10,
+		Visible = false,
+		Parent = ParentGUI,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = StatusPanel })
+	local StatusText = C("TextLabel", {
+		Size = UDim2.new(1, -16, 1, 0),
+		Position = UDim2.new(0, 8, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(230, 230, 230),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 11,
+		Parent = StatusPanel,
+	})
+
+	local function boolText(value)
+		return value and "ON" or "OFF"
+	end
+
+	local function updStatus()
+		StatusPanel.Visible = S.ShowStatus and (S.Aimbot or S.Silent or S.Trigger)
+		StatusText.Text = string.format("Aimbot: %s   Silent: %s   Trigger: %s   (click to hide)", boolText(S.Aimbot), boolText(S.Silent), boolText(S.Trigger))
+	end
+
+	StatusPanel.MouseButton1Click:Connect(function()
+		S.ShowStatus = false
+		StatusPanel.Visible = false
+	end)
+
 	local function updFOV()
 		local d = math.max(S.FOV * 2, 4)
 		FOVC.Size = UDim2.new(0, d, 0, d)
@@ -273,8 +314,8 @@ function Aim.Init(S, ParentGUI)
 	end
 
 	local function rayHostile()
-		local mpos = UIS:GetMouseLocation()
-		local ray = Cam:ViewportPointToRay(mpos.X, mpos.Y)
+		local center = Cam.ViewportSize / 2
+		local ray = Cam:ViewportPointToRay(center.X, center.Y)
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
@@ -293,10 +334,10 @@ function Aim.Init(S, ParentGUI)
 	end
 
 	local function fireClick()
-		local loc = UIS:GetMouseLocation()
-		VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, true, game, 0)
+		local center = Cam.ViewportSize / 2
+		VIM:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
 		task.defer(function()
-			VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, false, game, 0)
+			VIM:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
 		end)
 	end
 
@@ -325,6 +366,7 @@ function Aim.Init(S, ParentGUI)
 
 	RS.RenderStepped:Connect(function()
 		updFOV()
+		updStatus()
 
 		if silentPhase == 1 then
 			silentPhase = 2
@@ -334,12 +376,7 @@ function Aim.Init(S, ParentGUI)
 			silentPhase = 0
 		end
 
-		if S.Aimbot and not S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-			local tgt = getBestTarget()
-			if tgt then
-				aimCamera(tgt.part.Position)
-			end
-		elseif S.Aimbot and S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) and silentPhase == 0 then
+		if S.Aimbot and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) and silentPhase == 0 then
 			local tgt = getBestTarget()
 			if tgt then
 				aimCamera(tgt.part.Position)

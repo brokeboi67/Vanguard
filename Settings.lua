@@ -38,6 +38,7 @@ local Settings = {
 	TargetMode = "FOV",
 	HitPart = "Head",
 	AimBots = true,
+	ShowStatus = true,
 
 	-- MOVEMENT
 	BHop = false,
