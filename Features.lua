@@ -63,20 +63,19 @@ function Features.Init(S, ParentGUI)
 	end
 
 	-- // Spectator panel
-	local SpecPanel = C("CanvasGroup", {
+	local SpecPanel = C("Frame", {
 		Name = "Spectators",
-		Size = UDim2.new(0, 240, 0, 0),
+		Size = UDim2.new(0, 250, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		Position = UDim2.new(1, -256, 0, 88),
-		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
-		BackgroundTransparency = 0.08,
-		GroupTransparency = 0,
+		Position = UDim2.new(1, -266, 0, 88),
+		BackgroundColor3 = Color3.fromRGB(26, 26, 32),
+		BackgroundTransparency = 0.05,
 		Visible = false,
 		ZIndex = 35,
 		Parent = ParentGUI,
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = SpecPanel })
-	C("UIStroke", { Color = Color3.fromRGB(38, 38, 48), Thickness = 1, Parent = SpecPanel })
+	C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.65, Parent = SpecPanel })
 
 	local SpecHeader = C("Frame", {
 		Size = UDim2.new(1, 0, 0, 38),
@@ -96,18 +95,19 @@ function Features.Init(S, ParentGUI)
 		BackgroundTransparency = 1,
 		Text = "SPECTATORS",
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
-		TextColor3 = Color3.fromRGB(120, 120, 132),
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(200, 200, 210),
+		TextStrokeTransparency = 0.7,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = SpecHeader,
 	})
 	local SpecCount = C("TextLabel", {
 		Size = UDim2.new(0, 28, 0, 20),
 		Position = UDim2.new(1, -38, 0, 9),
-		BackgroundColor3 = Color3.fromRGB(22, 22, 28),
+		BackgroundColor3 = Color3.fromRGB(36, 36, 44),
 		Text = "0",
 		Font = Enum.Font.GothamBold,
-		TextSize = 10,
+		TextSize = 11,
 		TextColor3 = ACC,
 		Parent = SpecHeader,
 	})
@@ -136,7 +136,7 @@ function Features.Init(S, ParentGUI)
 		Text = "Nikt nie obserwuje",
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
-		TextColor3 = Color3.fromRGB(80, 80, 92),
+		TextColor3 = Color3.fromRGB(150, 150, 162),
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Visible = false,
 		LayoutOrder = 0,
@@ -167,15 +167,22 @@ function Features.Init(S, ParentGUI)
 	end
 
 	local function createSpecRow(plr, order)
-		local row = C("CanvasGroup", {
-			Size = UDim2.new(1, 0, 0, 44),
-			BackgroundColor3 = Color3.fromRGB(18, 18, 23),
-			BackgroundTransparency = 0.15,
-			GroupTransparency = 1,
+		local row = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 46),
+			BackgroundColor3 = Color3.fromRGB(34, 34, 42),
+			BackgroundTransparency = 0,
 			LayoutOrder = order,
 			Parent = SpecBody,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = row })
+		C("UIStroke", { Color = Color3.fromRGB(50, 50, 60), Thickness = 1, Parent = row })
+
+		row.Position = UDim2.new(0, 14, 0, 0)
+		row.BackgroundTransparency = 1
+		Tween(row, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 0,
+			Position = UDim2.new(0, 0, 0, 0),
+		})
 
 		local avWrap = C("Frame", {
 			Size = UDim2.new(0, 34, 0, 34),
@@ -202,20 +209,22 @@ function Features.Init(S, ParentGUI)
 			BackgroundTransparency = 1,
 			Text = plr.DisplayName ~= plr.Name and (plr.DisplayName .. " @" .. plr.Name) or plr.Name,
 			Font = Enum.Font.GothamSemibold,
-			TextSize = 11,
-			TextColor3 = Color3.fromRGB(235, 235, 242),
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(245, 245, 250),
+			TextStrokeTransparency = 0.75,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
 		C("TextLabel", {
 			Size = UDim2.new(1, -52, 0, 12),
-			Position = UDim2.new(0, 48, 0, 24),
+			Position = UDim2.new(0, 48, 0, 26),
 			BackgroundTransparency = 1,
 			Text = "Obserwuje",
-			Font = Enum.Font.Gotham,
-			TextSize = 9,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 10,
 			TextColor3 = ACC,
+			TextStrokeTransparency = 0.8,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Parent = row,
 		})
@@ -235,12 +244,6 @@ function Features.Init(S, ParentGUI)
 			Position = UDim2.new(1, -13, 0.5, -2),
 		})
 
-		row.Position = UDim2.new(0, 12, 0, 0)
-		Tween(row, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			GroupTransparency = 0,
-			Position = UDim2.new(0, 0, 0, 0),
-		})
-
 		return row
 	end
 
@@ -251,7 +254,7 @@ function Features.Init(S, ParentGUI)
 		end
 		specRows[userId] = nil
 		local tw = Tween(row, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-			GroupTransparency = 1,
+			BackgroundTransparency = 1,
 			Position = UDim2.new(0, 16, 0, 0),
 		})
 		tw.Completed:Connect(function()
@@ -260,21 +263,20 @@ function Features.Init(S, ParentGUI)
 	end
 
 	-- // Damage log
-	local DmgPanel = C("CanvasGroup", {
+	local DmgPanel = C("Frame", {
 		Name = "DamageLog",
-		Size = UDim2.new(0, 248, 0, 0),
+		Size = UDim2.new(0, 260, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 16, 1, -168),
-		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
-		BackgroundTransparency = 0.08,
-		GroupTransparency = 0,
+		BackgroundColor3 = Color3.fromRGB(26, 26, 32),
+		BackgroundTransparency = 0.05,
 		Visible = false,
 		ZIndex = 35,
 		Parent = ParentGUI,
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = DmgPanel })
-	C("UIStroke", { Color = Color3.fromRGB(38, 38, 48), Thickness = 1, Parent = DmgPanel })
+	C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.6, Parent = DmgPanel })
 	C("UIPadding", {
 		PaddingTop = UDim.new(0, 10),
 		PaddingBottom = UDim.new(0, 10),
@@ -289,12 +291,13 @@ function Features.Init(S, ParentGUI)
 	})
 
 	C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 12),
+		Size = UDim2.new(1, 0, 0, 14),
 		BackgroundTransparency = 1,
 		Text = "DAMAGE",
 		Font = Enum.Font.GothamBold,
-		TextSize = 9,
-		TextColor3 = Color3.fromRGB(100, 100, 112),
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(190, 190, 200),
+		TextStrokeTransparency = 0.75,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		LayoutOrder = 0,
 		Parent = DmgPanel,
@@ -349,63 +352,52 @@ function Features.Init(S, ParentGUI)
 			return
 		end
 		dmgVisible = on
-		if on then
-			DmgPanel.Visible = true
-			DmgPanel.GroupTransparency = 1
-			Tween(DmgPanel, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-				GroupTransparency = 0,
-			})
-		else
-			local tw = Tween(DmgPanel, TweenInfo.new(0.18), { GroupTransparency = 1 })
-			tw.Completed:Connect(function()
-				if not dmgVisible then
-					DmgPanel.Visible = false
-				end
-			end)
-		end
+		DmgPanel.Visible = on
 	end
 
 	local function addDmgLog(name, dmg)
 		setDmgPanelVisible(true)
 		local isHead = dmg >= 50
-		local row = C("CanvasGroup", {
-			Size = UDim2.new(1, 0, 0, 30),
-			BackgroundColor3 = Color3.fromRGB(18, 18, 23),
-			BackgroundTransparency = 0.2,
-			GroupTransparency = 0,
+		local row = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 32),
+			BackgroundColor3 = Color3.fromRGB(36, 36, 44),
+			BackgroundTransparency = 0,
 			LayoutOrder = 1,
 			Parent = DmgList,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 7), Parent = row })
+		C("UIStroke", { Color = Color3.fromRGB(55, 55, 65), Thickness = 1, Parent = row })
 
 		local dmgLbl = C("TextLabel", {
-			Size = UDim2.new(0, 52, 1, 0),
+			Size = UDim2.new(0, 56, 1, 0),
 			Position = UDim2.new(0, 8, 0, 0),
 			BackgroundTransparency = 1,
 			Text = string.format("-%.0f", dmg),
 			Font = Enum.Font.GothamBlack,
-			TextSize = 13,
-			TextColor3 = isHead and Color3.fromRGB(255, 100, 100) or ACC,
+			TextSize = 14,
+			TextColor3 = isHead and Color3.fromRGB(255, 110, 110) or ACC,
+			TextStrokeTransparency = 0.5,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Parent = row,
 		})
 		C("TextLabel", {
-			Size = UDim2.new(1, -68, 1, 0),
-			Position = UDim2.new(0, 60, 0, 0),
+			Size = UDim2.new(1, -72, 1, 0),
+			Position = UDim2.new(0, 64, 0, 0),
 			BackgroundTransparency = 1,
 			Text = name,
-			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
-			TextColor3 = Color3.fromRGB(210, 210, 220),
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(240, 240, 246),
+			TextStrokeTransparency = 0.75,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
 		})
 
-		row.GroupTransparency = 1
-		row.Position = UDim2.new(0, -20, 0, 0)
-		Tween(row, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			GroupTransparency = 0,
+		row.BackgroundTransparency = 1
+		row.Position = UDim2.new(0, -18, 0, 0)
+		Tween(row, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 0,
 			Position = UDim2.new(0, 0, 0, 0),
 		})
 		Tween(dmgLbl, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
@@ -423,7 +415,7 @@ function Features.Init(S, ParentGUI)
 		end
 		if #dmgEntries > 5 then
 			local old = table.remove(dmgEntries)
-			Tween(old, TweenInfo.new(0.18), { GroupTransparency = 1 })
+			Tween(old, TweenInfo.new(0.18), { BackgroundTransparency = 1 })
 			task.delay(0.2, function()
 				pcall(function() old:Destroy() end)
 			end)
@@ -431,7 +423,7 @@ function Features.Init(S, ParentGUI)
 
 		task.delay(4.5, function()
 			if row.Parent then
-				Tween(row, TweenInfo.new(0.3), { GroupTransparency = 1, Position = UDim2.new(0, -12, 0, 0) })
+				Tween(row, TweenInfo.new(0.28), { BackgroundTransparency = 1, Position = UDim2.new(0, -12, 0, 0) })
 				task.delay(0.32, function()
 					pcall(function() row:Destroy() end)
 					for i, entry in ipairs(dmgEntries) do
@@ -548,22 +540,7 @@ function Features.Init(S, ParentGUI)
 			return
 		end
 		specPanelVisible = on
-		if on then
-			SpecPanel.Visible = true
-			SpecPanel.GroupTransparency = 1
-			Tween(SpecPanel, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-				GroupTransparency = 0,
-			})
-		else
-			local tw = Tween(SpecPanel, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-				GroupTransparency = 1,
-			})
-			tw.Completed:Connect(function()
-				if not specPanelVisible then
-					SpecPanel.Visible = false
-				end
-			end)
-		end
+		SpecPanel.Visible = on
 	end
 
 	local function updSpectators()

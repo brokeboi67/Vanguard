@@ -46,16 +46,17 @@ function Aim.Init(S, ParentGUI)
 	local TriggerHud = C("Frame", {
 		Name = "TriggerHud",
 		AnchorPoint = Vector2.new(1, 0.5),
-		Size = UDim2.new(0, 10, 0, 10),
-		Position = UDim2.new(1, -20, 0.58, 0),
+		Size = UDim2.new(0, 12, 0, 12),
+		Position = UDim2.new(1, -22, 0.58, 0),
 		BackgroundColor3 = S.V,
-		BackgroundTransparency = 0.15,
+		BackgroundTransparency = 0,
 		BorderSizePixel = 0,
 		Visible = false,
 		ZIndex = 50,
 		Parent = ParentGUI,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = TriggerHud })
+	C("UIStroke", { Name = "DotStroke", Color = Color3.fromRGB(255, 255, 255), Thickness = 1, Transparency = 0.35, Parent = TriggerHud })
 
 	local TriggerHudFull = C("TextLabel", {
 		Name = "TriggerHudFull",
@@ -108,6 +109,10 @@ function Aim.Init(S, ParentGUI)
 		FOVC.Visible = S.ShowFOV and (S.Aimbot or S.Silent or S.Trigger)
 	end
 
+	local function isMinimalHud()
+		return S.TriggerHudMinimal ~= false
+	end
+
 	local function updTriggerHud()
 		if not S.ShowTriggerHud or not S.Trigger then
 			TriggerHud.Visible = false
@@ -115,35 +120,43 @@ function Aim.Init(S, ParentGUI)
 			return
 		end
 
-		local armed = triggerArmed()
-		local active = false
+		local active = triggerArmed()
 		local label = "IDLE"
-
 		if S.TriggerMode == "Toggle" then
-			active = triggerToggled
 			label = triggerToggled and "ON" or "OFF"
 		else
-			active = armed
-			label = armed and "HOLD" or "IDLE"
+			label = active and "HOLD" or "IDLE"
 		end
 
-		if S.TriggerHudMinimal then
+		if isMinimalHud() then
 			TriggerHudFull.Visible = false
-			TriggerHud.Visible = active
-			TriggerHud.BackgroundColor3 = S.V
-			TriggerHud.BackgroundTransparency = active and 0.1 or 1
+			TriggerHud.Visible = true
+			local dotStroke = TriggerHud:FindFirstChild("DotStroke")
+			if active then
+				TriggerHud.Size = UDim2.new(0, 14, 0, 14)
+				TriggerHud.BackgroundColor3 = S.V
+				TriggerHud.BackgroundTransparency = 0
+				if dotStroke then
+					dotStroke.Transparency = 0.15
+				end
+			else
+				TriggerHud.Size = UDim2.new(0, 9, 0, 9)
+				TriggerHud.BackgroundColor3 = Color3.fromRGB(160, 160, 170)
+				TriggerHud.BackgroundTransparency = 0.35
+				if dotStroke then
+					dotStroke.Transparency = 0.55
+				end
+			end
 		else
 			TriggerHud.Visible = false
+			TriggerHudFull.Visible = true
+			TriggerHudFull.Text = "TRIGGER · " .. label
 			if active then
-				TriggerHudFull.Visible = true
-				TriggerHudFull.Text = "TRIGGER · " .. label
 				TriggerHudFull.TextColor3 = S.V
+				TriggerHudFull.BackgroundTransparency = 0.2
 			else
-				TriggerHudFull.Visible = S.TriggerMode == "Toggle"
-				if TriggerHudFull.Visible then
-					TriggerHudFull.Text = "TRIGGER · OFF"
-					TriggerHudFull.TextColor3 = Color3.fromRGB(100, 100, 110)
-				end
+				TriggerHudFull.TextColor3 = Color3.fromRGB(170, 170, 180)
+				TriggerHudFull.BackgroundTransparency = 0.35
 			end
 		end
 	end

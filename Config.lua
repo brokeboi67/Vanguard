@@ -106,6 +106,9 @@ function Config.EnforceRules(S)
 	if S.Silent and S.Aimbot then
 		S.Aimbot = false
 	end
+	if S.TriggerHudMinimal == nil then
+		S.TriggerHudMinimal = true
+	end
 	if S.ChamsRainbow then
 		S.LoS = false
 		S.RealTeamColor = false

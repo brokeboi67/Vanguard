@@ -930,14 +930,10 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	end
 
 	local function isFreeCursorState()
-		local LP = game:GetService("Players").LocalPlayer
 		if UIS.MouseBehavior == Enum.MouseBehavior.Default then
 			return true
 		end
 		if UIS.MouseIconEnabled then
-			return true
-		end
-		if LP.MouseIconEnabled then
 			return true
 		end
 		return false
@@ -947,23 +943,18 @@ function UI.Init(S, ParentGUI, ConfigModule)
 		local LP = game:GetService("Players").LocalPlayer
 		savedMouse.behavior = UIS.MouseBehavior
 		savedMouse.icon = UIS.MouseIconEnabled
-		savedMouse.lpIcon = LP.MouseIconEnabled
 		savedMouse.cameraMode = LP.CameraMode
 		savedMouse.wasFree = isFreeCursorState()
 	end
 
 	local function forceMenuCursor()
-		local LP = game:GetService("Players").LocalPlayer
 		pcall(function()
 			GuiService:SetMenuIsOpen(true)
 		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
 		pcall(function()
-			LP.MouseIconEnabled = true
-		end)
-		pcall(function()
-			LP.DevEnableMouseLock = false
+			game:GetService("Players").LocalPlayer.DevEnableMouseLock = false
 		end)
 		pcall(function()
 			GuiService.SelectedObject = nil
@@ -971,27 +962,19 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	end
 
 	local function applyFreeCursor()
-		local LP = game:GetService("Players").LocalPlayer
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
 		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
-		pcall(function()
-			LP.MouseIconEnabled = true
-		end)
 	end
 
 	local function applyLockedCursor()
-		local LP = game:GetService("Players").LocalPlayer
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
 		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
 		UIS.MouseIconEnabled = false
-		pcall(function()
-			LP.MouseIconEnabled = false
-		end)
 	end
 
 	local function restoreMouseState()
@@ -1462,7 +1445,7 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	MakeSlider(T3, "Trigger Delay", "TriggerDelay", 1, 500, 9, { suffix = "ms", step = 1 })
 	MakeTog(T3, "Trigger Status HUD", "ShowTriggerHud", 10)
 	MakeTog(T3, "Minimal Trigger HUD", "TriggerHudMinimal", 11)
-	MakeHint(T3, "Minimal = mała kropka po prawej (tylko gdy aktywny). Pełny = etykieta tekstowa.", 12)
+	MakeHint(T3, "Włączone = mała kropka po prawej (jasna = aktywny, szara = czeka). Wyłączone = pełna etykieta tekstowa.", 12)
 	MakeHint(T3, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem, potem strzela w FOV.", 13)
 	MakeSection(T3, "TARGETING", 14)
 	MakeTog(T3, "Visible Check", "VisibleCheck", 15)
