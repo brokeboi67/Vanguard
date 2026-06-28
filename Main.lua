@@ -23,6 +23,7 @@ local CG = pcall(function() return game:GetService("CoreGui").Name end) and game
 pcall(function() CG.VanguardESP:Destroy() end)
 
 pcall(function() CG.VanguardHUD:Destroy() end)
+pcall(function() CG.VanguardFriendPopup:Destroy() end)
 
 local GUI = Instance.new("ScreenGui")
 GUI.Name = "VanguardESP"

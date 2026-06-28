@@ -1684,7 +1684,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 				Position = UDim2.new(0, 1, 0, 1),
 				BackgroundTransparency = 1,
 				ScaleType = Enum.ScaleType.Crop,
-				Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48", uid),
+				Image = string.format(
+					"https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=48&height=48&format=png",
+					uid
+				),
 				ZIndex = 9,
 				Parent = avWrap,
 			})

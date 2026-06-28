@@ -183,6 +183,8 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Avatar })
 
+	PopupRoot.Visible = false
+
 	local TitleLbl = C("TextLabel", {
 		Size = UDim2.new(1, -72, 0, 16),
 		Position = UDim2.new(0, 64, 0, 14),
@@ -210,13 +212,10 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 		Parent = PopupCard,
 	})
 
-	local popupBusy = false
-
 	local function showFriendPopup(plr, added)
-		if popupBusy or not plr then
+		if not plr then
 			return
 		end
-		popupBusy = true
 
 		TitleLbl.Text = plr.DisplayName or plr.Name
 		if added then
@@ -229,44 +228,31 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 			popupStroke.Color = Color3.fromRGB(90, 90, 100)
 		end
 
-		Avatar.Image = string.format("rbxthumb://type=AvatarHeadShot&id=%d&w=48&h=48", plr.UserId)
-		Avatar.ScaleType = Enum.ScaleType.Crop
-		task.spawn(function()
-			local ok, thumb = pcall(function()
-				return Players:GetUserThumbnailAsync(plr.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48)
-			end)
-			if ok and thumb and thumb ~= "" and Avatar.Parent then
-				Avatar.Image = thumb
-			end
-		end)
+		Avatar.Image = string.format(
+			"https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=48&height=48&format=png",
+			plr.UserId
+		)
+		Avatar.ImageTransparency = 0
+		TitleLbl.TextTransparency = 0
+		SubLbl.TextTransparency = 0
+		PopupCard.BackgroundTransparency = 0.06
 
 		PopupRoot.Visible = true
-		PopupRoot.Position = UDim2.new(0.5, -140, 0, 40)
-		PopupCard.BackgroundTransparency = 0.4
-		TitleLbl.TextTransparency = 1
-		SubLbl.TextTransparency = 1
-		Avatar.ImageTransparency = 1
-
-		TS:Create(PopupRoot, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		PopupRoot.Position = UDim2.new(0.5, -140, 0, 48)
+		TS:Create(PopupRoot, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Position = UDim2.new(0.5, -140, 0, 56),
 		}):Play()
-		TS:Create(PopupCard, TweenInfo.new(0.28), { BackgroundTransparency = 0.06 }):Play()
-		TS:Create(TitleLbl, TweenInfo.new(0.28), { TextTransparency = 0 }):Play()
-		TS:Create(SubLbl, TweenInfo.new(0.28), { TextTransparency = 0 }):Play()
-		TS:Create(Avatar, TweenInfo.new(0.28), { ImageTransparency = 0 }):Play()
 
-		task.delay(2.4, function()
-			TS:Create(PopupRoot, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-				Position = UDim2.new(0.5, -140, 0, 36),
-			}):Play()
-			TS:Create(PopupCard, TweenInfo.new(0.25), { BackgroundTransparency = 1 }):Play()
-			TS:Create(TitleLbl, TweenInfo.new(0.25), { TextTransparency = 1 }):Play()
-			TS:Create(SubLbl, TweenInfo.new(0.25), { TextTransparency = 1 }):Play()
-			TS:Create(Avatar, TweenInfo.new(0.25), { ImageTransparency = 1 }):Play()
-			task.delay(0.3, function()
-				PopupRoot.Visible = false
-				popupBusy = false
-			end)
+		task.delay(2.5, function()
+			if not PopupRoot.Parent then
+				return
+			end
+			local tw = TS:Create(PopupRoot, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+				Position = UDim2.new(0.5, -140, 0, 44),
+			})
+			tw:Play()
+			tw.Completed:Wait()
+			PopupRoot.Visible = false
 		end)
 	end
 

@@ -675,7 +675,8 @@ function Features.Init(S, _ParentGUI)
 	end
 
 	local function registerHit(hum, dmg, plrName)
-		local recent = S.LastShotAt and (tick() - S.LastShotAt) <= HIT_WINDOW
+		local shotAt = tonumber(S.LastShotAt)
+		local recent = shotAt and (tick() - shotAt) <= HIT_WINDOW
 		if not recent then
 			return
 		end
@@ -693,7 +694,8 @@ function Features.Init(S, _ParentGUI)
 	end
 
 	local function registerKill(plrName)
-		local recent = S.LastShotAt and (tick() - S.LastShotAt) <= 2.5
+		local shotAt = tonumber(S.LastShotAt)
+		local recent = shotAt and (tick() - shotAt) <= 2.5
 		if not recent then
 			return
 		end
@@ -998,6 +1000,9 @@ function Features.Init(S, _ParentGUI)
 		end)
 	end)
 
+	local specAt = 0
+	local lastShotTrack = 0
+
 	RS.Heartbeat:Connect(function()
 		Cross.Visible = S.Crosshair and not S.MenuOpen
 		if not S.DamageLog or S.MenuOpen then
@@ -1013,14 +1018,13 @@ function Features.Init(S, _ParentGUI)
 		updWatermark()
 		updKeybindList()
 		updSessionStats()
-		if S.LastShotAt and S.LastShotAt > lastShotTrack then
-			lastShotTrack = S.LastShotAt
+		local shotAt = tonumber(S.LastShotAt) or 0
+		if shotAt > 0 and shotAt > lastShotTrack then
+			lastShotTrack = shotAt
 			session.shots += 1
 		end
 	end)
 
-	local specAt = 0
-	local lastShotTrack = 0
 	RS.Heartbeat:Connect(function()
 		if tick() - specAt < 0.45 then
 			return
