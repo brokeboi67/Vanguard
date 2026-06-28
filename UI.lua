@@ -18,7 +18,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	local SIDE_W = 136
 	local RS = game:GetService("RunService")
 
-	ParentGUI.DisplayOrder = 100
+	ParentGUI.DisplayOrder = 999999
+	ParentGUI.ZIndexBehavior = Enum.ZIndexBehavior.Global
 
 	local function refreshLayout()
 		local vp = Cam.ViewportSize
@@ -1711,10 +1712,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeTog(MHit, "Apply To Bots", "MiscBots", 6, { flat = true })
 	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 7)
 
-	local MSec = MakeCard(TM, "SECURITY", "Stealth GUI — syn.protect_gui / gethui jeśli dostępne.", 2)
+	local MSec = MakeCard(TM, "SECURITY", "Chroni GUI (gethui / protect_gui) i trzyma je na wierzchu.", 2)
 	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
-	MakeTog(MSec, "Stealth Mode", "AntiStealth", 2, { flat = true })
-	MakeHint(MSec, "Kick 267 = gra wykryła executor/mod. Wyłącz Hitbox Expander i Rage w takich grach.", 3)
+	MakeHint(MSec, "Kick 267 = wykryty executor/mod w grze, nie samo GUI.", 2)
 
 	local MFX = MakeCard(TM, "LOCAL FX", "Tylko Ty widzisz — efekty przy hit / kill.", 3)
 	MakeTog(MFX, "Kill Effects", "KillEffects", 1, { flat = true })
@@ -1751,7 +1751,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			end
 		end
 	end)
-	MakeHint(MFX, "FX tylko na wrogów których trafiasz/zabijasz. Test = cel w crosshair. Self Aura = efekt na Tobie po killu.", 8)
+	MakeHint(MFX, "Hit FX = od razu przy strzale cheata. Kill FX = przy śmierci wroga. Test = cel w crosshair.", 8)
 
 	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 1)
 	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })

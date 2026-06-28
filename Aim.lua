@@ -409,6 +409,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			S.LastShotHum = hum
 		end
 		S.LastShotChar = job.tgt.char
+		if S.NotifyShot then
+			pcall(S.NotifyShot, job.tgt.char)
+		end
 			silentBusy = false
 		end)
 	end
@@ -445,6 +448,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		S.LastShotAt = tick()
 		S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
 		S.LastShotChar = tgt.char
+		if S.NotifyShot then
+			pcall(S.NotifyShot, tgt.char)
+		end
 		Util.fireCrosshair(VIM, Cam)
 	end
 

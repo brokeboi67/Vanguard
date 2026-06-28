@@ -171,9 +171,6 @@ function Config.EnforceRules(S)
 	if S.MenuBlurSize == nil then
 		S.MenuBlurSize = 18
 	end
-	if S.AntiStealth == nil then
-		S.AntiStealth = true
-	end
 	if S.KillEffects == nil then
 		S.KillEffects = false
 	end

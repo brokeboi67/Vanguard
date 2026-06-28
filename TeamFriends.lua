@@ -142,7 +142,7 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 		Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8),
 		IgnoreGuiInset = true,
 		ResetOnSpawn = false,
-		DisplayOrder = 5,
+		DisplayOrder = 999997,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = CG,
 	})

@@ -35,8 +35,8 @@ local GUI = Instance.new("ScreenGui")
 GUI.Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8)
 GUI.IgnoreGuiInset = true
 GUI.ResetOnSpawn = false
-GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-GUI.DisplayOrder = 3
+GUI.ZIndexBehavior = Enum.ZIndexBehavior.Global
+GUI.DisplayOrder = 999999
 GUI.Parent = CG
 
 -- Start

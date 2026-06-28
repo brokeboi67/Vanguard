@@ -6,15 +6,13 @@ function Effects.Init(S, Util)
 	local TS = game:GetService("TweenService")
 	local Debris = game:GetService("Debris")
 	local Players = game:GetService("Players")
+	local Lighting = game:GetService("Lighting")
+	local RS = game:GetService("RunService")
 	local LP = Players.LocalPlayer
 	local Cam = workspace.CurrentCamera
 
-	local FX_FOLDER = workspace:FindFirstChild("VG_FXRoot")
-	if not FX_FOLDER then
-		FX_FOLDER = Instance.new("Folder")
-		FX_FOLDER.Name = "VG_FXRoot"
-		FX_FOLDER.Parent = workspace
-	end
+	local SPARK_TEX = "rbxassetid://243660064"
+	local watched = {}
 
 	local accent = function()
 		return S.V or Color3.fromRGB(0, 255, 150)
@@ -24,10 +22,8 @@ function Effects.Init(S, Util)
 		if not char or not char:IsA("Model") or char == LP.Character then
 			return false
 		end
-		if Players:GetPlayerFromCharacter(char) == LP then
-			return false
-		end
-		return char:FindFirstChildOfClass("Humanoid") ~= nil
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		return hum and hum.Health > 0
 	end
 
 	local function getRoot(char)
@@ -36,19 +32,6 @@ function Effects.Init(S, Util)
 		end
 		return Util and Util.resolveBodyPart(char, "HumanoidRootPart")
 			or char:FindFirstChild("HumanoidRootPart")
-	end
-
-	local function resolveVictimChar(hum)
-		if hum and hum.Parent and isEnemyChar(hum.Parent) then
-			return hum.Parent
-		end
-		if S.LastShotHum and S.LastShotHum.Parent and isEnemyChar(S.LastShotHum.Parent) then
-			return S.LastShotHum.Parent
-		end
-		if S.LastShotChar and isEnemyChar(S.LastShotChar) then
-			return S.LastShotChar
-		end
-		return nil
 	end
 
 	local function getCrosshairVictim()
@@ -82,21 +65,40 @@ function Effects.Init(S, Util)
 		return best
 	end
 
+	local function recentShotWindow(maxAge)
+		maxAge = maxAge or 2.5
+		local t = tonumber(S.LastShotAt)
+		return t and (tick() - t) <= maxAge
+	end
+
+	local function shotMatchesChar(char)
+		if not char or not recentShotWindow(3) then
+			return false
+		end
+		if S.LastShotChar and S.LastShotChar == char then
+			return true
+		end
+		if S.LastShotHum and S.LastShotHum.Parent == char then
+			return true
+		end
+		return false
+	end
+
 	local function addHighlight(char, col, life)
 		local hl = Instance.new("Highlight")
 		hl.Name = "VG_FX"
 		hl.Adornee = char
 		hl.FillColor = col
 		hl.OutlineColor = Color3.new(1, 1, 1)
-		hl.FillTransparency = 0.15
-		hl.OutlineTransparency = 0.05
+		hl.FillTransparency = 0.1
+		hl.OutlineTransparency = 0
 		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		hl.Parent = FX_FOLDER
+		hl.Parent = Lighting
 		TS:Create(hl, TweenInfo.new(life or 0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			FillTransparency = 1,
 			OutlineTransparency = 1,
 		}):Play()
-		Debris:AddItem(hl, (life or 0.85) + 0.15)
+		Debris:AddItem(hl, (life or 0.85) + 0.2)
 		return hl
 	end
 
@@ -110,27 +112,54 @@ function Effects.Init(S, Util)
 		p.Transparency = 1
 		p.Size = Vector3.new(0.2, 0.2, 0.2)
 		p.CFrame = CFrame.new(pos)
-		p.Parent = FX_FOLDER
+		p.Parent = workspace
 		Debris:AddItem(p, lifetime or 2)
 		return p
 	end
 
 	local function makeBurst(pos, col, count, speed)
-		local anchor = spawnAnchor(pos, 2.5)
+		local anchor = spawnAnchor(pos, 3)
 		local em = Instance.new("ParticleEmitter")
+		em.Texture = SPARK_TEX
 		em.Color = ColorSequence.new(col, Color3.new(1, 1, 1))
 		em.LightEmission = 1
 		em.Rate = 0
-		em.Speed = NumberRange.new(speed or 10, (speed or 10) + 12)
-		em.Lifetime = NumberRange.new(0.35, 0.85)
+		em.Speed = NumberRange.new(speed or 8, (speed or 8) + 16)
+		em.Lifetime = NumberRange.new(0.5, 1.1)
 		em.SpreadAngle = Vector2.new(360, 360)
-		em.Drag = 2
+		em.Drag = 1.5
 		em.Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.55),
+			NumberSequenceKeypoint.new(0, 1.1),
+			NumberSequenceKeypoint.new(0.5, 0.6),
 			NumberSequenceKeypoint.new(1, 0),
 		})
 		em.Parent = anchor
-		em:Emit(count or 45)
+		em:Emit(count or 60)
+	end
+
+	local function flashBillboard(char, col)
+		local root = getRoot(char)
+		if not root then
+			return
+		end
+		local bb = Instance.new("BillboardGui")
+		bb.Name = "VG_FX"
+		bb.Adornee = root
+		bb.AlwaysOnTop = true
+		bb.Size = UDim2.new(6, 0, 6, 0)
+		bb.StudsOffset = Vector3.new(0, 1, 0)
+		bb.Parent = root
+		local img = Instance.new("Frame")
+		img.Size = UDim2.new(1, 0, 1, 0)
+		img.BackgroundColor3 = col
+		img.BackgroundTransparency = 0.35
+		img.BorderSizePixel = 0
+		img.Parent = bb
+		local cr = Instance.new("UICorner")
+		cr.CornerRadius = UDim.new(1, 0)
+		cr.Parent = img
+		TS:Create(img, TweenInfo.new(0.5), { BackgroundTransparency = 1, Size = UDim2.new(1.6, 0, 1.6, 0) }):Play()
+		Debris:AddItem(bb, 0.6)
 	end
 
 	local function trackPosition(char, seconds, stepFn)
@@ -150,49 +179,13 @@ function Effects.Init(S, Util)
 		end)
 	end
 
-	local function tryGhostFade(char, col)
-		if not char.Archivable then
-			return false
-		end
-		local ok, ghost = pcall(function()
-			return char:Clone()
-		end)
-		if not ok or not ghost then
-			return false
-		end
-		ghost.Name = "VG_Ghost"
-		for _, inst in ipairs(ghost:GetDescendants()) do
-			if inst:IsA("Script") or inst:IsA("LocalScript") or inst:IsA("Sound") then
-				inst:Destroy()
-			elseif inst:IsA("BasePart") then
-				inst.Anchored = true
-				inst.CanCollide = false
-				inst.CanQuery = false
-				inst.CanTouch = false
-				inst.Material = Enum.Material.Neon
-				inst.Color = col
-				inst.Transparency = 0
-			end
-		end
-		ghost.Parent = FX_FOLDER
-		for _, inst in ipairs(ghost:GetDescendants()) do
-			if inst:IsA("BasePart") then
-				TS:Create(inst, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					Transparency = 1,
-				}):Play()
-			end
-		end
-		Debris:AddItem(ghost, 1.1)
-		return true
-	end
-
 	local function effectNeonDissolve(char)
 		local col = accent()
 		addHighlight(char, col, 0.95)
-		tryGhostFade(char, col)
+		flashBillboard(char, col)
 		local root = getRoot(char)
 		if root then
-			makeBurst(root.Position + Vector3.new(0, 1.5, 0), col, 35, 9)
+			makeBurst(root.Position + Vector3.new(0, 1.5, 0), col, 50, 10)
 		end
 	end
 
@@ -202,20 +195,20 @@ function Effects.Init(S, Util)
 			return
 		end
 		local col = accent()
-		makeBurst(root.Position, col, 55, 14)
-		makeBurst(root.Position + Vector3.new(0, 2, 0), Color3.fromRGB(30, 30, 35), 25, 6)
-		addHighlight(char, col, 0.35)
+		makeBurst(root.Position, col, 70, 16)
+		makeBurst(root.Position + Vector3.new(0, 2, 0), Color3.fromRGB(40, 40, 48), 35, 8)
+		addHighlight(char, col, 0.4)
 	end
 
 	local function effectAscension(char)
 		local col = accent()
 		addHighlight(char, col, 1.4)
 		trackPosition(char, 1.5, function(pos, elapsed)
-			makeBurst(pos + Vector3.new(0, elapsed * 6, 0), col, 4, 3)
+			makeBurst(pos + Vector3.new(0, elapsed * 6, 0), col, 6, 4)
 		end)
 		local root = getRoot(char)
 		if root then
-			makeBurst(root.Position, col, 20, 5)
+			makeBurst(root.Position, col, 25, 6)
 		end
 	end
 
@@ -233,15 +226,15 @@ function Effects.Init(S, Util)
 		ring.CanTouch = false
 		ring.Material = Enum.Material.Neon
 		ring.Color = accent()
-		ring.Transparency = 0.35
+		ring.Transparency = 0.2
 		ring.Size = Vector3.new(0.15, 1, 1)
 		ring.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, 0, math.rad(90))
-		ring.Parent = FX_FOLDER
-		TS:Create(ring, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Size = Vector3.new(0.08, 14, 14),
+		ring.Parent = workspace
+		TS:Create(ring, TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Size = Vector3.new(0.08, 16, 16),
 			Transparency = 1,
 		}):Play()
-		Debris:AddItem(ring, 0.7)
+		Debris:AddItem(ring, 0.75)
 	end
 
 	local function effectLightningHit(char)
@@ -252,19 +245,20 @@ function Effects.Init(S, Util)
 			return
 		end
 		local col = accent()
-		local top = spawnAnchor(target.Position + Vector3.new(0, 12, 0), 0.35)
-		local bot = spawnAnchor(target.Position, 0.35)
+		local top = spawnAnchor(target.Position + Vector3.new(0, 14, 0), 0.4)
+		local bot = spawnAnchor(target.Position, 0.4)
 		local beam = Instance.new("Beam")
 		beam.Attachment0 = Instance.new("Attachment", top)
 		beam.Attachment1 = Instance.new("Attachment", bot)
 		beam.Color = ColorSequence.new(col, Color3.new(1, 1, 1))
 		beam.LightEmission = 1
-		beam.Width0 = 0.8
-		beam.Width1 = 0.15
+		beam.Width0 = 1.2
+		beam.Width1 = 0.2
 		beam.FaceCamera = true
 		beam.Parent = top
-		makeBurst(target.Position, col, 18, 10)
-		addHighlight(char, col, 0.25)
+		makeBurst(target.Position, col, 30, 12)
+		addHighlight(char, col, 0.35)
+		flashBillboard(char, col)
 	end
 
 	local function effectSparkHit(char)
@@ -272,7 +266,8 @@ function Effects.Init(S, Util)
 		if not root then
 			return
 		end
-		makeBurst(root.Position + Vector3.new(0, 1.2, 0), accent(), 22, 8)
+		makeBurst(root.Position + Vector3.new(0, 1.2, 0), accent(), 35, 10)
+		flashBillboard(char, accent())
 	end
 
 	local function effectSelfAura()
@@ -284,8 +279,8 @@ function Effects.Init(S, Util)
 		if not root then
 			return
 		end
-		makeBurst(root.Position, accent(), 35, 12)
-		addHighlight(char, accent(), 0.5)
+		makeBurst(root.Position, accent(), 40, 12)
+		addHighlight(char, accent(), 0.55)
 	end
 
 	local KILL_FX = {
@@ -303,8 +298,7 @@ function Effects.Init(S, Util)
 	local function pickKillFx()
 		local style = S.KillEffectStyle or "Neon"
 		if style == "Random" then
-			local keys = { "Neon", "Burst", "Ascension", "Shock" }
-			style = keys[math.random(1, #keys)]
+			style = ({ "Neon", "Burst", "Ascension", "Shock" })[math.random(1, 4)]
 		end
 		return KILL_FX[style] or effectNeonDissolve
 	end
@@ -313,59 +307,116 @@ function Effects.Init(S, Util)
 		return HIT_FX[S.HitEffectStyle or "Lightning"] or effectLightningHit
 	end
 
-	local function recentKill()
-		local t = tonumber(S.LastShotAt)
-		return t and (tick() - t) <= 2.5
-	end
+	local lastHitFxChar = nil
+	local lastHitFxAt = 0
+	local lastKillFxChar = nil
+	local lastKillFxAt = 0
 
-	local function recentHit()
-		local t = tonumber(S.LastShotAt)
-		return t and (tick() - t) <= 1.5
-	end
-
-	local function isOurVictim(hum)
-		if not hum or not hum.Parent or not isEnemyChar(hum.Parent) then
-			return false
-		end
-		if S.LastShotHum and hum ~= S.LastShotHum then
-			return false
-		end
-		return true
-	end
-
-	local function runOnVictim(hum, fn)
-		local char = resolveVictimChar(hum)
-		if not char then
+	local function playHitFx(char)
+		if not char or not isEnemyChar(char) then
 			return
 		end
+		if lastHitFxChar == char and tick() - lastHitFxAt < 0.3 then
+			return
+		end
+		lastHitFxChar = char
+		lastHitFxAt = tick()
 		pcall(function()
-			fn(char)
+			pickHitFx()(char)
 		end)
 	end
 
+	local function playKillFx(char)
+		if not char or char == LP.Character then
+			return
+		end
+		if lastKillFxChar == char and tick() - lastKillFxAt < 0.5 then
+			return
+		end
+		lastKillFxChar = char
+		lastKillFxAt = tick()
+		pcall(function()
+			pickKillFx()(char)
+		end)
+		if S.SelfKillFX then
+			pcall(effectSelfAura)
+		end
+	end
+
+	function S.NotifyShot(char)
+		if not char or not isEnemyChar(char) then
+			return
+		end
+		S.LastShotChar = char
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			S.LastShotHum = hum
+		end
+		if S.HitEffects then
+			playHitFx(char)
+		end
+	end
+
+	local function bindChar(char)
+		if not char or watched[char] then
+			return
+		end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hum then
+			return
+		end
+		watched[char] = true
+
+		hum.Died:Connect(function()
+			if not S.KillEffects then
+				return
+			end
+			if shotMatchesChar(char) then
+				playKillFx(char)
+			end
+		end)
+
+		local lastHp = hum.Health
+		hum.HealthChanged:Connect(function(hp)
+			if not S.KillEffects and not S.HitEffects then
+				lastHp = hp
+				return
+			end
+			if hp < lastHp and shotMatchesChar(char) then
+				if S.HitEffects then
+					playHitFx(char)
+				end
+				if hp <= 0 and S.KillEffects then
+					playKillFx(char)
+				end
+			end
+			lastHp = hp
+		end)
+	end
+
+	local function scanChars()
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= LP and plr.Character then
+				bindChar(plr.Character)
+			end
+		end
+	end
+
 	function S.OnLocalHit(hum, dmg)
-		if not S.HitEffects then
+		if not S.HitEffects or not hum or not hum.Parent then
 			return
 		end
-		if not recentHit() or not isOurVictim(hum) then
-			return
+		if shotMatchesChar(hum.Parent) then
+			playHitFx(hum.Parent)
 		end
-		runOnVictim(hum, pickHitFx())
 	end
 
 	function S.OnLocalKill(hum, plrName)
-		if not S.KillEffects then
-			if S.SelfKillFX and recentKill() and isOurVictim(hum) then
-				pcall(effectSelfAura)
-			end
+		if not S.KillEffects or not hum or not hum.Parent then
 			return
 		end
-		if not recentKill() or not isOurVictim(hum) then
-			return
-		end
-		runOnVictim(hum, pickKillFx())
-		if S.SelfKillFX then
-			pcall(effectSelfAura)
+		if shotMatchesChar(hum.Parent) then
+			playKillFx(hum.Parent)
 		end
 	end
 
@@ -374,9 +425,7 @@ function Effects.Init(S, Util)
 		if not char then
 			return false, "Celuj w wroga (crosshair)"
 		end
-		pcall(function()
-			pickKillFx()(char)
-		end)
+		playKillFx(char)
 		return true
 	end
 
@@ -385,11 +434,39 @@ function Effects.Init(S, Util)
 		if not char then
 			return false, "Celuj w wroga (crosshair)"
 		end
-		pcall(function()
-			pickHitFx()(char)
-		end)
+		playHitFx(char)
 		return true
 	end
+
+	Players.PlayerAdded:Connect(function(plr)
+		plr.CharacterAdded:Connect(function(char)
+			task.defer(function()
+				bindChar(char)
+			end)
+		end)
+	end)
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.Character then
+			task.defer(function()
+				bindChar(plr.Character)
+			end)
+		end
+		plr.CharacterAdded:Connect(function(char)
+			task.defer(function()
+				bindChar(char)
+			end)
+		end)
+	end
+
+	local scanAt = 0
+
+	RS.Heartbeat:Connect(function()
+		if tick() - scanAt > 2 then
+			scanAt = tick()
+			scanChars()
+		end
+	end)
 end
 
 return Effects

@@ -445,6 +445,9 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		S.LastShotAt = tick()
 		S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
 		S.LastShotChar = tgt.char
+		if S.NotifyShot then
+			pcall(S.NotifyShot, tgt.char)
+		end
 
 		rageShootingUntil = tick() + 0.12
 		local mode = S.RageAimMode or "Silent"

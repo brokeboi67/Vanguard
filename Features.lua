@@ -27,7 +27,8 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	HudGui.IgnoreGuiInset = true
 	HudGui.ResetOnSpawn = false
 	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	HudGui.DisplayOrder = 4
+	HudGui.DisplayOrder = 999998
+	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 	HudGui.Parent = CG
 
 	local Z = {
@@ -1115,6 +1116,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 				S.LastShotHum = hum
 				if hum.Parent and hum.Parent:IsA("Model") then
 					S.LastShotChar = hum.Parent
+					if S.NotifyShot then
+						pcall(S.NotifyShot, hum.Parent)
+					end
 				end
 			end
 		end
