@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.8.1",
+	Version = "2.8.2",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -92,6 +92,8 @@ local Settings = {
 	HitboxSize = false,
 	HitboxSizeScale = 1.5,
 	MiscAffectFriends = false,
+	MiscBots = true,
+	AntiBypass = true,
 
 	-- UI runtime
 	MenuOpen = false,

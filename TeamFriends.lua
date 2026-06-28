@@ -146,6 +146,7 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = CG,
 	})
+	PopGui:SetAttribute("VG", true)
 
 	local PopupRoot = C("Frame", {
 		Name = "FriendPopupRoot",

@@ -9,6 +9,8 @@ function Misc.Init(S, TF, Util)
 
 	local origSizes = {}
 	local trackedChars = {}
+	local botList = {}
+	local botScanAt = 0
 
 	local HEAD_NAMES = { "Head" }
 	local HITBOX_NAMES = {
@@ -20,6 +22,51 @@ function Misc.Init(S, TF, Util)
 		"HeadHB",
 		"RootHitbox",
 	}
+
+	local function isAliveChar(char)
+		if not char or not char.Parent then
+			return false
+		end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		return hum and hum.Health > 0
+	end
+
+	local function isBotModel(model)
+		if not model:IsA("Model") then
+			return false
+		end
+		if LP.Character and model == LP.Character then
+			return false
+		end
+		if Players:GetPlayerFromCharacter(model) then
+			return false
+		end
+		return Util.isAimableCharacter(model)
+	end
+
+	local function refreshBots()
+		if S.MiscBots == false then
+			table.clear(botList)
+			return
+		end
+		table.clear(botList)
+		local function tryAdd(model)
+			if model:IsA("Model") and isBotModel(model) then
+				table.insert(botList, model)
+			end
+		end
+		for _, child in ipairs(workspace:GetChildren()) do
+			tryAdd(child)
+		end
+		for _, folderName in ipairs({ "Characters", "Entities", "NPCs", "Bots" }) do
+			local folder = workspace:FindFirstChild(folderName)
+			if folder then
+				for _, child in ipairs(folder:GetChildren()) do
+					tryAdd(child)
+				end
+			end
+		end
+	end
 
 	local function rememberSize(part)
 		if not origSizes[part] then
@@ -44,7 +91,10 @@ function Misc.Init(S, TF, Util)
 	end
 
 	local function shouldAffect(plr)
-		if not plr or plr == LP then
+		if not plr then
+			return true
+		end
+		if plr == LP then
 			return false
 		end
 		if S.MiscAffectFriends then
@@ -146,6 +196,18 @@ function Misc.Init(S, TF, Util)
 				applyChar(plr.Character, plr)
 			end
 		end
+
+		if S.MiscBots ~= false then
+			if tick() - botScanAt > 1.5 then
+				botScanAt = tick()
+				refreshBots()
+			end
+			for _, model in ipairs(botList) do
+				if model.Parent and isAliveChar(model) then
+					applyChar(model, nil)
+				end
+			end
+		end
 	end
 
 	Players.PlayerAdded:Connect(function(plr)
@@ -172,7 +234,7 @@ function Misc.Init(S, TF, Util)
 	end
 
 	RS.Heartbeat:Connect(function()
-		scan()
+		pcall(scan)
 	end)
 end
 

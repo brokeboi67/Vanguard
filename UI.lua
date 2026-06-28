@@ -887,16 +887,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 	end
 
 	local function setToggleVisual(key, enabled)
-		local t = toggleRegistry[key]
-		if not t then
+		local list = toggleRegistry[key]
+		if not list then
 			return
 		end
-		TweenPlay(t.SwitchBg, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			BackgroundColor3 = enabled and ACC or Color3.fromRGB(36, 36, 44),
-		})
-		TweenPlay(t.SwitchDot, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-			Position = enabled and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
-		})
+		for _, t in ipairs(list) do
+			TweenPlay(t.SwitchBg, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+				BackgroundColor3 = enabled and ACC or Color3.fromRGB(36, 36, 44),
+			})
+			TweenPlay(t.SwitchDot, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+				Position = enabled and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
+			})
+		end
 	end
 
 	local NotifyRoot = C("Frame", {
@@ -1200,7 +1202,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 			UpdPreview()
 		end)
 
-		toggleRegistry[key] = { SwitchBg = SwitchBg, SwitchDot = SwitchDot }
+		if not toggleRegistry[key] then
+			toggleRegistry[key] = {}
+		end
+		table.insert(toggleRegistry[key], { SwitchBg = SwitchBg, SwitchDot = SwitchDot })
 	end
 
 	local function MakeChoice(page, label, key, options, order)
@@ -1637,7 +1642,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF)
 		fmt = function(v) return string.format("%.1fx", v) end,
 	})
 	MakeTog(MHit, "Include Friends / Team", "MiscAffectFriends", 5, { flat = true })
-	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 6)
+	MakeTog(MHit, "Apply To Bots", "MiscBots", 6, { flat = true })
+	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 7)
+
+	local MSec = MakeCard(TM, "SECURITY", "Ukrywa GUI przed prostymi skanerami anticheat.", 2)
+	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
+	MakeHint(MSec, "Domyślnie włączone — gethui, losowe nazwy GUI, niski DisplayOrder.", 2)
 
 	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 1)
 	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })

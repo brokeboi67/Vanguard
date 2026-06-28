@@ -157,6 +157,12 @@ function Config.EnforceRules(S)
 	if S.MiscAffectFriends == nil then
 		S.MiscAffectFriends = false
 	end
+	if S.MiscBots == nil then
+		S.MiscBots = true
+	end
+	if S.AntiBypass == nil then
+		S.AntiBypass = true
+	end
 	if S.ChamsRainbow then
 		S.LoS = false
 		S.RealTeamColor = false

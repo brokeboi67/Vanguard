@@ -19,6 +19,7 @@ function Features.Init(S, _ParentGUI)
 
 	local HudGui = Instance.new("ScreenGui")
 	HudGui.Name = "VanguardHUD"
+	HudGui:SetAttribute("VG", true)
 	HudGui.IgnoreGuiInset = true
 	HudGui.ResetOnSpawn = false
 	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling

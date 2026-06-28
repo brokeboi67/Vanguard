@@ -340,7 +340,11 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return nil
 		end
 
-		local dist3d = (Cam.CFrame.Position - tgt.part.Position).Magnitude
+		local partPos = Util.getPartPosition(part)
+		if not partPos then
+			return nil
+		end
+		local dist3d = (Cam.CFrame.Position - partPos).Magnitude
 		if dist3d > S.MaxDist then
 			return nil
 		end
@@ -438,13 +442,21 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not tgt or not tgt.part then
 			return
 		end
+		local targetPos = Util.getPartPosition(tgt.part)
+		if not targetPos then
+			return
+		end
 
 		lastTrigger = tick()
 		S.LastShotAt = tick()
 		if tgt.char then
 			S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
 		end
-		shootAt(tgt.part.Position)
+		if S.Silent then
+			silentShot(targetPos)
+		else
+			fireClick()
+		end
 	end
 
 	UIS.InputBegan:Connect(function(input, processed)
@@ -464,12 +476,15 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1 and S.Silent then
 			local tgt = getBestTarget()
-			if tgt then
-				S.LastShotAt = tick()
-				if tgt.char then
-					S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
+			if tgt and tgt.part then
+				local pos = Util.getPartPosition(tgt.part)
+				if pos then
+					S.LastShotAt = tick()
+					if tgt.char then
+						S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
+					end
+					silentShot(pos)
 				end
-				silentShot(tgt.part.Position)
 			end
 		end
 	end)
@@ -492,10 +507,15 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 
 		if S.Aimbot and not S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-			local tgt = getBestTarget()
-			if tgt then
-				aimCamera(tgt.part.Position)
-			end
+			pcall(function()
+				local tgt = getBestTarget()
+				if tgt and tgt.part then
+					local pos = Util.getPartPosition(tgt.part)
+					if pos then
+						aimCamera(pos)
+					end
+				end
+			end)
 		end
 	end)
 
