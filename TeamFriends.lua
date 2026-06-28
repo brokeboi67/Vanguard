@@ -139,14 +139,13 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 	end
 
 	local PopGui = C("ScreenGui", {
-		Name = "VanguardFriendPopup",
+		Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8),
 		IgnoreGuiInset = true,
 		ResetOnSpawn = false,
-		DisplayOrder = 120,
+		DisplayOrder = 5,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = CG,
 	})
-	PopGui:SetAttribute("VG", true)
 
 	local PopupRoot = C("Frame", {
 		Name = "FriendPopupRoot",

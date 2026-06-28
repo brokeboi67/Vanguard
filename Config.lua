@@ -170,6 +170,24 @@ function Config.EnforceRules(S)
 	if S.MenuBlurSize == nil then
 		S.MenuBlurSize = 18
 	end
+	if S.AntiStealth == nil then
+		S.AntiStealth = true
+	end
+	if S.KillEffects == nil then
+		S.KillEffects = false
+	end
+	if S.KillEffectStyle == nil then
+		S.KillEffectStyle = "Neon"
+	end
+	if S.HitEffects == nil then
+		S.HitEffects = false
+	end
+	if S.HitEffectStyle == nil then
+		S.HitEffectStyle = "Lightning"
+	end
+	if S.SelfKillFX == nil then
+		S.SelfKillFX = false
+	end
 	if S.AutoStrafe == nil then
 		S.AutoStrafe = false
 	end

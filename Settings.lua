@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.10.0",
+	Version = "2.11.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -105,6 +105,14 @@ local Settings = {
 	MiscAffectFriends = false,
 	MiscBots = true,
 	AntiBypass = true,
+	AntiStealth = true,
+
+	-- EFFECTS (local only)
+	KillEffects = false,
+	KillEffectStyle = "Neon",
+	HitEffects = false,
+	HitEffectStyle = "Lightning",
+	SelfKillFX = false,
 
 	-- UI runtime
 	MenuOpen = false,

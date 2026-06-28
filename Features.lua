@@ -2,7 +2,7 @@
 
 local Features = {}
 
-function Features.Init(S, _ParentGUI)
+function Features.Init(S, _ParentGUI, AntiBypassModule)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
@@ -12,18 +12,22 @@ function Features.Init(S, _ParentGUI)
 	local Cam = workspace.CurrentCamera
 	local ACC = S.V
 
-	local CG = pcall(function() return game:GetService("CoreGui").Name end)
-		and game:GetService("CoreGui")
-		or LP:WaitForChild("PlayerGui")
+	local CG
+	if AntiBypassModule and AntiBypassModule.getGuiRoot then
+		CG = AntiBypassModule.getGuiRoot()
+	else
+		CG = pcall(function() return game:GetService("CoreGui").Name end)
+			and game:GetService("CoreGui")
+			or LP:WaitForChild("PlayerGui")
+	end
 	pcall(function() CG.VanguardHUD:Destroy() end)
 
 	local HudGui = Instance.new("ScreenGui")
-	HudGui.Name = "VanguardHUD"
-	HudGui:SetAttribute("VG", true)
+	HudGui.Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8)
 	HudGui.IgnoreGuiInset = true
 	HudGui.ResetOnSpawn = false
 	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	HudGui.DisplayOrder = 50
+	HudGui.DisplayOrder = 4
 	HudGui.Parent = CG
 
 	local Z = {
@@ -1046,6 +1050,7 @@ function Features.Init(S, _ParentGUI)
 		local last = hum.Health
 		humWatch[hum] = hum.HealthChanged:Connect(function(hp)
 			local trackHit = S.Hitmarker or S.HitSound or S.DamageLog or S.SessionStats or S.KillFeed
+				or S.HitEffects or S.KillEffects
 			if not trackHit then
 				last = hp
 				return
@@ -1053,9 +1058,15 @@ function Features.Init(S, _ParentGUI)
 			if hp < last then
 				local dmg = last - hp
 				registerHit(hum, dmg, plrName)
+				if S.OnLocalHit then
+					pcall(S.OnLocalHit, hum, dmg)
+				end
 			end
 			if hp <= 0 and last > 0 then
 				registerKill(plrName)
+				if S.OnLocalKill then
+					pcall(S.OnLocalKill, hum, plrName)
+				end
 			end
 			last = hp
 		end)
@@ -1228,6 +1239,10 @@ function Features.Init(S, _ParentGUI)
 		scanHumanoids()
 		updSpectators()
 	end)
+
+	if AntiBypassModule then
+		AntiBypassModule.concealGui(HudGui)
+	end
 end
 
 return Features

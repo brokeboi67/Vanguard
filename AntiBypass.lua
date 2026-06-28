@@ -2,7 +2,18 @@
 
 local AntiBypass = {}
 
-local concealed = {}
+local concealed = setmetatable({}, { __mode = "k" })
+local protected = setmetatable({}, { __mode = "k" })
+
+local function randomName()
+	local chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+	local out = {}
+	for i = 1, 12 do
+		local idx = math.random(1, #chars)
+		out[i] = string.sub(chars, idx, idx)
+	end
+	return table.concat(out)
+end
 
 function AntiBypass.getGuiRoot()
 	if typeof(gethui) == "function" then
@@ -11,13 +22,46 @@ function AntiBypass.getGuiRoot()
 			return hui
 		end
 	end
-	local ok, cg = pcall(function()
-		return game:GetService("CoreGui")
-	end)
-	if ok and cg then
-		return cg
+	if typeof(get_hidden_gui) == "function" then
+		local ok, hui = pcall(get_hidden_gui)
+		if ok and hui then
+			return hui
+		end
 	end
-	return game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+	local LP = game:GetService("Players").LocalPlayer
+	local pg = LP:FindFirstChildOfClass("PlayerGui") or LP:WaitForChild("PlayerGui")
+	local folder = pg:FindFirstChild("_")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "_"
+		folder.Parent = pg
+	end
+	return folder
+end
+
+function AntiBypass.protectInstance(gui)
+	if not gui or protected[gui] then
+		return
+	end
+	protected[gui] = true
+
+	if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+		pcall(syn.protect_gui, gui)
+	end
+	if typeof(protectgui) == "function" then
+		pcall(protectgui, gui)
+	end
+	if typeof(gethui) == "function" then
+		pcall(function()
+			local hui = gethui()
+			if hui and gui.Parent ~= hui then
+				gui.Parent = hui
+			end
+		end)
+	end
+	if typeof(cloneref) == "function" then
+		pcall(cloneref, gui)
+	end
 end
 
 function AntiBypass.concealGui(gui)
@@ -28,16 +72,24 @@ function AntiBypass.concealGui(gui)
 		return
 	end
 	concealed[gui] = true
+
+	AntiBypass.protectInstance(gui)
+
 	pcall(function()
-		gui:SetAttribute("VG", true)
+		gui.Name = randomName()
 	end)
 	pcall(function()
-		local HttpService = game:GetService("HttpService")
-		gui.Name = "Gui_" .. string.sub(HttpService:GenerateGUID(false), 1, 10)
+		if gui:IsA("ScreenGui") then
+			gui.DisplayOrder = math.clamp(gui.DisplayOrder or 1, -999, 9)
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+			gui.ResetOnSpawn = false
+			gui.IgnoreGuiInset = true
+		end
 	end)
-	pcall(function()
-		gui.DisplayOrder = math.clamp(gui.DisplayOrder or 1, 1, 9)
-	end)
+end
+
+function AntiBypass.isVanguardGui(gui)
+	return gui and concealed[gui] == true
 end
 
 function AntiBypass.Init(S)
@@ -49,8 +101,13 @@ function AntiBypass.Init(S)
 
 	local function sweep(parent)
 		for _, ch in ipairs(parent:GetChildren()) do
-			if ch:IsA("ScreenGui") and ch:GetAttribute("VG") then
+			if concealed[ch] then
 				AntiBypass.concealGui(ch)
+			elseif ch:IsA("ScreenGui") then
+				local n = string.lower(ch.Name)
+				if n:find("vanguard", 1, true) or n:find("esp", 1, true) and ch:GetAttribute("VG") then
+					AntiBypass.concealGui(ch)
+				end
 			end
 		end
 	end
@@ -58,7 +115,10 @@ function AntiBypass.Init(S)
 	sweep(root)
 	root.ChildAdded:Connect(function(ch)
 		task.defer(function()
-			if ch:IsA("ScreenGui") and ch:GetAttribute("VG") then
+			if ch:IsA("ScreenGui") or ch:IsA("Folder") then
+				sweep(ch)
+			end
+			if concealed[ch] or (ch:IsA("ScreenGui") and string.lower(ch.Name):find("vanguard", 1, true)) then
 				AntiBypass.concealGui(ch)
 			end
 		end)
@@ -67,7 +127,18 @@ function AntiBypass.Init(S)
 	task.spawn(function()
 		while S.AntiBypass ~= false do
 			sweep(root)
-			task.wait(4 + math.random() * 2)
+			if S.AntiStealth ~= false then
+				for gui in pairs(concealed) do
+					if gui.Parent then
+						pcall(function()
+							if math.random() < 0.15 then
+								gui.Name = randomName()
+							end
+						end)
+					end
+				end
+			end
+			task.wait(8 + math.random() * 4)
 		end
 	end)
 end

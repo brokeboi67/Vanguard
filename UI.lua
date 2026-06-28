@@ -1692,7 +1692,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			animOrder += 1
 		end
 	end
-	MakeHint(APlay, "Wymaga Animator w postaci. Niektóre gry blokują custom animacje.", animOrder)
+	MakeHint(APlay, "Najpierw animacje z Animate gry, potem domyślne ID, na końcu /e chat.", animOrder)
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Niewidoczne hitboxy — nie powiększa modelu postaci.", 1)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })
@@ -1711,9 +1711,39 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeTog(MHit, "Apply To Bots", "MiscBots", 6, { flat = true })
 	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 7)
 
-	local MSec = MakeCard(TM, "SECURITY", "Ukrywa GUI przed prostymi skanerami anticheat.", 2)
+	local MSec = MakeCard(TM, "SECURITY", "Stealth GUI — syn.protect_gui / gethui jeśli dostępne.", 2)
 	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
-	MakeHint(MSec, "Domyślnie włączone — gethui, losowe nazwy GUI, niski DisplayOrder.", 2)
+	MakeTog(MSec, "Stealth Mode", "AntiStealth", 2, { flat = true })
+	MakeHint(MSec, "Kick 267 = gra wykryła executor/mod. Wyłącz Hitbox Expander i Rage w takich grach.", 3)
+
+	local MFX = MakeCard(TM, "LOCAL FX", "Tylko Ty widzisz — efekty przy hit / kill.", 3)
+	MakeTog(MFX, "Kill Effects", "KillEffects", 1, { flat = true })
+	MakeChoice(MFX, "Kill Style", "KillEffectStyle", {
+		{ label = "Neon", value = "Neon" },
+		{ label = "Burst", value = "Burst" },
+		{ label = "Ascend", value = "Ascension" },
+		{ label = "Shock", value = "Shock" },
+		{ label = "Random", value = "Random" },
+	}, 2)
+	MakeTog(MFX, "Hit Effects", "HitEffects", 3, { flat = true })
+	MakeChoice(MFX, "Hit Style", "HitEffectStyle", {
+		{ label = "Lightning", value = "Lightning" },
+		{ label = "Sparks", value = "Sparks" },
+	}, 4)
+	MakeTog(MFX, "Self Aura On Kill", "SelfKillFX", 5, { flat = true })
+	MakeButton(MFX, "Test Kill FX", 6, function()
+		if S.TestKillEffect then
+			S.TestKillEffect()
+			showNotify("Test kill effect")
+		end
+	end)
+	MakeButton(MFX, "Test Hit FX", 7, function()
+		if S.TestHitEffect then
+			S.TestHitEffect()
+			showNotify("Test hit effect")
+		end
+	end)
+	MakeHint(MFX, "Neon = zielony neon + fade. Burst = iskry. Ascend = unosi w górę. Shock = pierścień.", 8)
 
 	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 1)
 	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })
