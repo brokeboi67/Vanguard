@@ -30,6 +30,7 @@ local Settings = {
 	TriggerKey = "V",
 	TriggerMode = "Hold",
 	TriggerDelay = 100,
+	ShowTriggerHud = true,
 	VisibleCheck = true,
 	ShowFOV = true,
 	FOV = 80,
@@ -41,6 +42,9 @@ local Settings = {
 
 	-- MOVEMENT
 	BHop = false,
+
+	-- UI runtime
+	MenuOpen = false,
 }
 
 return Settings

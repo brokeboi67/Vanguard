@@ -13,12 +13,12 @@ function Aim.Init(S, ParentGUI)
 
 	local jitterSeed = math.random() * 100
 	local lastTrigger = 0
+	local lastTogglePress = 0
 	local triggerToggled = false
 	local botList = {}
 	local botScanAt = 0
-
-	local silentRestore = nil
-	local silentPhase = 0
+	local triggerLock = nil
+	local triggerLockUntil = 0
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
 
@@ -43,10 +43,77 @@ function Aim.Init(S, ParentGUI)
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = FOVC })
 	C("UIStroke", { Color = S.V, Thickness = 1, Transparency = 0.3, Parent = FOVC })
 
+	local TriggerHud = C("TextLabel", {
+		Name = "TriggerHud",
+		Size = UDim2.new(0, 150, 0, 24),
+		Position = UDim2.new(0, 14, 0, 14),
+		BackgroundColor3 = Color3.fromRGB(12, 12, 16),
+		BackgroundTransparency = 0.25,
+		Text = "TRIGGER · OFF",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(130, 130, 140),
+		Visible = false,
+		ZIndex = 50,
+		Parent = ParentGUI,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = TriggerHud })
+	C("UIStroke", { Color = Color3.fromRGB(40, 40, 48), Thickness = 1, Parent = TriggerHud })
+
+	local function getTriggerKey()
+		if not S.TriggerKey or S.TriggerKey == "" or S.TriggerKey == "None" then
+			return nil
+		end
+		local ok, key = pcall(function()
+			return Enum.KeyCode[S.TriggerKey]
+		end)
+		if ok then
+			return key
+		end
+		return nil
+	end
+
+	local function triggerArmed()
+		if not S.Trigger then
+			return false
+		end
+		if S.TriggerMode == "Toggle" then
+			return triggerToggled
+		end
+		local key = getTriggerKey()
+		if not key then
+			return true
+		end
+		return UIS:IsKeyDown(key)
+	end
+
 	local function updFOV()
 		local d = math.max(S.FOV * 2, 4)
 		FOVC.Size = UDim2.new(0, d, 0, d)
 		FOVC.Visible = S.ShowFOV and (S.Aimbot or S.Silent or S.Trigger)
+	end
+
+	local function updTriggerHud()
+		if not S.ShowTriggerHud or not S.Trigger then
+			TriggerHud.Visible = false
+			return
+		end
+		TriggerHud.Visible = true
+		if S.TriggerMode == "Toggle" then
+			if triggerToggled then
+				TriggerHud.Text = "TRIGGER · ON"
+				TriggerHud.TextColor3 = S.V
+			else
+				TriggerHud.Text = "TRIGGER · OFF"
+				TriggerHud.TextColor3 = Color3.fromRGB(130, 130, 140)
+			end
+		elseif triggerArmed() then
+			TriggerHud.Text = "TRIGGER · HOLD"
+			TriggerHud.TextColor3 = S.V
+		else
+			TriggerHud.Text = "TRIGGER · IDLE"
+			TriggerHud.TextColor3 = Color3.fromRGB(130, 130, 140)
+		end
 	end
 
 	local function isBotModel(model)
@@ -166,55 +233,70 @@ function Aim.Init(S, ParentGUI)
 		return list
 	end
 
+	local function scoreTarget(entry)
+		local char = entry.char
+		if not char or not char.Parent then
+			return nil
+		end
+		local part = resolveHitPart(char)
+		if not part then
+			return nil
+		end
+
+		local dist2d = screenDist(part)
+		if dist2d > math.max(S.FOV, 1) then
+			return nil
+		end
+		if not isVisible(part, char) then
+			return nil
+		end
+
+		local dist3d = (Cam.CFrame.Position - part.Position).Magnitude
+		if dist3d > S.MaxDist then
+			return nil
+		end
+
+		local hum = char:FindFirstChild("Humanoid")
+		local score
+		if S.TargetMode == "Distance" then
+		 score = dist3d
+		elseif S.TargetMode == "Health" then
+			score = hum and hum.Health or math.huge
+		else
+			score = dist2d
+		end
+
+		return { part = part, char = char, plr = entry.plr, score = score }
+	end
+
 	local function getBestTarget()
 		local best, bestScore = nil, math.huge
-		local fov = math.max(S.FOV, 1)
-
 		for _, entry in ipairs(collectTargets()) do
-			local char = entry.char
-			if not char or not char.Parent then
-				continue
-			end
-			local part = resolveHitPart(char)
-			if not part then
-				continue
-			end
-
-			local dist2d = screenDist(part)
-			if dist2d > fov then
-				continue
-			end
-			if not isVisible(part, char) then
-				continue
-			end
-
-			local dist3d = (Cam.CFrame.Position - part.Position).Magnitude
-			if dist3d > S.MaxDist then
-				continue
-			end
-
-			local hum = char:FindFirstChild("Humanoid")
-			local score
-			if S.TargetMode == "Distance" then
-				score = dist3d
-			elseif S.TargetMode == "Health" then
-				score = hum and hum.Health or math.huge
-			else
-				score = dist2d
-			end
-
-			if score < bestScore then
-				bestScore = score
-				best = { part = part, char = char, plr = entry.plr }
+			local cand = scoreTarget(entry)
+			if cand and cand.score < bestScore then
+				bestScore = cand.score
+				best = cand
 			end
 		end
 		return best
 	end
 
-	local function aimCamera(targetPos)
-		if silentPhase > 0 then
-			return
+	local function getStableTriggerTarget()
+		if triggerLock and tick() < triggerLockUntil then
+			local part = triggerLock.part
+			local char = triggerLock.char
+			if part and part.Parent and char and char.Parent and isVisible(part, char) then
+				if screenDist(part) <= math.max(S.FOV, 1) then
+					return triggerLock
+				end
+			end
 		end
+		triggerLock = getBestTarget()
+		triggerLockUntil = tick() + 0.25
+		return triggerLock
+	end
+
+	local function aimCamera(targetPos)
 		local goal = CFrame.new(Cam.CFrame.Position, targetPos)
 		local alpha = math.clamp((1 - S.Smooth) * 0.22, 0.012, 0.45)
 		if S.AimCurve then
@@ -222,74 +304,6 @@ function Aim.Init(S, ParentGUI)
 			alpha = math.clamp(alpha * (1 + j * S.Smooth), 0.008, 0.5)
 		end
 		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
-	end
-
-	local function getTriggerKey()
-		if not S.TriggerKey or S.TriggerKey == "" or S.TriggerKey == "None" then
-			return nil
-		end
-		local ok, key = pcall(function()
-			return Enum.KeyCode[S.TriggerKey]
-		end)
-		if ok then
-			return key
-		end
-		return nil
-	end
-
-	local function triggerArmed()
-		if not S.Trigger then
-			return false
-		end
-		if S.TriggerMode == "Toggle" then
-			return triggerToggled
-		end
-		local key = getTriggerKey()
-		if not key then
-			return true
-		end
-		return UIS:IsKeyDown(key)
-	end
-
-	local function isHostileModel(model)
-		if not model then
-			return false
-		end
-		local hum = model:FindFirstChild("Humanoid")
-		if not hum or hum.Health <= 0 then
-			return false
-		end
-		local plr = Players:GetPlayerFromCharacter(model)
-		if plr then
-			if plr == LP then
-				return false
-			end
-			if S.Team and plr.Team and LP.Team and plr.Team == LP.Team then
-				return false
-			end
-			return true
-		end
-		return S.AimBots and isBotModel(model)
-	end
-
-	local function rayHostile()
-		local mpos = UIS:GetMouseLocation()
-		local ray = Cam:ViewportPointToRay(mpos.X, mpos.Y)
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
-		if not hit then
-			return nil
-		end
-		local model = hit.Instance:FindFirstAncestorOfClass("Model")
-		if not isHostileModel(model) then
-			return nil
-		end
-		if S.VisibleCheck and not isVisible(hit.Instance, model) then
-			return nil
-		end
-		return model
 	end
 
 	local function fireClick()
@@ -300,12 +314,58 @@ function Aim.Init(S, ParentGUI)
 		end)
 	end
 
-	UIS.InputBegan:Connect(function(input, processed)
-		local key = getTriggerKey()
-		if S.TriggerMode == "Toggle" and key and input.KeyCode == key and not processed then
-			triggerToggled = not triggerToggled
+	local function shootAt(targetPos)
+		if S.Silent then
+			local saved = Cam.CFrame
+			Cam.CFrame = CFrame.new(saved.Position, targetPos)
+			RS.RenderStepped:Wait()
+			fireClick()
+			RS.RenderStepped:Wait()
+			Cam.CFrame = saved
+		else
+			fireClick()
+		end
+	end
+
+	local function tryTriggerShot()
+		if S.MenuOpen then
+			return
+		end
+		if not triggerArmed() then
+			return
+		end
+		local delaySec = math.max(S.TriggerDelay or 1, 1) / 1000
+		if tick() - lastTrigger < delaySec then
+			return
 		end
 
+		local tgt = getStableTriggerTarget()
+		if not tgt or not tgt.part then
+			return
+		end
+
+		lastTrigger = tick()
+		shootAt(tgt.part.Position)
+	end
+
+	UIS.InputBegan:Connect(function(input, processed)
+		if S.MenuOpen then
+			return
+		end
+
+		local key = getTriggerKey()
+		if S.Trigger and S.TriggerMode == "Toggle" and key and input.KeyCode == key then
+			if tick() - lastTogglePress < 0.2 then
+				return
+			end
+			lastTogglePress = tick()
+			triggerToggled = not triggerToggled
+			return
+		end
+
+		if processed then
+			return
+		end
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
 			return
 		end
@@ -314,32 +374,25 @@ function Aim.Init(S, ParentGUI)
 		end
 
 		local tgt = getBestTarget()
-		if not tgt then
-			return
+		if tgt then
+			shootAt(tgt.part.Position)
 		end
-
-		silentRestore = Cam.CFrame
-		Cam.CFrame = CFrame.new(silentRestore.Position, tgt.part.Position)
-		silentPhase = 1
 	end)
 
 	RS.RenderStepped:Connect(function()
 		updFOV()
+		updTriggerHud()
 
-		if silentPhase == 1 then
-			silentPhase = 2
-		elseif silentPhase == 2 and silentRestore then
-			Cam.CFrame = silentRestore
-			silentRestore = nil
-			silentPhase = 0
+		if not S.Trigger then
+			triggerToggled = false
+			triggerLock = nil
+		end
+
+		if S.MenuOpen then
+			return
 		end
 
 		if S.Aimbot and not S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-			local tgt = getBestTarget()
-			if tgt then
-				aimCamera(tgt.part.Position)
-			end
-		elseif S.Aimbot and S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) and silentPhase == 0 then
 			local tgt = getBestTarget()
 			if tgt then
 				aimCamera(tgt.part.Position)
@@ -348,17 +401,7 @@ function Aim.Init(S, ParentGUI)
 	end)
 
 	RS.Heartbeat:Connect(function()
-		if not triggerArmed() then
-			return
-		end
-		local delaySec = math.max(S.TriggerDelay or 0, 1) / 1000
-		if tick() - lastTrigger < delaySec then
-			return
-		end
-		if rayHostile() then
-			lastTrigger = tick()
-			fireClick()
-		end
+		tryTriggerShot()
 	end)
 end
 

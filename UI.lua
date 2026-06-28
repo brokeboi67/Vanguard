@@ -509,7 +509,7 @@ function UI.Init(S, ParentGUI)
 		local showBox = S.Box
 		M_Box.Visible = showBox or S.Name or S.DistView or S.Health or S.HealthText or S.Weapon or S.Trace or S.Skel or S.Chams
 		M_Cham.Visible = S.Chams
-		if S.Chams and S.ChamsRainbow then
+		if S.Chams and S.ChamsRainbow and not S.LoS then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		else
 			M_Cham.BackgroundColor3 = ACC
@@ -534,7 +534,7 @@ function UI.Init(S, ParentGUI)
 		UpdPrevCorner(M_Box.AbsoluteSize.X, M_Box.AbsoluteSize.Y)
 	end)
 	RS.RenderStepped:Connect(function()
-		if S.Chams and S.ChamsRainbow and M_Cham.Visible then
+		if S.Chams and S.ChamsRainbow and not S.LoS and M_Cham.Visible then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		end
 	end)
@@ -589,6 +589,9 @@ function UI.Init(S, ParentGUI)
 	local tabBusy = false
 	local savedMouseBehavior = nil
 	local savedMouseIcon = nil
+	local savedCameraMode = nil
+	local mouseUnlockConn = nil
+	local GuiService = game:GetService("GuiService")
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -864,6 +867,15 @@ function UI.Init(S, ParentGUI)
 		Row.MouseButton1Click:Connect(function()
 			S[key] = not S[key]
 			local enabled = S[key]
+
+			if key == "LoS" and enabled then
+				S.ChamsRainbow = false
+			end
+			if key == "ChamsRainbow" and enabled and S.LoS then
+				S[key] = false
+				enabled = false
+			end
+
 			TweenPlay(SwitchBg, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				BackgroundColor3 = enabled and ACC or Color3.fromRGB(36, 36, 44),
 			})
@@ -1175,31 +1187,32 @@ function UI.Init(S, ParentGUI)
 	}, 6)
 	MakeBind(T3, "Trigger Key", "TriggerKey", 7)
 	MakeSlider(T3, "Trigger Delay", "TriggerDelay", 1, 500, 8, { suffix = "ms", step = 1 })
-	MakeHint(T3, "Hold = działa gdy trzymasz klawisz. Toggle = włącz/wyłącz klawiszem.", 9)
-	MakeSection(T3, "TARGETING", 10)
-	MakeTog(T3, "Visible Check", "VisibleCheck", 11)
-	MakeTog(T3, "Target Bots", "AimBots", 12)
+	MakeTog(T3, "Trigger Status HUD", "ShowTriggerHud", 9)
+	MakeHint(T3, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem, potem strzela w FOV.", 10)
+	MakeSection(T3, "TARGETING", 11)
+	MakeTog(T3, "Visible Check", "VisibleCheck", 12)
+	MakeTog(T3, "Target Bots", "AimBots", 13)
 	MakeChoice(T3, "Target Priority", "TargetMode", {
 		{ label = "FOV", value = "FOV" },
 		{ label = "Dist", value = "Distance" },
 		{ label = "HP", value = "Health" },
-	}, 13)
+	}, 14)
 	MakeChoice(T3, "Hit Part", "HitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 14)
-	MakeSection(T3, "FOV & SMOOTH", 15)
-	MakeTog(T3, "Show FOV Circle", "ShowFOV", 16)
-	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 17, { suffix = "px", step = 5 })
-	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 18, {
+	}, 15)
+	MakeSection(T3, "FOV & SMOOTH", 16)
+	MakeTog(T3, "Show FOV Circle", "ShowFOV", 17)
+	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 18, { suffix = "px", step = 5 })
+	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 19, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 19)
-	MakeHint(T3, "Spowalnia ruch celownika i dodaje lekki losowy szum — wygląda bardziej jak ręka, mniej jak snap.", 20)
+	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 20)
+	MakeHint(T3, "Smoothing działa tylko z Aimbot (RMB). Silent = flick przy strzale, bez trackingu.", 21)
 
 	MakeSection(T2, "MOVEMENT", 1)
 	MakeTog(T2, "Bunny Hop", "BHop", 2)
@@ -1217,6 +1230,7 @@ function UI.Init(S, ParentGUI)
 			return
 		end
 		menuOpen = open
+		S.MenuOpen = open
 
 		CancelTweens(menuTweens)
 		MenuRoot.Visible = true
@@ -1228,10 +1242,32 @@ function UI.Init(S, ParentGUI)
 		if open then
 			savedMouseBehavior = UIS.MouseBehavior
 			savedMouseIcon = UIS.MouseIconEnabled
+			savedCameraMode = LP.CameraMode
+
+			pcall(function()
+				GuiService:SetMenuIsOpen(true)
+			end)
 			UIS.MouseBehavior = Enum.MouseBehavior.Default
 			UIS.MouseIconEnabled = true
 			pcall(function()
 				LP.MouseIconEnabled = true
+			end)
+
+			if mouseUnlockConn then
+				mouseUnlockConn:Disconnect()
+			end
+			mouseUnlockConn = RS.RenderStepped:Connect(function()
+				if not menuOpen then
+					return
+				end
+				pcall(function()
+					GuiService:SetMenuIsOpen(true)
+				end)
+				UIS.MouseBehavior = Enum.MouseBehavior.Default
+				UIS.MouseIconEnabled = true
+				pcall(function()
+					LP.MouseIconEnabled = true
+				end)
 			end)
 
 			MenuScale.Scale = 0.985
@@ -1239,8 +1275,19 @@ function UI.Init(S, ParentGUI)
 			table.insert(menuTweens, TweenPlay(MenuRoot, showInfo, { GroupTransparency = 0 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, showInfo, { Scale = 1 }))
 		else
+			if mouseUnlockConn then
+				mouseUnlockConn:Disconnect()
+				mouseUnlockConn = nil
+			end
+
+			pcall(function()
+				GuiService:SetMenuIsOpen(false)
+			end)
+
 			if savedMouseBehavior then
 				UIS.MouseBehavior = savedMouseBehavior
+			else
+				UIS.MouseBehavior = Enum.MouseBehavior.Default
 			end
 			if savedMouseIcon ~= nil then
 				UIS.MouseIconEnabled = savedMouseIcon
@@ -1248,6 +1295,11 @@ function UI.Init(S, ParentGUI)
 			pcall(function()
 				LP.MouseIconEnabled = savedMouseIcon ~= false
 			end)
+			if savedCameraMode then
+				pcall(function()
+					LP.CameraMode = savedCameraMode
+				end)
+			end
 
 			table.insert(menuTweens, TweenPlay(MenuRoot, hideInfo, { GroupTransparency = 1 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, hideInfo, { Scale = 0.985 }))
