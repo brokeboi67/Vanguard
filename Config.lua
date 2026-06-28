@@ -11,6 +11,8 @@ local CONFIG_DIR = ROOT .. "/configs"
 local RUNTIME_KEYS = {
 	MenuOpen = true,
 	Version = true,
+	LastShotAt = true,
+	LastShotHum = true,
 }
 
 local function canPersist()

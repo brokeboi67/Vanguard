@@ -929,30 +929,78 @@ function UI.Init(S, ParentGUI, ConfigModule)
 			or behavior == Enum.MouseBehavior.LockCurrentPosition
 	end
 
+	local function isFreeCursorState()
+		local LP = game:GetService("Players").LocalPlayer
+		if UIS.MouseBehavior == Enum.MouseBehavior.Default then
+			return true
+		end
+		if UIS.MouseIconEnabled then
+			return true
+		end
+		if LP.MouseIconEnabled then
+			return true
+		end
+		return false
+	end
+
 	local function captureMouseState()
 		local LP = game:GetService("Players").LocalPlayer
 		savedMouse.behavior = UIS.MouseBehavior
 		savedMouse.icon = UIS.MouseIconEnabled
 		savedMouse.lpIcon = LP.MouseIconEnabled
 		savedMouse.cameraMode = LP.CameraMode
+		savedMouse.wasFree = isFreeCursorState()
 	end
 
-	local function restoreMouseState()
+	local function forceMenuCursor()
+		local LP = game:GetService("Players").LocalPlayer
+		pcall(function()
+			GuiService:SetMenuIsOpen(true)
+		end)
+		UIS.MouseBehavior = Enum.MouseBehavior.Default
+		UIS.MouseIconEnabled = true
+		pcall(function()
+			LP.MouseIconEnabled = true
+		end)
+		pcall(function()
+			LP.DevEnableMouseLock = false
+		end)
+		pcall(function()
+			GuiService.SelectedObject = nil
+		end)
+	end
+
+	local function applyFreeCursor()
 		local LP = game:GetService("Players").LocalPlayer
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
 		end)
-		if savedMouse.behavior ~= nil then
-			UIS.MouseBehavior = savedMouse.behavior
+		UIS.MouseBehavior = Enum.MouseBehavior.Default
+		UIS.MouseIconEnabled = true
+		pcall(function()
+			LP.MouseIconEnabled = true
+		end)
+	end
+
+	local function applyLockedCursor()
+		local LP = game:GetService("Players").LocalPlayer
+		pcall(function()
+			GuiService:SetMenuIsOpen(false)
+		end)
+		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UIS.MouseIconEnabled = false
+		pcall(function()
+			LP.MouseIconEnabled = false
+		end)
+	end
+
+	local function restoreMouseState()
+		if savedMouse.wasFree then
+			applyFreeCursor()
+		else
+			applyLockedCursor()
 		end
-		if savedMouse.icon ~= nil then
-			UIS.MouseIconEnabled = savedMouse.icon
-		end
-		if savedMouse.lpIcon ~= nil then
-			pcall(function()
-				LP.MouseIconEnabled = savedMouse.lpIcon
-			end)
-		end
+		local LP = game:GetService("Players").LocalPlayer
 		if savedMouse.cameraMode ~= nil then
 			pcall(function()
 				LP.CameraMode = savedMouse.cameraMode
@@ -990,6 +1038,7 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	end
 
 	local mouseUnlockConn = nil
+	local mouseUnlockHB = nil
 	local mouseRestoreConn = nil
 
 	local function MakeTog(page, label, key, order)
@@ -1446,6 +1495,51 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	MakeTog(T2, "Hide Teammates", "Team", 6)
 	MakeTog(T2, "Line of Sight", "LoS", 7)
 
+	MakeSection(T2, "HUD", 8)
+	MakeTog(T2, "Crosshair Dot", "Crosshair", 9)
+	MakeSlider(T2, "Crosshair Size", "CrosshairSize", 2, 12, 10, { suffix = "px", step = 1 })
+	MakeTog(T2, "Spectator List", "Spectators", 11)
+	MakeHint(T2, "Spectator = heurystyka (brak postaci / martwy / atrybut Spectating). Nie każda gra to wspiera.", 12)
+	MakeTog(T2, "Hitmarker", "Hitmarker", 13)
+	MakeTog(T2, "Damage Log", "DamageLog", 14)
+	MakeHint(T2, "Hitmarker/log działają gdy gra pokazuje zmiany HP na kliencie — uniwersalnie, nie zawsze.", 15)
+
+	local SettingsAutoloadLbl
+	MakeSection(T2, "AUTOLOAD", 16)
+	SettingsAutoloadLbl = C("TextLabel", {
+		Size = UDim2.new(1, -8, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Text = "Autoload: brak",
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(100, 100, 110),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+		LayoutOrder = 17,
+		ZIndex = 5,
+		Parent = T2,
+	})
+	MakeButton(T2, "Załaduj autoload teraz", 18, function()
+		if not ConfigModule then
+			showNotify("Brak modułu config")
+			return
+		end
+		local ok, msg = ConfigModule.Autoload(S)
+		if ok then
+			refreshAllControls()
+			showNotify("Autoload: " .. tostring(msg))
+			setFooterStatus("Autoload · " .. tostring(msg))
+			refreshConfigList()
+			if SettingsAutoloadLbl then
+				SettingsAutoloadLbl.Text = "Autoload: " .. tostring(msg)
+			end
+		else
+			showNotify("Brak autoload lub błąd wczytywania")
+		end
+	end)
+	MakeHint(T2, "Autoload wczytuje się automatycznie przy każdym uruchomieniu skryptu (nowa gra = reinject). Ustaw w zakładce Config.", 19)
+
 	-- // Config tab
 	local ConfigNameBox
 	local ConfigListHost
@@ -1473,6 +1567,13 @@ function UI.Init(S, ParentGUI, ConfigModule)
 				AutoloadLbl.Text = "Autoload: " .. autoload
 			else
 				AutoloadLbl.Text = "Autoload: brak"
+			end
+		end
+		if SettingsAutoloadLbl then
+			if autoload ~= "" then
+				SettingsAutoloadLbl.Text = "Autoload: " .. autoload .. " (ładuje się przy starcie skryptu)"
+			else
+				SettingsAutoloadLbl.Text = "Autoload: brak — ustaw w zakładce Config"
 			end
 		end
 		if #list == 0 then
@@ -1639,7 +1740,7 @@ function UI.Init(S, ParentGUI, ConfigModule)
 		PaddingRight = UDim.new(0, 10),
 		Parent = ConfigListHost,
 	})
-	MakeHint(T4, "Pliki w folderze Vanguard/configs. Autoload wczytuje się przy starcie skryptu.", 12)
+	MakeHint(T4, "Pliki w folderze Vanguard/configs. Autoload ładuje się przy każdym uruchomieniu skryptu (reinject w nowej grze).", 12)
 	refreshConfigList()
 
 	ApplyLayout(true, false)
@@ -1666,31 +1767,36 @@ function UI.Init(S, ParentGUI, ConfigModule)
 			end
 
 			captureMouseState()
-
-			pcall(function()
-				GuiService:SetMenuIsOpen(true)
-			end)
-			UIS.MouseBehavior = Enum.MouseBehavior.Default
-			UIS.MouseIconEnabled = true
-			pcall(function()
-				LP.MouseIconEnabled = true
-			end)
+			forceMenuCursor()
 
 			if mouseUnlockConn then
 				mouseUnlockConn:Disconnect()
 			end
+			if mouseUnlockHB then
+				mouseUnlockHB:Disconnect()
+			end
+			local unlockBeat = false
 			mouseUnlockConn = RS.RenderStepped:Connect(function()
 				if not menuOpen then
 					return
 				end
-				pcall(function()
-					GuiService:SetMenuIsOpen(true)
-				end)
-				UIS.MouseBehavior = Enum.MouseBehavior.Default
-				UIS.MouseIconEnabled = true
-				pcall(function()
-					LP.MouseIconEnabled = true
-				end)
+				forceMenuCursor()
+			end)
+			mouseUnlockHB = RS.Heartbeat:Connect(function()
+				if not menuOpen then
+					return
+				end
+				unlockBeat = not unlockBeat
+				if unlockBeat then
+					forceMenuCursor()
+				end
+			end)
+
+			task.defer(forceMenuCursor)
+			task.delay(0.05, function()
+				if menuOpen then
+					forceMenuCursor()
+				end
 			end)
 
 			MenuScale.Scale = 0.985
@@ -1704,6 +1810,10 @@ function UI.Init(S, ParentGUI, ConfigModule)
 				mouseUnlockConn:Disconnect()
 				mouseUnlockConn = nil
 			end
+			if mouseUnlockHB then
+				mouseUnlockHB:Disconnect()
+				mouseUnlockHB = nil
+			end
 
 			restoreMouseState()
 
@@ -1711,20 +1821,25 @@ function UI.Init(S, ParentGUI, ConfigModule)
 			if mouseRestoreConn then
 				mouseRestoreConn:Disconnect()
 			end
-			local needReassert = isLockedMouseBehavior(savedMouse.behavior)
+			local framesTarget = savedMouse.wasFree and 10 or 14
 			mouseRestoreConn = RS.RenderStepped:Connect(function()
 				if menuOpen then
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
 					return
 				end
-				if needReassert then
-					restoreMouseState()
-				end
+				restoreMouseState()
 				restoreFrames = restoreFrames + 1
-				if restoreFrames >= (needReassert and 6 or 1) then
+				if restoreFrames >= framesTarget then
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
+				end
+			end)
+
+			task.defer(restoreMouseState)
+			task.delay(0.05, function()
+				if not menuOpen then
+					restoreMouseState()
 				end
 			end)
 
@@ -1796,11 +1911,11 @@ function UI.Init(S, ParentGUI, ConfigModule)
 		Loader:Destroy()
 
 		if ConfigModule then
-			local ok, name = ConfigModule.Autoload(S)
-			if ok then
+			refreshConfigList()
+			local autoload = ConfigModule.GetAutoload()
+			if autoload ~= "" then
 				refreshAllControls()
-				setFooterStatus("Autoload · " .. tostring(name))
-				showNotify("Autoload: " .. tostring(name))
+				setFooterStatus("Autoload · " .. autoload)
 			end
 		end
 

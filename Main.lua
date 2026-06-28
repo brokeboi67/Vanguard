@@ -5,10 +5,15 @@ local function Get(file)
 end
 
 local Settings = Get("Settings.lua")
+local Config   = Get("Config.lua")
+pcall(function()
+	Config.Autoload(Settings)
+end)
+
 local ESP      = Get("ESP.lua")
 local Aim      = Get("Aim.lua")
 local Movement = Get("Movement.lua")
-local Config   = Get("Config.lua")
+local Features = Get("Features.lua")
 local UI       = Get("UI.lua")
 
 -- Głowne GUI (podobnie jak w poprzednim loaderze)
@@ -25,6 +30,7 @@ GUI.Parent = CG
 ESP.Init(Settings, GUI)
 Aim.Init(Settings, GUI)
 Movement.Init(Settings)
+Features.Init(Settings, GUI)
 UI.Init(Settings, GUI, Config)
 
 print("VANGUARD: Loaded from GitHub!")

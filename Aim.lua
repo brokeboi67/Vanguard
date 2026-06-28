@@ -346,6 +346,10 @@ function Aim.Init(S, ParentGUI)
 		end
 
 		lastTrigger = tick()
+		S.LastShotAt = tick()
+		if tgt.char then
+			S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
+		end
 		shootAt(tgt.part.Position)
 	end
 
@@ -376,6 +380,10 @@ function Aim.Init(S, ParentGUI)
 
 		local tgt = getBestTarget()
 		if tgt then
+			S.LastShotAt = tick()
+			if tgt.char then
+				S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
+			end
 			shootAt(tgt.part.Position)
 		end
 	end)

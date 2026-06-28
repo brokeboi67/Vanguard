@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.1.0",
+	Version = "2.2.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -44,8 +44,17 @@ local Settings = {
 	-- MOVEMENT
 	BHop = false,
 
+	-- HUD
+	Crosshair = false,
+	CrosshairSize = 5,
+	Spectators = false,
+	Hitmarker = false,
+	DamageLog = false,
+
 	-- UI runtime
 	MenuOpen = false,
+	LastShotAt = 0,
+	LastShotHum = nil,
 }
 
 return Settings
