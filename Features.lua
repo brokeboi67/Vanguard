@@ -366,7 +366,7 @@ function Features.Init(S, _ParentGUI)
 		DmgPanel.Visible = on
 	end
 
-	local function addDmgLog(name, dmg)
+	local function addDmgLog(name, dmg, incoming)
 		if not S.DamageLog then
 			return
 		end
@@ -374,23 +374,32 @@ function Features.Init(S, _ParentGUI)
 		local isHead = dmg >= 50
 		local row = tagZ(C("Frame", {
 			Size = UDim2.new(1, 0, 0, 34),
-			BackgroundColor3 = ROW_BG,
+			BackgroundColor3 = incoming and Color3.fromRGB(44, 28, 28) or ROW_BG,
 			BackgroundTransparency = 0,
 			BorderSizePixel = 0,
 			LayoutOrder = 1,
 			Parent = DmgList,
 		}), Z.dmgRow)
 		C("UICorner", { CornerRadius = UDim.new(0, 7), Parent = row })
-		C("UIStroke", { Color = Color3.fromRGB(60, 60, 72), Thickness = 1, Parent = row })
+		C("UIStroke", {
+			Color = incoming and Color3.fromRGB(120, 60, 60) or Color3.fromRGB(60, 60, 72),
+			Thickness = 1,
+			Parent = row,
+		})
+
+		local dmgText = incoming and string.format("+%.0f", dmg) or string.format("-%.0f", dmg)
+		local nameText = incoming and ("from " .. name) or name
+		local dmgColor = incoming and Color3.fromRGB(255, 130, 130)
+			or (isHead and Color3.fromRGB(255, 120, 120) or ACC)
 
 		tagZ(C("TextLabel", {
 			Size = UDim2.new(0, 58, 1, 0),
 			Position = UDim2.new(0, 8, 0, 0),
 			BackgroundTransparency = 1,
-			Text = string.format("-%.0f", dmg),
+			Text = dmgText,
 			Font = Enum.Font.GothamBlack,
 			TextSize = 15,
-			TextColor3 = isHead and Color3.fromRGB(255, 120, 120) or ACC,
+			TextColor3 = dmgColor,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Parent = row,
 		}), Z.dmgRow + 1)
@@ -398,10 +407,10 @@ function Features.Init(S, _ParentGUI)
 			Size = UDim2.new(1, -74, 1, 0),
 			Position = UDim2.new(0, 66, 0, 0),
 			BackgroundTransparency = 1,
-			Text = name,
+			Text = nameText,
 			Font = Enum.Font.GothamSemibold,
 			TextSize = 12,
-			TextColor3 = Color3.fromRGB(255, 255, 255),
+			TextColor3 = incoming and Color3.fromRGB(255, 210, 210) or Color3.fromRGB(255, 255, 255),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = row,
@@ -441,6 +450,68 @@ function Features.Init(S, _ParentGUI)
 	end
 
 	local humWatch = {}
+	local localHumConn = nil
+
+	local function findLikelyAttacker()
+		local myChar = LP.Character
+		local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		if not myHRP then
+			return "Unknown"
+		end
+		local bestName, bestScore = nil, math.huge
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= LP and plr.Character then
+				local char = plr.Character
+				local head = char:FindFirstChild("Head")
+				local hrp = char:FindFirstChild("HumanoidRootPart")
+				local ref = head or hrp
+				if ref then
+					local toMe = myHRP.Position - ref.Position
+					local dist = toMe.Magnitude
+					if dist > 1 and dist < bestScore then
+						local look = ref.CFrame.LookVector
+						if look:Dot(toMe.Unit) > 0.55 then
+							bestScore = dist
+							bestName = plr.Name
+						end
+					end
+				end
+			end
+		end
+		return bestName or "Unknown"
+	end
+
+	local function bindLocalHum()
+		if localHumConn then
+			localHumConn:Disconnect()
+			localHumConn = nil
+		end
+		local char = LP.Character
+		if not char then
+			return
+		end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not hum then
+			return
+		end
+		local last = hum.Health
+		localHumConn = hum.HealthChanged:Connect(function(hp)
+			if not S.DamageLog then
+				last = hp
+				return
+			end
+			if hp < last then
+				local dmg = last - hp
+				addDmgLog(findLikelyAttacker(), dmg, true)
+			end
+			last = hp
+		end)
+	end
+
+	LP.CharacterAdded:Connect(function()
+		task.defer(bindLocalHum)
+	end)
+	bindLocalHum()
 
 	local function bindHum(hum, plrName)
 		if humWatch[hum] then
@@ -462,7 +533,7 @@ function Features.Init(S, _ParentGUI)
 					flashHitmarker(dmg)
 				end
 				if S.DamageLog then
-					addDmgLog(plrName or "Target", dmg)
+					addDmgLog(plrName or "Target", dmg, false)
 				end
 			end
 			last = hp
