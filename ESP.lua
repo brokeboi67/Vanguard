@@ -2,7 +2,7 @@
 
 local ESP = {}
 
-function ESP.Init(S, ParentGUI)
+function ESP.Init(S, ParentGUI, TF)
 	local P = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local LP = P.LocalPlayer
@@ -117,7 +117,14 @@ function ESP.Init(S, ParentGUI)
 	end
 
 	local function isTeammate(plr)
-		return plr and plr.Team and LP.Team and plr.Team == LP.Team
+		return TF and TF.isTeammate(LP, plr)
+	end
+
+	local function shouldHidePlayer(plr, isBot)
+		if TF then
+			return TF.shouldHideESP(S, LP, plr, isBot)
+		end
+		return not isBot and S.Team and isTeammate(plr)
 	end
 
 	local losParams = RaycastParams.new()
@@ -259,7 +266,7 @@ function ESP.Init(S, ParentGUI)
 			return
 		end
 
-		if not isBot and S.Team and isTeammate(plr) then
+		if shouldHidePlayer(plr, isBot) then
 			if Cache[key] then
 				hideAll(Cache[key])
 			end

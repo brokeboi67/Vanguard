@@ -2,7 +2,7 @@
 
 local Aim = {}
 
-function Aim.Init(S, ParentGUI)
+function Aim.Init(S, ParentGUI, TF)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
@@ -262,10 +262,6 @@ function Aim.Init(S, ParentGUI)
 		end
 	end
 
-	local function isTeammate(plr)
-		return plr and plr.Team and LP.Team and plr.Team == LP.Team
-	end
-
 	local function isEnemyPlayer(plr)
 		if plr == LP then
 			return false
@@ -274,7 +270,10 @@ function Aim.Init(S, ParentGUI)
 		if not isAliveChar(char) then
 			return false
 		end
-		if S.ExcludeTeam and isTeammate(plr) then
+		if TF and TF.shouldExclude(S, LP, plr) then
+			return false
+		end
+		if not TF and S.ExcludeTeam and plr.Team and LP.Team and plr.Team == LP.Team then
 			return false
 		end
 		return true

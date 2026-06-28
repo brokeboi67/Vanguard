@@ -11,6 +11,7 @@ pcall(function()
 end)
 
 local ESP      = Get("ESP.lua")
+local TeamFriends = Get("TeamFriends.lua")
 local Aim      = Get("Aim.lua")
 local Rage     = Get("Rage.lua")
 local Movement = Get("Movement.lua")
@@ -32,11 +33,11 @@ GUI.DisplayOrder = 10
 GUI.Parent = CG
 
 -- Start
-ESP.Init(Settings, GUI)
-Aim.Init(Settings, GUI)
-Rage.Init(Settings, GUI)
+ESP.Init(Settings, GUI, TeamFriends)
+Aim.Init(Settings, GUI, TeamFriends)
+Rage.Init(Settings, GUI, TeamFriends)
 Movement.Init(Settings)
 Features.Init(Settings, GUI)
-UI.Init(Settings, GUI, Config)
+UI.Init(Settings, GUI, Config, TeamFriends)
 
 print("VANGUARD: Loaded from GitHub!")

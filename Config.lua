@@ -94,7 +94,9 @@ function Config.Apply(S, data)
 			-- skip runtime keys
 		elseif typeof(v) == "table" and v.__color then
 			S[k] = Color3.new(v.r, v.g, v.b)
-		elseif S[k] ~= nil and typeof(v) ~= "table" then
+		elseif typeof(v) == "table" then
+			S[k] = v
+		elseif S[k] ~= nil then
 			S[k] = v
 		end
 	end
@@ -121,6 +123,9 @@ function Config.EnforceRules(S)
 	end
 	if S.RageHudMinimal == nil then
 		S.RageHudMinimal = true
+	end
+	if typeof(S.FriendIds) ~= "table" then
+		S.FriendIds = {}
 	end
 	if S.ChamsRainbow then
 		S.LoS = false

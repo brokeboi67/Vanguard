@@ -2,7 +2,7 @@
 
 local Rage = {}
 
-function Rage.Init(S, ParentGUI)
+function Rage.Init(S, ParentGUI, TF)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
@@ -28,10 +28,6 @@ function Rage.Init(S, ParentGUI)
 			i[k] = v
 		end
 		return i
-	end
-
-	local function isTeammate(plr)
-		return plr and plr.Team and LP.Team and plr.Team == LP.Team
 	end
 
 	local function isPartVisibleFromCamera(part, char)
@@ -234,7 +230,10 @@ function Rage.Init(S, ParentGUI)
 		if not isAliveChar(char) then
 			return false
 		end
-		if S.ExcludeTeam and isTeammate(plr) then
+		if TF and TF.shouldExclude(S, LP, plr) then
+			return false
+		end
+		if not TF and S.ExcludeTeam and plr.Team and LP.Team and plr.Team == LP.Team then
 			return false
 		end
 		return true

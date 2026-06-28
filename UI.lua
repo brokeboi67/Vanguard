@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule)
+function UI.Init(S, ParentGUI, ConfigModule, TF)
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -14,16 +14,17 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	)
 
 	local Cam = workspace.CurrentCamera
-	local W_FULL, W_COMPACT, H = 720, 520, 500
+	local W_FULL, W_COMPACT, H = 800, 600, 540
+	local SIDE_W = 136
 	local RS = game:GetService("RunService")
 
 	ParentGUI.DisplayOrder = 100
 
 	local function refreshLayout()
 		local vp = Cam.ViewportSize
-		W_FULL = math.clamp(math.floor(vp.X * 0.54), 600, 780)
-		W_COMPACT = math.clamp(math.floor(vp.X * 0.42), 500, 580)
-		H = math.clamp(math.floor(vp.Y * 0.64), 460, 580)
+		W_FULL = math.clamp(math.floor(vp.X * 0.58), 660, 900)
+		W_COMPACT = math.clamp(math.floor(vp.X * 0.48), 540, 660)
+		H = math.clamp(math.floor(vp.Y * 0.68), 500, 640)
 	end
 	refreshLayout()
 
@@ -232,7 +233,7 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	})
 
 	local Side = C("Frame", {
-		Size = UDim2.new(0, 150, 1, -48),
+		Size = UDim2.new(0, SIDE_W, 1, -48),
 		Position = UDim2.new(0, 0, 0, 48),
 		BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 		BorderSizePixel = 0,
@@ -272,8 +273,8 @@ function UI.Init(S, ParentGUI, ConfigModule)
 
 	local Content = C("Frame", {
 		Name = "Content",
-		Size = UDim2.new(0, 300, 1, -82),
-		Position = UDim2.new(0, 162, 0, 58),
+		Size = UDim2.new(0, 360, 1, -82),
+		Position = UDim2.new(0, SIDE_W + 10, 0, 58),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
 		ZIndex = 3,
@@ -615,7 +616,8 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	local function ApplyLayout(showPreview, animate, keepPosition)
 		refreshLayout()
 		local targetW = showPreview and W_FULL or W_COMPACT
-		local targetContentW = showPreview and math.floor(W_FULL * 0.42) or (W_COMPACT - 172)
+		local previewW = showPreview and 212 or 0
+		local targetContentW = targetW - SIDE_W - previewW - 28
 
 		CancelTweens(layoutTweens)
 
@@ -764,8 +766,8 @@ function UI.Init(S, ParentGUI, ConfigModule)
 			ZIndex = 4,
 			Parent = Wrap,
 		})
-		C("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = P })
-		C("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 6), Parent = P })
+		C("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = P })
+		C("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2), Parent = P })
 
 		B.MouseEnter:Connect(function()
 			if B ~= ActiveTabBtn then
@@ -787,6 +789,69 @@ function UI.Init(S, ParentGUI, ConfigModule)
 		end
 
 		return P
+	end
+
+	local function MakeCard(page, title, subtitle, order)
+		local Card = C("Frame", {
+			Size = UDim2.new(1, -2, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = Color3.fromRGB(16, 16, 20),
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = Card })
+		C("UIStroke", { Color = Color3.fromRGB(34, 34, 42), Thickness = 1, Transparency = 0.55, Parent = Card })
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 10),
+			PaddingBottom = UDim.new(0, 10),
+			PaddingLeft = UDim.new(0, 10),
+			PaddingRight = UDim.new(0, 10),
+			Parent = Card,
+		})
+		C("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Card })
+
+		C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 12),
+			BackgroundTransparency = 1,
+			Text = title,
+			Font = Enum.Font.GothamBold,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(150, 150, 162),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 1,
+			ZIndex = 6,
+			Parent = Card,
+		})
+
+		if subtitle then
+			C("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				Text = subtitle,
+				Font = Enum.Font.Gotham,
+				TextSize = 9,
+				TextColor3 = Color3.fromRGB(92, 92, 102),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextWrapped = true,
+				LayoutOrder = 2,
+				ZIndex = 6,
+				Parent = Card,
+			})
+		end
+
+		local Body = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			LayoutOrder = 3,
+			ZIndex = 6,
+			Parent = Card,
+		})
+		C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Body })
+		return Body
 	end
 
 	local function MakeSection(page, title, order)
@@ -1062,11 +1127,13 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	local mouseUnlockHB = nil
 	local mouseRestoreConn = nil
 
-	local function MakeTog(page, label, key, order)
+	local function MakeTog(page, label, key, order, opts)
+		opts = opts or {}
+		local flat = opts.flat
 		local on = S[key] == true
 		local Row = C("TextButton", {
-			Size = UDim2.new(1, 0, 0, 36),
-			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			Size = UDim2.new(1, 0, 0, flat and 32 or 36),
+			BackgroundColor3 = flat and Color3.fromRGB(20, 20, 25) or Color3.fromRGB(17, 17, 21),
 			Text = "",
 			AutoButtonColor = false,
 			BorderSizePixel = 0,
@@ -1075,7 +1142,9 @@ function UI.Init(S, ParentGUI, ConfigModule)
 			Parent = page,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
-		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+		if not flat then
+			C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+		end
 
 		local Title = C("TextLabel", {
 			Size = UDim2.new(1, -54, 1, 0),
@@ -1448,131 +1517,242 @@ function UI.Init(S, ParentGUI, ConfigModule)
 	local T2 = MakeTab("Settings", false, false, 4)
 	local T4 = MakeTab("Config", false, false, 5)
 
-	MakeSection(T1, "CORE", 1)
-	MakeTog(T1, "Master ESP", "ESP", 2)
-	MakeSection(T1, "FILTERS", 3)
-	MakeTog(T1, "Hide Teammates", "Team", 4)
-	MakeHint(T1, "Ukrywa ESP (box, chams, skeleton itd.) dla graczy z tej samej drużyny. Działa niezależnie od Team Colors / LoS.", 5)
-	MakeSection(T1, "DISTANCE", 6)
-	MakeTog(T1, "Show Distance", "DistView", 7)
-	MakeSlider(T1, "Distance Limit", "MaxDist", 50, 1500, 8)
-	MakeSection(T1, "OVERLAYS", 9)
-	MakeTog(T1, "Bounding Boxes", "Box", 10)
-	MakeChoice(T1, "Box Type", "BoxType", {
+	local VCore = MakeCard(T1, "ESP", nil, 1)
+	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
+	local VFilter = MakeCard(T1, "FILTERS", "Ukrywanie teammateów i znajomych z ESP.", 2)
+	MakeTog(VFilter, "Hide Teammates", "Team", 1, { flat = true })
+	MakeHint(VFilter, "Ctrl+Click na gracza dodaje znajomego — ukryty jak teammate (Settings).", 2)
+
+	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
+	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })
+	MakeSlider(VDist, "Distance Limit", "MaxDist", 50, 1500, 2)
+	local VOver = MakeCard(T1, "OVERLAYS", nil, 4)
+	MakeTog(VOver, "Bounding Boxes", "Box", 1, { flat = true })
+	MakeChoice(VOver, "Box Type", "BoxType", {
 		{ label = "Full", value = "Full" },
 		{ label = "Corner", value = "Corner" },
-	}, 11)
-	MakeTog(T1, "Player Names", "Name", 12)
-	MakeTog(T1, "Health Bars", "Health", 13)
-	MakeTog(T1, "Health Text", "HealthText", 14)
-	MakeTog(T1, "Weapon ESP", "Weapon", 15)
-	MakeSection(T1, "ADVANCED", 16)
-	MakeTog(T1, "Render Bots", "RenderBots", 17)
-	MakeTog(T1, "Skeleton", "Skel", 18)
-	MakeTog(T1, "Tracers", "Trace", 19)
-	MakeTog(T1, "Chams Fill", "Chams", 20)
-	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 21)
-	MakeHint(T1, "Chams Rainbow, Team Colors i Line of Sight wykluczają się — włączenie jednego wyłącza pozostałe.", 22)
+	}, 2)
+	MakeTog(VOver, "Player Names", "Name", 3, { flat = true })
+	MakeTog(VOver, "Health Bars", "Health", 4, { flat = true })
+	MakeTog(VOver, "Health Text", "HealthText", 5, { flat = true })
+	MakeTog(VOver, "Weapon ESP", "Weapon", 6, { flat = true })
 
-	MakeSection(T3, "AIMBOT", 1)
-	MakeTog(T3, "Aimbot (hold RMB)", "Aimbot", 2)
-	MakeTog(T3, "Silent Aim (flick)", "Silent", 3)
-	MakeHint(T3, "LPM w FOV: 1 klatka celowania → strzał → powrót kamery. Bez trackingu.", 4)
-	MakeHint(T3, "Aimbot i Silent wykluczają się — włączenie jednego wyłącza drugie.", 5)
-	MakeTog(T3, "Triggerbot", "Trigger", 6)
-	MakeChoice(T3, "Trigger Mode", "TriggerMode", {
+	local VAdv = MakeCard(T1, "ADVANCED", "Rainbow / Team Colors / LoS się wykluczają.", 5)
+	MakeTog(VAdv, "Render Bots", "RenderBots", 1, { flat = true })
+	MakeTog(VAdv, "Skeleton", "Skel", 2, { flat = true })
+	MakeTog(VAdv, "Tracers", "Trace", 3, { flat = true })
+	MakeTog(VAdv, "Chams Fill", "Chams", 4, { flat = true })
+	MakeTog(VAdv, "Chams Rainbow", "ChamsRainbow", 5, { flat = true })
+
+	local LAim = MakeCard(T3, "AIMBOT", "Aimbot i Silent się wykluczają.", 1)
+	MakeTog(LAim, "Aimbot (hold RMB)", "Aimbot", 1, { flat = true })
+	MakeTog(LAim, "Silent Aim (flick)", "Silent", 2, { flat = true })
+	MakeTog(LAim, "Triggerbot", "Trigger", 3, { flat = true })
+
+	local LTrig = MakeCard(T3, "TRIGGERBOT", nil, 2)
+	MakeChoice(LTrig, "Trigger Mode", "TriggerMode", {
 		{ label = "Hold", value = "Hold" },
 		{ label = "Toggle", value = "Toggle" },
-	}, 7)
-	MakeBind(T3, "Trigger Key", "TriggerKey", 8)
-	MakeSlider(T3, "Trigger Delay", "TriggerDelay", 1, 500, 9, { suffix = "ms", step = 1 })
-	MakeTog(T3, "Trigger Status HUD", "ShowTriggerHud", 10)
-	MakeTog(T3, "Minimal Trigger HUD", "TriggerHudMinimal", 11)
-	MakeHint(T3, "Włączone = mała kropka po prawej (jasna = aktywny, szara = czeka). Wyłączone = pełna etykieta tekstowa.", 12)
-	MakeHint(T3, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem, potem strzela w FOV.", 13)
-	MakeSection(T3, "TARGETING", 14)
-	MakeTog(T3, "Exclude Teammates", "ExcludeTeam", 15)
-	MakeTog(T3, "Visible Check", "VisibleCheck", 16)
-	MakeTog(T3, "Target Bots", "AimBots", 17)
-	MakeChoice(T3, "Target Priority", "TargetMode", {
+	}, 1)
+	MakeBind(LTrig, "Trigger Key", "TriggerKey", 2)
+	MakeSlider(LTrig, "Trigger Delay", "TriggerDelay", 1, 500, 3, { suffix = "ms", step = 1 })
+	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 4, { flat = true })
+	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 5, { flat = true })
+
+	local LTarget = MakeCard(T3, "TARGETING", nil, 3)
+	MakeTog(LTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })
+	MakeTog(LTarget, "Visible Check", "VisibleCheck", 2, { flat = true })
+	MakeTog(LTarget, "Target Bots", "AimBots", 3, { flat = true })
+	MakeChoice(LTarget, "Target Priority", "TargetMode", {
 		{ label = "FOV", value = "FOV" },
 		{ label = "Dist", value = "Distance" },
 		{ label = "HP", value = "Health" },
-	}, 18)
-	MakeChoice(T3, "Hit Part", "HitPart", {
+	}, 4)
+	MakeChoice(LTarget, "Hit Part", "HitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 19)
-	MakeHint(T3, "Exclude Teammates = nie celuj/strzelaj w graczy z tej samej drużyny (wymaga przypisanych Team).", 20)
-	MakeSection(T3, "FOV & SMOOTH", 21)
-	MakeTog(T3, "Show FOV Circle", "ShowFOV", 22)
-	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 23, { suffix = "px", step = 5 })
-	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 24, {
+	}, 5)
+
+	local LFov = MakeCard(T3, "FOV & SMOOTH", "Smooth tylko z Aimbot (RMB).", 4)
+	MakeTog(LFov, "Show FOV Circle", "ShowFOV", 1, { flat = true })
+	MakeSlider(LFov, "FOV Size", "FOV", 20, 300, 2, { suffix = "px", step = 5 })
+	MakeSlider(LFov, "Smoothing", "Smooth", 0.05, 0.95, 3, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 25)
-	MakeHint(T3, "Smoothing działa tylko z Aimbot (RMB). Silent nie używa smoothingu.", 26)
-	MakeHint(T3, "Master Rage (zakładka Rage) wyłącza wszystkie funkcje Legit.", 27)
+	MakeTog(LFov, "Aim Curve + Jitter", "AimCurve", 4, { flat = true })
 
-	MakeSection(TR, "MASTER", 1)
-	MakeTog(TR, "Master Rage", "MasterRage", 2)
-	MakeHint(TR, "Włączenie Master Rage wyłącza Aimbot, Silent i Triggerbot. Nie działają razem.", 3)
-	MakeSection(TR, "ANTI-AIM", 4)
-	MakeTog(TR, "Anti-Aim", "AntiAim", 5)
-	MakeTog(TR, "Spin", "AASpin", 6)
-	MakeSlider(TR, "Spin Speed", "AASpinSpeed", 1, 20, 7, { suffix = "", step = 1 })
-	MakeSlider(TR, "Yaw Offset", "AAYaw", -180, 180, 8, { suffix = "°", step = 5 })
-	MakeSlider(TR, "Pitch Offset", "AAPitch", -89, 89, 9, { suffix = "°", step = 5 })
-	MakeTog(TR, "Yaw Jitter", "AAJitter", 10)
-	MakeSlider(TR, "Jitter Range", "AAJitterRange", 5, 180, 11, { suffix = "°", step = 5 })
-	MakeHint(TR, "Anti-aim obraca postać od kamery + offsety. Spin = ciągła rotacja yaw.", 12)
-	MakeSection(TR, "RAGEBOT", 13)
-	MakeTog(TR, "Ragebot", "RageBot", 14)
-	MakeChoice(TR, "Rage Mode", "RageMode", {
+	local RMaster = MakeCard(TR, "MASTER", "Wyłącza wszystkie funkcje Legit.", 1)
+	MakeTog(RMaster, "Master Rage", "MasterRage", 1, { flat = true })
+
+	local RAA = MakeCard(TR, "ANTI-AIM", "Obrót postaci od kamery + offsety.", 2)
+	MakeTog(RAA, "Anti-Aim", "AntiAim", 1, { flat = true })
+	MakeTog(RAA, "Spin", "AASpin", 2, { flat = true })
+	MakeSlider(RAA, "Spin Speed", "AASpinSpeed", 1, 20, 3, { suffix = "", step = 1 })
+	MakeSlider(RAA, "Yaw Offset", "AAYaw", -180, 180, 4, { suffix = "°", step = 5 })
+	MakeSlider(RAA, "Pitch Offset", "AAPitch", -89, 89, 5, { suffix = "°", step = 5 })
+	MakeTog(RAA, "Yaw Jitter", "AAJitter", 6, { flat = true })
+	MakeSlider(RAA, "Jitter Range", "AAJitterRange", 5, 180, 7, { suffix = "°", step = 5 })
+
+	local RBot = MakeCard(TR, "RAGEBOT", "Bez FOV — strzela gdy hitbox widoczny z kamery.", 3)
+	MakeTog(RBot, "Ragebot", "RageBot", 1, { flat = true })
+	MakeChoice(RBot, "Rage Mode", "RageMode", {
 		{ label = "Hold", value = "Hold" },
 		{ label = "Toggle", value = "Toggle" },
-	}, 15)
-	MakeBind(TR, "Rage Key", "RageKey", 16)
-	MakeSlider(TR, "Rage Delay", "RageDelay", 1, 500, 17, { suffix = "ms", step = 1 })
-	MakeTog(TR, "Rage Status HUD", "ShowRageHud", 18)
-	MakeTog(TR, "Minimal Rage HUD", "RageHudMinimal", 19)
-	MakeHint(TR, "Ragebot skanuje bez FOV. Strzela tylko gdy wybrany hitbox jest widoczny z kamery.", 20)
-	MakeHint(TR, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem.", 21)
-	MakeSection(TR, "TARGETING", 22)
-	MakeTog(TR, "Exclude Teammates", "ExcludeTeam", 23)
-	MakeTog(TR, "Visible Check", "RageVisibleCheck", 24)
-	MakeTog(TR, "Target Bots", "RageBots", 25)
-	MakeChoice(TR, "Hit Part", "RageHitPart", {
+	}, 2)
+	MakeBind(RBot, "Rage Key", "RageKey", 3)
+	MakeSlider(RBot, "Rage Delay", "RageDelay", 1, 500, 4, { suffix = "ms", step = 1 })
+	MakeTog(RBot, "Rage Status HUD", "ShowRageHud", 5, { flat = true })
+	MakeTog(RBot, "Minimal Rage HUD", "RageHudMinimal", 6, { flat = true })
+
+	local RTarget = MakeCard(TR, "TARGETING", nil, 4)
+	MakeTog(RTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })
+	MakeTog(RTarget, "Visible Check", "RageVisibleCheck", 2, { flat = true })
+	MakeTog(RTarget, "Target Bots", "RageBots", 3, { flat = true })
+	MakeChoice(RTarget, "Hit Part", "RageHitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 26)
-	MakeSlider(TR, "Max Distance", "RageMaxDist", 50, 1500, 27, { suffix = "m", step = 25 })
+	}, 4)
+	MakeSlider(RTarget, "Max Distance", "RageMaxDist", 50, 1500, 5, { suffix = "m", step = 25 })
 
-	MakeSection(T2, "MOVEMENT", 1)
-	MakeTog(T2, "Bunny Hop", "BHop", 2)
-	MakeHint(T2, "Auto-skok tylko gdy się poruszasz (WASD). Stojąc w miejscu — nic nie robi.", 3)
-	MakeSection(T2, "FILTERS", 4)
-	MakeTog(T2, "Team Colors", "RealTeamColor", 5)
-	MakeTog(T2, "Line of Sight", "LoS", 6)
-	MakeHint(T2, "Hide Teammates jest w zakładce Visuals. Exclude Teammates — w Legit / Rage.", 7)
+	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 1)
+	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })
 
-	MakeSection(T2, "HUD", 8)
-	MakeTog(T2, "Crosshair Dot", "Crosshair", 9)
-	MakeSlider(T2, "Crosshair Size", "CrosshairSize", 2, 12, 10, { suffix = "px", step = 1 })
-	MakeTog(T2, "Spectator List", "Spectators", 11)
-	MakeHint(T2, "Spectator = heurystyka (brak postaci / martwy / atrybut Spectating). Nie każda gra to wspiera.", 12)
-	MakeTog(T2, "Hitmarker", "Hitmarker", 13)
-	MakeTog(T2, "Damage Log", "DamageLog", 14)
-	MakeHint(T2, "Pokazuje zadane (-) i otrzymane (+) obrażenia. Kto strzelił = heurystyka.", 15)
+	local FriendListHost = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 2,
+		ZIndex = 6,
+		Parent = SFriend,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = FriendListHost })
+
+	local function refreshFriendList()
+		for _, ch in ipairs(FriendListHost:GetChildren()) do
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
+				ch:Destroy()
+			end
+		end
+		local ids = S.FriendIds or {}
+		if #ids == 0 then
+			C("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundTransparency = 1,
+				Text = "Brak znajomych na liście",
+				Font = Enum.Font.Gotham,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(95, 95, 105),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = 1,
+				ZIndex = 7,
+				Parent = FriendListHost,
+			})
+			return
+		end
+		local sorted = {}
+		for _, id in ipairs(ids) do
+			table.insert(sorted, id)
+		end
+		table.sort(sorted)
+		for i, uid in ipairs(sorted) do
+			local row = C("Frame", {
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundColor3 = Color3.fromRGB(22, 22, 28),
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+				ZIndex = 7,
+				Parent = FriendListHost,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = row })
+			local nameLbl = C("TextLabel", {
+				Size = UDim2.new(1, -36, 1, 0),
+				Position = UDim2.new(0, 10, 0, 0),
+				BackgroundTransparency = 1,
+				Text = "User " .. tostring(uid),
+				Font = Enum.Font.GothamMedium,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(190, 190, 200),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				ZIndex = 8,
+				Parent = row,
+			})
+			task.spawn(function()
+				local ok, name = pcall(function()
+					return game:GetService("Players"):GetNameFromUserIdAsync(uid)
+				end)
+				if ok and nameLbl.Parent then
+					nameLbl.Text = name
+				end
+			end)
+			local rm = C("TextButton", {
+				Size = UDim2.new(0, 22, 0, 22),
+				Position = UDim2.new(1, -26, 0.5, -11),
+				BackgroundColor3 = Color3.fromRGB(40, 40, 48),
+				Text = "×",
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = Color3.fromRGB(200, 200, 210),
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				ZIndex = 8,
+				Parent = row,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 4), Parent = rm })
+			rm.MouseButton1Click:Connect(function()
+				if TF then
+					TF.removeFriend(S, uid)
+				else
+					for j, id in ipairs(S.FriendIds or {}) do
+						if id == uid then
+							table.remove(S.FriendIds, j)
+							break
+						end
+					end
+				end
+				refreshFriendList()
+				showNotify("Usunięto z listy")
+			end)
+		end
+	end
+
+	MakeButton(SFriend, "Wyczyść listę", 3, function()
+		if TF then
+			TF.clearFriends(S)
+		else
+			S.FriendIds = {}
+		end
+		refreshFriendList()
+		showNotify("Lista znajomych wyczyszczona")
+	end)
+	refreshFriendList()
+	if TF then
+		TF.Init(S, ParentGUI, ACC, refreshFriendList)
+	end
+
+	local SMov = MakeCard(T2, "MOVEMENT", nil, 2)
+	MakeTog(SMov, "Bunny Hop", "BHop", 1, { flat = true })
+
+	local SFilt = MakeCard(T2, "ESP COLORS", "Team Colors / LoS — wykluczają się.", 3)
+	MakeTog(SFilt, "Team Colors", "RealTeamColor", 1, { flat = true })
+	MakeTog(SFilt, "Line of Sight", "LoS", 2, { flat = true })
+
+	local SHud = MakeCard(T2, "HUD", nil, 4)
+	MakeTog(SHud, "Crosshair Dot", "Crosshair", 1, { flat = true })
+	MakeSlider(SHud, "Crosshair Size", "CrosshairSize", 2, 12, 2, { suffix = "px", step = 1 })
+	MakeTog(SHud, "Spectator List", "Spectators", 3, { flat = true })
+	MakeTog(SHud, "Hitmarker", "Hitmarker", 4, { flat = true })
+	MakeTog(SHud, "Damage Log", "DamageLog", 5, { flat = true })
 
 	local SettingsAutoloadLbl
-	MakeSection(T2, "AUTOLOAD", 16)
+	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 5)
+
 	SettingsAutoloadLbl = C("TextLabel", {
 		Size = UDim2.new(1, -8, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
@@ -1583,11 +1763,11 @@ function UI.Init(S, ParentGUI, ConfigModule)
 		TextColor3 = Color3.fromRGB(100, 100, 110),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextWrapped = true,
-		LayoutOrder = 17,
-		ZIndex = 5,
-		Parent = T2,
+		LayoutOrder = 1,
+		ZIndex = 6,
+		Parent = SAuto,
 	})
-	MakeButton(T2, "Załaduj autoload teraz", 18, function()
+	MakeButton(SAuto, "Załaduj autoload teraz", 2, function()
 		if not ConfigModule then
 			showNotify("Brak modułu config")
 			return
@@ -1605,7 +1785,6 @@ function UI.Init(S, ParentGUI, ConfigModule)
 			showNotify("Brak autoload lub błąd wczytywania")
 		end
 	end)
-	MakeHint(T2, "Autoload wczytuje się automatycznie przy każdym uruchomieniu skryptu (nowa gra = reinject). Ustaw w zakładce Config.", 19)
 
 	-- // Config tab
 	local ConfigNameBox
