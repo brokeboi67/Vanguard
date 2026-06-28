@@ -45,8 +45,9 @@ function Aim.Init(S, ParentGUI)
 
 	local TriggerHud = C("TextLabel", {
 		Name = "TriggerHud",
-		Size = UDim2.new(0, 150, 0, 24),
-		Position = UDim2.new(0, 14, 0, 14),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Size = UDim2.new(0, 160, 0, 26),
+		Position = UDim2.new(0.5, 0, 1, -48),
 		BackgroundColor3 = Color3.fromRGB(12, 12, 16),
 		BackgroundTransparency = 0.25,
 		Text = "TRIGGER · OFF",

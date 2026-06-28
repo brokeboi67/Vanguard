@@ -116,20 +116,54 @@ function ESP.Init(S, ParentGUI)
 		return typeof(key) == "Instance" and key:IsA("Model")
 	end
 
-	local function GetColor(plr, c, ray, isBot)
-		if S.Chams and S.ChamsRainbow and not S.LoS then
+	local losParams = RaycastParams.new()
+	losParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	local LOS_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
+
+	local function updateLosFilter()
+		losParams.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
+	end
+
+	local function charHasLineOfSight(char)
+		if not char then
+			return true
+		end
+		updateLosFilter()
+		local origin = Cam.CFrame.Position
+		for _, name in ipairs(LOS_PARTS) do
+			local part = char:FindFirstChild(name)
+			if part then
+				local dir = part.Position - origin
+				local mag = dir.Magnitude
+				if mag > 0.05 then
+					local hit = workspace:Raycast(origin, dir, losParams)
+					if not hit or hit.Instance:IsDescendantOf(char) then
+						return true
+					end
+				end
+			end
+		end
+		return false
+	end
+
+	local function GetColor(plr, c, isBot)
+		if S.Chams and S.ChamsRainbow then
 			return Rainbow()
 		end
 		if isBot then
+			if S.LoS and not charHasLineOfSight(c) then
+				return S.O
+			end
 			return Color3.fromRGB(255, 180, 80)
 		end
-		local clr = S.V
-		if plr and S.RealTeamColor and plr.Team then
-			clr = plr.Team.TeamColor.Color
-		elseif S.LoS and ray and ray.Instance and not ray.Instance:IsDescendantOf(c) then
-			clr = S.O
+		if S.RealTeamColor and plr and plr.Team then
+			return plr.Team.TeamColor.Color
 		end
-		return clr
+		if S.LoS and not charHasLineOfSight(c) then
+			return S.O
+		end
+		return S.V
 	end
 
 	local function ensureCache(key)
@@ -250,8 +284,7 @@ function ESP.Init(S, ParentGUI)
 
 		local cf, sz = c:GetBoundingBox()
 		local dist = (Cam.CFrame.Position - cf.Position).Magnitude
-		local ray = S.LoS and workspace:Raycast(Cam.CFrame.Position, hrp.Position - Cam.CFrame.Position, RaycastParams.new())
-		local clr = GetColor(plr, c, ray, isBot)
+		local clr = GetColor(plr, c, isBot)
 
 		if S.Chams then
 			ch.CHM.Adornee = c

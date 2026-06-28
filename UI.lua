@@ -509,7 +509,7 @@ function UI.Init(S, ParentGUI)
 		local showBox = S.Box
 		M_Box.Visible = showBox or S.Name or S.DistView or S.Health or S.HealthText or S.Weapon or S.Trace or S.Skel or S.Chams
 		M_Cham.Visible = S.Chams
-		if S.Chams and S.ChamsRainbow and not S.LoS then
+		if S.Chams and S.ChamsRainbow then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		else
 			M_Cham.BackgroundColor3 = ACC
@@ -534,7 +534,7 @@ function UI.Init(S, ParentGUI)
 		UpdPrevCorner(M_Box.AbsoluteSize.X, M_Box.AbsoluteSize.Y)
 	end)
 	RS.RenderStepped:Connect(function()
-		if S.Chams and S.ChamsRainbow and not S.LoS and M_Cham.Visible then
+		if S.Chams and S.ChamsRainbow and M_Cham.Visible then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		end
 	end)
@@ -587,11 +587,11 @@ function UI.Init(S, ParentGUI)
 	local menuTweens = {}
 	local layoutTweens = {}
 	local tabBusy = false
-	local savedMouseBehavior = nil
-	local savedMouseIcon = nil
 	local savedCameraMode = nil
 	local mouseUnlockConn = nil
+	local mouseRestoreConn = nil
 	local GuiService = game:GetService("GuiService")
+	local toggleRegistry = {}
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -809,6 +809,115 @@ function UI.Init(S, ParentGUI)
 		})
 	end
 
+	local function setToggleVisual(key, enabled)
+		local t = toggleRegistry[key]
+		if not t then
+			return
+		end
+		TweenPlay(t.SwitchBg, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			BackgroundColor3 = enabled and ACC or Color3.fromRGB(36, 36, 44),
+		})
+		TweenPlay(t.SwitchDot, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Position = enabled and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
+		})
+	end
+
+	local NotifyRoot = C("Frame", {
+		Name = "NotifyRoot",
+		Size = UDim2.new(0, 320, 0, 200),
+		Position = UDim2.new(0.5, -160, 0, 52),
+		BackgroundTransparency = 1,
+		ZIndex = 90,
+		Parent = ParentGUI,
+	})
+	C("UIListLayout", {
+		Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Parent = NotifyRoot,
+	})
+
+	local function showNotify(msg)
+		local card = C("TextLabel", {
+			Size = UDim2.new(0, 300, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+			BackgroundTransparency = 0.08,
+			Text = "  " .. msg .. "  ",
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 220, 228),
+			TextWrapped = true,
+			ZIndex = 91,
+			Parent = NotifyRoot,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = card })
+		C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.35, Parent = card })
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 8),
+			PaddingBottom = UDim.new(0, 8),
+			PaddingLeft = UDim.new(0, 6),
+			PaddingRight = UDim.new(0, 6),
+			Parent = card,
+		})
+		task.delay(3.2, function()
+			if card.Parent then
+				TweenPlay(card, TweenInfo.new(0.25), { BackgroundTransparency = 1, TextTransparency = 1 })
+				task.delay(0.3, function()
+					pcall(function() card:Destroy() end)
+				end)
+			end
+		end)
+	end
+
+	local function applyEspColorExclusivity(fromKey, turningOn)
+		if not turningOn then
+			return
+		end
+		local off = {}
+		local pairsList
+		if fromKey == "ChamsRainbow" then
+			pairsList = {
+				{ "LoS", "Line of Sight" },
+				{ "RealTeamColor", "Team Colors" },
+			}
+		elseif fromKey == "LoS" then
+			pairsList = {
+				{ "ChamsRainbow", "Chams Rainbow" },
+				{ "RealTeamColor", "Team Colors" },
+			}
+		elseif fromKey == "RealTeamColor" then
+			pairsList = {
+				{ "ChamsRainbow", "Chams Rainbow" },
+				{ "LoS", "Line of Sight" },
+			}
+		else
+			return
+		end
+		for _, pair in ipairs(pairsList) do
+			local k, label = pair[1], pair[2]
+			if S[k] then
+				S[k] = false
+				setToggleVisual(k, false)
+				table.insert(off, label)
+			end
+		end
+		if #off > 0 then
+			showNotify("Wyłączono: " .. table.concat(off, ", "))
+		end
+	end
+
+	local function applyGameplayMouse()
+		pcall(function()
+			GuiService:SetMenuIsOpen(false)
+		end)
+		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UIS.MouseIconEnabled = false
+		pcall(function()
+			game:GetService("Players").LocalPlayer.MouseIconEnabled = false
+		end)
+	end
+
 	local function MakeTog(page, label, key, order)
 		local on = S[key] == true
 		local Row = C("TextButton", {
@@ -868,22 +977,15 @@ function UI.Init(S, ParentGUI)
 			S[key] = not S[key]
 			local enabled = S[key]
 
-			if key == "LoS" and enabled then
-				S.ChamsRainbow = false
-			end
-			if key == "ChamsRainbow" and enabled and S.LoS then
-				S[key] = false
-				enabled = false
+			if enabled then
+				applyEspColorExclusivity(key, true)
 			end
 
-			TweenPlay(SwitchBg, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-				BackgroundColor3 = enabled and ACC or Color3.fromRGB(36, 36, 44),
-			})
-			TweenPlay(SwitchDot, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-				Position = enabled and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
-			})
+			setToggleVisual(key, enabled)
 			UpdPreview()
 		end)
+
+		toggleRegistry[key] = { SwitchBg = SwitchBg, SwitchDot = SwitchDot }
 	end
 
 	local function MakeChoice(page, label, key, options, order)
@@ -1175,6 +1277,7 @@ function UI.Init(S, ParentGUI)
 	MakeTog(T1, "Tracers", "Trace", 16)
 	MakeTog(T1, "Chams Fill", "Chams", 17)
 	MakeTog(T1, "Chams Rainbow", "ChamsRainbow", 18)
+	MakeHint(T1, "Chams Rainbow, Team Colors i Line of Sight wykluczają się — włączenie jednego wyłącza pozostałe.", 19)
 
 	MakeSection(T3, "AIMBOT", 1)
 	MakeTog(T3, "Aimbot (hold RMB)", "Aimbot", 2)
@@ -1240,8 +1343,11 @@ function UI.Init(S, ParentGUI)
 		local hideInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
 
 		if open then
-			savedMouseBehavior = UIS.MouseBehavior
-			savedMouseIcon = UIS.MouseIconEnabled
+			if mouseRestoreConn then
+				mouseRestoreConn:Disconnect()
+				mouseRestoreConn = nil
+			end
+
 			savedCameraMode = LP.CameraMode
 
 			pcall(function()
@@ -1275,31 +1381,38 @@ function UI.Init(S, ParentGUI)
 			table.insert(menuTweens, TweenPlay(MenuRoot, showInfo, { GroupTransparency = 0 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, showInfo, { Scale = 1 }))
 		else
+			dragging = false
+
 			if mouseUnlockConn then
 				mouseUnlockConn:Disconnect()
 				mouseUnlockConn = nil
 			end
 
-			pcall(function()
-				GuiService:SetMenuIsOpen(false)
-			end)
+			applyGameplayMouse()
 
-			if savedMouseBehavior then
-				UIS.MouseBehavior = savedMouseBehavior
-			else
-				UIS.MouseBehavior = Enum.MouseBehavior.Default
-			end
-			if savedMouseIcon ~= nil then
-				UIS.MouseIconEnabled = savedMouseIcon
-			end
-			pcall(function()
-				LP.MouseIconEnabled = savedMouseIcon ~= false
-			end)
 			if savedCameraMode then
 				pcall(function()
 					LP.CameraMode = savedCameraMode
 				end)
 			end
+
+			local restoreFrames = 0
+			if mouseRestoreConn then
+				mouseRestoreConn:Disconnect()
+			end
+			mouseRestoreConn = RS.RenderStepped:Connect(function()
+				if menuOpen then
+					mouseRestoreConn:Disconnect()
+					mouseRestoreConn = nil
+					return
+				end
+				applyGameplayMouse()
+				restoreFrames = restoreFrames + 1
+				if restoreFrames >= 8 then
+					mouseRestoreConn:Disconnect()
+					mouseRestoreConn = nil
+				end
+			end)
 
 			table.insert(menuTweens, TweenPlay(MenuRoot, hideInfo, { GroupTransparency = 1 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, hideInfo, { Scale = 0.985 }))
