@@ -53,6 +53,51 @@ function Util.getPartPosition(part)
 	return nil
 end
 
+function Util.getPartVelocity(part, char)
+	if part and part:IsA("BasePart") then
+		local ok, vel = pcall(function()
+			return part.AssemblyLinearVelocity
+		end)
+		if ok and vel then
+			return vel
+		end
+	end
+	if char then
+		local hrp = Util.resolveBodyPart(char, "HumanoidRootPart")
+		if hrp then
+			local ok, vel = pcall(function()
+				return hrp.AssemblyLinearVelocity
+			end)
+			if ok and vel then
+				return vel
+			end
+		end
+	end
+	return Vector3.zero
+end
+
+function Util.getNetworkLead(extra)
+	extra = extra or 0
+	local ping = 0.05
+	pcall(function()
+		local item = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]
+		if item then
+			ping = math.clamp(item:GetValue() / 1000, 0.02, 0.35)
+		end
+	end)
+	return ping + extra
+end
+
+function Util.predictAimPoint(part, char, leadTime)
+	local pos = Util.getPartPosition(part)
+	if not pos then
+		return nil
+	end
+	leadTime = leadTime or 0.08
+	local vel = Util.getPartVelocity(part, char)
+	return pos + vel * leadTime
+end
+
 function Util.isDecorNpc(model)
 	if not model then
 		return false
@@ -141,18 +186,30 @@ function Util.fireAtWorld(VIM, Cam, worldPos)
 	end)
 end
 
-function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames)
-	aimFrames = aimFrames or 3
+function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, opts)
+	opts = opts or {}
+	aimFrames = aimFrames or 2
 	local saved = Cam.CFrame
-	Cam.CFrame = CFrame.new(saved.Position, targetPos)
+	local getPos = opts.getTarget
+
 	for _ = 1, aimFrames do
+		local pos = getPos and getPos() or targetPos
+		if pos then
+			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
+		end
 		RS.RenderStepped:Wait()
 	end
-	Util.fireAtWorld(VIM, Cam, targetPos)
-	for _ = 1, 2 do
-		RS.RenderStepped:Wait()
+
+	local firePos = getPos and getPos() or targetPos
+	if firePos then
+		Util.fireAtWorld(VIM, Cam, firePos)
 	end
-	Cam.CFrame = saved
+
+	RS.RenderStepped:Wait()
+
+	if not opts.noRestore then
+		Cam.CFrame = saved
+	end
 end
 
 return Util

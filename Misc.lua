@@ -12,6 +12,7 @@ function Misc.Init(S, TF, Util)
 	local trackedChars = {}
 	local botList = {}
 	local botScanAt = 0
+	local lastRefresh = 0
 
 	local HEAD_SLOTS = { "Head" }
 	local HITBOX_SLOTS = {
@@ -54,11 +55,6 @@ function Misc.Init(S, TF, Util)
 				ch:Destroy()
 			end
 		end
-		for _, inst in ipairs(char:GetDescendants()) do
-			if inst:IsA("BasePart") and string.sub(inst.Name, 1, #VG_PREFIX) == VG_PREFIX then
-				inst:Destroy()
-			end
-		end
 		trackedChars[char] = nil
 	end
 
@@ -79,10 +75,16 @@ function Misc.Init(S, TF, Util)
 			box.Transparency = 1
 			box.CastShadow = false
 			box.Material = Enum.Material.SmoothPlastic
+			box.CFrame = anchor.CFrame
+			box.Size = anchor.Size * mul
 			box.Parent = char
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = anchor
+			weld.Part1 = box
+			weld.Parent = box
+		else
+			box.Size = anchor.Size * mul
 		end
-		box.Size = anchor.Size * mul
-		box.CFrame = anchor.CFrame
 		return box
 	end
 
@@ -91,6 +93,11 @@ function Misc.Init(S, TF, Util)
 			return
 		end
 		if plr and not shouldAffect(plr) then
+			clearExpands(char)
+			return
+		end
+
+		if not S.HeadSize and not S.HitboxSize then
 			clearExpands(char)
 			return
 		end
@@ -106,6 +113,13 @@ function Misc.Init(S, TF, Util)
 					any = true
 				end
 			end
+		else
+			for _, name in ipairs(HEAD_SLOTS) do
+				local box = char:FindFirstChild(VG_PREFIX .. name)
+				if box then
+					box:Destroy()
+				end
+			end
 		end
 
 		if S.HitboxSize then
@@ -115,80 +129,23 @@ function Misc.Init(S, TF, Util)
 					any = true
 				end
 			end
-			for _, inst in ipairs(char:GetDescendants()) do
-				if inst:IsA("BasePart") and inst.Name:lower():find("hitbox", 1, true) then
-					local slot = "X_" .. inst.Name
-					if ensureExpand(char, inst, slot, boxMul) then
-						any = true
-					end
-				end
-			end
-		end
-
-		if not S.HeadSize and not S.HitboxSize then
-			clearExpands(char)
-			return
-		end
-
-		if not S.HeadSize then
-			for _, name in ipairs(HEAD_SLOTS) do
-				local box = char:FindFirstChild(VG_PREFIX .. name)
-				if box then
-					box:Destroy()
-				end
-			end
-		end
-
-		if not S.HitboxSize then
+		else
 			for _, name in ipairs(HITBOX_SLOTS) do
 				local box = char:FindFirstChild(VG_PREFIX .. name)
 				if box then
 					box:Destroy()
-				end
-			end
-			for _, inst in ipairs(char:GetDescendants()) do
-				if inst:IsA("BasePart") and string.sub(inst.Name, 1, #VG_PREFIX) == VG_PREFIX then
-					if string.find(inst.Name, "X_", #VG_PREFIX + 1, true) then
-						inst:Destroy()
-					end
 				end
 			end
 		end
 
 		if any then
-			trackedChars[char] = true
+			trackedChars[char] = { headMul = headMul, boxMul = boxMul }
+		else
+			trackedChars[char] = nil
 		end
 	end
 
-	local function resyncExpands(char)
-		if not trackedChars[char] then
-			return
-		end
-		local headMul = math.clamp(S.HeadSizeScale or 2, 1, 6)
-		local boxMul = math.clamp(S.HitboxSizeScale or 1.5, 1, 5)
-		if S.HeadSize then
-			for _, name in ipairs(HEAD_SLOTS) do
-				local anchor = Util.resolveBodyPart(char, name)
-				local box = char:FindFirstChild(VG_PREFIX .. name)
-				if anchor and box and box:IsA("BasePart") then
-					box.Size = anchor.Size * headMul
-					box.CFrame = anchor.CFrame
-				end
-			end
-		end
-		if S.HitboxSize then
-			for _, name in ipairs(HITBOX_SLOTS) do
-				local anchor = Util.resolveBodyPart(char, name)
-				local box = char:FindFirstChild(VG_PREFIX .. name)
-				if anchor and box and box:IsA("BasePart") then
-					box.Size = anchor.Size * boxMul
-					box.CFrame = anchor.CFrame
-				end
-			end
-		end
-	end
-
-	local function scan()
+	local function refreshAll()
 		if not S.HeadSize and not S.HitboxSize then
 			for char in pairs(trackedChars) do
 				if char.Parent then
@@ -202,19 +159,17 @@ function Misc.Init(S, TF, Util)
 		for _, plr in ipairs(Players:GetPlayers()) do
 			if plr.Character then
 				applyChar(plr.Character, plr)
-				resyncExpands(plr.Character)
 			end
 		end
 
 		if S.MiscBots ~= false then
-			if tick() - botScanAt > 1.5 then
+			if tick() - botScanAt > 2 then
 				botScanAt = tick()
 				Util.refreshBotList(botList, true, LP)
 			end
 			for _, model in ipairs(botList) do
 				if model.Parent and isAliveChar(model) then
 					applyChar(model, nil)
-					resyncExpands(model)
 				end
 			end
 		end
@@ -234,7 +189,15 @@ function Misc.Init(S, TF, Util)
 	end)
 
 	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.Character then
+			task.defer(function()
+				applyChar(plr.Character, plr)
+			end)
+		end
 		plr.CharacterAdded:Connect(function(char)
+			task.defer(function()
+				applyChar(char, plr)
+			end)
 			char.AncestryChanged:Connect(function(_, parent)
 				if not parent then
 					clearExpands(char)
@@ -244,7 +207,14 @@ function Misc.Init(S, TF, Util)
 	end
 
 	RS.Heartbeat:Connect(function()
-		pcall(scan)
+		if not S.HeadSize and not S.HitboxSize then
+			return
+		end
+		if tick() - lastRefresh < 2 then
+			return
+		end
+		lastRefresh = tick()
+		pcall(refreshAll)
 	end)
 end
 

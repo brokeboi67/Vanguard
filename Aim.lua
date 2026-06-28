@@ -7,6 +7,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
 	local VIM = game:GetService("VirtualInputManager")
+	local CAS = game:GetService("ContextActionService")
 
 	local LP = Players.LocalPlayer
 	local Cam = workspace.CurrentCamera
@@ -19,6 +20,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	local botScanAt = 0
 	local triggerLock = nil
 	local triggerLockUntil = 0
+	local silentBusy = false
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
 
@@ -181,19 +183,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return isAliveHumanoid(char:FindFirstChildOfClass("Humanoid"))
 	end
 
-	local function isBotModel(model)
-		if not model:IsA("Model") then
-			return false
-		end
-		if LP.Character and model == LP.Character then
-			return false
-		end
-		if Players:GetPlayerFromCharacter(model) then
-			return false
-		end
-		return Util.isAimableCharacter(model)
-	end
-
 	local function refreshBots()
 		if not S.AimBots then
 			table.clear(botList)
@@ -205,7 +194,18 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 	end
 
-	local silentJob = nil
+	local function screenDist(part)
+		local pos3 = Util.getPartPosition(part)
+		if not pos3 then
+			return math.huge
+		end
+		local pos, onScreen = Cam:WorldToViewportPoint(pos3)
+		if not onScreen then
+			return math.huge
+		end
+		local center = Cam.ViewportSize / 2
+		return (Vector2.new(pos.X, pos.Y) - Vector2.new(center.X, center.Y)).Magnitude
+	end
 
 	local function resolveHitPart(char)
 		if S.HitPart == "Head" then
@@ -286,19 +286,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return { char = model, plr = nil }
 		end
 		return nil
-	end
-
-	local function screenDist(part)
-		local pos3 = Util.getPartPosition(part)
-		if not pos3 then
-			return math.huge
-		end
-		local pos, onScreen = Cam:WorldToViewportPoint(pos3)
-		if not onScreen then
-			return math.huge
-		end
-		local center = Cam.ViewportSize / 2
-		return (Vector2.new(pos.X, pos.Y) - Vector2.new(center.X, center.Y)).Magnitude
 	end
 
 	local function isVisible(part, char)
@@ -402,13 +389,13 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			local part = triggerLock.part
 			local char = triggerLock.char
 			if part and part.Parent and char and isAliveChar(char) and isVisible(part, char) then
-				if screenDist(part) <= math.max(S.FOV, 1) * 1.2 then
+				if screenDist(part) <= math.max(S.FOV, 1) * 1.25 then
 					return triggerLock
 				end
 			end
 		end
 		triggerLock = getBestTarget()
-		triggerLockUntil = tick() + 0.5
+		triggerLockUntil = tick() + 0.55
 		return triggerLock
 	end
 
@@ -422,58 +409,33 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
 	end
 
-	local function fireClick()
-		local loc = UIS:GetMouseLocation()
-		VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, true, game, 0)
-		task.defer(function()
-			VIM:SendMouseButtonEvent(loc.X, loc.Y, 0, false, game, 0)
+	local function runSilentShot(tgt)
+		if silentBusy or not tgt or not tgt.part then
+			return
+		end
+		silentBusy = true
+		task.spawn(function()
+			local part = tgt.part
+			local char = tgt.char
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			local lead = Util.getNetworkLead(0.05)
+			local function getTarget()
+				return Util.predictAimPoint(part, char, lead)
+			end
+			local pos = getTarget()
+			if pos then
+				Util.performSilentShot(RS, Cam, VIM, pos, 2, { getTarget = getTarget })
+				S.LastShotAt = tick()
+				if hum then
+					S.LastShotHum = hum
+				end
+			end
+			silentBusy = false
 		end)
 	end
 
-	local function queueSilentShot(targetPos, hum)
-		if silentJob then
-			return
-		end
-		silentJob = {
-			pos = targetPos,
-			hum = hum,
-			saved = Cam.CFrame,
-			stage = "aim",
-			ticks = 0,
-		}
-	end
-
-	local function processSilentJob()
-		if not silentJob then
-			return
-		end
-		local job = silentJob
-		if job.stage == "aim" then
-			Cam.CFrame = CFrame.new(Cam.CFrame.Position, job.pos)
-			job.ticks += 1
-			if job.ticks >= 3 then
-				job.stage = "fire"
-				job.ticks = 0
-			end
-		elseif job.stage == "fire" then
-			Util.fireAtWorld(VIM, Cam, job.pos)
-			S.LastShotAt = tick()
-			if job.hum then
-				S.LastShotHum = job.hum
-			end
-			job.stage = "restore"
-			job.ticks = 0
-		elseif job.stage == "restore" then
-			Cam.CFrame = job.saved
-			job.ticks += 1
-			if job.ticks >= 1 then
-				silentJob = nil
-			end
-		end
-	end
-
 	local function tryTriggerShot()
-		if S.MenuOpen or S.MasterRage then
+		if S.MenuOpen or S.MasterRage or silentBusy then
 			return
 		end
 		if not triggerArmed() then
@@ -481,8 +443,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 		local baseDelay = math.max(S.TriggerDelay or 1, 1) / 1000
 		local jitter = baseDelay * (math.random() * 0.2 - 0.1)
-		local delaySec = baseDelay + jitter
-		if tick() - lastTrigger < delaySec then
+		if tick() - lastTrigger < baseDelay + jitter then
 			return
 		end
 
@@ -490,7 +451,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not tgt or not tgt.part then
 			return
 		end
-		local targetPos = Util.getPartPosition(tgt.part)
+
+		local lead = Util.getNetworkLead(baseDelay + 0.03)
+		local targetPos = Util.predictAimPoint(tgt.part, tgt.char, lead)
 		if not targetPos then
 			return
 		end
@@ -500,15 +463,32 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if tgt.char then
 			S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
 		end
-		if S.Silent then
-			Util.performSilentShot(RS, Cam, VIM, targetPos, 3)
-		else
-			Util.fireAtWorld(VIM, Cam, targetPos)
-		end
+		Util.fireAtWorld(VIM, Cam, targetPos)
 	end
 
+	pcall(function()
+		CAS:UnbindAction("VanguardSilent")
+	end)
+	CAS:BindActionAtPriority("VanguardSilent", function(_, state, input)
+		if S.MenuOpen or S.MasterRage or not S.Silent then
+			return Enum.ContextActionResult.Pass
+		end
+		if state ~= Enum.UserInputState.Begin then
+			return Enum.ContextActionResult.Pass
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+			return Enum.ContextActionResult.Pass
+		end
+		local tgt = getBestTarget()
+		if tgt then
+			runSilentShot(tgt)
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end, false, Enum.ContextActionPriority.High.Value, Enum.UserInputType.MouseButton1)
+
 	UIS.InputBegan:Connect(function(input, processed)
-		if S.MenuOpen or S.MasterRage or processed then
+		if S.MenuOpen or S.MasterRage then
 			return
 		end
 
@@ -519,57 +499,36 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			end
 			lastTogglePress = tick()
 			triggerToggled = not triggerToggled
-			return
-		end
-
-		if input.UserInputType == Enum.UserInputType.MouseButton1 and S.Silent and not S.Trigger then
-			local tgt = getBestTarget()
-			if tgt and tgt.part then
-				local pos = Util.getPartPosition(tgt.part)
-				if pos then
-					local hum = tgt.char and tgt.char:FindFirstChildOfClass("Humanoid")
-					queueSilentShot(pos, hum)
-				end
-			end
 		end
 	end)
 
 	RS.RenderStepped:Connect(function()
 		updFOV()
 		updTriggerHud()
-		processSilentJob()
 
 		if not S.Trigger then
 			triggerToggled = false
 			triggerLock = nil
 		end
 
-		if S.MenuOpen then
+		if S.MenuOpen or S.MasterRage then
 			return
 		end
 
-		if S.MasterRage then
-			return
-		end
+		pcall(tryTriggerShot)
 
 		if S.Aimbot and not S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
 			pcall(function()
 				local tgt = getBestTarget()
 				if tgt and tgt.part then
-					local pos = Util.getPartPosition(tgt.part)
+					local lead = Util.getNetworkLead(0.02)
+					local pos = Util.predictAimPoint(tgt.part, tgt.char, lead)
 					if pos then
 						aimCamera(pos)
 					end
 				end
 			end)
 		end
-	end)
-
-	RS.Heartbeat:Connect(function()
-		if S.MenuOpen then
-			return
-		end
-		pcall(tryTriggerShot)
 	end)
 end
 

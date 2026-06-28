@@ -450,21 +450,29 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
-		local targetPos = Util.getPartPosition(tgt.part)
+		local part = tgt.part
+		local char = tgt.char
+		local lead = Util.getNetworkLead((S.RageDelay or 80) / 1000 + 0.06)
+		local function getTarget()
+			return Util.predictAimPoint(part, char, lead)
+		end
+		local targetPos = getTarget()
 		if not targetPos then
 			return
 		end
 
 		lastRageShot = tick()
 		S.LastShotAt = tick()
-		if tgt.char then
-			S.LastShotHum = tgt.char:FindFirstChildOfClass("Humanoid")
+		if char then
+			S.LastShotHum = char:FindFirstChildOfClass("Humanoid")
 		end
 
-		rageShootingUntil = tick() + 0.12
-		rotateCharacterTo(targetPos)
+		rageShootingUntil = tick() + 0.14
 		if S.RageSilent ~= false then
-			Util.performSilentShot(RS, Cam, VIM, targetPos, 3)
+			Util.performSilentShot(RS, Cam, VIM, targetPos, 2, {
+				getTarget = getTarget,
+				noRestore = true,
+			})
 		else
 			Util.fireAtWorld(VIM, Cam, targetPos)
 		end
