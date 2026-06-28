@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI)
+function UI.Init(S, ParentGUI, ConfigModule)
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -209,11 +209,11 @@ function UI.Init(S, ParentGUI)
 		Parent = Top,
 	})
 
-	C("TextLabel", {
-		Size = UDim2.new(0, 36, 0, 18),
-		Position = UDim2.new(1, -52, 0.5, -9),
+	local VersionLbl = C("TextLabel", {
+		Size = UDim2.new(0, 48, 0, 18),
+		Position = UDim2.new(1, -56, 0.5, -9),
 		BackgroundTransparency = 1,
-		Text = "v2.0",
+		Text = "v" .. (S.Version or "?"),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(90, 90, 100),
@@ -555,10 +555,11 @@ function UI.Init(S, ParentGUI)
 		Parent = Footer,
 	})
 	C("TextLabel", {
-		Size = UDim2.new(0, 120, 1, 0),
+		Name = "FooterStatus",
+		Size = UDim2.new(0, 200, 1, 0),
 		Position = UDim2.new(0, 16, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "Ready",
+		Text = "v" .. (S.Version or "?") .. "  ·  Ready",
 		Font = Enum.Font.GothamMedium,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(100, 100, 110),
@@ -587,11 +588,12 @@ function UI.Init(S, ParentGUI)
 	local menuTweens = {}
 	local layoutTweens = {}
 	local tabBusy = false
-	local savedCameraMode = nil
-	local mouseUnlockConn = nil
-	local mouseRestoreConn = nil
+	local savedMouse = {}
 	local GuiService = game:GetService("GuiService")
 	local toggleRegistry = {}
+	local choiceRegistry = {}
+	local sliderRegistry = {}
+	local bindRegistry = {}
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -907,16 +909,88 @@ function UI.Init(S, ParentGUI)
 		end
 	end
 
-	local function applyGameplayMouse()
+	local function applyAimExclusivity(fromKey, turningOn)
+		if not turningOn then
+			return
+		end
+		if fromKey == "Silent" and S.Aimbot then
+			S.Aimbot = false
+			setToggleVisual("Aimbot", false)
+			showNotify("Wyłączono: Aimbot")
+		elseif fromKey == "Aimbot" and S.Silent then
+			S.Silent = false
+			setToggleVisual("Silent", false)
+			showNotify("Wyłączono: Silent Aim")
+		end
+	end
+
+	local function isLockedMouseBehavior(behavior)
+		return behavior == Enum.MouseBehavior.LockCenter
+			or behavior == Enum.MouseBehavior.LockCurrentPosition
+	end
+
+	local function captureMouseState()
+		local LP = game:GetService("Players").LocalPlayer
+		savedMouse.behavior = UIS.MouseBehavior
+		savedMouse.icon = UIS.MouseIconEnabled
+		savedMouse.lpIcon = LP.MouseIconEnabled
+		savedMouse.cameraMode = LP.CameraMode
+	end
+
+	local function restoreMouseState()
+		local LP = game:GetService("Players").LocalPlayer
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
 		end)
-		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
-		UIS.MouseIconEnabled = false
-		pcall(function()
-			game:GetService("Players").LocalPlayer.MouseIconEnabled = false
-		end)
+		if savedMouse.behavior ~= nil then
+			UIS.MouseBehavior = savedMouse.behavior
+		end
+		if savedMouse.icon ~= nil then
+			UIS.MouseIconEnabled = savedMouse.icon
+		end
+		if savedMouse.lpIcon ~= nil then
+			pcall(function()
+				LP.MouseIconEnabled = savedMouse.lpIcon
+			end)
+		end
+		if savedMouse.cameraMode ~= nil then
+			pcall(function()
+				LP.CameraMode = savedMouse.cameraMode
+			end)
+		end
 	end
+
+	local function refreshAllControls()
+		for key, _ in pairs(toggleRegistry) do
+			setToggleVisual(key, S[key] == true)
+		end
+		for key, reg in pairs(choiceRegistry) do
+			local cur = S[key]
+			for val, btn in pairs(reg.btns) do
+				local on = val == cur
+				btn.BackgroundColor3 = on and ACC_SOFT or Color3.fromRGB(24, 24, 30)
+				btn.TextColor3 = on and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120)
+				local stroke = btn:FindFirstChildOfClass("UIStroke")
+				if on and not stroke then
+					C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.5, Parent = btn })
+				elseif not on and stroke then
+					stroke:Destroy()
+				end
+			end
+		end
+		for key, reg in pairs(sliderRegistry) do
+			if reg.setValue and S[key] ~= nil then
+				reg.setValue(S[key])
+			end
+		end
+		for key, lbl in pairs(bindRegistry) do
+			lbl.Text = S[key] or "None"
+		end
+		UpdPreview()
+	end
+
+	local mouseUnlockConn = nil
+	local mouseRestoreConn = nil
 
 	local function MakeTog(page, label, key, order)
 		local on = S[key] == true
@@ -979,6 +1053,7 @@ function UI.Init(S, ParentGUI)
 
 			if enabled then
 				applyEspColorExclusivity(key, true)
+				applyAimExclusivity(key, true)
 			end
 
 			setToggleVisual(key, enabled)
@@ -1066,6 +1141,7 @@ function UI.Init(S, ParentGUI)
 				UpdPreview()
 			end)
 		end
+		choiceRegistry[key] = { btns = btns }
 	end
 
 	local bindListening = false
@@ -1131,6 +1207,7 @@ function UI.Init(S, ParentGUI)
 				end
 			end)
 		end)
+		bindRegistry[key] = KeyLbl
 	end
 
 	local function MakeSlider(page, label, key, min, max, order, opts)
@@ -1250,11 +1327,54 @@ function UI.Init(S, ParentGUI)
 				draggingSlider = false
 			end
 		end)
+
+		sliderRegistry[key] = {
+			setValue = function(val)
+				local p = (val - min) / (max - min)
+				setValue(p)
+			end,
+		}
+	end
+
+	local function MakeButton(page, label, order, callback)
+		local Row = C("TextButton", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			Text = label,
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 220, 228),
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+		Row.MouseEnter:Connect(function()
+			TweenPlay(Row, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(22, 22, 28) })
+		end)
+		Row.MouseLeave:Connect(function()
+			TweenPlay(Row, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(17, 17, 21) })
+		end)
+		Row.MouseButton1Click:Connect(function()
+			callback()
+		end)
+	end
+
+	local FooterStatus = Footer:FindFirstChild("FooterStatus")
+
+	local function setFooterStatus(text)
+		if FooterStatus then
+			FooterStatus.Text = "v" .. (S.Version or "?") .. "  ·  " .. text
+		end
 	end
 
 	local T1 = MakeTab("Visuals", true, true, 1)
 	local T3 = MakeTab("Aim", false, false, 2)
 	local T2 = MakeTab("Settings", false, false, 3)
+	local T4 = MakeTab("Config", false, false, 4)
 
 	MakeSection(T1, "CORE", 1)
 	MakeTog(T1, "Master ESP", "ESP", 2)
@@ -1282,40 +1402,41 @@ function UI.Init(S, ParentGUI)
 	MakeSection(T3, "AIMBOT", 1)
 	MakeTog(T3, "Aimbot (hold RMB)", "Aimbot", 2)
 	MakeTog(T3, "Silent Aim (flick)", "Silent", 3)
-	MakeHint(T3, "Przy kliknięciu LPM kamera na 1 klatkę celuje w target — bez ruszania widoku na stałe.", 4)
-	MakeTog(T3, "Triggerbot", "Trigger", 5)
+	MakeHint(T3, "Aimbot i Silent wykluczają się — włączenie jednego wyłącza drugie.", 4)
+	MakeHint(T3, "Przy kliknięciu LPM kamera na 1 klatkę celuje w target — bez ruszania widoku na stałe.", 5)
+	MakeTog(T3, "Triggerbot", "Trigger", 6)
 	MakeChoice(T3, "Trigger Mode", "TriggerMode", {
 		{ label = "Hold", value = "Hold" },
 		{ label = "Toggle", value = "Toggle" },
-	}, 6)
-	MakeBind(T3, "Trigger Key", "TriggerKey", 7)
-	MakeSlider(T3, "Trigger Delay", "TriggerDelay", 1, 500, 8, { suffix = "ms", step = 1 })
-	MakeTog(T3, "Trigger Status HUD", "ShowTriggerHud", 9)
-	MakeHint(T3, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem, potem strzela w FOV.", 10)
-	MakeSection(T3, "TARGETING", 11)
-	MakeTog(T3, "Visible Check", "VisibleCheck", 12)
-	MakeTog(T3, "Target Bots", "AimBots", 13)
+	}, 7)
+	MakeBind(T3, "Trigger Key", "TriggerKey", 8)
+	MakeSlider(T3, "Trigger Delay", "TriggerDelay", 1, 500, 9, { suffix = "ms", step = 1 })
+	MakeTog(T3, "Trigger Status HUD", "ShowTriggerHud", 10)
+	MakeHint(T3, "Hold = strzela gdy trzymasz klawisz. Toggle = ON/OFF klawiszem, potem strzela w FOV.", 11)
+	MakeSection(T3, "TARGETING", 12)
+	MakeTog(T3, "Visible Check", "VisibleCheck", 13)
+	MakeTog(T3, "Target Bots", "AimBots", 14)
 	MakeChoice(T3, "Target Priority", "TargetMode", {
 		{ label = "FOV", value = "FOV" },
 		{ label = "Dist", value = "Distance" },
 		{ label = "HP", value = "Health" },
-	}, 14)
+	}, 15)
 	MakeChoice(T3, "Hit Part", "HitPart", {
 		{ label = "Head", value = "Head" },
 		{ label = "Torso", value = "Torso" },
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
-	}, 15)
-	MakeSection(T3, "FOV & SMOOTH", 16)
-	MakeTog(T3, "Show FOV Circle", "ShowFOV", 17)
-	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 18, { suffix = "px", step = 5 })
-	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 19, {
+	}, 16)
+	MakeSection(T3, "FOV & SMOOTH", 17)
+	MakeTog(T3, "Show FOV Circle", "ShowFOV", 18)
+	MakeSlider(T3, "FOV Size", "FOV", 20, 300, 19, { suffix = "px", step = 5 })
+	MakeSlider(T3, "Smoothing", "Smooth", 0.05, 0.95, 20, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 20)
-	MakeHint(T3, "Smoothing działa tylko z Aimbot (RMB). Silent = flick przy strzale, bez trackingu.", 21)
+	MakeTog(T3, "Aim Curve + Jitter", "AimCurve", 21)
+	MakeHint(T3, "Smoothing działa tylko z Aimbot (RMB). Silent = flick przy strzale, bez trackingu.", 22)
 
 	MakeSection(T2, "MOVEMENT", 1)
 	MakeTog(T2, "Bunny Hop", "BHop", 2)
@@ -1324,6 +1445,202 @@ function UI.Init(S, ParentGUI)
 	MakeTog(T2, "Team Colors", "RealTeamColor", 5)
 	MakeTog(T2, "Hide Teammates", "Team", 6)
 	MakeTog(T2, "Line of Sight", "LoS", 7)
+
+	-- // Config tab
+	local ConfigNameBox
+	local ConfigListHost
+	local AutoloadLbl
+
+	local function getConfigName()
+		if ConfigNameBox then
+			return ConfigNameBox.Text
+		end
+		return ""
+	end
+
+	local function refreshConfigList()
+		if not ConfigListHost or not ConfigModule then
+			return
+		end
+		for _, ch in ipairs(ConfigListHost:GetChildren()) do
+			if ch:IsA("TextLabel") then
+				ch:Destroy()
+			end
+		end
+		local list, autoload = ConfigModule.List()
+		if AutoloadLbl then
+			if autoload ~= "" then
+				AutoloadLbl.Text = "Autoload: " .. autoload
+			else
+				AutoloadLbl.Text = "Autoload: brak"
+			end
+		end
+		if #list == 0 then
+			C("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 16),
+				BackgroundTransparency = 1,
+				Text = "Brak zapisanych configów",
+				Font = Enum.Font.Gotham,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(90, 90, 100),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = 1,
+				ZIndex = 6,
+				Parent = ConfigListHost,
+			})
+			return
+		end
+		for i, name in ipairs(list) do
+			local mark = (name == autoload) and " ★" or ""
+			C("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 16),
+				BackgroundTransparency = 1,
+				Text = name .. mark,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 10,
+				TextColor3 = name == autoload and ACC or Color3.fromRGB(170, 170, 180),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = i,
+				ZIndex = 6,
+				Parent = ConfigListHost,
+			})
+		end
+	end
+
+	MakeSection(T4, "CONFIG", 1)
+	if ConfigModule and not ConfigModule.CanPersist() then
+		MakeHint(T4, "Twój executor nie wspiera writefile — zapis configów niedostępny.", 2)
+	end
+
+	local NameRow = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 36),
+		BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+		BorderSizePixel = 0,
+		LayoutOrder = 3,
+		ZIndex = 5,
+		Parent = T4,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = NameRow })
+	C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = NameRow })
+	C("TextLabel", {
+		Size = UDim2.new(0, 80, 1, 0),
+		Position = UDim2.new(0, 12, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "Nazwa",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(200, 200, 208),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 6,
+		Parent = NameRow,
+	})
+	ConfigNameBox = C("TextBox", {
+		Size = UDim2.new(1, -104, 0, 24),
+		Position = UDim2.new(0, 92, 0.5, -12),
+		BackgroundColor3 = Color3.fromRGB(24, 24, 30),
+		Text = "default",
+		PlaceholderText = "np. legit, rage, hvh",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(230, 230, 235),
+		PlaceholderColor3 = Color3.fromRGB(80, 80, 90),
+		ClearTextOnFocus = false,
+		ZIndex = 6,
+		Parent = NameRow,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = ConfigNameBox })
+	C("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = ConfigNameBox })
+
+	MakeButton(T4, "Zapisz config", 4, function()
+		if not ConfigModule then return end
+		local ok, msg = ConfigModule.Save(getConfigName(), S)
+		if ok then
+			showNotify("Zapisano: " .. msg)
+			setFooterStatus("Config · " .. msg)
+			refreshConfigList()
+		else
+			showNotify(msg or "Błąd zapisu")
+		end
+	end)
+	MakeButton(T4, "Wczytaj config", 5, function()
+		if not ConfigModule then return end
+		local ok, msg = ConfigModule.Load(getConfigName(), S)
+		if ok then
+			refreshAllControls()
+			showNotify("Wczytano: " .. msg)
+			setFooterStatus("Loaded · " .. msg)
+		else
+			showNotify(msg or "Błąd wczytywania")
+		end
+	end)
+	MakeButton(T4, "Usuń config", 6, function()
+		if not ConfigModule then return end
+		local ok, msg = ConfigModule.Delete(getConfigName())
+		if ok then
+			showNotify("Usunięto: " .. msg)
+			refreshConfigList()
+		else
+			showNotify(msg or "Błąd usuwania")
+		end
+	end)
+	MakeButton(T4, "Ustaw autoload", 7, function()
+		if not ConfigModule then return end
+		local ok, msg = ConfigModule.SetAutoload(getConfigName())
+		if ok then
+			showNotify("Autoload: " .. getConfigName())
+			refreshConfigList()
+		else
+			showNotify(msg or "Błąd autoload")
+		end
+	end)
+	MakeButton(T4, "Wyłącz autoload", 8, function()
+		if not ConfigModule then return end
+		local ok, msg = ConfigModule.ClearAutoload()
+		if ok then
+			showNotify("Autoload wyłączony")
+			refreshConfigList()
+		else
+			showNotify(msg or "Błąd")
+		end
+	end)
+
+	MakeSection(T4, "ZAPISANE", 9)
+	AutoloadLbl = C("TextLabel", {
+		Size = UDim2.new(1, -8, 0, 14),
+		BackgroundTransparency = 1,
+		Text = "Autoload: brak",
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(100, 100, 110),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = 10,
+		ZIndex = 5,
+		Parent = T4,
+	})
+	ConfigListHost = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 120),
+		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+		BorderSizePixel = 0,
+		LayoutOrder = 11,
+		ZIndex = 5,
+		Parent = T4,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = ConfigListHost })
+	C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Parent = ConfigListHost })
+	C("UIListLayout", {
+		Padding = UDim.new(0, 4),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = ConfigListHost,
+	})
+	C("UIPadding", {
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+		Parent = ConfigListHost,
+	})
+	MakeHint(T4, "Pliki w folderze Vanguard/configs. Autoload wczytuje się przy starcie skryptu.", 12)
+	refreshConfigList()
 
 	ApplyLayout(true, false)
 
@@ -1348,7 +1665,7 @@ function UI.Init(S, ParentGUI)
 				mouseRestoreConn = nil
 			end
 
-			savedCameraMode = LP.CameraMode
+			captureMouseState()
 
 			pcall(function()
 				GuiService:SetMenuIsOpen(true)
@@ -1388,27 +1705,24 @@ function UI.Init(S, ParentGUI)
 				mouseUnlockConn = nil
 			end
 
-			applyGameplayMouse()
-
-			if savedCameraMode then
-				pcall(function()
-					LP.CameraMode = savedCameraMode
-				end)
-			end
+			restoreMouseState()
 
 			local restoreFrames = 0
 			if mouseRestoreConn then
 				mouseRestoreConn:Disconnect()
 			end
+			local needReassert = isLockedMouseBehavior(savedMouse.behavior)
 			mouseRestoreConn = RS.RenderStepped:Connect(function()
 				if menuOpen then
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
 					return
 				end
-				applyGameplayMouse()
+				if needReassert then
+					restoreMouseState()
+				end
 				restoreFrames = restoreFrames + 1
-				if restoreFrames >= 8 then
+				if restoreFrames >= (needReassert and 6 or 1) then
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
 				end
@@ -1480,6 +1794,15 @@ function UI.Init(S, ParentGUI)
 		TweenPlay(Loader, TweenInfo.new(0.2), { BackgroundTransparency = 1 })
 		task.wait(0.2)
 		Loader:Destroy()
+
+		if ConfigModule then
+			local ok, name = ConfigModule.Autoload(S)
+			if ok then
+				refreshAllControls()
+				setFooterStatus("Autoload · " .. tostring(name))
+				showNotify("Autoload: " .. tostring(name))
+			end
+		end
 
 		menuOpen = false
 		MenuRoot.Visible = true
