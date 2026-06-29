@@ -100,6 +100,8 @@ function Core.begin()
 		Active = true,
 		GUIs = {},
 		Cleanups = {},
+		registerGui = Core.registerGui,
+		registerCleanup = Core.registerCleanup,
 	}
 
 	local marker = Instance.new("BoolValue")
