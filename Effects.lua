@@ -19,6 +19,16 @@ function Effects.Init(S, Util)
 		return S.V or Color3.fromRGB(0, 255, 150)
 	end
 
+	local function ensureColor(col, fallback)
+		if typeof(col) == "Color3" then
+			return col
+		end
+		if typeof(fallback) == "Color3" then
+			return fallback
+		end
+		return accent()
+	end
+
 	local function isEnemyChar(char)
 		if not char or not char:IsA("Model") or char == LP.Character then
 			return false
@@ -207,6 +217,7 @@ function Effects.Init(S, Util)
 	end
 
 	local function makeBurst(pos, col, count, speed, tex)
+		col = ensureColor(col)
 		local anchor = spawnAnchor(pos, 4)
 		local em = makeEmitter(anchor, {
 			Texture = tex or SPARK_TEX,
@@ -218,6 +229,7 @@ function Effects.Init(S, Util)
 	end
 
 	local function makeSmoke(pos, col, count)
+		col = ensureColor(col)
 		local anchor = spawnAnchor(pos, 4)
 		local em = makeEmitter(anchor, {
 			Texture = SMOKE_TEX,
@@ -235,6 +247,7 @@ function Effects.Init(S, Util)
 	end
 
 	local function shockRings(pos, col, count, maxDiam, delayStep)
+		col = ensureColor(col)
 		count = count or 4
 		maxDiam = maxDiam or 22
 		delayStep = delayStep or 0.07
@@ -265,6 +278,7 @@ function Effects.Init(S, Util)
 	end
 
 	local function flashBillboard(char, col, sizeMult)
+		col = ensureColor(col)
 		local root = getRoot(char)
 		if not root then
 			return
@@ -300,6 +314,7 @@ function Effects.Init(S, Util)
 	end
 
 	local function forkLightning(fromPos, toPos, col, forks)
+		col = ensureColor(col)
 		forks = forks or 3
 		for f = 1, forks do
 			local mid = fromPos:Lerp(toPos, 0.35 + math.random() * 0.3)
@@ -326,6 +341,7 @@ function Effects.Init(S, Util)
 	end
 
 	local function ghostAscend(char, col)
+		col = ensureColor(col)
 		local root = getRoot(char)
 		if not root then
 			return
@@ -366,20 +382,23 @@ function Effects.Init(S, Util)
 		end)
 	end
 
-	local function novaBurst(char, col)
+	local function effectNovaBurst(char)
 		local root = getRoot(char)
 		if not root then
 			return
 		end
+		local col = Color3.fromRGB(255, 55, 190)
+		local col2 = Color3.fromRGB(255, 240, 255)
 		local pos = root.Position + Vector3.new(0, 1.5, 0)
-		shockRings(pos, col, 5, 28, 0.06)
-		makeBurst(pos, col, 120, 22)
-		makeBurst(pos, Color3.new(1, 1, 1), 40, 14)
-		makeSmoke(pos, col, 35)
-		screenFlash(col, 0.45, 0.7, 0.28)
-		camShake(0.35, 0.35)
-		addHighlight(char, col, 1.1, 0)
-		flashBillboard(char, col, 1.4)
+		shockRings(pos, col, 6, 34, 0.05)
+		shockRings(pos, col2, 3, 22, 0.09)
+		makeBurst(pos, col, 140, 26)
+		makeBurst(pos, col2, 55, 18)
+		makeSmoke(pos, Color3.fromRGB(80, 20, 60), 40)
+		screenFlash(col, 0.55, 0.85, 0.32)
+		camShake(0.42, 0.4)
+		addHighlight(char, col, 1.2, 0)
+		flashBillboard(char, col2, 1.6)
 		ghostAscend(char, col)
 	end
 
@@ -401,17 +420,18 @@ function Effects.Init(S, Util)
 	end
 
 	local function effectNeonDissolve(char)
-		local col = accent()
+		local col = ensureColor(accent())
+		local col2 = Color3.fromRGB(100, 255, 230)
 		addHighlight(char, col, 1.2, 0)
-		flashBillboard(char, col, 1.2)
-		screenFlash(col, 0.25, 0.4, 0.18)
+		flashBillboard(char, col2, 1.2)
+		screenFlash(col2, 0.25, 0.4, 0.18)
 		local root = getRoot(char)
 		if root then
 			local pos = root.Position + Vector3.new(0, 1.5, 0)
-			shockRings(pos, col, 3, 18)
-			makeBurst(pos, col, 90, 14)
-			makeBurst(pos, Color3.fromRGB(255, 255, 255), 30, 10)
-			ghostAscend(char, col)
+			shockRings(pos, col, 2, 14)
+			makeBurst(pos, col, 70, 12)
+			makeBurst(pos, col2, 35, 10)
+			ghostAscend(char, col2)
 		end
 		camShake(0.2, 0.25)
 	end
@@ -421,33 +441,35 @@ function Effects.Init(S, Util)
 		if not root then
 			return
 		end
-		local col = accent()
+		local col = Color3.fromRGB(255, 140, 30)
+		local col2 = Color3.fromRGB(255, 220, 80)
 		local pos = root.Position
-		makeBurst(pos, col, 100, 20)
-		makeBurst(pos + Vector3.new(0, 2.5, 0), Color3.fromRGB(255, 200, 80), 60, 16)
-		makeBurst(pos + Vector3.new(0, 1, 0), Color3.fromRGB(40, 40, 48), 45, 10)
-		makeSmoke(pos, col, 30)
-		shockRings(pos + Vector3.new(0, 1, 0), col, 4, 20)
-		addHighlight(char, col, 0.65, 0.1)
-		flashBillboard(char, col, 1.1)
-		screenFlash(col, 0.3, 0.5, 0.2)
-		camShake(0.28, 0.3)
+		makeBurst(pos, col, 120, 24)
+		makeBurst(pos + Vector3.new(0, 2.5, 0), col2, 70, 18)
+		makeBurst(pos + Vector3.new(0, 1, 0), Color3.fromRGB(35, 35, 42), 50, 8)
+		makeSmoke(pos, Color3.fromRGB(50, 45, 40), 45)
+		shockRings(pos + Vector3.new(0, 0.5, 0), col, 2, 16)
+		addHighlight(char, col, 0.55, 0.15)
+		flashBillboard(char, col2, 1.15)
+		screenFlash(col, 0.35, 0.55, 0.22)
+		camShake(0.32, 0.32)
 	end
 
 	local function effectAscension(char)
-		local col = accent()
+		local col = Color3.fromRGB(170, 120, 255)
+		local col2 = Color3.fromRGB(255, 230, 140)
 		addHighlight(char, col, 1.6, 0)
-		screenFlash(col, 0.35, 0.6, 0.25)
+		screenFlash(col2, 0.35, 0.6, 0.25)
 		trackPosition(char, 1.8, function(pos, elapsed)
-			makeBurst(pos + Vector3.new(0, elapsed * 7, 0), col, 10, 6)
+			makeBurst(pos + Vector3.new(0, elapsed * 7, 0), col2, 12, 5)
 			if math.floor(elapsed * 10) % 3 == 0 then
-				makeBurst(pos + Vector3.new(0, elapsed * 7, 0), Color3.new(1, 1, 1), 4, 4)
+				makeBurst(pos + Vector3.new(0, elapsed * 7, 0), col, 6, 3)
 			end
 		end)
 		local root = getRoot(char)
 		if root then
-			shockRings(root.Position, col, 4, 16)
-			makeBurst(root.Position, col, 50, 8)
+			shockRings(root.Position, col, 3, 14)
+			makeBurst(root.Position, col2, 40, 6)
 			ghostAscend(char, col)
 		end
 		camShake(0.22, 0.4)
@@ -458,14 +480,16 @@ function Effects.Init(S, Util)
 		if not root then
 			return
 		end
-		local col = accent()
+		local col = Color3.fromRGB(60, 180, 255)
+		local col2 = Color3.fromRGB(200, 240, 255)
 		local pos = root.Position
-		shockRings(pos, col, 6, 32, 0.05)
-		makeBurst(pos + Vector3.new(0, 0.5, 0), col, 70, 18)
-		addHighlight(char, col, 0.8, 0.15)
-		flashBillboard(char, col, 1.3)
-		screenFlash(col, 0.4, 0.55, 0.24)
-		camShake(0.32, 0.35)
+		shockRings(pos, col, 8, 36, 0.04)
+		shockRings(pos, col2, 4, 24, 0.07)
+		makeBurst(pos + Vector3.new(0, 0.5, 0), col2, 25, 10)
+		addHighlight(char, col, 0.7, 0.2)
+		flashBillboard(char, col, 1.35)
+		screenFlash(col, 0.38, 0.45, 0.2)
+		camShake(0.35, 0.38)
 	end
 
 	local function effectLightningHit(char)
@@ -556,7 +580,7 @@ function Effects.Init(S, Util)
 		Burst = effectParticleBurst,
 		Ascension = effectAscension,
 		Shock = effectShockRing,
-		Nova = novaBurst,
+		Nova = effectNovaBurst,
 	}
 
 	local HIT_FX = {
