@@ -391,6 +391,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 				pcall(S.NotifyShot, char)
 			end
 		end
+		if S.RequestShotTracer then
+			pcall(S.RequestShotTracer, false)
+		end
 	end
 
 	local function snapSilentCamera(tgt)

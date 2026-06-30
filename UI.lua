@@ -8,10 +8,31 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 
 	local ACC = S.V
 	local ACC_SOFT = Color3.new(
-		math.clamp(ACC.R * 0.18 + 0.05, 0, 1),
-		math.clamp(ACC.G * 0.18 + 0.05, 0, 1),
-		math.clamp(ACC.B * 0.18 + 0.05, 0, 1)
+		math.clamp(ACC.R * 0.12 + 0.08, 0, 1),
+		math.clamp(ACC.G * 0.12 + 0.08, 0, 1),
+		math.clamp(ACC.B * 0.12 + 0.08, 0, 1)
 	)
+
+	local pageThemes = {}
+	local tabBtnThemes = {}
+	local TAB_THEMES = {
+		Visuals = Color3.fromRGB(90, 175, 255),
+		Legit = Color3.fromRGB(80, 255, 160),
+		Rage = Color3.fromRGB(255, 85, 85),
+		Anim = Color3.fromRGB(255, 150, 230),
+		World = Color3.fromRGB(130, 210, 110),
+		Settings = Color3.fromRGB(175, 175, 195),
+		Misc = Color3.fromRGB(255, 195, 75),
+		Config = Color3.fromRGB(155, 135, 255),
+	}
+
+	local function tabSoft(col)
+		return Color3.new(
+			math.clamp(col.R * 0.14 + 0.07, 0, 1),
+			math.clamp(col.G * 0.14 + 0.07, 0, 1),
+			math.clamp(col.B * 0.14 + 0.07, 0, 1)
+		)
+	end
 
 	local Cam = workspace.CurrentCamera
 	local W_FULL, W_COMPACT, H = 800, 600, 540
@@ -655,12 +676,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	end
 
 	local function StyleTab(btn, active)
+		local accent = tabBtnThemes[btn] or ACC
+		local soft = tabSoft(accent)
 		TweenPlay(btn, TweenInfo.new(0.15, Enum.EasingStyle.Quart), {
-			BackgroundColor3 = active and ACC_SOFT or Color3.fromRGB(18, 18, 22),
+			BackgroundColor3 = active and soft or Color3.fromRGB(18, 18, 22),
 			TextColor3 = active and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(105, 105, 115),
 		})
 		local ind = btn:FindFirstChild("Indicator")
 		if ind then
+			ind.BackgroundColor3 = accent
 			TweenPlay(ind, TweenInfo.new(0.15, Enum.EasingStyle.Quart), {
 				BackgroundTransparency = active and 0 or 1,
 			})
@@ -720,9 +744,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	end
 
 	local function MakeTab(name, default, showPreview, layoutOrder)
+		local tabAccent = TAB_THEMES[name] or ACC
+		local tabSoftCol = tabSoft(tabAccent)
 		local B = C("TextButton", {
 			Size = UDim2.new(1, 0, 0, 34),
-			BackgroundColor3 = default and ACC_SOFT or Color3.fromRGB(18, 18, 22),
+			BackgroundColor3 = default and tabSoftCol or Color3.fromRGB(18, 18, 22),
 			Text = "  " .. name,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextColor3 = default and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(105, 105, 115),
@@ -734,12 +760,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			ZIndex = 5,
 			Parent = SidePad,
 		})
+		tabBtnThemes[B] = tabAccent
 		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = B })
 		C("Frame", {
 			Name = "Indicator",
 			Size = UDim2.new(0, 2, 0, 16),
 			Position = UDim2.new(0, 0, 0.5, -8),
-			BackgroundColor3 = ACC,
+			BackgroundColor3 = tabAccent,
 			BackgroundTransparency = default and 0 or 1,
 			BorderSizePixel = 0,
 			ZIndex = 6,
@@ -769,10 +796,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		})
 		C("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = P })
 		C("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2), Parent = P })
+		pageThemes[P] = tabAccent
 
 		B.MouseEnter:Connect(function()
 			if B ~= ActiveTabBtn then
-				TweenPlay(B, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(22, 22, 26) })
+				TweenPlay(B, TweenInfo.new(0.12), { BackgroundColor3 = tabSoft(tabAccent) })
 			end
 		end)
 		B.MouseLeave:Connect(function()
@@ -793,6 +821,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	end
 
 	local function MakeCard(page, title, subtitle, order)
+		local tabCol = pageThemes[page] or ACC
 		local Card = C("Frame", {
 			Size = UDim2.new(1, -2, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
@@ -803,7 +832,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			Parent = page,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = Card })
-		C("UIStroke", { Color = Color3.fromRGB(34, 34, 42), Thickness = 1, Transparency = 0.55, Parent = Card })
+		local strokeCol = Color3.new(
+			math.clamp(tabCol.R * 0.35 + 0.12, 0, 1),
+			math.clamp(tabCol.G * 0.35 + 0.12, 0, 1),
+			math.clamp(tabCol.B * 0.35 + 0.12, 0, 1)
+		)
+		C("UIStroke", { Color = strokeCol, Thickness = 1, Transparency = 0.45, Parent = Card })
+		C("Frame", {
+			Name = "TabAccentBar",
+			Size = UDim2.new(0, 3, 1, -10),
+			Position = UDim2.new(0, 0, 0, 5),
+			BackgroundColor3 = tabCol,
+			BackgroundTransparency = 0.15,
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = Card,
+		})
 		C("UIPadding", {
 			PaddingTop = UDim.new(0, 10),
 			PaddingBottom = UDim.new(0, 10),
@@ -819,7 +863,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			Text = title,
 			Font = Enum.Font.GothamBold,
 			TextSize = 10,
-			TextColor3 = Color3.fromRGB(150, 150, 162),
+			TextColor3 = tabCol,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			LayoutOrder = 1,
 			ZIndex = 6,
@@ -1553,6 +1597,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeTog(VAdv, "Chams Fill", "Chams", 4, { flat = true })
 	MakeTog(VAdv, "Chams Rainbow", "ChamsRainbow", 5, { flat = true })
 
+	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 6)
+	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })
+	MakeTog(VTrace, "Kill Tracer (grubszy + glow)", "KillShotTracers", 2, { flat = true })
+	MakeHint(VTrace, "Kill tracer = czerwona grubsza linia + kula przy zabójstwie.", 3)
+
 	local LAim = MakeCard(T3, "AIMBOT", "Aimbot i Silent się wykluczają.", 1)
 	MakeTog(LAim, "Aimbot (hold RMB)", "Aimbot", 1, { flat = true })
 	MakeTog(LAim, "Silent Aim (flick)", "Silent", 2, { flat = true })
@@ -1695,7 +1744,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	end
 	MakeHint(APlay, "Procedural: Twerk, Floss, Griddy, Spin, Thunder, Matrix, Disco, Levitate. Reszta = Animate gry lub /e chat.", animOrder)
 
-	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Niewidoczne hitboxy — nie powiększa modelu postaci.", 1)
+	local MMove = MakeCard(TM, "MOVEMENT", "Auto Strafe działa w powietrzu (razem z BHop).", 1)
+	MakeTog(MMove, "Bunny Hop", "BHop", 1, { flat = true })
+	MakeTog(MMove, "Auto Strafe", "AutoStrafe", 2, { flat = true })
+
+	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Niewidoczne hitboxy — nie powiększa modelu postaci.", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })
 	MakeSlider(MHit, "Head Scale", "HeadSizeScale", 1, 6, 2, {
 		suffix = "x",
@@ -1712,11 +1765,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeTog(MHit, "Apply To Bots", "MiscBots", 6, { flat = true })
 	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 7)
 
-	local MSec = MakeCard(TM, "SECURITY", "Chroni GUI (gethui / protect_gui) i trzyma je na wierzchu.", 2)
+	local MSec = MakeCard(TM, "SECURITY", "Chroni GUI (gethui / protect_gui) i trzyma je na wierzchu.", 3)
 	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
 	MakeHint(MSec, "Kick 267 = wykryty executor/mod w grze, nie samo GUI.", 2)
 
-	local MFX = MakeCard(TM, "LOCAL FX", "Tylko Ty widzisz — efekty przy hit / kill.", 3)
+	local MFX = MakeCard(TM, "LOCAL FX", "Tylko Ty widzisz — efekty przy hit / kill.", 4)
 	MakeTog(MFX, "Kill Effects", "KillEffects", 1, { flat = true })
 	MakeChoice(MFX, "Kill Style", "KillEffectStyle", {
 		{ label = "Neon", value = "Neon" },
@@ -1894,15 +1947,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		TF.Init(S, ParentGUI, ACC, refreshFriendList)
 	end
 
-	local SMov = MakeCard(T2, "MOVEMENT", "Auto Strafe działa w powietrzu (razem z BHop).", 2)
-	MakeTog(SMov, "Bunny Hop", "BHop", 1, { flat = true })
-	MakeTog(SMov, "Auto Strafe", "AutoStrafe", 2, { flat = true })
-
-	local SFilt = MakeCard(T2, "ESP COLORS", "Team Colors / LoS — wykluczają się.", 3)
+	local SFilt = MakeCard(T2, "ESP COLORS", "Team Colors / LoS — wykluczają się.", 2)
 	MakeTog(SFilt, "Team Colors", "RealTeamColor", 1, { flat = true })
 	MakeTog(SFilt, "Line of Sight", "LoS", 2, { flat = true })
 
-	local SHud = MakeCard(T2, "HUD", nil, 4)
+	local SHud = MakeCard(T2, "HUD", nil, 3)
 	MakeTog(SHud, "Crosshair Dot", "Crosshair", 1, { flat = true })
 	MakeSlider(SHud, "Crosshair Size", "CrosshairSize", 2, 12, 2, { suffix = "px", step = 1 })
 	MakeTog(SHud, "Spectator List", "Spectators", 3, { flat = true })
@@ -1929,7 +1978,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeTog(SHud, "Kill Feed", "KillFeed", 13, { flat = true })
 
 	local SettingsAutoloadLbl
-	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 5)
+	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 4)
 
 	SettingsAutoloadLbl = C("TextLabel", {
 		Size = UDim2.new(1, -8, 0, 0),
@@ -1994,7 +2043,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			return
 		end
 		for _, ch in ipairs(ConfigListHost:GetChildren()) do
-			if ch:IsA("TextLabel") then
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
 				ch:Destroy()
 			end
 		end
@@ -2030,10 +2079,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		end
 		for i, name in ipairs(list) do
 			local mark = (name == autoload) and " ★" or ""
-			C("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 16),
-				BackgroundTransparency = 1,
-				Text = name .. mark,
+			local selected = ConfigNameBox and ConfigNameBox.Text == name
+			local row = C("TextButton", {
+				Size = UDim2.new(1, -8, 0, 22),
+				BackgroundColor3 = selected and Color3.fromRGB(28, 32, 38) or Color3.fromRGB(20, 20, 26),
+				BackgroundTransparency = selected and 0.1 or 0.35,
+				AutoButtonColor = false,
+				Text = "  " .. name .. mark,
 				Font = Enum.Font.GothamMedium,
 				TextSize = 10,
 				TextColor3 = name == autoload and ACC or Color3.fromRGB(170, 170, 180),
@@ -2042,6 +2094,24 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 				ZIndex = 6,
 				Parent = ConfigListHost,
 			})
+			C("UICorner", { CornerRadius = UDim.new(0, 4), Parent = row })
+			row.MouseEnter:Connect(function()
+				if not selected then
+					TweenPlay(row, TweenInfo.new(0.1), { BackgroundTransparency = 0.15 })
+				end
+			end)
+			row.MouseLeave:Connect(function()
+				if not (ConfigNameBox and ConfigNameBox.Text == name) then
+					TweenPlay(row, TweenInfo.new(0.1), { BackgroundTransparency = 0.35 })
+				end
+			end)
+			row.MouseButton1Click:Connect(function()
+				if ConfigNameBox then
+					ConfigNameBox.Text = name
+				end
+				showNotify("Config: " .. name)
+				refreshConfigList()
+			end)
 		end
 	end
 

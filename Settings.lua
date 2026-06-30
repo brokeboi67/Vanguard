@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.12.3",
+	Version = "2.13.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -90,6 +90,8 @@ local Settings = {
 	KeybindList = false,
 	SessionStats = false,
 	KillFeed = false,
+	ShotTracers = false,
+	KillShotTracers = true,
 	HitSound = true,
 	HitSoundVolume = 0.45,
 

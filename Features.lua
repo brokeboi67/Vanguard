@@ -6,7 +6,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
-	local TS = game:GetService("TweenService")
+	local Debris = game:GetService("Debris")
 
 	local LP = Players.LocalPlayer
 	local Cam = workspace.CurrentCamera
@@ -852,43 +852,6 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end)
 	end
 
-	local function registerHit(hum, dmg, plrName)
-		local shotAt = tonumber(S.LastShotAt)
-		local recent = shotAt and (tick() - shotAt) <= HIT_WINDOW
-		if not recent then
-			return
-		end
-		if S.LastShotHum and hum ~= S.LastShotHum then
-			return
-		end
-		session.hits += 1
-		if S.Hitmarker then
-			flashHitmarker(dmg)
-		end
-		playHitSound(false)
-		if S.DamageLog then
-			addDmgLog(plrName or "Target", dmg, false)
-		end
-	end
-
-	function S.TestHitFeedback()
-		flashHitmarker(42)
-		playHitSound(true)
-		if S.DamageLog then
-			addDmgLog("Test", 42, false)
-		end
-	end
-
-	local function registerKill(plrName)
-		local shotAt = tonumber(S.LastShotAt)
-		local recent = shotAt and (tick() - shotAt) <= 2.5
-		if not recent then
-			return
-		end
-		session.kills += 1
-		addKillFeed(plrName or "Target")
-	end
-
 	local function setDmgPanelVisible(on)
 		if on == dmgVisible then
 			return
@@ -978,6 +941,152 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 				end)
 			end
 		end)
+	end
+
+	local function getTracerOrigin()
+		local char = LP.Character
+		if not char then
+			return Cam.CFrame.Position
+		end
+		local tool = char:FindFirstChildOfClass("Tool")
+		if tool then
+			local handle = tool:FindFirstChild("Handle")
+			if handle and handle:IsA("BasePart") then
+				return handle.Position
+			end
+		end
+		local head = char:FindFirstChild("Head")
+		if head then
+			return head.Position
+		end
+		return Cam.CFrame.Position
+	end
+
+	local function getTracerEnd()
+		if S.LastShotChar and S.LastShotChar.Parent then
+			local head = S.LastShotChar:FindFirstChild("Head")
+			local hrp = S.LastShotChar:FindFirstChild("HumanoidRootPart")
+			local part = head or hrp
+			if part then
+				return part.Position
+			end
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
+		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1400, params)
+		if hit then
+			return hit.Position
+		end
+		return ray.Origin + ray.Direction * 250
+	end
+
+	local lastTracerAt = 0
+
+	local function spawnShotTracer(isKill)
+		if isKill then
+			if not S.KillShotTracers then
+				return
+			end
+		elseif not S.ShotTracers then
+			return
+		end
+		if not isKill and tick() - lastTracerAt < 0.06 then
+			return
+		end
+		lastTracerAt = tick()
+		local from = getTracerOrigin()
+		local to = getTracerEnd()
+		local diff = to - from
+		local dist = diff.Magnitude
+		if dist < 0.4 then
+			return
+		end
+		local mid = from + diff * 0.5
+		local col = isKill and Color3.fromRGB(255, 55, 90) or (S.V or ACC)
+		local width = isKill and 0.2 or 0.09
+		local life = isKill and 0.6 or 0.32
+		local beam = Instance.new("Part")
+		beam.Name = "VG_ShotTrace"
+		beam.Anchored = true
+		beam.CanCollide = false
+		beam.CanQuery = false
+		beam.CanTouch = false
+		beam.Material = Enum.Material.Neon
+		beam.Color = col
+		beam.Size = Vector3.new(width, width, dist)
+		beam.CFrame = CFrame.lookAt(mid, to)
+		beam.Transparency = isKill and 0.05 or 0.2
+		beam.Parent = workspace
+		Debris:AddItem(beam, life + 0.2)
+		Tween(beam, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 1,
+			Size = Vector3.new(width * 0.25, width * 0.25, dist),
+		}):Play()
+		if isKill then
+			local ring = Instance.new("Part")
+			ring.Shape = Enum.PartType.Ball
+			ring.Size = Vector3.new(1.2, 1.2, 1.2)
+			ring.Anchored = true
+			ring.CanCollide = false
+			ring.CanQuery = false
+			ring.CanTouch = false
+			ring.Material = Enum.Material.Neon
+			ring.Color = col
+			ring.Transparency = 0.25
+			ring.CFrame = CFrame.new(to)
+			ring.Parent = workspace
+			Debris:AddItem(ring, 0.5)
+			Tween(ring, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Size = Vector3.new(3.5, 3.5, 3.5),
+				Transparency = 1,
+			}):Play()
+		end
+	end
+
+	function S.RequestShotTracer(isKill)
+		pcall(spawnShotTracer, isKill == true)
+	end
+
+	local function registerHit(hum, dmg, plrName)
+		local shotAt = tonumber(S.LastShotAt)
+		local recent = shotAt and (tick() - shotAt) <= HIT_WINDOW
+		if not recent then
+			return
+		end
+		if S.LastShotHum and hum ~= S.LastShotHum then
+			return
+		end
+		session.hits += 1
+		if S.Hitmarker then
+			flashHitmarker(dmg)
+		end
+		pcall(playHitSound, false)
+		if S.DamageLog then
+			pcall(addDmgLog, plrName or "Target", dmg, false)
+		end
+	end
+
+	function S.TestHitFeedback()
+		flashHitmarker(42)
+		playHitSound(true)
+		if S.DamageLog then
+			addDmgLog("Test", 42, false)
+		end
+	end
+
+	local function registerKill(plrName)
+		local shotAt = tonumber(S.LastShotAt)
+		local recent = shotAt and (tick() - shotAt) <= 2.5
+		if not recent then
+			return
+		end
+		session.kills += 1
+		pcall(addKillFeed, plrName or "Target")
+		if S.KillShotTracers then
+			pcall(spawnShotTracer, true)
+		end
 	end
 
 	local humWatch = {}
@@ -1120,6 +1229,11 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 						pcall(S.NotifyShot, hum.Parent)
 					end
 				end
+			end
+			if S.ShotTracers then
+				task.defer(function()
+					pcall(spawnShotTracer, false)
+				end)
 			end
 		end
 	end)

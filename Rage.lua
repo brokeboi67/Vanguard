@@ -448,6 +448,9 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		if S.NotifyShot then
 			pcall(S.NotifyShot, tgt.char)
 		end
+		if S.RequestShotTracer then
+			pcall(S.RequestShotTracer, false)
+		end
 
 		rageShootingUntil = tick() + 0.12
 		local mode = S.RageAimMode or "Silent"
