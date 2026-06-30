@@ -449,7 +449,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			pcall(S.NotifyShot, tgt.char)
 		end
 		if S.RequestShotTracer then
-			pcall(S.RequestShotTracer, false)
+			pcall(S.RequestShotTracer, false, tgt.char)
 		end
 
 		rageShootingUntil = tick() + 0.12

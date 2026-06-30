@@ -6,6 +6,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
+	local TS = game:GetService("TweenService")
 	local Debris = game:GetService("Debris")
 
 	local LP = Players.LocalPlayer
@@ -962,7 +963,15 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		return Cam.CFrame.Position
 	end
 
-	local function getTracerEnd()
+	local function getTracerEnd(targetChar)
+		if targetChar and targetChar.Parent then
+			local head = targetChar:FindFirstChild("Head")
+			local hrp = targetChar:FindFirstChild("HumanoidRootPart")
+			local part = head or hrp
+			if part then
+				return part.Position
+			end
+		end
 		if S.LastShotChar and S.LastShotChar.Parent then
 			local head = S.LastShotChar:FindFirstChild("Head")
 			local hrp = S.LastShotChar:FindFirstChild("HumanoidRootPart")
@@ -982,9 +991,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		return ray.Origin + ray.Direction * 250
 	end
 
-	local lastTracerAt = 0
+	local lastBulletTracerAt = 0
 
-	local function spawnShotTracer(isKill)
+	local function spawnShotTracer(isKill, targetChar)
 		if isKill then
 			if not S.KillShotTracers then
 				return
@@ -992,12 +1001,14 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		elseif not S.ShotTracers then
 			return
 		end
-		if not isKill and tick() - lastTracerAt < 0.06 then
+		if not isKill and tick() - lastBulletTracerAt < 0.05 then
 			return
 		end
-		lastTracerAt = tick()
+		if not isKill then
+			lastBulletTracerAt = tick()
+		end
 		local from = getTracerOrigin()
-		local to = getTracerEnd()
+		local to = getTracerEnd(targetChar)
 		local diff = to - from
 		local dist = diff.Magnitude
 		if dist < 0.4 then
@@ -1006,7 +1017,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		local mid = from + diff * 0.5
 		local col = isKill and Color3.fromRGB(255, 55, 90) or (S.V or ACC)
 		local width = isKill and 0.2 or 0.09
-		local life = isKill and 0.6 or 0.32
+		local life = isKill and 0.55 or 0.28
 		local beam = Instance.new("Part")
 		beam.Name = "VG_ShotTrace"
 		beam.Anchored = true
@@ -1019,13 +1030,16 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		beam.CFrame = CFrame.lookAt(mid, to)
 		beam.Transparency = isKill and 0.05 or 0.2
 		beam.Parent = workspace
-		Debris:AddItem(beam, life + 0.2)
-		Tween(beam, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-			Transparency = 1,
-			Size = Vector3.new(width * 0.25, width * 0.25, dist),
-		}):Play()
+		Debris:AddItem(beam, life + 0.15)
+		pcall(function()
+			Tween(beam, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Transparency = 1,
+				Size = Vector3.new(width * 0.25, width * 0.25, dist),
+			})
+		end)
 		if isKill then
 			local ring = Instance.new("Part")
+			ring.Name = "VG_KillTrace"
 			ring.Shape = Enum.PartType.Ball
 			ring.Size = Vector3.new(1.2, 1.2, 1.2)
 			ring.Anchored = true
@@ -1038,15 +1052,17 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			ring.CFrame = CFrame.new(to)
 			ring.Parent = workspace
 			Debris:AddItem(ring, 0.5)
-			Tween(ring, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Size = Vector3.new(3.5, 3.5, 3.5),
-				Transparency = 1,
-			}):Play()
+			pcall(function()
+				Tween(ring, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Size = Vector3.new(3.5, 3.5, 3.5),
+					Transparency = 1,
+				})
+			end)
 		end
 	end
 
-	function S.RequestShotTracer(isKill)
-		pcall(spawnShotTracer, isKill == true)
+	function S.RequestShotTracer(isKill, targetChar)
+		pcall(spawnShotTracer, isKill == true, targetChar)
 	end
 
 	local function registerHit(hum, dmg, plrName)
@@ -1076,7 +1092,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end
 	end
 
-	local function registerKill(plrName)
+	local function registerKill(plrName, victimChar)
 		local shotAt = tonumber(S.LastShotAt)
 		local recent = shotAt and (tick() - shotAt) <= 2.5
 		if not recent then
@@ -1085,7 +1101,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		session.kills += 1
 		pcall(addKillFeed, plrName or "Target")
 		if S.KillShotTracers then
-			pcall(spawnShotTracer, true)
+			pcall(spawnShotTracer, true, victimChar)
 		end
 	end
 
@@ -1173,7 +1189,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 				end
 			end
 			if hp <= 0 and last > 0 then
-				registerKill(plrName)
+				registerKill(plrName, hum.Parent)
 				if S.OnLocalKill then
 					pcall(S.OnLocalKill, hum, plrName)
 				end
@@ -1231,9 +1247,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 				end
 			end
 			if S.ShotTracers then
-				task.defer(function()
-					pcall(spawnShotTracer, false)
-				end)
+				pcall(spawnShotTracer, false, hum and hum.Parent or nil)
 			end
 		end
 	end)

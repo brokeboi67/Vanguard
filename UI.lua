@@ -838,16 +838,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			math.clamp(tabCol.B * 0.35 + 0.12, 0, 1)
 		)
 		C("UIStroke", { Color = strokeCol, Thickness = 1, Transparency = 0.45, Parent = Card })
-		C("Frame", {
-			Name = "TabAccentBar",
-			Size = UDim2.new(0, 3, 1, -10),
-			Position = UDim2.new(0, 0, 0, 5),
-			BackgroundColor3 = tabCol,
-			BackgroundTransparency = 0.15,
-			BorderSizePixel = 0,
-			ZIndex = 6,
-			Parent = Card,
-		})
 		C("UIPadding", {
 			PaddingTop = UDim.new(0, 10),
 			PaddingBottom = UDim.new(0, 10),

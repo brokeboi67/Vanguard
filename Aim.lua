@@ -392,7 +392,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			end
 		end
 		if S.RequestShotTracer then
-			pcall(S.RequestShotTracer, false)
+			pcall(S.RequestShotTracer, false, char)
 		end
 	end
 
