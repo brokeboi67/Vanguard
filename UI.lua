@@ -1590,7 +1590,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 6)
 	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })
 	MakeTog(VTrace, "Kill Tracer (grubszy + glow)", "KillShotTracers", 2, { flat = true })
-	MakeHint(VTrace, "Kill tracer = czerwona grubsza linia + kula przy zabójstwie.", 3)
+	MakeHint(VTrace, "Linia od crosshaira przez cel (przebija postać). Kill = grubsza czerwona + kula.", 3)
 
 	local LAim = MakeCard(T3, "AIMBOT", "Aimbot i Silent się wykluczają.", 1)
 	MakeTog(LAim, "Aimbot (hold RMB)", "Aimbot", 1, { flat = true })

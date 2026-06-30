@@ -944,7 +944,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end)
 	end
 
-	local function resolveTracerLine(targetChar, aimPos)
+	local function resolveTracerLine(targetChar, aimPos, isKill)
 		local to = aimPos
 		if typeof(to) ~= "Vector3" and targetChar and targetChar.Parent then
 			local head = targetChar:FindFirstChild("Head")
@@ -962,10 +962,17 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end
 
 		local rayOrigin = S.LastShotRayOrigin
+		local rayDir = S.LastShotRayDir
 		local shotAt = tonumber(S.LastShotAt)
 		if typeof(rayOrigin) ~= "Vector3" or not shotAt or tick() - shotAt > 0.75 then
 			local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
 			rayOrigin = ray.Origin
+			rayDir = ray.Direction
+		end
+		if typeof(rayDir) == "Vector3" and rayDir.Magnitude > 0 then
+			rayDir = rayDir.Unit
+		else
+			rayDir = nil
 		end
 
 		if typeof(to) ~= "Vector3" then
@@ -977,25 +984,28 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			if hit then
 				to = hit.Position
 			else
-				to = ray.Origin + ray.Direction * 220
+				to = ray.Origin + ray.Direction * 280
 			end
 			if typeof(rayOrigin) ~= "Vector3" then
 				rayOrigin = ray.Origin
 			end
+			if not rayDir then
+				rayDir = ray.Direction.Unit
+			end
 		end
 
-		local delta = to - rayOrigin
-		local dist = delta.Magnitude
-		if dist < 2 then
+		if not rayDir then
+			rayDir = (to - rayOrigin).Unit
+		end
+
+		local pierce = isKill and 14 or 8
+		to = to + rayDir * pierce
+
+		local from = rayOrigin + rayDir * 1.5
+		local dist = (to - from).Magnitude
+		if dist < 1 then
 			return nil, nil
 		end
-		local dir = delta.Unit
-
-		local hideDist = math.clamp(dist * 0.5, 22, dist - 2)
-		if hideDist >= dist - 1 then
-			hideDist = dist * 0.3
-		end
-		local from = rayOrigin + dir * hideDist
 		return from, to
 	end
 
@@ -1016,7 +1026,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			lastBulletTracerAt = tick()
 		end
 
-		local from, to = resolveTracerLine(targetChar, aimPos)
+		local from, to = resolveTracerLine(targetChar, aimPos, isKill)
 		if not from or not to then
 			return
 		end
@@ -1027,45 +1037,52 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end
 		local mid = from + diff * 0.5
 		local col = isKill and Color3.fromRGB(255, 55, 90) or (S.V or ACC)
-		local width = isKill and 0.2 or 0.09
-		local life = isKill and 0.55 or 0.28
-		local beam = Instance.new("Part")
-		beam.Name = "VG_ShotTrace"
-		beam.Anchored = true
-		beam.CanCollide = false
-		beam.CanQuery = false
-		beam.CanTouch = false
-		beam.Material = Enum.Material.Neon
-		beam.Color = col
-		beam.Size = Vector3.new(width, width, dist)
-		beam.CFrame = CFrame.lookAt(mid, to)
-		beam.Transparency = isKill and 0.05 or 0.2
-		beam.Parent = workspace
-		Debris:AddItem(beam, life + 0.15)
-		pcall(function()
-			Tween(beam, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-				Transparency = 1,
-				Size = Vector3.new(width * 0.25, width * 0.25, dist),
-			})
-		end)
+		local width = isKill and 0.5 or 0.28
+		local coreW = isKill and 0.22 or 0.12
+		local life = isKill and 0.85 or 0.5
+
+		local function makeSegment(w, color, transp, name)
+			local seg = Instance.new("Part")
+			seg.Name = name or "VG_ShotTrace"
+			seg.Anchored = true
+			seg.CanCollide = false
+			seg.CanQuery = false
+			seg.CanTouch = false
+			seg.Material = Enum.Material.Neon
+			seg.Color = color
+			seg.Size = Vector3.new(w, w, dist)
+			seg.CFrame = CFrame.lookAt(mid, to)
+			seg.Transparency = transp
+			seg.Parent = workspace
+			Debris:AddItem(seg, life + 0.2)
+			pcall(function()
+				Tween(seg, TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Transparency = 1,
+				})
+			end)
+			return seg
+		end
+
+		makeSegment(width, col, isKill and 0.1 or 0.15, "VG_ShotTrace")
+		makeSegment(coreW, Color3.new(1, 1, 1), isKill and 0 or 0.05, "VG_ShotTraceCore")
 		if isKill then
 			local ring = Instance.new("Part")
 			ring.Name = "VG_KillTrace"
 			ring.Shape = Enum.PartType.Ball
-			ring.Size = Vector3.new(1.2, 1.2, 1.2)
+			ring.Size = Vector3.new(2, 2, 2)
 			ring.Anchored = true
 			ring.CanCollide = false
 			ring.CanQuery = false
 			ring.CanTouch = false
 			ring.Material = Enum.Material.Neon
 			ring.Color = col
-			ring.Transparency = 0.25
+			ring.Transparency = 0.1
 			ring.CFrame = CFrame.new(to)
 			ring.Parent = workspace
 			Debris:AddItem(ring, 0.5)
 			pcall(function()
-				Tween(ring, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-					Size = Vector3.new(3.5, 3.5, 3.5),
+				Tween(ring, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Size = Vector3.new(5, 5, 5),
 					Transparency = 1,
 				})
 			end)
