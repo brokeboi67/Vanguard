@@ -1120,10 +1120,25 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end
 	end
 
-	local function registerKill(plrName, victimChar)
+	local function shotMatchesKill(hum, victimChar)
 		local shotAt = tonumber(S.LastShotAt)
-		local recent = shotAt and (tick() - shotAt) <= 2.5
-		if not recent then
+		if not shotAt or tick() - shotAt > 2.5 then
+			return false
+		end
+		if not S.LastShotChar and not S.LastShotHum then
+			return false
+		end
+		if S.LastShotHum and hum and hum == S.LastShotHum then
+			return true
+		end
+		if S.LastShotChar and victimChar and victimChar == S.LastShotChar then
+			return true
+		end
+		return false
+	end
+
+	local function registerKill(plrName, victimChar, hum)
+		if not shotMatchesKill(hum, victimChar) then
 			return
 		end
 		session.kills += 1
@@ -1217,7 +1232,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 				end
 			end
 			if hp <= 0 and last > 0 then
-				registerKill(plrName, hum.Parent)
+				registerKill(plrName, hum.Parent, hum)
 				if S.OnLocalKill then
 					pcall(S.OnLocalKill, hum, plrName)
 				end

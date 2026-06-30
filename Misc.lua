@@ -9,7 +9,8 @@ function Misc.Init(S, TF, Util)
 	local RS = game:GetService("RunService")
 	local LP = Players.LocalPlayer
 
-	local trackedChars = {}
+	local expandRoot = nil
+	local expandParts = {}
 	local botList = {}
 	local botScanAt = 0
 	local lastRefresh = 0
@@ -21,6 +22,27 @@ function Misc.Init(S, TF, Util)
 		"Torso",
 		"LowerTorso",
 	}
+
+	local function getRoot()
+		if expandRoot and expandRoot.Parent then
+			return expandRoot
+		end
+		expandRoot = workspace:FindFirstChild("VG_Hitboxes")
+		if not expandRoot then
+			expandRoot = Instance.new("Folder")
+			expandRoot.Name = "VG_Hitboxes"
+			expandRoot.Parent = workspace
+		end
+		return expandRoot
+	end
+
+	local function charId(char)
+		return tostring(char:GetDebugId())
+	end
+
+	local function boxName(char, slotName)
+		return VG_PREFIX .. charId(char) .. "_" .. slotName
+	end
 
 	local function isAliveChar(char)
 		if not char or not char.Parent then
@@ -50,24 +72,36 @@ function Misc.Init(S, TF, Util)
 	end
 
 	local function clearExpands(char)
-		for _, ch in ipairs(char:GetChildren()) do
-			if ch:IsA("BasePart") and string.sub(ch.Name, 1, #VG_PREFIX) == VG_PREFIX then
-				ch:Destroy()
+		if expandParts[char] then
+			for _, data in pairs(expandParts[char]) do
+				if data.part and data.part.Parent then
+					data.part:Destroy()
+				end
+			end
+			expandParts[char] = nil
+		end
+		local root = workspace:FindFirstChild("VG_Hitboxes")
+		if root and char then
+			local id = charId(char)
+			for _, ch in ipairs(root:GetChildren()) do
+				if string.find(ch.Name, id, 1, true) then
+					ch:Destroy()
+				end
 			end
 		end
-		trackedChars[char] = nil
 	end
 
 	local function ensureExpand(char, anchor, slotName, mul)
 		if not anchor or not anchor:IsA("BasePart") or not anchor.Parent then
 			return nil
 		end
-		local boxName = VG_PREFIX .. slotName
-		local box = char:FindFirstChild(boxName)
+		local name = boxName(char, slotName)
+		local root = getRoot()
+		local box = root:FindFirstChild(name)
 		if not box then
 			box = Instance.new("Part")
-			box.Name = boxName
-			box.Anchored = false
+			box.Name = name
+			box.Anchored = true
 			box.CanCollide = false
 			box.CanQuery = true
 			box.CanTouch = false
@@ -75,16 +109,17 @@ function Misc.Init(S, TF, Util)
 			box.Transparency = 1
 			box.CastShadow = false
 			box.Material = Enum.Material.SmoothPlastic
-			box.CFrame = anchor.CFrame
-			box.Size = anchor.Size * mul
-			box.Parent = char
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = anchor
-			weld.Part1 = box
-			weld.Parent = box
-		else
-			box.Size = anchor.Size * mul
+			box.Parent = root
 		end
+		box.Size = anchor.Size * mul
+		box.CFrame = anchor.CFrame
+
+		expandParts[char] = expandParts[char] or {}
+		expandParts[char][slotName] = {
+			part = box,
+			anchor = anchor,
+			mul = mul,
+		}
 		return box
 	end
 
@@ -104,20 +139,22 @@ function Misc.Init(S, TF, Util)
 
 		local headMul = math.clamp(S.HeadSizeScale or 2, 1, 6)
 		local boxMul = math.clamp(S.HitboxSizeScale or 1.5, 1, 5)
-		local any = false
 
 		if S.HeadSize then
 			for _, name in ipairs(HEAD_SLOTS) do
 				local anchor = Util.resolveBodyPart(char, name)
-				if anchor and ensureExpand(char, anchor, name, headMul) then
-					any = true
+				if anchor then
+					ensureExpand(char, anchor, name, headMul)
 				end
 			end
 		else
-			for _, name in ipairs(HEAD_SLOTS) do
-				local box = char:FindFirstChild(VG_PREFIX .. name)
-				if box then
-					box:Destroy()
+			if expandParts[char] then
+				for _, name in ipairs(HEAD_SLOTS) do
+					local data = expandParts[char][name]
+					if data and data.part then
+						data.part:Destroy()
+						expandParts[char][name] = nil
+					end
 				end
 			end
 		end
@@ -125,34 +162,35 @@ function Misc.Init(S, TF, Util)
 		if S.HitboxSize then
 			for _, name in ipairs(HITBOX_SLOTS) do
 				local anchor = Util.resolveBodyPart(char, name)
-				if anchor and ensureExpand(char, anchor, name, boxMul) then
-					any = true
+				if anchor then
+					ensureExpand(char, anchor, name, boxMul)
 				end
 			end
 		else
-			for _, name in ipairs(HITBOX_SLOTS) do
-				local box = char:FindFirstChild(VG_PREFIX .. name)
-				if box then
-					box:Destroy()
+			if expandParts[char] then
+				for _, name in ipairs(HITBOX_SLOTS) do
+					local data = expandParts[char][name]
+					if data and data.part then
+						data.part:Destroy()
+						expandParts[char][name] = nil
+					end
 				end
 			end
 		end
 
-		if any then
-			trackedChars[char] = { headMul = headMul, boxMul = boxMul }
-		else
-			trackedChars[char] = nil
+		if expandParts[char] and next(expandParts[char]) == nil then
+			expandParts[char] = nil
 		end
 	end
 
 	local function refreshAll()
 		if not S.HeadSize and not S.HitboxSize then
-			for char in pairs(trackedChars) do
+			for char in pairs(expandParts) do
 				if char.Parent then
 					clearExpands(char)
 				end
 			end
-			table.clear(trackedChars)
+			table.clear(expandParts)
 			return
 		end
 
@@ -174,6 +212,32 @@ function Misc.Init(S, TF, Util)
 			end
 		end
 	end
+
+	RS.RenderStepped:Connect(function()
+		if S.Unloaded then
+			return
+		end
+		if not S.HeadSize and not S.HitboxSize then
+			return
+		end
+		for char, slots in pairs(expandParts) do
+			if not char or not char.Parent then
+				clearExpands(char)
+			else
+				for slotName, data in pairs(slots) do
+					local anchor = Util.resolveBodyPart(char, slotName)
+					if anchor and data.part and data.part.Parent then
+						data.part.CFrame = anchor.CFrame
+						data.part.Size = anchor.Size * data.mul
+						data.anchor = anchor
+					elseif data.part then
+						data.part:Destroy()
+						slots[slotName] = nil
+					end
+				end
+			end
+		end
+	end)
 
 	Players.PlayerAdded:Connect(function(plr)
 		plr.CharacterAdded:Connect(function(char)
@@ -213,7 +277,7 @@ function Misc.Init(S, TF, Util)
 		if not S.HeadSize and not S.HitboxSize then
 			return
 		end
-		if tick() - lastRefresh < 2 then
+		if tick() - lastRefresh < 1 then
 			return
 		end
 		lastRefresh = tick()
@@ -222,16 +286,18 @@ function Misc.Init(S, TF, Util)
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerCleanup(function()
-			for char in pairs(trackedChars) do
+			for char in pairs(expandParts) do
 				if char and char.Parent then
 					clearExpands(char)
 				end
 			end
-			for _, plr in ipairs(Players:GetPlayers()) do
-				if plr.Character then
-					clearExpands(plr.Character)
+			table.clear(expandParts)
+			pcall(function()
+				local root = workspace:FindFirstChild("VG_Hitboxes")
+				if root then
+					root:Destroy()
 				end
-			end
+			end)
 		end)
 	end
 end

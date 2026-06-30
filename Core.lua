@@ -165,6 +165,13 @@ function Core.unload()
 	end)
 
 	pcall(function()
+		local hbx = workspace:FindFirstChild("VG_Hitboxes")
+		if hbx then
+			hbx:Destroy()
+		end
+	end)
+
+	pcall(function()
 		game:GetService("ContextActionService"):UnbindAction("VanguardSilent")
 	end)
 

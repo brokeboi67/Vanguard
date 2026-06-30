@@ -210,7 +210,14 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return math.huge
 		end
 		local center = Cam.ViewportSize / 2
-		return (Vector2.new(pos.X, pos.Y) - Vector2.new(center.X, center.Y)).Magnitude
+		local d = (Vector2.new(pos.X, pos.Y) - Vector2.new(center.X, center.Y)).Magnitude
+		if part and part:IsA("BasePart") and string.sub(part.Name, 1, 8) == "VG_HBX_" then
+			local right = Cam.CFrame.RightVector * (part.Size.X * 0.5)
+			local edgePos = Cam:WorldToViewportPoint(part.Position + right)
+			local screenRadius = (Vector2.new(edgePos.X, edgePos.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
+			d = math.max(0, d - screenRadius * 0.9)
+		end
+		return d
 	end
 
 	local function resolveHitPart(char)

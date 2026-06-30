@@ -28,6 +28,14 @@ function Util.resolveAimPart(char, name)
 	if not char or not name then
 		return nil
 	end
+	local root = workspace:FindFirstChild("VG_Hitboxes")
+	if root then
+		local key = VG_PREFIX .. tostring(char:GetDebugId()) .. "_" .. name
+		local vg = root:FindFirstChild(key)
+		if vg and vg:IsA("BasePart") then
+			return vg
+		end
+	end
 	local vg = char:FindFirstChild(VG_PREFIX .. name)
 	if vg and vg:IsA("BasePart") then
 		return vg
@@ -58,6 +66,9 @@ function Util.getFirePosition(char, part)
 		return nil
 	end
 	if char and string.sub(part.Name, 1, #VG_PREFIX) == VG_PREFIX then
+		if part:IsA("BasePart") then
+			return part.Position
+		end
 		local slot = string.sub(part.Name, #VG_PREFIX + 1)
 		local body = Util.resolveBodyPart(char, slot)
 		if body then
