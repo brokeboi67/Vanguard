@@ -1756,10 +1756,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeHint(MHit, "Powiększa hitboxy lokalnie dla aim/trigger (folder VG_Hitboxes). Nie zmienia serwera.", 7)
 	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 8)
 
-	local MSec = MakeCard(TM, "SECURITY", "Stealth: gethui + hooki reflection + async GUI + GUID nazwy.", 3)
+	local MSec = MakeCard(TM, "SECURITY", "gethui + protect_gui + losowe nazwy GUI (bez lagujących hooków).", 3)
 	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
-	MakeHint(MSec, "Wymaga hookmetamethod w executorze. Wyłącz tylko jeśli masz własny bypass.", 2)
-	MakeHint(MSec, "Kick 267 = wykryty executor/mod w grze, nie samo GUI.", 3)
+	MakeHint(MSec, "267 = gra wykrywa skrypt/executor. Używaj gethui i nie ładuj 2 cheatów naraz.", 2)
 
 	local MFX = MakeCard(TM, "LOCAL FX", "Tylko Ty widzisz — efekty przy hit / kill.", 4)
 	MakeTog(MFX, "Kill Effects", "KillEffects", 1, { flat = true })

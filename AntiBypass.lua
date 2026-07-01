@@ -4,12 +4,10 @@ local AntiBypass = {}
 
 local concealed = setmetatable({}, { __mode = "k" })
 local protected = setmetatable({}, { __mode = "k" })
-local StealthModule = nil
 
 local GUI_ORDER = 999999
 
-function AntiBypass.setStealth(mod)
-	StealthModule = mod
+function AntiBypass.setStealth(_mod)
 end
 
 function AntiBypass.getGuiRoot()
@@ -66,9 +64,6 @@ function AntiBypass.protectInstance(gui)
 	if typeof(cloneref) == "function" then
 		pcall(cloneref, gui)
 	end
-	if typeof(sethiddenproperty) == "function" then
-		pcall(sethiddenproperty, gui, "Archivable", false)
-	end
 end
 
 function AntiBypass.concealGui(gui)
@@ -76,16 +71,8 @@ function AntiBypass.concealGui(gui)
 		return
 	end
 	concealed[gui] = true
-	if StealthModule then
-		StealthModule.mark(gui, true)
-	end
 	AntiBypass.protectInstance(gui)
 	AntiBypass.bringToFront(gui)
-	for _, desc in ipairs(gui:GetDescendants()) do
-		if StealthModule then
-			StealthModule.mark(desc)
-		end
-	end
 end
 
 function AntiBypass.isVanguardGui(gui)
@@ -95,10 +82,6 @@ end
 function AntiBypass.Init(S)
 	if S.AntiBypass == false then
 		return
-	end
-
-	if StealthModule then
-		StealthModule.installHooks()
 	end
 
 	local root = AntiBypass.getGuiRoot()
