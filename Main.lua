@@ -27,8 +27,12 @@ local Teleport = Get("Teleport.lua")
 Teleport.init(Settings, Core)
 
 local Session = Get("Session.lua")
-Settings.RejoinGame = Session.rejoin
-Settings.ServerHop = Session.serverHop
+Settings.RejoinGame = function()
+	return Session.rejoin(Settings.MarkManualLeave)
+end
+Settings.ServerHop = function()
+	return Session.serverHop(Settings.MarkManualLeave)
+end
 
 local Util = Get("Util.lua")
 local ESP = Get("ESP.lua")

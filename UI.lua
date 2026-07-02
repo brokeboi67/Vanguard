@@ -2327,7 +2327,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			end
 		end,
 	})
-	MakeHint(SSession, "Transfer Script: ponownie ładuje Vanguard gdy gra teleportuje Cię (lobby → mecz). Nie działa przy ręcznym wyjściu i dołączeniu do innej gry.", 3)
+	MakeHint(SSession, "Transfer Script: ładuje się po teleportacji w grze (lobby → mecz). Wyjście z gry / dołączenie ręczne = NIE ładuje (flaga skip).", 3)
 	MakeButton(SSession, "Rejoin Game", 4, function()
 		showNotify("Rejoin...")
 		if S.RejoinGame then

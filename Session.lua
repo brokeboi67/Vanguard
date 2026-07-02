@@ -2,7 +2,10 @@
 
 local Session = {}
 
-function Session.rejoin()
+function Session.rejoin(markLeave)
+	if markLeave then
+		pcall(markLeave)
+	end
 	local TS = game:GetService("TeleportService")
 	local LP = game:GetService("Players").LocalPlayer
 	if not LP then
@@ -17,7 +20,10 @@ function Session.rejoin()
 	return true
 end
 
-function Session.serverHop()
+function Session.serverHop(markLeave)
+	if markLeave then
+		pcall(markLeave)
+	end
 	local TS = game:GetService("TeleportService")
 	local HttpService = game:GetService("HttpService")
 	local LP = game:GetService("Players").LocalPlayer

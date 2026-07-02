@@ -158,37 +158,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return false
 	end
 
-	local function bindSilentAction()
-		pcall(function()
-			CAS:UnbindAction("VanguardSilent")
-		end)
-		if not S.Silent then
-			return
-		end
-		local bindName = getSilentBindName()
-		local mouse = resolveMouseBind(bindName)
-		if not mouse then
-			return
-		end
-		CAS:BindActionAtPriority("VanguardSilent", function(_, state, input)
-			if S.MenuOpen or S.MasterRage or not S.Silent then
-				return Enum.ContextActionResult.Pass
-			end
-			if state ~= Enum.UserInputState.Begin then
-				return Enum.ContextActionResult.Pass
-			end
-			if input.UserInputType ~= mouse then
-				return Enum.ContextActionResult.Pass
-			end
-			local tgt = pickBestTarget(fovLimit())
-			if tgt and snapSilentCamera(tgt) then
-				local pos = Util.getFirePosition(tgt.char, tgt.part)
-				markShot(tgt.char, pos)
-			end
-			return Enum.ContextActionResult.Pass
-		end, false, Enum.ContextActionPriority.High.Value, mouse)
-	end
-
 	local function triggerArmed()
 		if not S.Trigger then
 			return false
@@ -581,6 +550,39 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		lastTrigger = tick()
 		runSilentShot(tgt)
+	end
+
+	local function bindSilentAction()
+		pcall(function()
+			CAS:UnbindAction("VanguardSilent")
+		end)
+		if not S.Silent then
+			return
+		end
+		local bindName = getSilentBindName()
+		local mouse = resolveMouseBind(bindName)
+		if not mouse then
+			return
+		end
+		CAS:BindActionAtPriority("VanguardSilent", function(_, state, input)
+			if S.MenuOpen or S.MasterRage or not S.Silent then
+				return Enum.ContextActionResult.Pass
+			end
+			if state ~= Enum.UserInputState.Begin then
+				return Enum.ContextActionResult.Pass
+			end
+			if input.UserInputType ~= mouse then
+				return Enum.ContextActionResult.Pass
+			end
+			pcall(function()
+				local tgt = pickBestTarget(fovLimit())
+				if tgt and snapSilentCamera(tgt) then
+					local pos = Util.getFirePosition(tgt.char, tgt.part)
+					markShot(tgt.char, pos)
+				end
+			end)
+			return Enum.ContextActionResult.Pass
+		end, false, Enum.ContextActionPriority.High.Value, mouse)
 	end
 
 	pcall(function()
