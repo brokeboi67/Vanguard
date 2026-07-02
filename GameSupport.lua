@@ -23,6 +23,7 @@ GameSupport.ENTRIES = {
 	[12355337193] = { status = "Supported", note = "Murderers VS Sheriffs DUELS" },
 	[72258920367796] = { status = "Supported", note = "Recoil" },
 	[87018676608089] = { status = "Partially Supported", note = "Pistol Arena" },
+	[128326169270358] = { status = "Supported", note = "[FPS] One Shot Arena 🎯" }
 }
 
 local STATUS_UI = {
