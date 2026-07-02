@@ -93,4 +93,8 @@ end
 AntiBypass.concealGui(GUI)
 AntiBypass.Init(Settings)
 
+if not isTransferLoad and Settings.TransferScript and Settings.ApplyTransferScript then
+	pcall(Settings.ApplyTransferScript)
+end
+
 Stealth.silentPrint("VANGUARD: Loaded")

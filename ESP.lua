@@ -508,18 +508,16 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 	end
 
-	local function renderOffscreen(key, worldPos, clr, dist, displayName)
-		local placement = getOffscreenPlacement(worldPos)
-		if not placement then
+	local function renderOffscreen(key, worldPos, clr, dist)
+		local edge, angle = getOffscreenPlacement(worldPos)
+		if not edge then
 			hideArrow(key)
 			return
 		end
-		local edge, angle = placement[1], placement[2]
 		local ch = ensureArrow(key)
 		ch.root.Position = UDim2.new(0, edge.X, 0, edge.Y)
 		ch.root.Rotation = angle
 		ch.glyph.TextColor3 = clr
-		ch.glyph.Rotation = 0
 		ch.distLbl.Text = math.floor(dist) .. "m"
 		ch.distLbl.TextColor3 = clr
 		ch.root.Visible = true
@@ -606,12 +604,11 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				if dist > S.MaxDist then
 					return
 				end
-				local placement = getOffscreenPlacement(hrp.Position)
-				if placement then
+				local edge = getOffscreenPlacement(hrp.Position)
+				if edge then
 					arrowActive[key] = true
 					local clr = GetColor(plr, char, isBot)
-					local label = isBot and ("[BOT] " .. char.Name) or (plr and plr.Name or char.Name)
-					renderOffscreen(key, hrp.Position, clr, dist, label)
+					pcall(renderOffscreen, key, hrp.Position, clr, dist)
 				else
 					hideArrow(key)
 				end

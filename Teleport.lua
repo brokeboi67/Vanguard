@@ -14,22 +14,48 @@ local function loaderSnippet()
 	local gameId = game.GameId
 	return string.format(
 		[[
-local Players = game:GetService("Players")
-local LP = Players.LocalPlayer
-if not LP then return end
-local okJoin, joinData = pcall(function() return LP:GetJoinData() end)
-local sourcePlace = okJoin and joinData and joinData.SourcePlaceId or nil
-if not sourcePlace or sourcePlace == 0 then return end
-if game.GameId ~= %d then return end
-if isfile and isfile(%q) then
-	pcall(delfile, %q)
+local EXPECTED_GAME = %d
+local SKIP_PATH = %q
+local LOADER = %q
+
+local function shouldLoad()
+	if game.GameId ~= EXPECTED_GAME then
+		return false
+	end
+	if isfile and isfile(SKIP_PATH) then
+		pcall(delfile, SKIP_PATH)
+		return false
+	end
+	local Players = game:GetService("Players")
+	local LP = Players.LocalPlayer
+	if not LP then
+		LP = Players.PlayerAdded:Wait()
+	end
+	task.wait(0.15)
+	local okJoin, joinData = pcall(function()
+		return LP:GetJoinData()
+	end)
+	if not okJoin or typeof(joinData) ~= "table" then
+		return false
+	end
+	local srcPlace = joinData.SourcePlaceId or 0
+	local srcGame = joinData.SourceGameId or 0
+	if srcPlace > 0 then
+		return true
+	end
+	if srcGame > 0 and srcGame == EXPECTED_GAME then
+		return true
+	end
+	return false
+end
+
+if not shouldLoad() then
 	return
 end
 _G.VG_FROM_TRANSFER = true
-loadstring(game:HttpGet(%q))()
+loadstring(game:HttpGet(LOADER))()
 ]],
 		gameId,
-		SKIP_PATH,
 		SKIP_PATH,
 		LOADER_URL
 	)
