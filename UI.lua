@@ -2859,19 +2859,26 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			return
 		end
 		local total = state.total or 0
-		local loaded = state.loaded or 0
-		local pct = total > 0 and math.clamp(loaded / total, 0, 1) or 0
-		if state.phase == "start" then
-			PreloadStatus.Text = "Znaleziono " .. total .. " assetów"
+		local processed = state.processed or state.loaded or 0
+		local pct = total > 0 and math.clamp(processed / total, 0, 1) or 1
+		if state.phase == "scan" then
+			PreloadStatus.Text = state.label or "Skanowanie gry..."
+		elseif state.phase == "start" then
+			PreloadStatus.Text = state.label or ("Do załadowania: " .. total)
+		elseif state.phase == "item" then
+			PreloadStatus.Text = state.label or "Ładowanie..."
 		elseif state.phase == "progress" then
-			PreloadStatus.Text = state.label or (loaded .. " / " .. total)
+			PreloadStatus.Text = state.label or (processed .. " / " .. total)
 		elseif state.phase == "error" then
 			PreloadStatus.Text = "Błąd: " .. tostring(state.label or "?")
 		elseif state.phase == "done" then
 			local failed = state.failed or 0
-			PreloadStatus.Text = failed > 0
-				and ("Gotowe · " .. failed .. " błędów")
-				or ("Gotowe · " .. total .. " assetów")
+			local skipped = state.skipped or 0
+			PreloadStatus.Text = state.label
+				or (failed > 0 and ("Gotowe · " .. failed .. " błędów") or ("Gotowe · " .. (state.loaded or total) .. " assetów"))
+			if skipped > 0 and failed == 0 and (state.loaded or 0) == 0 and total == 0 then
+				PreloadStatus.Text = state.label or ("Już załadowane · " .. skipped)
+			end
 			PreloadCancelBtn.Text = "OK"
 			preloadRunning = false
 			task.delay(8, function()
