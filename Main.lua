@@ -26,6 +26,10 @@ Settings.Unloaded = false
 local Teleport = Get("Teleport.lua")
 Teleport.init(Settings, Core)
 
+local Session = Get("Session.lua")
+Settings.RejoinGame = Session.rejoin
+Settings.ServerHop = Session.serverHop
+
 local Util = Get("Util.lua")
 local ESP = Get("ESP.lua")
 local TeamFriends = Get("TeamFriends.lua")

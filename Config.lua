@@ -216,6 +216,12 @@ function Config.EnforceRules(S)
 	if S.TransferScript == nil then
 		S.TransferScript = false
 	end
+	if S.AimKey == nil or S.AimKey == "" then
+		S.AimKey = "MouseButton2"
+	end
+	if S.SilentKey == nil or S.SilentKey == "" then
+		S.SilentKey = "MouseButton1"
+	end
 	if S.ChamsRainbow then
 		S.LoS = false
 		S.RealTeamColor = false

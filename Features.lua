@@ -801,7 +801,19 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			order += 1
 		end
 		if S.Aimbot then
-			addKeyRow("Aimbot", "RMB", order)
+			local bind = S.AimKey or "MouseButton2"
+			if bind == "MouseButton1" then bind = "M1"
+			elseif bind == "MouseButton2" then bind = "M2"
+			elseif bind == "MouseButton3" then bind = "M3" end
+			addKeyRow("Aimbot", bind, order)
+			order += 1
+		end
+		if S.Silent then
+			local bind = S.SilentKey or "MouseButton1"
+			if bind == "MouseButton1" then bind = "M1"
+			elseif bind == "MouseButton2" then bind = "M2"
+			elseif bind == "MouseButton3" then bind = "M3" end
+			addKeyRow("Silent", bind, order)
 			order += 1
 		end
 		if S.FriendClick then

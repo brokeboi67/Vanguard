@@ -97,6 +97,98 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return nil
 	end
 
+	local MOUSE_BINDS = {
+		MouseButton1 = Enum.UserInputType.MouseButton1,
+		MouseButton2 = Enum.UserInputType.MouseButton2,
+		MouseButton3 = Enum.UserInputType.MouseButton3,
+	}
+
+	local function resolveMouseBind(name)
+		return MOUSE_BINDS[name]
+	end
+
+	local function resolveKeyBind(name)
+		if not name or name == "" or name == "None" then
+			return nil
+		end
+		local ok, key = pcall(function()
+			return Enum.KeyCode[name]
+		end)
+		if ok then
+			return key
+		end
+		return nil
+	end
+
+	local function getAimBindName()
+		return S.AimKey or "MouseButton2"
+	end
+
+	local function getSilentBindName()
+		return S.SilentKey or "MouseButton1"
+	end
+
+	local function inputMatchesBind(input, bindName)
+		if not bindName or bindName == "" or bindName == "None" then
+			return false
+		end
+		local mouse = resolveMouseBind(bindName)
+		if mouse then
+			return input.UserInputType == mouse
+		end
+		local key = resolveKeyBind(bindName)
+		if key then
+			return input.KeyCode == key
+		end
+		return false
+	end
+
+	local function isBindDown(bindName)
+		if not bindName or bindName == "" or bindName == "None" then
+			return false
+		end
+		local mouse = resolveMouseBind(bindName)
+		if mouse then
+			return UIS:IsMouseButtonPressed(mouse)
+		end
+		local key = resolveKeyBind(bindName)
+		if key then
+			return UIS:IsKeyDown(key)
+		end
+		return false
+	end
+
+	local function bindSilentAction()
+		pcall(function()
+			CAS:UnbindAction("VanguardSilent")
+		end)
+		if not S.Silent then
+			return
+		end
+		local bindName = getSilentBindName()
+		local mouse = resolveMouseBind(bindName)
+		if not mouse then
+			return
+		end
+		CAS:BindActionAtPriority("VanguardSilent", function(_, state, input)
+			if S.MenuOpen or S.MasterRage or not S.Silent then
+				return Enum.ContextActionResult.Pass
+			end
+			if state ~= Enum.UserInputState.Begin then
+				return Enum.ContextActionResult.Pass
+			end
+			if input.UserInputType ~= mouse then
+				return Enum.ContextActionResult.Pass
+			end
+			local tgt = pickBestTarget(fovLimit())
+			if tgt and snapSilentCamera(tgt) then
+				local pos = Util.getFirePosition(tgt.char, tgt.part)
+				markShot(tgt.char, pos)
+			end
+			return Enum.ContextActionResult.Pass
+		end, false, Enum.ContextActionPriority.High.Value, mouse)
+	end
+
 	local function triggerArmed()
 		if not S.Trigger then
 			return false
@@ -494,37 +586,26 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	pcall(function()
 		CAS:UnbindAction("VanguardSilent")
 	end)
-	CAS:BindActionAtPriority("VanguardSilent", function(_, state, input)
-		if S.MenuOpen or S.MasterRage or not S.Silent then
-			return Enum.ContextActionResult.Pass
-		end
-		if state ~= Enum.UserInputState.Begin then
-			return Enum.ContextActionResult.Pass
-		end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
-			return Enum.ContextActionResult.Pass
-		end
-		local tgt = pickBestTarget(fovLimit())
-		if tgt and snapSilentCamera(tgt) then
-			local pos = Util.getFirePosition(tgt.char, tgt.part)
-			markShot(tgt.char, pos)
-		end
-		return Enum.ContextActionResult.Pass
-	end, false, Enum.ContextActionPriority.High.Value, Enum.UserInputType.MouseButton1)
+	bindSilentAction()
 
 	UIS.InputBegan:Connect(function(input, processed)
 		if processed or S.MenuOpen or S.MasterRage or not S.Silent then
 			return
 		end
-		if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+		local bindName = getSilentBindName()
+		if resolveMouseBind(bindName) then
+			return
+		end
+		if not inputMatchesBind(input, bindName) then
 			return
 		end
 		local tgt = pickBestTarget(fovLimit())
-		if tgt and snapSilentCamera(tgt) then
-			local pos = Util.getFirePosition(tgt.char, tgt.part)
-			markShot(tgt.char, pos)
+		if tgt then
+			runSilentShot(tgt)
 		end
 	end)
+
+	S.RebindSilent = bindSilentAction
 
 	UIS.InputBegan:Connect(function(input)
 		if S.MenuOpen or S.MasterRage then
@@ -559,7 +640,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		pcall(tryTriggerShot)
 
-		if S.Aimbot and not S.Silent and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+		if S.Aimbot and not S.Silent and isBindDown(getAimBindName()) then
 			pcall(function()
 				local tgt = pickBestTarget(fovLimit())
 				if tgt and tgt.part and tgt.char then

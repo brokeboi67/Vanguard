@@ -24,6 +24,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		Settings = Color3.fromRGB(175, 175, 195),
 		Misc = Color3.fromRGB(255, 195, 75),
 		Config = Color3.fromRGB(155, 135, 255),
+		Menus = Color3.fromRGB(255, 120, 180),
 	}
 
 	local function tabSoft(col)
@@ -545,8 +546,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		if S.Chams and S.ChamsRainbow then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		else
-			M_Cham.BackgroundColor3 = ACC
+			M_Cham.BackgroundColor3 = S.V
 		end
+		M_BoxStroke.Color = S.V
+		M_BoxStroke.Thickness = S.Th
+		M_Nm.TextColor3 = S.V
+		M_Tr.Size = UDim2.new(0, S.Th, 0, 52)
+		M_Tr.BackgroundColor3 = S.V
 		M_Nm.Visible = S.Name
 		M_Dist.Visible = S.DistView
 		M_Nm.Position = UDim2.new(0.5, -46, 0, S.DistView and -22 or -14)
@@ -627,6 +633,26 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	local choiceRegistry = {}
 	local sliderRegistry = {}
 	local bindRegistry = {}
+	local colorRegistry = {}
+
+	local function formatBindName(name)
+		if name == "MouseButton1" then
+			return "M1"
+		end
+		if name == "MouseButton2" then
+			return "M2"
+		end
+		if name == "MouseButton3" then
+			return "M3"
+		end
+		return name or "None"
+	end
+
+	local function espCustomColorsEnabled()
+		return not S.LoS and not S.ChamsRainbow and not S.RealTeamColor
+	end
+
+	local updateEspColorControls
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -1155,7 +1181,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			end
 		end
 		for key, lbl in pairs(bindRegistry) do
-			lbl.Text = S[key] or "None"
+			lbl.Text = formatBindName(S[key])
+		end
+		if updateEspColorControls then
+			updateEspColorControls()
+		end
+		if S.RebindSilent then
+			pcall(S.RebindSilent)
 		end
 		UpdPreview()
 	end
@@ -1235,6 +1267,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 
 			setToggleVisual(key, enabled)
 			UpdPreview()
+			if key == "LoS" or key == "RealTeamColor" or key == "ChamsRainbow" then
+				if updateEspColorControls then
+					updateEspColorControls()
+				end
+			end
 			if opts.onChange then
 				pcall(opts.onChange, enabled)
 			end
@@ -1329,7 +1366,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 
 	local bindListening = false
 
-	local function MakeBind(page, label, key, order)
+	local function MakeBind(page, label, key, order, opts)
+		opts = opts or {}
 		local Row = C("TextButton", {
 			Size = UDim2.new(1, 0, 0, 36),
 			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
@@ -1360,7 +1398,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			Size = UDim2.new(0, 56, 0, 22),
 			Position = UDim2.new(1, -64, 0.5, -11),
 			BackgroundColor3 = Color3.fromRGB(24, 24, 30),
-			Text = S[key] or "None",
+			Text = formatBindName(S[key]),
 			Font = Enum.Font.GothamBold,
 			TextSize = 10,
 			TextColor3 = ACC,
@@ -1369,6 +1407,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = KeyLbl })
 
+		local listenConn
+		local function finishBind(name)
+			S[key] = name
+			KeyLbl.Text = formatBindName(name)
+			KeyLbl.TextColor3 = ACC
+			bindListening = false
+			if listenConn then
+				listenConn:Disconnect()
+				listenConn = nil
+			end
+			if opts.onChange then
+				pcall(opts.onChange, name)
+			end
+		end
+
 		Row.MouseButton1Click:Connect(function()
 			if bindListening then
 				return
@@ -1376,21 +1429,214 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			bindListening = true
 			KeyLbl.Text = "…"
 			KeyLbl.TextColor3 = Color3.fromRGB(200, 200, 120)
-			local conn
-			conn = UIS.InputBegan:Connect(function(input, processed)
+			listenConn = UIS.InputBegan:Connect(function(input, processed)
 				if processed then
 					return
 				end
 				if input.KeyCode ~= Enum.KeyCode.Unknown then
-					S[key] = input.KeyCode.Name
-					KeyLbl.Text = S[key]
-					KeyLbl.TextColor3 = ACC
-					bindListening = false
-					conn:Disconnect()
+					finishBind(input.KeyCode.Name)
+				elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+					finishBind("MouseButton1")
+				elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+					finishBind("MouseButton2")
+				elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+					finishBind("MouseButton3")
 				end
 			end)
 		end)
 		bindRegistry[key] = KeyLbl
+	end
+
+	local function MakeColorPicker(page, label, key, order)
+		local host = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 4),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = host,
+		})
+
+		local Head = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			BorderSizePixel = 0,
+			LayoutOrder = 1,
+			ZIndex = 5,
+			Parent = host,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Head })
+
+		C("TextLabel", {
+			Size = UDim2.new(1, -52, 1, 0),
+			Position = UDim2.new(0, 12, 0, 0),
+			BackgroundTransparency = 1,
+			Text = label,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(200, 200, 208),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = Head,
+		})
+
+		local Swatch = C("Frame", {
+			Size = UDim2.new(0, 24, 0, 24),
+			Position = UDim2.new(1, -36, 0.5, -12),
+			BackgroundColor3 = S[key] or Color3.new(1, 1, 1),
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = Head,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = Swatch })
+		C("UIStroke", { Color = Color3.fromRGB(50, 50, 58), Thickness = 1, Parent = Swatch })
+
+		local sliders = {}
+		local function applyColor()
+			local r = sliders.R and sliders.R.val or 0
+			local g = sliders.G and sliders.G.val or 0
+			local b = sliders.B and sliders.B.val or 0
+			S[key] = Color3.fromRGB(r, g, b)
+			Swatch.BackgroundColor3 = S[key]
+			UpdPreview()
+		end
+
+		local function addChannel(ch, channelKey, layoutOrder)
+			local min, max = 0, 255
+			local Row = C("Frame", {
+				Size = UDim2.new(1, 0, 0, 34),
+				BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+				BorderSizePixel = 0,
+				LayoutOrder = layoutOrder,
+				ZIndex = 5,
+				Parent = host,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+
+			local cur = math.floor((S[key] or Color3.new(1, 1, 1))[channelKey] * 255 + 0.5)
+			local ValLbl = C("TextLabel", {
+				Size = UDim2.new(0, 36, 0, 14),
+				Position = UDim2.new(1, -44, 0, 8),
+				BackgroundTransparency = 1,
+				Text = tostring(cur),
+				Font = Enum.Font.GothamBold,
+				TextSize = 10,
+				TextColor3 = ACC,
+				TextXAlignment = Enum.TextXAlignment.Right,
+				ZIndex = 6,
+				Parent = Row,
+			})
+
+			C("TextLabel", {
+				Size = UDim2.new(1, -52, 0, 14),
+				Position = UDim2.new(0, 12, 0, 8),
+				BackgroundTransparency = 1,
+				Text = ch,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 11,
+				TextColor3 = Color3.fromRGB(200, 200, 208),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				ZIndex = 6,
+				Parent = Row,
+			})
+
+			local Track = C("TextButton", {
+				Size = UDim2.new(1, -24, 0, 6),
+				Position = UDim2.new(0, 12, 0, 22),
+				BackgroundColor3 = Color3.fromRGB(28, 28, 36),
+				Text = "",
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				ZIndex = 6,
+				Parent = Row,
+			})
+			C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Track })
+
+			local Fill = C("Frame", {
+				Size = UDim2.new(cur / max, 0, 1, 0),
+				BackgroundColor3 = ACC,
+				BorderSizePixel = 0,
+				ZIndex = 7,
+				Parent = Track,
+			})
+			C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Fill })
+
+			local reg = { val = cur, row = Row, track = Track, fill = Fill, valLbl = ValLbl, active = true }
+			sliders[ch] = reg
+
+			local dragging = false
+			local function setVal(raw)
+				local val = math.clamp(math.floor(raw + 0.5), min, max)
+				reg.val = val
+				ValLbl.Text = tostring(val)
+				Fill.Size = UDim2.new(val / max, 0, 1, 0)
+				applyColor()
+			end
+			local function fromInput(x)
+				local ax = Track.AbsolutePosition.X
+				local aw = Track.AbsoluteSize.X
+				if aw <= 0 then
+					return
+				end
+				setVal(min + (max - min) * math.clamp((x - ax) / aw, 0, 1))
+			end
+
+			Track.MouseButton1Down:Connect(function()
+				if not reg.active then
+					return
+				end
+				dragging = true
+				fromInput(UIS:GetMouseLocation().X)
+			end)
+			Track.MouseButton1Up:Connect(function()
+				dragging = false
+			end)
+			Track.MouseButton1Click:Connect(function()
+				if reg.active then
+					fromInput(UIS:GetMouseLocation().X)
+				end
+			end)
+			UIS.InputChanged:Connect(function(input)
+				if dragging and reg.active and input.UserInputType == Enum.UserInputType.MouseMovement then
+					fromInput(input.Position.X)
+				end
+			end)
+		end
+
+		addChannel("R", "R", 2)
+		addChannel("G", "G", 3)
+		addChannel("B", "B", 4)
+
+		table.insert(colorRegistry, {
+			host = host,
+			swatch = Swatch,
+			sliders = sliders,
+			setEnabled = function(on)
+				for _, reg in pairs(sliders) do
+					reg.active = on
+					reg.row.BackgroundTransparency = on and 0 or 0.35
+				end
+				Head.BackgroundTransparency = on and 0 or 0.35
+			end,
+			refresh = function()
+				local col = S[key] or Color3.new(1, 1, 1)
+				Swatch.BackgroundColor3 = col
+				for ch, channelKey in pairs({ R = "R", G = "G", B = "B" }) do
+					local reg = sliders[ch]
+					if reg then
+						local val = math.floor(col[channelKey] * 255 + 0.5)
+						reg.val = val
+						reg.valLbl.Text = tostring(val)
+						reg.fill.Size = UDim2.new(val / 255, 0, 1, 0)
+					end
+				end
+			end,
+		})
 	end
 
 	local function MakeSlider(page, label, key, min, max, order, opts)
@@ -1562,6 +1808,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	local T2 = MakeTab("Settings", false, false, 6)
 	local TM = MakeTab("Misc", false, false, 7)
 	local T4 = MakeTab("Config", false, false, 8)
+	local TMenu = MakeTab("Menus", false, false, 9)
 
 	local VCore = MakeCard(T1, "ESP", nil, 1)
 	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
@@ -1596,11 +1843,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeHint(VTrace, "Linia od crosshaira przez cel (przebija postać). Kill = grubsza czerwona + kula.", 3)
 
 	local LAim = MakeCard(T3, "AIMBOT", "Aimbot i Silent się wykluczają.", 1)
-	MakeTog(LAim, "Aimbot (hold RMB)", "Aimbot", 1, { flat = true })
-	MakeTog(LAim, "Silent Aim (flick)", "Silent", 2, { flat = true })
+	MakeTog(LAim, "Aimbot", "Aimbot", 1, { flat = true })
+	MakeTog(LAim, "Silent Aim (flick)", "Silent", 2, {
+		flat = true,
+		onChange = function()
+			if S.RebindSilent then
+				pcall(S.RebindSilent)
+			end
+		end,
+	})
 	MakeTog(LAim, "Triggerbot", "Trigger", 3, { flat = true })
 
-	local LTrig = MakeCard(T3, "TRIGGERBOT", nil, 2)
+	local LAimBind = MakeCard(T3, "KEYBINDS", "Kliknij wiersz i naciśnij klawisz lub M1/M2/M3.", 2)
+	MakeBind(LAimBind, "Aimbot Key", "AimKey", 1)
+	MakeBind(LAimBind, "Silent Key", "SilentKey", 2, {
+		onChange = function()
+			if S.RebindSilent then
+				pcall(S.RebindSilent)
+			end
+		end,
+	})
+
+	local LTrig = MakeCard(T3, "TRIGGERBOT", nil, 3)
 	MakeChoice(LTrig, "Trigger Mode", "TriggerMode", {
 		{ label = "Hold", value = "Hold" },
 		{ label = "Toggle", value = "Toggle" },
@@ -1610,7 +1874,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 4, { flat = true })
 	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 5, { flat = true })
 
-	local LTarget = MakeCard(T3, "TARGETING", nil, 3)
+	local LTarget = MakeCard(T3, "TARGETING", nil, 4)
 	MakeTog(LTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })
 	MakeTog(LTarget, "Visible Check", "VisibleCheck", 2, { flat = true })
 	MakeTog(LTarget, "Target Bots", "AimBots", 3, { flat = true })
@@ -1626,7 +1890,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		{ label = "Closest", value = "Closest" },
 	}, 5)
 
-	local LFov = MakeCard(T3, "FOV & SMOOTH", "Smooth tylko z Aimbot (RMB).", 4)
+	local LFov = MakeCard(T3, "FOV & SMOOTH", "Smooth działa tylko z Aimbot (hold keybind).", 5)
 	MakeTog(LFov, "Show FOV Circle", "ShowFOV", 1, { flat = true })
 	MakeSlider(LFov, "FOV Size", "FOV", 20, 300, 2, { suffix = "px", step = 5 })
 	MakeSlider(LFov, "Smoothing", "Smooth", 0.05, 0.95, 3, {
@@ -1941,9 +2205,30 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		TF.Init(S, ParentGUI, ACC, refreshFriendList)
 	end
 
-	local SFilt = MakeCard(T2, "ESP COLORS", "Team Colors / LoS — wykluczają się.", 2)
+	local SFilt = MakeCard(T2, "ESP COLORS", "Tryby kolorów — wykluczają się nawzajem.", 2)
 	MakeTog(SFilt, "Team Colors", "RealTeamColor", 1, { flat = true })
 	MakeTog(SFilt, "Line of Sight", "LoS", 2, { flat = true })
+	MakeHint(SFilt, "Custom kolory (V/O) działają tylko gdy wyłączone: Team Colors, LoS i Chams Rainbow.", 3)
+	MakeColorPicker(SFilt, "Visible Color", "V", 4)
+	MakeColorPicker(SFilt, "Hidden Color", "O", 5)
+	MakeSlider(SFilt, "Line Thickness", "Th", 0.5, 4, 6, {
+		suffix = "px",
+		step = 0.1,
+		fmt = function(v)
+			return string.format("%.1f px", v)
+		end,
+	})
+
+	updateEspColorControls = function()
+		local on = espCustomColorsEnabled()
+		for _, reg in ipairs(colorRegistry) do
+			reg.setEnabled(on)
+			if on then
+				reg.refresh()
+			end
+		end
+	end
+	updateEspColorControls()
 
 	local SHud = MakeCard(T2, "HUD", nil, 3)
 	MakeTog(SHud, "Crosshair Dot", "Crosshair", 1, { flat = true })
@@ -2038,7 +2323,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 		end,
 	})
 	MakeHint(SSession, "Transfer Script: ponownie ładuje Vanguard gdy gra teleportuje Cię (lobby → mecz). Nie działa przy ręcznym wyjściu i dołączeniu do innej gry.", 3)
-	MakeHint(SSession, "Unload usuwa menu, HUD i hooki. Po reinject menu załaduje się od nowa.", 4)
+	MakeButton(SSession, "Rejoin Game", 4, function()
+		showNotify("Rejoin...")
+		if S.RejoinGame then
+			local ok, err = S.RejoinGame()
+			if not ok then
+				showNotify(err or "Błąd rejoin")
+			end
+		else
+			showNotify("Rejoin niedostępny")
+		end
+	end)
+	MakeButton(SSession, "Server Hop", 5, function()
+		showNotify("Szukam serwera...")
+		if S.ServerHop then
+			local ok, err = S.ServerHop()
+			if not ok then
+				showNotify(err or "Błąd server hop")
+			end
+		else
+			showNotify("Server hop niedostępny")
+		end
+	end)
+	MakeHint(SSession, "Unload usuwa menu, HUD i hooki. Po reinject menu załaduje się od nowa.", 6)
 
 	-- // Config tab
 	local ConfigNameBox
@@ -2263,6 +2570,23 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	})
 	MakeHint(T4, "Pliki w folderze Vanguard/configs. Autoload ładuje się przy każdym uruchomieniu skryptu (reinject w nowej grze).", 12)
 	refreshConfigList()
+
+	local MLoad = MakeCard(TMenu, "ADMIN MENUS", "Zewnętrzne skrypty — Vanguard zostaje włączony.", 1)
+	MakeButton(MLoad, "Load Infinite Yield", 1, function()
+		showNotify("Ładowanie Infinite Yield...")
+		task.spawn(function()
+			local ok, err = pcall(function()
+				loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
+			end)
+			if ok then
+				showNotify("Infinite Yield załadowany")
+				setFooterStatus("Menus · Infinite Yield")
+			else
+				showNotify("Błąd IY: " .. tostring(err))
+			end
+		end)
+	end)
+	MakeHint(MLoad, "Infinite Yield to osobne admin menu. Nie wyładowuje Vanguarda.", 2)
 
 	ApplyLayout(true, false)
 
