@@ -225,6 +225,15 @@ function Config.EnforceRules(S)
 	if S.TargetInfo == nil then
 		S.TargetInfo = false
 	end
+	if S.CrosshairStyle == nil then
+		S.CrosshairStyle = "Dot"
+	end
+	if S.CrosshairColorMode == nil then
+		S.CrosshairColorMode = "Accent"
+	end
+	if S.CrosshairColor == nil then
+		S.CrosshairColor = Color3.fromRGB(255, 255, 255)
+	end
 	if S.AimKey == nil or S.AimKey == "" then
 		S.AimKey = "MouseButton2"
 	end

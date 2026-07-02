@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.19.0",
+	Version = "2.20.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -85,6 +85,9 @@ local Settings = {
 
 	-- HUD
 	Crosshair = false,
+	CrosshairStyle = "Dot",
+	CrosshairColorMode = "Accent",
+	CrosshairColor = Color3.fromRGB(255, 255, 255),
 	CrosshairSize = 5,
 	Spectators = false,
 	Hitmarker = false,

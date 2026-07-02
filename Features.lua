@@ -69,17 +69,154 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		return inst
 	end
 
-	local Cross = tagZ(C("Frame", {
-		Name = "Crosshair",
+	local CrossRoot = tagZ(C("Frame", {
+		Name = "CrosshairRoot",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(0.5, 0, 0.5, 0),
-		Size = UDim2.new(0, 5, 0, 5),
-		BackgroundColor3 = ACC,
-		BorderSizePixel = 0,
+		Size = UDim2.new(0, 40, 0, 40),
+		BackgroundTransparency = 1,
 		Visible = false,
 		Parent = HudGui,
 	}), Z.cross)
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Cross })
+
+	local function makeCrossLine(name, size, pos, rot)
+		local ln = tagZ(C("Frame", {
+			Name = name,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = pos,
+			Size = size,
+			Rotation = rot or 0,
+			BackgroundColor3 = ACC,
+			BorderSizePixel = 0,
+			Visible = false,
+			Parent = CrossRoot,
+		}), Z.cross + 1)
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ln })
+		return ln
+	end
+
+	local CrossDot = makeCrossLine("CrossDot", UDim2.new(0, 5, 0, 5), UDim2.new(0.5, 0, 0.5, 0), 0)
+	local CrossTop = makeCrossLine("CrossTop", UDim2.new(0, 2, 0, 8), UDim2.new(0.5, 0, 0.5, -7), 0)
+	local CrossBottom = makeCrossLine("CrossBottom", UDim2.new(0, 2, 0, 8), UDim2.new(0.5, 0, 0.5, 7), 0)
+	local CrossLeft = makeCrossLine("CrossLeft", UDim2.new(0, 8, 0, 2), UDim2.new(0.5, -7, 0.5, 0), 0)
+	local CrossRight = makeCrossLine("CrossRight", UDim2.new(0, 8, 0, 2), UDim2.new(0.5, 7, 0.5, 0), 0)
+	local CrossX1 = makeCrossLine("CrossX1", UDim2.new(0, 2, 0, 12), UDim2.new(0.5, 0, 0.5, 0), 45)
+	local CrossX2 = makeCrossLine("CrossX2", UDim2.new(0, 2, 0, 12), UDim2.new(0.5, 0, 0.5, 0), -45)
+
+	local CrossRing = tagZ(C("Frame", {
+		Name = "CrossRing",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.new(0, 16, 0, 16),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = CrossRoot,
+	}), Z.cross + 1)
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = CrossRing })
+	C("UIStroke", {
+		Name = "RingStroke",
+		Color = ACC,
+		Thickness = 1.5,
+		Parent = CrossRing,
+	})
+
+	local crossParts = {
+		CrossDot,
+		CrossTop,
+		CrossBottom,
+		CrossLeft,
+		CrossRight,
+		CrossX1,
+		CrossX2,
+	}
+
+	local function getCrossColor()
+		local mode = S.CrosshairColorMode or "Accent"
+		if mode == "White" then
+			return Color3.fromRGB(255, 255, 255)
+		end
+		if mode == "Red" then
+			return Color3.fromRGB(255, 85, 85)
+		end
+		if mode == "Green" then
+			return Color3.fromRGB(80, 255, 150)
+		end
+		if mode == "Custom" then
+			return S.CrosshairColor or ACC
+		end
+		return ACC
+	end
+
+	local function updCrosshair()
+		if not S.Crosshair or S.MenuOpen then
+			CrossRoot.Visible = false
+			return
+		end
+
+		CrossRoot.Visible = true
+		local sz = math.clamp(S.CrosshairSize or 5, 2, 14)
+		local col = getCrossColor()
+		local gap = math.max(2, math.floor(sz * 0.55))
+		local arm = math.max(4, sz + 2)
+		local thick = math.max(1, math.floor(sz * 0.35))
+
+		for _, part in ipairs(crossParts) do
+			part.BackgroundColor3 = col
+			part.Visible = false
+		end
+		CrossRing.Visible = false
+		local ringStroke = CrossRing:FindFirstChild("RingStroke")
+		if ringStroke then
+			ringStroke.Color = col
+		end
+
+		local style = S.CrosshairStyle or "Dot"
+		if style == "Dot" then
+			CrossDot.Size = UDim2.new(0, sz, 0, sz)
+			CrossDot.Visible = true
+		elseif style == "Cross" then
+			CrossTop.Size = UDim2.new(0, thick, 0, arm)
+			CrossTop.Position = UDim2.new(0.5, 0, 0.5, -(gap + arm * 0.5))
+			CrossBottom.Size = UDim2.new(0, thick, 0, arm)
+			CrossBottom.Position = UDim2.new(0.5, 0, 0.5, gap + arm * 0.5)
+			CrossLeft.Size = UDim2.new(0, arm, 0, thick)
+			CrossLeft.Position = UDim2.new(0.5, -(gap + arm * 0.5), 0.5, 0)
+			CrossRight.Size = UDim2.new(0, arm, 0, thick)
+			CrossRight.Position = UDim2.new(0.5, gap + arm * 0.5, 0.5, 0)
+			CrossTop.Visible = true
+			CrossBottom.Visible = true
+			CrossLeft.Visible = true
+			CrossRight.Visible = true
+		elseif style == "X" then
+			local len = arm + gap + 2
+			CrossX1.Size = UDim2.new(0, thick, 0, len)
+			CrossX2.Size = UDim2.new(0, thick, 0, len)
+			CrossX1.Visible = true
+			CrossX2.Visible = true
+		elseif style == "Circle" then
+			local d = sz * 3
+			CrossRing.Size = UDim2.new(0, d, 0, d)
+			CrossRing.Visible = true
+			if ringStroke then
+				ringStroke.Thickness = thick
+			end
+		elseif style == "DotCross" then
+			CrossDot.Size = UDim2.new(0, math.max(3, sz - 1), 0, math.max(3, sz - 1))
+			CrossDot.Visible = true
+			CrossTop.Size = UDim2.new(0, thick, 0, arm)
+			CrossTop.Position = UDim2.new(0.5, 0, 0.5, -(gap + arm * 0.5))
+			CrossBottom.Size = UDim2.new(0, thick, 0, arm)
+			CrossBottom.Position = UDim2.new(0.5, 0, 0.5, gap + arm * 0.5)
+			CrossLeft.Size = UDim2.new(0, arm, 0, thick)
+			CrossLeft.Position = UDim2.new(0.5, -(gap + arm * 0.5), 0.5, 0)
+			CrossRight.Size = UDim2.new(0, arm, 0, thick)
+			CrossRight.Position = UDim2.new(0.5, gap + arm * 0.5, 0.5, 0)
+			CrossTop.Visible = true
+			CrossBottom.Visible = true
+			CrossLeft.Visible = true
+			CrossRight.Visible = true
+		end
+	end
 
 	local HitGroup = tagZ(C("Frame", {
 		Name = "Hitmarker",
@@ -1848,16 +1985,11 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	local lastShotTrack = 0
 
 	RS.Heartbeat:Connect(function()
-		Cross.Visible = S.Crosshair and not S.MenuOpen
+		updCrosshair()
 		if not S.DamageLog or S.MenuOpen then
 			if dmgVisible then
 				setDmgPanelVisible(false)
 			end
-		end
-		if S.Crosshair then
-			local sz = math.clamp(S.CrosshairSize or 5, 2, 12)
-			Cross.Size = UDim2.new(0, sz, 0, sz)
-			Cross.BackgroundColor3 = ACC
 		end
 		fpsFrames += 1
 		local now = tick()

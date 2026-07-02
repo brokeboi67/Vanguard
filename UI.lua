@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
+function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule)
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -2233,18 +2233,33 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	updateEspColorControls()
 
 	local SHud = MakeCard(T2, "HUD", nil, 3)
-	MakeTog(SHud, "Crosshair Dot", "Crosshair", 1, { flat = true })
-	MakeSlider(SHud, "Crosshair Size", "CrosshairSize", 2, 12, 2, { suffix = "px", step = 1 })
-	MakeTog(SHud, "Spectator List", "Spectators", 3, { flat = true })
-	MakeTog(SHud, "Target Info Panel", "TargetInfo", 4, { flat = true })
-	MakeTog(SHud, "Hitmarker", "Hitmarker", 5, { flat = true })
-	MakeTog(SHud, "Hit Sound", "HitSound", 6, { flat = true })
-	MakeSlider(SHud, "Hit Sound Volume", "HitSoundVolume", 0.1, 1, 7, {
+	MakeTog(SHud, "Crosshair", "Crosshair", 1, { flat = true })
+	MakeChoice(SHud, "Crosshair Style", "CrosshairStyle", {
+		{ label = "Dot", value = "Dot" },
+		{ label = "Cross", value = "Cross" },
+		{ label = "X", value = "X" },
+		{ label = "Circle", value = "Circle" },
+		{ label = "Dot+Cross", value = "DotCross" },
+	}, 2)
+	MakeChoice(SHud, "Crosshair Color", "CrosshairColorMode", {
+		{ label = "Accent", value = "Accent" },
+		{ label = "White", value = "White" },
+		{ label = "Green", value = "Green" },
+		{ label = "Red", value = "Red" },
+		{ label = "Custom", value = "Custom" },
+	}, 3)
+	MakeColorPicker(SHud, "Custom Color", "CrosshairColor", 4)
+	MakeSlider(SHud, "Crosshair Size", "CrosshairSize", 2, 14, 5, { suffix = "px", step = 1 })
+	MakeTog(SHud, "Spectator List", "Spectators", 6, { flat = true })
+	MakeTog(SHud, "Target Info Panel", "TargetInfo", 7, { flat = true })
+	MakeTog(SHud, "Hitmarker", "Hitmarker", 8, { flat = true })
+	MakeTog(SHud, "Hit Sound", "HitSound", 9, { flat = true })
+	MakeSlider(SHud, "Hit Sound Volume", "HitSoundVolume", 0.1, 1, 10, {
 		suffix = "",
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeButton(SHud, "Test Hitmarker + Sound", 8, function()
+	MakeButton(SHud, "Test Hitmarker + Sound", 11, function()
 		if S.TestHitFeedback then
 			S.TestHitFeedback()
 			showNotify("Test hitmarker / dźwięku")
@@ -2252,14 +2267,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			showNotify("Features nie załadowane")
 		end
 	end)
-	MakeHint(SHud, "Hitmarker: krzyżyk na środku ekranu po trafieniu (1.5s od strzału). Damage log pokazuje -HP.", 9)
-	MakeTog(SHud, "Damage Log", "DamageLog", 10, { flat = true })
-	MakeTog(SHud, "3D Damage Numbers", "DamageNumbers", 11, { flat = true })
-	MakeTog(SHud, "Watermark", "Watermark", 12, { flat = true })
-	MakeTog(SHud, "Keybind List", "KeybindList", 13, { flat = true })
-	MakeTog(SHud, "Session Stats", "SessionStats", 14, { flat = true })
-	MakeTog(SHud, "Kill Feed", "KillFeed", 15, { flat = true })
-	MakeHint(SHud, "Spectator list pokazuje tylko graczy, którzy faktycznie Cię obserwują (atrybuty / kamera).", 16)
+	MakeHint(SHud, "Hitmarker: krzyżyk na środku ekranu po trafieniu (1.5s od strzału). Damage log pokazuje -HP.", 12)
+	MakeTog(SHud, "Damage Log", "DamageLog", 13, { flat = true })
+	MakeTog(SHud, "3D Damage Numbers", "DamageNumbers", 14, { flat = true })
+	MakeTog(SHud, "Watermark", "Watermark", 15, { flat = true })
+	MakeTog(SHud, "Keybind List", "KeybindList", 16, { flat = true })
+	MakeTog(SHud, "Session Stats", "SessionStats", 17, { flat = true })
+	MakeTog(SHud, "Kill Feed", "KillFeed", 18, { flat = true })
+	MakeHint(SHud, "Spectator list pokazuje tylko graczy, którzy faktycznie Cię obserwują (atrybuty / kamera).", 19)
 
 	local SettingsAutoloadLbl
 	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 4)
@@ -2577,21 +2592,248 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 	refreshConfigList()
 
 	local MLoad = MakeCard(TMenu, "ADMIN MENUS", "Zewnętrzne skrypty — Vanguard zostaje włączony.", 1)
-	MakeButton(MLoad, "Load Infinite Yield", 1, function()
-		showNotify("Ładowanie Infinite Yield...")
+
+	local function loadMenuScript(key, label)
+		if not MenusModule or not MenusModule.loadScript then
+			showNotify("Moduł Menus niedostępny")
+			return
+		end
+		showNotify("Ładowanie " .. label .. "...")
 		task.spawn(function()
-			local ok, err = pcall(function()
-				loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
-			end)
+			local ok, msg = MenusModule.loadScript(key)
 			if ok then
-				showNotify("Infinite Yield załadowany")
-				setFooterStatus("Menus · Infinite Yield")
+				showNotify(msg .. " załadowany")
+				setFooterStatus("Menus · " .. msg)
 			else
-				showNotify("Błąd IY: " .. tostring(err))
+				showNotify("Błąd " .. label .. ": " .. tostring(msg))
+			end
+		end)
+	end
+
+	local menuOrder = 1
+	if MenusModule and MenusModule.getScriptList then
+		for _, entry in ipairs(MenusModule.getScriptList()) do
+			MakeButton(MLoad, "Load " .. entry.label, menuOrder, function()
+				loadMenuScript(entry.key, entry.label)
+			end)
+			menuOrder += 1
+		end
+	else
+		MakeButton(MLoad, "Load Infinite Yield", menuOrder, function()
+			loadMenuScript("InfiniteYield", "Infinite Yield")
+		end)
+		menuOrder += 1
+	end
+	MakeHint(MLoad, "Każde menu to osobny skrypt. Nie wyładowuje Vanguarda.", menuOrder)
+
+	local MTools = MakeCard(TMenu, "TOOLS", "Pomoc przy wolniejszym internecie.", 2)
+
+	local PreloadOverlay = C("Frame", {
+		Name = "AssetPreloader",
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.4,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 95,
+		Active = true,
+		Parent = ParentGUI,
+	})
+
+	local PreloadBox = C("Frame", {
+		Name = "PreloadBox",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		Size = UDim2.new(0, 340, 0, 196),
+		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+		BorderSizePixel = 0,
+		ZIndex = 96,
+		Parent = PreloadOverlay,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = PreloadBox })
+	C("UIStroke", {
+		Color = Color3.fromRGB(42, 42, 52),
+		Thickness = 1,
+		Parent = PreloadBox,
+	})
+
+	C("TextLabel", {
+		Size = UDim2.new(1, -24, 0, 22),
+		Position = UDim2.new(0, 14, 0, 12),
+		BackgroundTransparency = 1,
+		Text = "PRELOAD GAME ASSETS",
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(230, 230, 235),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 97,
+		Parent = PreloadBox,
+	})
+
+	local PreloadStatus = C("TextLabel", {
+		Size = UDim2.new(1, -28, 0, 34),
+		Position = UDim2.new(0, 14, 0, 38),
+		BackgroundTransparency = 1,
+		Text = "Skanowanie assetów w grze...",
+		Font = Enum.Font.Gotham,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(120, 120, 130),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		ZIndex = 97,
+		Parent = PreloadBox,
+	})
+
+	local PreloadPct = C("TextLabel", {
+		Size = UDim2.new(0, 48, 0, 16),
+		Position = UDim2.new(1, -62, 0, 82),
+		BackgroundTransparency = 1,
+		Text = "0%",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = ACC,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 97,
+		Parent = PreloadBox,
+	})
+
+	local PreloadTrack = C("Frame", {
+		Size = UDim2.new(1, -28, 0, 6),
+		Position = UDim2.new(0, 14, 0, 104),
+		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
+		BorderSizePixel = 0,
+		ZIndex = 97,
+		Parent = PreloadBox,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PreloadTrack })
+
+	local PreloadFill = C("Frame", {
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = ACC,
+		BorderSizePixel = 0,
+		ZIndex = 98,
+		Parent = PreloadTrack,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PreloadFill })
+
+	local PreloadDetail = C("TextLabel", {
+		Size = UDim2.new(1, -28, 0, 28),
+		Position = UDim2.new(0, 14, 0, 118),
+		BackgroundTransparency = 1,
+		Text = "",
+		Font = Enum.Font.Code,
+		TextSize = 9,
+		TextColor3 = Color3.fromRGB(95, 95, 105),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 97,
+		Parent = PreloadBox,
+	})
+
+	local PreloadCancelBtn = C("TextButton", {
+		Size = UDim2.new(1, -28, 0, 32),
+		Position = UDim2.new(0, 14, 1, -44),
+		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
+		BorderSizePixel = 0,
+		Text = "Anuluj",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(210, 210, 215),
+		AutoButtonColor = false,
+		ZIndex = 97,
+		Parent = PreloadBox,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = PreloadCancelBtn })
+
+	local preloadCancel = false
+	local preloadRunning = false
+
+	local function closePreloader()
+		PreloadOverlay.Visible = false
+		preloadRunning = false
+		preloadCancel = false
+	end
+
+	local function updatePreloader(state)
+		if not state then
+			return
+		end
+		local total = state.total or 0
+		local loaded = state.loaded or 0
+		local pct = total > 0 and math.clamp(loaded / total, 0, 1) or 0
+		if state.phase == "start" then
+			PreloadStatus.Text = "Znaleziono " .. total .. " assetów. Ładowanie..."
+			PreloadDetail.Text = ""
+		elseif state.phase == "item" then
+			PreloadDetail.Text = tostring(state.contentId or state.label or "")
+		elseif state.phase == "progress" then
+			PreloadStatus.Text = state.label or ("Postęp: " .. loaded .. " / " .. total)
+		elseif state.phase == "error" then
+			PreloadDetail.Text = tostring(state.label or "Błąd batcha")
+		elseif state.phase == "done" then
+			local failed = state.failed or 0
+			PreloadStatus.Text = state.label or "Gotowe"
+			PreloadDetail.Text = failed > 0
+				and ("Nie udało się załadować części assetów: " .. failed)
+				or "Wszystkie assety zostały przeskanowane."
+			PreloadCancelBtn.Text = "Zamknij"
+			preloadRunning = false
+			return
+		end
+		PreloadPct.Text = math.floor(pct * 100) .. "%"
+		PreloadFill.Size = UDim2.new(pct, 0, 1, 0)
+	end
+
+	PreloadCancelBtn.MouseButton1Click:Connect(function()
+		if preloadRunning then
+			preloadCancel = true
+			PreloadStatus.Text = "Anulowanie..."
+		else
+			closePreloader()
+		end
+	end)
+
+	MakeButton(MTools, "Preload Game Assets", 1, function()
+		if preloadRunning then
+			showNotify("Preload już trwa...")
+			PreloadOverlay.Visible = true
+			return
+		end
+		if not MenusModule or not MenusModule.preloadAssets then
+			showNotify("Moduł preload niedostępny")
+			return
+		end
+		preloadCancel = false
+		preloadRunning = true
+		PreloadCancelBtn.Text = "Anuluj"
+		PreloadStatus.Text = "Skanowanie assetów w grze..."
+		PreloadDetail.Text = ""
+		PreloadPct.Text = "0%"
+		PreloadFill.Size = UDim2.new(0, 0, 1, 0)
+		PreloadOverlay.Visible = true
+		task.spawn(function()
+			MenusModule.preloadAssets(function(state)
+				task.defer(function()
+					if preloadCancel and state.phase ~= "done" then
+						return
+					end
+					updatePreloader(state)
+				end)
+			end, function()
+				return preloadCancel
+			end)
+			if preloadCancel then
+				task.defer(function()
+					PreloadStatus.Text = "Anulowano"
+					PreloadCancelBtn.Text = "Zamknij"
+					preloadRunning = false
+				end)
 			end
 		end)
 	end)
-	MakeHint(MLoad, "Infinite Yield to osobne admin menu. Nie wyładowuje Vanguarda.", 2)
+	MakeHint(MTools, "Skanuje mapę, modele i UI gry, potem ładuje brakujące tekstury/dźwięki przez ContentProvider.", 2)
 
 	ApplyLayout(true, false)
 

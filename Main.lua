@@ -58,6 +58,7 @@ local Animations = Get("Animations.lua")
 local World = Get("World.lua")
 local Effects = Get("Effects.lua")
 local UI = Get("UI.lua")
+local Menus = Get("Menus.lua")
 
 local CG = AntiBypass.getGuiRoot()
 pcall(function()
@@ -88,7 +89,7 @@ Features.Init(Settings, GUI, AntiBypass)
 Effects.Init(Settings, Util)
 Animations.Init(Settings)
 World.Init(Settings)
-UI.Init(Settings, GUI, Config, TeamFriends, Animations, World)
+UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus)
 
 Settings.Unload = function()
 	Settings.Unloaded = true
