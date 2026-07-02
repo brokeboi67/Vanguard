@@ -2327,7 +2327,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			end
 		end,
 	})
-	MakeHint(SSession, "Transfer Script: ładuje się po teleportacji w grze (lobby → mecz). Wyjście z gry / dołączenie ręczne = NIE ładuje (flaga skip).", 3)
+	MakeHint(SSession, "Transfer: tylko teleport w grze (lobby→mecz). Ręczne dołączenie / inna gra = bez autoload. Wyłącz przed wyjściem.", 3)
 	MakeButton(SSession, "Rejoin Game", 4, function()
 		showNotify("Rejoin...")
 		if S.RejoinGame then

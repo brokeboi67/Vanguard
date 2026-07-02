@@ -23,8 +23,15 @@ end)
 
 Settings.Unloaded = false
 
+local isTransferLoad = _G.VG_FROM_TRANSFER == true
+_G.VG_FROM_TRANSFER = nil
+
 local Teleport = Get("Teleport.lua")
-Teleport.init(Settings, Core)
+if not isTransferLoad then
+	Teleport.clearQueue()
+	Teleport.markManualLeave()
+end
+Teleport.init(Settings, Core, isTransferLoad)
 
 local Session = Get("Session.lua")
 Settings.RejoinGame = function()

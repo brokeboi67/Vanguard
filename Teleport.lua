@@ -11,14 +11,24 @@ local function canPersist()
 end
 
 local function loaderSnippet()
+	local gameId = game.GameId
 	return string.format(
 		[[
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+if not LP then return end
+local okJoin, joinData = pcall(function() return LP:GetJoinData() end)
+local sourcePlace = okJoin and joinData and joinData.SourcePlaceId or nil
+if not sourcePlace or sourcePlace == 0 then return end
+if game.GameId ~= %d then return end
 if isfile and isfile(%q) then
 	pcall(delfile, %q)
 	return
 end
+_G.VG_FROM_TRANSFER = true
 loadstring(game:HttpGet(%q))()
 ]],
+		gameId,
 		SKIP_PATH,
 		SKIP_PATH,
 		LOADER_URL
@@ -100,22 +110,16 @@ function Teleport.apply(S)
 	return true
 end
 
-function Teleport.init(S, CoreRef)
+function Teleport.init(S, CoreRef, isTransferLoad)
 	S.ApplyTransferScript = function()
 		return Teleport.apply(S)
 	end
 
 	S.MarkManualLeave = Teleport.markManualLeave
 
-	if S.TransferScript then
+	if S.TransferScript and isTransferLoad then
 		Teleport.apply(S)
 	end
-
-	game:BindToClose(function()
-		if S.TransferScript then
-			Teleport.markManualLeave()
-		end
-	end)
 
 	if CoreRef and typeof(CoreRef.registerCleanup) == "function" then
 		CoreRef.registerCleanup(function()
