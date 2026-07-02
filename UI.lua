@@ -1235,6 +1235,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 
 			setToggleVisual(key, enabled)
 			UpdPreview()
+			if opts.onChange then
+				pcall(opts.onChange, enabled)
+			end
 		end)
 
 		if not toggleRegistry[key] then
@@ -2015,7 +2018,27 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 			showNotify("Unload niedostępny")
 		end
 	end)
-	MakeHint(SSession, "Unload usuwa menu, HUD i hooki. Po reinject menu załaduje się od nowa.", 2)
+	MakeTog(SSession, "Transfer Script", "TransferScript", 2, {
+		flat = true,
+		onChange = function(enabled)
+			if S.ApplyTransferScript then
+				local ok, err = S.ApplyTransferScript()
+				if not ok then
+					S.TransferScript = false
+					setToggleVisual("TransferScript", false)
+					showNotify(err or "Executor nie wspiera transferu")
+					return
+				end
+			end
+			if enabled then
+				showNotify("Transfer włączony — skrypt przeżyje teleport w grze")
+			else
+				showNotify("Transfer wyłączony")
+			end
+		end,
+	})
+	MakeHint(SSession, "Transfer Script: ponownie ładuje Vanguard gdy gra teleportuje Cię (lobby → mecz). Nie działa przy ręcznym wyjściu i dołączeniu do innej gry.", 3)
+	MakeHint(SSession, "Unload usuwa menu, HUD i hooki. Po reinject menu załaduje się od nowa.", 4)
 
 	-- // Config tab
 	local ConfigNameBox

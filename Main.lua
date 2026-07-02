@@ -23,6 +23,9 @@ end)
 
 Settings.Unloaded = false
 
+local Teleport = Get("Teleport.lua")
+Teleport.init(Settings, Core)
+
 local Util = Get("Util.lua")
 local ESP = Get("ESP.lua")
 local TeamFriends = Get("TeamFriends.lua")

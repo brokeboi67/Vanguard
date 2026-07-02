@@ -213,6 +213,9 @@ function Config.EnforceRules(S)
 	if S.AntiBypass == nil then
 		S.AntiBypass = true
 	end
+	if S.TransferScript == nil then
+		S.TransferScript = false
+	end
 	if S.ChamsRainbow then
 		S.LoS = false
 		S.RealTeamColor = false
