@@ -4,10 +4,18 @@ local function Get(file)
 	return loadstring(game:HttpGet(repo .. file))()
 end
 
+local isTransferLoad = _G.VG_FROM_TRANSFER == true
+_G.VG_FROM_TRANSFER = nil
+
 local Core = Get("Core.lua")
 if Core.isActive() then
-	Core.showDuplicateWarning()
-	return
+	if isTransferLoad then
+		pcall(Core.unload)
+		_G.VANGUARD = nil
+	else
+		Core.showDuplicateWarning()
+		return
+	end
 end
 Core.begin()
 
@@ -23,15 +31,12 @@ end)
 
 Settings.Unloaded = false
 
-local isTransferLoad = _G.VG_FROM_TRANSFER == true
-_G.VG_FROM_TRANSFER = nil
-
 local Teleport = Get("Teleport.lua")
 if not isTransferLoad then
 	Teleport.clearQueue()
 	Teleport.markManualLeave()
 end
-Teleport.init(Settings, Core, isTransferLoad)
+Teleport.init(Settings, Core)
 
 local Session = Get("Session.lua")
 Settings.RejoinGame = function()
@@ -93,8 +98,8 @@ end
 AntiBypass.concealGui(GUI)
 AntiBypass.Init(Settings)
 
-if not isTransferLoad and Settings.TransferScript and Settings.ApplyTransferScript then
+if Settings.TransferScript and Settings.ApplyTransferScript then
 	pcall(Settings.ApplyTransferScript)
 end
 
-Stealth.silentPrint("VANGUARD: Loaded")
+Stealth.silentPrint(isTransferLoad and "VANGUARD: Loaded (transfer)" or "VANGUARD: Loaded")

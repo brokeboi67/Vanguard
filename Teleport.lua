@@ -18,42 +18,43 @@ local EXPECTED_GAME = %d
 local SKIP_PATH = %q
 local LOADER = %q
 
-local function shouldLoad()
-	if game.GameId ~= EXPECTED_GAME then
-		return false
-	end
-	if isfile and isfile(SKIP_PATH) then
-		pcall(delfile, SKIP_PATH)
-		return false
+if game.GameId ~= EXPECTED_GAME then
+	return
+end
+if isfile and isfile(SKIP_PATH) then
+	pcall(delfile, SKIP_PATH)
+	return
+end
+
+task.defer(function()
+	if not game:IsLoaded() then
+		pcall(function()
+			game.Loaded:Wait()
+		end)
 	end
 	local Players = game:GetService("Players")
 	local LP = Players.LocalPlayer
 	if not LP then
-		LP = Players.PlayerAdded:Wait()
+		local ok, plr = pcall(function()
+			return Players.PlayerAdded:Wait()
+		end)
+		LP = ok and plr or nil
 	end
-	task.wait(0.15)
-	local okJoin, joinData = pcall(function()
-		return LP:GetJoinData()
+	if not LP then
+		return
+	end
+	task.wait(0.4)
+	if game.GameId ~= EXPECTED_GAME then
+		return
+	end
+	_G.VG_FROM_TRANSFER = true
+	local ok, err = pcall(function()
+		loadstring(game:HttpGet(LOADER))()
 	end)
-	if not okJoin or typeof(joinData) ~= "table" then
-		return false
+	if not ok then
+		warn("[Vanguard Transfer]", err)
 	end
-	local srcPlace = joinData.SourcePlaceId or 0
-	local srcGame = joinData.SourceGameId or 0
-	if srcPlace > 0 then
-		return true
-	end
-	if srcGame > 0 and srcGame == EXPECTED_GAME then
-		return true
-	end
-	return false
-end
-
-if not shouldLoad() then
-	return
-end
-_G.VG_FROM_TRANSFER = true
-loadstring(game:HttpGet(LOADER))()
+end)
 ]],
 		gameId,
 		SKIP_PATH,
@@ -136,16 +137,12 @@ function Teleport.apply(S)
 	return true
 end
 
-function Teleport.init(S, CoreRef, isTransferLoad)
+function Teleport.init(S, CoreRef)
 	S.ApplyTransferScript = function()
 		return Teleport.apply(S)
 	end
 
 	S.MarkManualLeave = Teleport.markManualLeave
-
-	if S.TransferScript and isTransferLoad then
-		Teleport.apply(S)
-	end
 
 	if CoreRef and typeof(CoreRef.registerCleanup) == "function" then
 		CoreRef.registerCleanup(function()

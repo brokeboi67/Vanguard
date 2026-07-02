@@ -2321,13 +2321,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule)
 				end
 			end
 			if enabled then
-				showNotify("Transfer włączony — skrypt przeżyje teleport w grze")
+				showNotify("Transfer ON — działa tylko z queue_on_teleport executora")
 			else
-				showNotify("Transfer wyłączony")
+				showNotify("Transfer wyłączony — kolejka wyczyszczona")
 			end
 		end,
 	})
-	MakeHint(SSession, "Transfer: tylko teleport w grze (lobby→mecz). Ręczne dołączenie / inna gra = bez autoload. Wyłącz przed wyjściem.", 3)
+	MakeHint(SSession, "Transfer: wymaga queue_on_teleport. Blokuje inne gry (GameId). Teleport w grze = autoload. Inject ręczny = bez autoload przy wyjściu.", 3)
 	MakeButton(SSession, "Rejoin Game", 4, function()
 		showNotify("Rejoin...")
 		if S.RejoinGame then
