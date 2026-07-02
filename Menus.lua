@@ -25,7 +25,26 @@ local SCRIPTS = {
 	},
 	Hydroxide = {
 		label = "Hydroxide",
-		url = "https://raw.githubusercontent.com/Upbolt/Hydroxide/revision/oh-main/Init.lua",
+		loader = function()
+			local owner = "Upbolt"
+			local branch = "revision"
+			local function httpGet(url)
+				if typeof(game.HttpGetAsync) == "function" then
+					return game:HttpGetAsync(url)
+				elseif typeof(game.HttpGet) == "function" then
+					return game:HttpGet(url)
+				end
+				error("HttpGet niedostępny")
+			end
+			local function webImport(file)
+				local src = httpGet(
+					("https://raw.githubusercontent.com/%s/Hydroxide/%s/%s.lua"):format(owner, branch, file)
+				)
+				return loadstring(src, file .. ".lua")()
+			end
+			webImport("init")
+			webImport("ui/main")
+		end,
 	},
 	UnnamedESP = {
 		label = "Unnamed ESP",
@@ -83,11 +102,30 @@ function Menus.loadScript(key)
 	if not entry then
 		return false, "Nieznany skrypt"
 	end
-	if typeof(game.HttpGet) ~= "function" then
-		return false, "HttpGet niedostępny"
+
+	if entry.loader then
+		local ok, err = pcall(entry.loader)
+		if not ok then
+			return false, tostring(err)
+		end
+		return true, entry.label
 	end
+
+	if not entry.url then
+		return false, "Brak URL skryptu"
+	end
+
+	local function httpGet(url)
+		if typeof(game.HttpGetAsync) == "function" then
+			return game:HttpGetAsync(url)
+		elseif typeof(game.HttpGet) == "function" then
+			return game:HttpGet(url)
+		end
+		error("HttpGet niedostępny")
+	end
+
 	local ok, err = pcall(function()
-		loadstring(game:HttpGet(entry.url))()
+		loadstring(httpGet(entry.url))()
 	end)
 	if not ok then
 		return false, tostring(err)

@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule)
+function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule)
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -153,6 +153,109 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ZIndex = 104,
 		Parent = Track,
 	})
+
+	local LoaderGame = C("Frame", {
+		Name = "LoaderGame",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0.54, 0),
+		Size = UDim2.new(0, 320, 0, 88),
+		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+		ZIndex = 101,
+		Parent = Loader,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = LoaderGame })
+	C("UIStroke", {
+		Color = Color3.fromRGB(38, 38, 48),
+		Thickness = 1,
+		Parent = LoaderGame,
+	})
+
+	local LoaderGameIcon = C("ImageLabel", {
+		Size = UDim2.new(0, 56, 0, 56),
+		Position = UDim2.new(0, 14, 0.5, -28),
+		BackgroundColor3 = Color3.fromRGB(22, 22, 28),
+		BorderSizePixel = 0,
+		Image = "",
+		ScaleType = Enum.ScaleType.Crop,
+		ZIndex = 102,
+		Parent = LoaderGame,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = LoaderGameIcon })
+
+	local LoaderGameName = C("TextLabel", {
+		Size = UDim2.new(1, -92, 0, 22),
+		Position = UDim2.new(0, 82, 0, 16),
+		BackgroundTransparency = 1,
+		Text = "Loading game info...",
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = Color3.fromRGB(235, 235, 240),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 102,
+		Parent = LoaderGame,
+	})
+
+	local LoaderSupportBadge = C("TextLabel", {
+		Size = UDim2.new(1, -92, 0, 16),
+		Position = UDim2.new(0, 82, 0, 40),
+		BackgroundTransparency = 1,
+		Text = "NO DATA",
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(130, 130, 145),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 102,
+		Parent = LoaderGame,
+	})
+
+	local LoaderSupportNote = C("TextLabel", {
+		Size = UDim2.new(1, -92, 0, 28),
+		Position = UDim2.new(0, 82, 0, 56),
+		BackgroundTransparency = 1,
+		Text = "",
+		Font = Enum.Font.Gotham,
+		TextSize = 9,
+		TextColor3 = Color3.fromRGB(105, 105, 115),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 102,
+		Parent = LoaderGame,
+	})
+
+	local function refreshLoaderGameInfo()
+		local placeId = game.PlaceId
+		LoaderGameIcon.Image = "rbxthumb://type=Place&id=" .. placeId .. "&w=150&h=150"
+		LoaderGameName.Text = game.Name ~= "" and game.Name or ("Place " .. tostring(placeId))
+
+		if not GameSupportModule then
+			LoaderSupportBadge.Text = "NO DATA"
+			LoaderSupportBadge.TextColor3 = Color3.fromRGB(130, 130, 145)
+			LoaderSupportNote.Text = ""
+			return
+		end
+
+		local gameId = game.GameId
+		local status, note = GameSupportModule.getStatus(placeId, gameId)
+		local badge, badgeColor = GameSupportModule.getStatusDisplay(status)
+		LoaderSupportBadge.Text = badge
+		LoaderSupportBadge.TextColor3 = badgeColor
+		LoaderSupportNote.Text = note or ""
+
+		task.spawn(function()
+			local name, thumb = GameSupportModule.getGameInfo(placeId)
+			LoaderGameName.Text = name
+			if thumb and thumb ~= "" then
+				LoaderGameIcon.Image = thumb
+			end
+		end)
+	end
+
+	refreshLoaderGameInfo()
 
 	-- // Main menu
 	local MenuRoot = C("CanvasGroup", {
@@ -2628,83 +2731,89 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local MTools = MakeCard(TMenu, "TOOLS", "Pomoc przy wolniejszym internecie.", 2)
 
-	local PreloadOverlay = C("Frame", {
+	local PreloadWidget = C("Frame", {
 		Name = "AssetPreloader",
-		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.4,
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -12, 1, -12),
+		Size = UDim2.new(0, 268, 0, 96),
+		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
 		Visible = false,
-		ZIndex = 95,
-		Active = true,
+		Active = false,
+		ZIndex = 50,
 		Parent = ParentGUI,
 	})
-
-	local PreloadBox = C("Frame", {
-		Name = "PreloadBox",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		Size = UDim2.new(0, 340, 0, 196),
-		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
-		BorderSizePixel = 0,
-		ZIndex = 96,
-		Parent = PreloadOverlay,
-	})
-	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = PreloadBox })
+	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = PreloadWidget })
 	C("UIStroke", {
 		Color = Color3.fromRGB(42, 42, 52),
 		Thickness = 1,
-		Parent = PreloadBox,
+		Parent = PreloadWidget,
 	})
 
 	C("TextLabel", {
-		Size = UDim2.new(1, -24, 0, 22),
-		Position = UDim2.new(0, 14, 0, 12),
+		Size = UDim2.new(1, -52, 0, 18),
+		Position = UDim2.new(0, 12, 0, 8),
 		BackgroundTransparency = 1,
-		Text = "PRELOAD GAME ASSETS",
+		Text = "ASSET PRELOAD",
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 10,
 		TextColor3 = Color3.fromRGB(230, 230, 235),
 		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 97,
-		Parent = PreloadBox,
+		ZIndex = 51,
+		Parent = PreloadWidget,
+	})
+
+	local PreloadCloseBtn = C("TextButton", {
+		Size = UDim2.new(0, 22, 0, 22),
+		Position = UDim2.new(1, -30, 0, 6),
+		BackgroundTransparency = 1,
+		Text = "×",
+		Font = Enum.Font.GothamBold,
+		TextSize = 16,
+		TextColor3 = Color3.fromRGB(140, 140, 150),
+		AutoButtonColor = false,
+		Active = true,
+		ZIndex = 52,
+		Parent = PreloadWidget,
 	})
 
 	local PreloadStatus = C("TextLabel", {
-		Size = UDim2.new(1, -28, 0, 34),
-		Position = UDim2.new(0, 14, 0, 38),
+		Size = UDim2.new(1, -24, 0, 28),
+		Position = UDim2.new(0, 12, 0, 26),
 		BackgroundTransparency = 1,
-		Text = "Skanowanie assetów w grze...",
+		Text = "Skanowanie...",
 		Font = Enum.Font.Gotham,
-		TextSize = 11,
+		TextSize = 10,
 		TextColor3 = Color3.fromRGB(120, 120, 130),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
-		ZIndex = 97,
-		Parent = PreloadBox,
+		ZIndex = 51,
+		Parent = PreloadWidget,
 	})
 
 	local PreloadPct = C("TextLabel", {
-		Size = UDim2.new(0, 48, 0, 16),
-		Position = UDim2.new(1, -62, 0, 82),
+		Size = UDim2.new(0, 40, 0, 14),
+		Position = UDim2.new(1, -52, 0, 56),
 		BackgroundTransparency = 1,
 		Text = "0%",
 		Font = Enum.Font.GothamBold,
-		TextSize = 11,
+		TextSize = 10,
 		TextColor3 = ACC,
 		TextXAlignment = Enum.TextXAlignment.Right,
-		ZIndex = 97,
-		Parent = PreloadBox,
+		ZIndex = 51,
+		Parent = PreloadWidget,
 	})
 
 	local PreloadTrack = C("Frame", {
-		Size = UDim2.new(1, -28, 0, 6),
-		Position = UDim2.new(0, 14, 0, 104),
+		Size = UDim2.new(1, -24, 0, 5),
+		Position = UDim2.new(0, 12, 0, 58),
 		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
 		BorderSizePixel = 0,
-		ZIndex = 97,
-		Parent = PreloadBox,
+		Active = false,
+		ZIndex = 51,
+		Parent = PreloadWidget,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PreloadTrack })
 
@@ -2712,46 +2821,32 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Size = UDim2.new(0, 0, 1, 0),
 		BackgroundColor3 = ACC,
 		BorderSizePixel = 0,
-		ZIndex = 98,
+		ZIndex = 52,
 		Parent = PreloadTrack,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PreloadFill })
 
-	local PreloadDetail = C("TextLabel", {
-		Size = UDim2.new(1, -28, 0, 28),
-		Position = UDim2.new(0, 14, 0, 118),
-		BackgroundTransparency = 1,
-		Text = "",
-		Font = Enum.Font.Code,
-		TextSize = 9,
-		TextColor3 = Color3.fromRGB(95, 95, 105),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 97,
-		Parent = PreloadBox,
-	})
-
 	local PreloadCancelBtn = C("TextButton", {
-		Size = UDim2.new(1, -28, 0, 32),
-		Position = UDim2.new(0, 14, 1, -44),
+		Size = UDim2.new(0, 72, 0, 22),
+		Position = UDim2.new(1, -84, 1, -30),
 		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
 		BorderSizePixel = 0,
 		Text = "Anuluj",
 		Font = Enum.Font.GothamBold,
-		TextSize = 11,
+		TextSize = 10,
 		TextColor3 = Color3.fromRGB(210, 210, 215),
 		AutoButtonColor = false,
-		ZIndex = 97,
-		Parent = PreloadBox,
+		Active = true,
+		ZIndex = 52,
+		Parent = PreloadWidget,
 	})
-	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = PreloadCancelBtn })
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = PreloadCancelBtn })
 
 	local preloadCancel = false
 	local preloadRunning = false
 
 	local function closePreloader()
-		PreloadOverlay.Visible = false
+		PreloadWidget.Visible = false
 		preloadRunning = false
 		preloadCancel = false
 	end
@@ -2764,27 +2859,39 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local loaded = state.loaded or 0
 		local pct = total > 0 and math.clamp(loaded / total, 0, 1) or 0
 		if state.phase == "start" then
-			PreloadStatus.Text = "Znaleziono " .. total .. " assetów. Ładowanie..."
-			PreloadDetail.Text = ""
-		elseif state.phase == "item" then
-			PreloadDetail.Text = tostring(state.contentId or state.label or "")
+			PreloadStatus.Text = "Znaleziono " .. total .. " assetów"
 		elseif state.phase == "progress" then
-			PreloadStatus.Text = state.label or ("Postęp: " .. loaded .. " / " .. total)
+			PreloadStatus.Text = state.label or (loaded .. " / " .. total)
 		elseif state.phase == "error" then
-			PreloadDetail.Text = tostring(state.label or "Błąd batcha")
+			PreloadStatus.Text = "Błąd: " .. tostring(state.label or "?")
 		elseif state.phase == "done" then
 			local failed = state.failed or 0
-			PreloadStatus.Text = state.label or "Gotowe"
-			PreloadDetail.Text = failed > 0
-				and ("Nie udało się załadować części assetów: " .. failed)
-				or "Wszystkie assety zostały przeskanowane."
-			PreloadCancelBtn.Text = "Zamknij"
+			PreloadStatus.Text = failed > 0
+				and ("Gotowe · " .. failed .. " błędów")
+				or ("Gotowe · " .. total .. " assetów")
+			PreloadCancelBtn.Text = "OK"
 			preloadRunning = false
+			task.delay(8, function()
+				if PreloadWidget.Visible and not preloadRunning and PreloadCancelBtn.Text == "OK" then
+					closePreloader()
+				end
+			end)
+			PreloadPct.Text = math.floor(pct * 100) .. "%"
+			PreloadFill.Size = UDim2.new(pct, 0, 1, 0)
 			return
 		end
 		PreloadPct.Text = math.floor(pct * 100) .. "%"
 		PreloadFill.Size = UDim2.new(pct, 0, 1, 0)
 	end
+
+	PreloadCloseBtn.MouseButton1Click:Connect(function()
+		if preloadRunning then
+			preloadCancel = true
+			PreloadStatus.Text = "Anulowanie..."
+		else
+			closePreloader()
+		end
+	end)
 
 	PreloadCancelBtn.MouseButton1Click:Connect(function()
 		if preloadRunning then
@@ -2797,8 +2904,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	MakeButton(MTools, "Preload Game Assets", 1, function()
 		if preloadRunning then
-			showNotify("Preload już trwa...")
-			PreloadOverlay.Visible = true
+			PreloadWidget.Visible = true
+			showNotify("Preload trwa — panel w prawym dolnym rogu")
 			return
 		end
 		if not MenusModule or not MenusModule.preloadAssets then
@@ -2808,11 +2915,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		preloadCancel = false
 		preloadRunning = true
 		PreloadCancelBtn.Text = "Anuluj"
-		PreloadStatus.Text = "Skanowanie assetów w grze..."
-		PreloadDetail.Text = ""
+		PreloadStatus.Text = "Skanowanie assetów..."
 		PreloadPct.Text = "0%"
 		PreloadFill.Size = UDim2.new(0, 0, 1, 0)
-		PreloadOverlay.Visible = true
+		PreloadWidget.Visible = true
 		task.spawn(function()
 			MenusModule.preloadAssets(function(state)
 				task.defer(function()
@@ -2827,13 +2933,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			if preloadCancel then
 				task.defer(function()
 					PreloadStatus.Text = "Anulowano"
-					PreloadCancelBtn.Text = "Zamknij"
+					PreloadCancelBtn.Text = "OK"
 					preloadRunning = false
 				end)
 			end
 		end)
 	end)
-	MakeHint(MTools, "Skanuje mapę, modele i UI gry, potem ładuje brakujące tekstury/dźwięki przez ContentProvider.", 2)
+	MakeHint(MTools, "Mały panel w prawym dolnym rogu — nie blokuje ruchu ani myszki. Możesz grać normalnie.", 2)
 
 	ApplyLayout(true, false)
 
@@ -3002,6 +3108,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		task.wait(0.08)
 		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 			Position = UDim2.new(0, 0, 0, -56),
+		})
+		TweenPlay(LoaderGame, TweenInfo.new(0.22), {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(0.5, 0, 0.52, 0),
 		})
 		TweenPlay(Loader, TweenInfo.new(0.28), { BackgroundTransparency = 1 })
 		task.wait(0.28)
