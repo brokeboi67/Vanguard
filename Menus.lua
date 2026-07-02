@@ -21,7 +21,7 @@ local SCRIPTS = {
 	},
 	CSpy = {
 		label = "CSpy",
-		url = "https://raw.githubusercontent.com/NotDSF/CSpy/main/CSpy.lua",
+		url = "https://github.com/notpoiu/cobalt/releases/latest/download/Cobalt.luau",
 	},
 	Hydroxide = {
 		label = "Hydroxide",
