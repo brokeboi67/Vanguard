@@ -2854,15 +2854,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		preloadCancel = false
 	end
 
+	local function setPreloadBar(processed, total, phase)
+		if phase == "scan" then
+			PreloadPct.Text = "..."
+			PreloadFill.Size = UDim2.new(0.12, 0, 1, 0)
+			return
+		end
+		processed = tonumber(processed) or 0
+		total = tonumber(total) or 0
+		local pct = total > 0 and math.clamp(processed / total, 0, 1) or 0
+		PreloadPct.Text = math.floor(pct * 100) .. "%"
+		PreloadFill.Size = UDim2.new(pct, 0, 1, 0)
+	end
+
 	local function updatePreloader(state)
 		if not state then
 			return
 		end
-		local total = state.total or 0
-		local processed = state.processed or state.loaded or 0
-		local pct = total > 0 and math.clamp(processed / total, 0, 1) or 1
+		local total = tonumber(state.total) or 0
+		local processed = tonumber(state.processed) or tonumber(state.loaded) or 0
 		if state.phase == "scan" then
 			PreloadStatus.Text = state.label or "Skanowanie gry..."
+			setPreloadBar(0, 0, "scan")
+			return
 		elseif state.phase == "start" then
 			PreloadStatus.Text = state.label or ("Do załadowania: " .. total)
 		elseif state.phase == "item" then
@@ -2872,26 +2886,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		elseif state.phase == "error" then
 			PreloadStatus.Text = "Błąd: " .. tostring(state.label or "?")
 		elseif state.phase == "done" then
-			local failed = state.failed or 0
-			local skipped = state.skipped or 0
+			local failed = tonumber(state.failed) or 0
 			PreloadStatus.Text = state.label
-				or (failed > 0 and ("Gotowe · " .. failed .. " błędów") or ("Gotowe · " .. (state.loaded or total) .. " assetów"))
-			if skipped > 0 and failed == 0 and (state.loaded or 0) == 0 and total == 0 then
-				PreloadStatus.Text = state.label or ("Już załadowane · " .. skipped)
-			end
+				or (failed > 0 and ("Gotowe · " .. failed .. " błędów") or ("Gotowe · " .. processed .. " assetów"))
 			PreloadCancelBtn.Text = "OK"
 			preloadRunning = false
+			setPreloadBar(processed, total > 0 and total or processed, "done")
 			task.delay(8, function()
 				if PreloadWidget.Visible and not preloadRunning and PreloadCancelBtn.Text == "OK" then
 					closePreloader()
 				end
 			end)
-			PreloadPct.Text = math.floor(pct * 100) .. "%"
-			PreloadFill.Size = UDim2.new(pct, 0, 1, 0)
 			return
 		end
-		PreloadPct.Text = math.floor(pct * 100) .. "%"
-		PreloadFill.Size = UDim2.new(pct, 0, 1, 0)
+		setPreloadBar(processed, total, state.phase)
 	end
 
 	PreloadCloseBtn.MouseButton1Click:Connect(function()

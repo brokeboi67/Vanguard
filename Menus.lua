@@ -117,87 +117,124 @@ local function normalizeContentId(str)
 	return nil
 end
 
-local function addContentId(seen, list, str)
+local function addContentId(ctx, str)
 	local id = normalizeContentId(str)
-	if id and not seen[id] then
-		seen[id] = true
-		table.insert(list, id)
+	if id and not ctx.seenIds[id] then
+		ctx.seenIds[id] = true
+		table.insert(ctx.ids, id)
 	end
 end
 
-local function addNumericAsset(seen, list, assetId)
+local function addNumericAsset(ctx, assetId)
 	if typeof(assetId) == "number" and assetId > 0 then
-		addContentId(seen, list, "rbxassetid://" .. assetId)
+		addContentId(ctx, "rbxassetid://" .. assetId)
 	end
 end
 
-local function scanStringProperties(seen, list, inst)
+local function trackPreloadInstance(ctx, inst)
+	if not inst or ctx.seenInst[inst] then
+		return
+	end
+	if inst:IsA("LuaSourceContainer") then
+		return
+	end
+	local preloadable = inst:IsA("Decal")
+		or inst:IsA("Texture")
+		or inst:IsA("Sound")
+		or inst:IsA("Animation")
+		or inst:IsA("MeshPart")
+		or inst:IsA("SpecialMesh")
+		or inst:IsA("FileMesh")
+		or inst:IsA("Shirt")
+		or inst:IsA("Pants")
+		or inst:IsA("ShirtGraphic")
+		or inst:IsA("ImageLabel")
+		or inst:IsA("ImageButton")
+		or inst:IsA("VideoFrame")
+		or inst:IsA("ParticleEmitter")
+		or inst:IsA("Beam")
+		or inst:IsA("Trail")
+		or inst:IsA("SurfaceAppearance")
+		or inst:IsA("Sky")
+	if preloadable then
+		ctx.seenInst[inst] = true
+		table.insert(ctx.instances, inst)
+	end
+end
+
+local function scanStringProperties(ctx, inst)
 	for _, prop in ipairs(STRING_PROPS) do
 		local ok, val = pcall(function()
 			return inst[prop]
 		end)
 		if ok and typeof(val) == "string" then
-			addContentId(seen, list, val)
+			addContentId(ctx, val)
 		end
 	end
 end
 
-local function scanInstance(seen, list, inst)
+local function scanInstance(ctx, inst)
 	if not inst then
 		return
 	end
 
-	scanStringProperties(seen, list, inst)
+	trackPreloadInstance(ctx, inst)
+	scanStringProperties(ctx, inst)
 
 	if inst:IsA("Decal") or inst:IsA("Texture") then
-		addContentId(seen, list, inst.Texture)
+		addContentId(ctx, inst.Texture)
 	elseif inst:IsA("Sound") then
-		addContentId(seen, list, inst.SoundId)
+		addContentId(ctx, inst.SoundId)
 	elseif inst:IsA("Animation") then
-		addContentId(seen, list, inst.AnimationId)
+		addContentId(ctx, inst.AnimationId)
 	elseif inst:IsA("MeshPart") then
-		addContentId(seen, list, inst.MeshId)
-		addContentId(seen, list, inst.TextureID)
+		addContentId(ctx, inst.MeshId)
+		addContentId(ctx, inst.TextureID)
 	elseif inst:IsA("SpecialMesh") or inst:IsA("FileMesh") or inst:IsA("BlockMesh") then
-		addContentId(seen, list, inst.MeshId)
+		addContentId(ctx, inst.MeshId)
 		if inst:IsA("SpecialMesh") then
-			addContentId(seen, list, inst.TextureId)
+			addContentId(ctx, inst.TextureId)
 		end
 	elseif inst:IsA("Shirt") then
-		addContentId(seen, list, inst.ShirtTemplate)
+		addContentId(ctx, inst.ShirtTemplate)
 	elseif inst:IsA("Pants") then
-		addContentId(seen, list, inst.PantsTemplate)
+		addContentId(ctx, inst.PantsTemplate)
 	elseif inst:IsA("ShirtGraphic") then
-		addContentId(seen, list, inst.Graphic)
+		addContentId(ctx, inst.Graphic)
 	elseif inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-		addContentId(seen, list, inst.Image)
+		addContentId(ctx, inst.Image)
 	elseif inst:IsA("VideoFrame") then
-		addContentId(seen, list, inst.Video)
+		addContentId(ctx, inst.Video)
 	elseif inst:IsA("ParticleEmitter") or inst:IsA("Beam") or inst:IsA("Trail") then
-		addContentId(seen, list, inst.Texture)
+		addContentId(ctx, inst.Texture)
 	elseif inst:IsA("Sky") then
-		addContentId(seen, list, inst.SkyboxBk)
-		addContentId(seen, list, inst.SkyboxDn)
-		addContentId(seen, list, inst.SkyboxFt)
-		addContentId(seen, list, inst.SkyboxLf)
-		addContentId(seen, list, inst.SkyboxRt)
-		addContentId(seen, list, inst.SkyboxUp)
+		addContentId(ctx, inst.SkyboxBk)
+		addContentId(ctx, inst.SkyboxDn)
+		addContentId(ctx, inst.SkyboxFt)
+		addContentId(ctx, inst.SkyboxLf)
+		addContentId(ctx, inst.SkyboxRt)
+		addContentId(ctx, inst.SkyboxUp)
 	elseif inst:IsA("StringValue") then
-		addContentId(seen, list, inst.Value)
+		addContentId(ctx, inst.Value)
 	end
 end
 
-local function scanTree(seen, list, root)
+local function scanTree(ctx, root)
 	if not root then
 		return
 	end
-	for _, inst in ipairs(root:GetDescendants()) do
-		scanInstance(seen, list, inst)
+	local ok, descendants = pcall(function()
+		return root:GetDescendants()
+	end)
+	if ok and typeof(descendants) == "table" then
+		for _, inst in ipairs(descendants) do
+			scanInstance(ctx, inst)
+		end
 	end
-	scanInstance(seen, list, root)
+	scanInstance(ctx, root)
 end
 
-local function scanHumanoidDescription(seen, list, desc)
+local function scanHumanoidDescription(ctx, desc)
 	if not desc then
 		return
 	end
@@ -206,7 +243,7 @@ local function scanHumanoidDescription(seen, list, desc)
 			return desc[prop]
 		end)
 		if ok then
-			addNumericAsset(seen, list, val)
+			addNumericAsset(ctx, val)
 		end
 	end
 	local okAcc, accessories = pcall(function()
@@ -215,29 +252,34 @@ local function scanHumanoidDescription(seen, list, desc)
 	if okAcc and typeof(accessories) == "table" then
 		for _, accessory in ipairs(accessories) do
 			if typeof(accessory) == "number" then
-				addNumericAsset(seen, list, accessory)
+				addNumericAsset(ctx, accessory)
 			elseif typeof(accessory) == "table" and accessory.AssetId then
-				addNumericAsset(seen, list, accessory.AssetId)
+				addNumericAsset(ctx, accessory.AssetId)
 			end
 		end
 	end
 end
 
-local function scanCharacter(seen, list, character)
+local function scanCharacter(ctx, character)
 	if not character then
 		return
 	end
-	scanTree(seen, list, character)
+	scanTree(ctx, character)
 	local hum = character:FindFirstChildOfClass("Humanoid")
 	if hum then
 		local ok, desc = pcall(function()
 			return hum:GetAppliedDescription()
 		end)
 		if ok then
-			scanHumanoidDescription(seen, list, desc)
+			scanHumanoidDescription(ctx, desc)
 		end
-		for _, acc in ipairs(hum:GetAccessories()) do
-			scanTree(seen, list, acc)
+		local okAcc, accessories = pcall(function()
+			return hum:GetAccessories()
+		end)
+		if okAcc and typeof(accessories) == "table" then
+			for _, acc in ipairs(accessories) do
+				scanTree(ctx, acc)
+			end
 		end
 	end
 end
@@ -303,37 +345,53 @@ function Menus.loadScript(key)
 end
 
 function Menus.collectAssets()
-	local seen = {}
-	local list = {}
+	local ctx = {
+		seenIds = {},
+		ids = {},
+		seenInst = {},
+		instances = {},
+	}
 
 	for _, root in ipairs(SCAN_ROOTS) do
 		if root then
 			pcall(function()
-				scanTree(seen, list, root)
+				scanTree(ctx, root)
 			end)
 		end
 	end
 
-	local StarterPlayer = game:GetService("StarterPlayer")
-	if StarterPlayer.StarterCharacter then
-		scanCharacter(seen, list, StarterPlayer.StarterCharacter)
-	end
+	pcall(function()
+		local StarterPlayer = game:GetService("StarterPlayer")
+		local starterChar = StarterPlayer:FindFirstChild("StarterCharacter")
+		if starterChar and starterChar:IsA("Model") then
+			scanCharacter(ctx, starterChar)
+		end
+		local okDesc, starterDesc = pcall(function()
+			return StarterPlayer.StarterHumanoidDescription
+		end)
+		if okDesc and starterDesc then
+			scanHumanoidDescription(ctx, starterDesc)
+		end
+	end)
 
 	local Players = game:GetService("Players")
 	for _, plr in ipairs(Players:GetPlayers()) do
-		scanCharacter(seen, list, plr.Character)
-		if plr:FindFirstChildOfClass("Backpack") then
-			scanTree(seen, list, plr.Backpack)
-		end
-		local ok, desc = pcall(function()
-			return Players:GetHumanoidDescriptionFromUserId(plr.UserId)
+		pcall(function()
+			scanCharacter(ctx, plr.Character)
+			local backpack = plr:FindFirstChildOfClass("Backpack")
+			if backpack then
+				scanTree(ctx, backpack)
+			end
+			local ok, desc = pcall(function()
+				return Players:GetHumanoidDescriptionFromUserId(plr.UserId)
+			end)
+			if ok then
+				scanHumanoidDescription(ctx, desc)
+			end
 		end)
-		if ok then
-			scanHumanoidDescription(seen, list, desc)
-		end
 	end
 
-	return list
+	return ctx.ids, ctx.instances
 end
 
 local function assetFetchStatus(contentId)
@@ -347,19 +405,16 @@ local function assetFetchStatus(contentId)
 	return status
 end
 
-local function isAssetLoaded(contentId)
+local function isContentIdLoaded(contentId)
 	local status = assetFetchStatus(contentId)
-	if status == nil then
-		return false
-	end
 	return status == Enum.AssetFetchStatus.Success
 end
 
-local function filterPending(contentIds)
+local function filterPendingIds(contentIds)
 	local pending = {}
 	local skipped = 0
 	for _, contentId in ipairs(contentIds) do
-		if isAssetLoaded(contentId) then
+		if isContentIdLoaded(contentId) then
 			skipped += 1
 		else
 			table.insert(pending, contentId)
@@ -368,21 +423,40 @@ local function filterPending(contentIds)
 	return pending, skipped
 end
 
-local function tryPreload(contentId)
+local function preloadEntry(entry)
 	local ContentProvider = game:GetService("ContentProvider")
 	local ok = pcall(function()
-		ContentProvider:PreloadAsync({ contentId })
+		ContentProvider:PreloadAsync({ entry })
 	end)
 	if not ok then
 		return false
 	end
-	task.wait(0.02)
-	return isAssetLoaded(contentId)
+	task.wait(0.035)
+	if typeof(entry) == "string" then
+		local status = assetFetchStatus(entry)
+		if status == nil or status == Enum.AssetFetchStatus.None then
+			return true
+		end
+		return status == Enum.AssetFetchStatus.Success
+	end
+	return true
+end
+
+local function buildWorkQueue(ids, instances)
+	local pendingIds, skipped = filterPendingIds(ids)
+	local queue = {}
+	for _, inst in ipairs(instances) do
+		if inst and inst.Parent then
+			table.insert(queue, inst)
+		end
+	end
+	for _, contentId in ipairs(pendingIds) do
+		table.insert(queue, contentId)
+	end
+	return queue, skipped, #pendingIds + #instances
 end
 
 function Menus.preloadAssets(onUpdate, shouldCancel)
-	local ContentProvider = game:GetService("ContentProvider")
-
 	if onUpdate then
 		onUpdate({
 			phase = "scan",
@@ -394,24 +468,58 @@ function Menus.preloadAssets(onUpdate, shouldCancel)
 		})
 	end
 
-	local allAssets = Menus.collectAssets()
-	local pending, skipped = filterPending(allAssets)
-	local total = #pending
+	local ids, instances = {}, {}
+	local scanOk, scanErr = pcall(function()
+		ids, instances = Menus.collectAssets()
+	end)
+	if not scanOk then
+		if onUpdate then
+			onUpdate({
+				phase = "done",
+				total = 0,
+				processed = 0,
+				loaded = 0,
+				failed = 0,
+				label = "Błąd skanowania: " .. tostring(scanErr),
+			})
+		end
+		return { total = 0, loaded = 0, failed = 0, error = tostring(scanErr) }
+	end
+
+	if onUpdate then
+		onUpdate({
+			phase = "scan",
+			label = "Preload mapy i RS...",
+			total = 0,
+			processed = 0,
+			loaded = 0,
+			failed = 0,
+		})
+	end
+
+	pcall(function()
+		game:GetService("ContentProvider"):PreloadAsync({
+			workspace,
+			game:GetService("ReplicatedStorage"),
+		})
+	end)
+
+	local queue, skipped, scanned = buildWorkQueue(ids, instances)
+	local total = #queue
 	local loaded = 0
 	local failed = 0
 	local processed = 0
-	local batchSize = 8
 
 	if onUpdate then
 		onUpdate({
 			phase = "start",
 			total = total,
-			scanned = #allAssets,
+			scanned = scanned,
 			skipped = skipped,
 			processed = 0,
 			loaded = 0,
 			failed = 0,
-			label = string.format("%d do załadowania · %d już OK", total, skipped),
+			label = string.format("%d elementów · %d już OK", total, skipped),
 		})
 	end
 
@@ -420,69 +528,49 @@ function Menus.preloadAssets(onUpdate, shouldCancel)
 			onUpdate({
 				phase = "done",
 				total = 0,
-				scanned = #allAssets,
+				scanned = scanned,
 				skipped = skipped,
 				processed = 0,
 				loaded = 0,
 				failed = 0,
-				label = skipped > 0 and ("Wszystko załadowane · " .. skipped .. " assetów") or "Brak assetów",
+				label = skipped > 0 and ("Mapa OK · " .. skipped .. " assetów") or "Brak assetów do preloadu",
 			})
 		end
-		return { total = 0, scanned = #allAssets, skipped = skipped, loaded = 0, failed = 0 }
+		return { total = 0, scanned = scanned, skipped = skipped, loaded = 0, failed = 0 }
 	end
 
-	for i = 1, total, batchSize do
+	for index, entry in ipairs(queue) do
 		if shouldCancel and shouldCancel() then
 			break
 		end
 
-		local batch = {}
-		for j = i, math.min(i + batchSize - 1, total) do
-			table.insert(batch, pending[j])
+		local label
+		if typeof(entry) == "string" then
+			label = entry:gsub("rbxassetid://", "#")
+		else
+			label = entry.ClassName
 		end
 
-		pcall(function()
-			ContentProvider:PreloadAsync(batch, function(contentId)
-				if onUpdate then
-					onUpdate({
-						phase = "item",
-						contentId = contentId,
-						total = total,
-						processed = processed,
-						loaded = loaded,
-						failed = failed,
-						label = tostring(contentId):gsub("rbxassetid://", "#"),
-					})
-				end
-			end)
-		end)
+		if preloadEntry(entry) then
+			loaded += 1
+		else
+			failed += 1
+		end
+		processed += 1
 
-		task.wait(0.08)
+		if onUpdate then
+			onUpdate({
+				phase = "progress",
+				total = total,
+				processed = processed,
+				loaded = loaded,
+				failed = failed,
+				label = string.format("%d / %d · %s", processed, total, label),
+			})
+		end
 
-		for _, contentId in ipairs(batch) do
-			if shouldCancel and shouldCancel() then
-				break
-			end
-
-			if isAssetLoaded(contentId) then
-				loaded += 1
-			elseif tryPreload(contentId) then
-				loaded += 1
-			else
-				failed += 1
-			end
-			processed += 1
-
-			if onUpdate then
-				onUpdate({
-					phase = "progress",
-					total = total,
-					processed = processed,
-					loaded = loaded,
-					failed = failed,
-					label = string.format("%d / %d · OK %d · błędy %d", processed, total, loaded, failed),
-				})
-			end
+		if index % 6 == 0 then
+			task.wait(0.02)
 		end
 	end
 
@@ -491,7 +579,7 @@ function Menus.preloadAssets(onUpdate, shouldCancel)
 		onUpdate({
 			phase = "done",
 			total = total,
-			scanned = #allAssets,
+			scanned = scanned,
 			skipped = skipped,
 			processed = processed,
 			loaded = loaded,
@@ -500,13 +588,13 @@ function Menus.preloadAssets(onUpdate, shouldCancel)
 				and string.format("Anulowano · %d / %d", processed, total)
 				or (failed > 0
 					and string.format("Gotowe · %d OK · %d błędów", loaded, failed)
-					or string.format("Gotowe · %d assetów", loaded)),
+					or string.format("Gotowe · %d załadowanych", loaded)),
 		})
 	end
 
 	return {
 		total = total,
-		scanned = #allAssets,
+		scanned = scanned,
 		skipped = skipped,
 		processed = processed,
 		loaded = loaded,
