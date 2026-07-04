@@ -542,11 +542,14 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 
 		shotBusy = true
-		Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
-		markShot(tgt.char, pos)
-		Util.dispatchClick(LP, UIS, VIM, Cam)
-
-		task.delay(0.06, function()
+		task.spawn(function()
+			local savedCF = Cam.CFrame
+			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
+			markShot(tgt.char, pos)
+			RS.RenderStepped:Wait()
+			Util.clickMouse(VIM, Cam, UIS, 4, LP)
+			RS.RenderStepped:Wait()
+			Cam.CFrame = savedCF
 			shotBusy = false
 		end)
 		return true

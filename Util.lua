@@ -244,6 +244,88 @@ function Util.refreshBotList(list, enabled, LP)
 	end
 end
 
+function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
+	local RS = game:GetService("RunService")
+	holdFrames = holdFrames or 3
+
+	local function holdRelease(pressFn, releaseFn)
+		if typeof(pressFn) ~= "function" then
+			return false
+		end
+		local ok = pcall(pressFn)
+		if not ok then
+			return false
+		end
+		for _ = 1, holdFrames do
+			RS.RenderStepped:Wait()
+		end
+		if typeof(releaseFn) == "function" then
+			pcall(releaseFn)
+		end
+		return true
+	end
+
+	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+
+	if holdRelease(genv.mouse1press, genv.mouse1release) then
+		return true
+	end
+	if holdRelease(mouse1press, mouse1release) then
+		return true
+	end
+	if typeof(genv.mouse1click) == "function" then
+		pcall(genv.mouse1click)
+		return true
+	end
+	if typeof(mouse1click) == "function" then
+		pcall(mouse1click)
+		return true
+	end
+	if typeof(syn) == "table" and typeof(syn.mouse1click) == "function" then
+		pcall(syn.mouse1click)
+		return true
+	end
+
+	local mouse = LP and LP:GetMouse()
+	if mouse and typeof(getconnections) == "function" then
+		local fired = false
+		pcall(function()
+			for _, conn in ipairs(getconnections(mouse.Button1Down)) do
+				conn:Fire()
+				fired = true
+			end
+		end)
+		if fired then
+			for _ = 1, holdFrames do
+				RS.RenderStepped:Wait()
+			end
+			pcall(function()
+				for _, conn in ipairs(getconnections(mouse.Button1Up)) do
+					conn:Fire()
+				end
+			end)
+			return true
+		end
+	end
+
+	local cx, cy = Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2
+	if UIS then
+		local loc = UIS:GetMouseLocation()
+		cx, cy = loc.X, loc.Y
+	end
+
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
+	end)
+	for _ = 1, holdFrames do
+		RS.RenderStepped:Wait()
+	end
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
+	end)
+	return true
+end
+
 function Util.fireCrosshair(VIM, Cam, UIS, opts)
 	opts = opts or {}
 	local cx, cy
@@ -273,77 +355,12 @@ function Util.fireCrosshair(VIM, Cam, UIS, opts)
 	end)
 end
 
-local function fireSignalConnections(signal)
-	if typeof(getconnections) ~= "function" or not signal then
-		return false
-	end
-	local fired = false
-	pcall(function()
-		for _, conn in ipairs(getconnections(signal)) do
-			conn:Fire()
-			fired = true
-		end
-	end)
-	return fired
-end
-
 function Util.dispatchClick(LP, UIS, VIM, Cam)
-	local cx = Cam.ViewportSize.X / 2
-	local cy = Cam.ViewportSize.Y / 2
-
-	local char = LP and LP.Character
-	if char then
-		for _, item in ipairs(char:GetChildren()) do
-			if item:IsA("Tool") then
-				pcall(function()
-					item:Activate()
-				end)
-				fireSignalConnections(item.Activated)
-			end
-		end
-	end
-
-	local mouse = LP and LP:GetMouse()
-	if mouse then
-		fireSignalConnections(mouse.Button1Down)
-		fireSignalConnections(mouse.Button1Up)
-	end
-
-	if typeof(firesignal) == "function" then
-		pcall(function()
-			local input = {
-				UserInputType = Enum.UserInputType.MouseButton1,
-				KeyCode = Enum.KeyCode.Unknown,
-			}
-			firesignal(UIS.InputBegan, input, false)
-			firesignal(UIS.InputEnded, input, false)
-		end)
-	end
-
-	pcall(function()
-		local VirtualUser = game:GetService("VirtualUser")
-		VirtualUser:Button1Down(Vector2.new(cx, cy))
-		VirtualUser:Button1Up(Vector2.new(cx, cy))
-	end)
-
-	Util.fireCrosshair(VIM, Cam, UIS, { center = true })
-
-	if typeof(mouse1click) == "function" then
-		pcall(mouse1click)
-	elseif typeof(mouse1press) == "function" then
-		pcall(mouse1press)
-		task.defer(function()
-			if typeof(mouse1release) == "function" then
-				pcall(mouse1release)
-			end
-		end)
-	elseif typeof(click) == "function" then
-		pcall(click)
-	end
+	Util.clickMouse(VIM, Cam, UIS, 3, LP)
 end
 
 function Util.fireWeapon(LP, VIM, Cam, UIS)
-	Util.dispatchClick(LP, UIS, VIM, Cam)
+	Util.clickMouse(VIM, Cam, UIS, 3, LP)
 end
 
 function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, UIS, LP)
