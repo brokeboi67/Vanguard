@@ -432,33 +432,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
 	end
 
-	local function getCrosshairRadius(part, char)
-		local base = 24
-		if not part or not char then
-			return base
-		end
-		local aimPos = Util.getFirePosition(char, part) or Util.getPartPosition(part)
-		if not aimPos then
-			return base
-		end
-		local center, onScreen = Cam:WorldToViewportPoint(aimPos)
-		if not onScreen then
-			return base
-		end
-		if part:IsA("BasePart") then
-			local edgeWorld = aimPos + Cam.CFrame.RightVector * math.max(part.Size.X, part.Size.Y) * 0.35
-			local edge, edgeOn = Cam:WorldToViewportPoint(edgeWorld)
-			if edgeOn then
-				local r = (Vector2.new(edge.X, edge.Y) - Vector2.new(center.X, center.Y)).Magnitude
-				base = math.max(base, r * 0.9)
-			end
-		end
-		return math.clamp(base, 24, 56)
-	end
-
 	local function finishTriggerShot()
-		triggerFiring = false
 		triggerNextShotAt = tick() + math.max(S.TriggerDelay or 1, 1) / 1000
+		triggerFiring = false
 	end
 
 	local function clearTriggerLock()
@@ -466,7 +442,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		triggerLockUntil = 0
 	end
 
-	local function validateTriggerTarget(tgt, maxScreenDist)
+	local function validateTriggerTarget(tgt)
 		if not tgt or not tgt.char then
 			return nil
 		end
@@ -480,8 +456,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not part then
 			return nil
 		end
-		local dist2d = screenDist(part, tgt.char)
-		if maxScreenDist and dist2d > maxScreenDist then
+		if screenDist(part, tgt.char) > fovLimit() then
 			return nil
 		end
 		if S.VisibleCheck and not isVisible(part, tgt.char) then
@@ -490,61 +465,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return { char = tgt.char, plr = tgt.plr, part = part }
 	end
 
-	local function getTriggerCrosshairTarget()
-		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-		params.IgnoreWater = true
-
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * (S.MaxDist or 500), params)
-		if hit then
-			local char = hit.Instance:FindFirstAncestorOfClass("Model")
-			if char and Util.isValidTarget(char, nil) then
-				local plr = Players:GetPlayerFromCharacter(char)
-				local valid = false
-				if plr then
-					valid = isEnemyPlayer(plr)
-				elseif S.AimBots then
-					valid = true
-				end
-				if valid then
-					local part = hit.Instance
-					if not part:IsA("BasePart") or not part:IsDescendantOf(char) then
-						part = resolveHitPart(char)
-					end
-					if part then
-						local radius = getCrosshairRadius(part, char)
-						local validated = validateTriggerTarget({ part = part, char = char, plr = plr }, radius)
-						if validated then
-							return validated
-						end
-					end
-				end
-			end
-		end
-
-		local best, bestD = nil, math.huge
-		for _, entry in ipairs(collectTargets()) do
-			local char = entry.char
-			local part = resolveHitPart(char)
-			if part then
-				local radius = getCrosshairRadius(part, char)
-				local cand = scoreTarget(entry, radius)
-				if cand and cand.score < bestD then
-					bestD = cand.score
-					best = cand
-				end
-			end
-		end
-		return best
-	end
-
 	local function acquireTriggerTarget()
-		local maxDist = S.TriggerCompat and fovLimit() or nil
-
 		if triggerLock and tick() < triggerLockUntil then
-			local locked = validateTriggerTarget(triggerLock, maxDist)
+			local locked = validateTriggerTarget(triggerLock)
 			if locked then
 				triggerLock = locked
 				return locked
@@ -552,13 +475,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			clearTriggerLock()
 		end
 
-		local fresh
-		if S.TriggerCompat then
-			fresh = pickBestTarget(fovLimit())
-		else
-			fresh = getTriggerCrosshairTarget()
-		end
-
+		local fresh = pickBestTarget(fovLimit())
 		if fresh then
 			triggerLock = fresh
 			triggerLockUntil = tick() + 0.35
