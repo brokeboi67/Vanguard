@@ -1979,10 +1979,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	}, 1)
 	MakeBind(LTrig, "Trigger Key", "TriggerKey", 2)
 	MakeSlider(LTrig, "Trigger Delay", "TriggerDelay", 1, 500, 3, { suffix = "ms", step = 1 })
-	MakeTog(LTrig, "Game Compatibility (Arsenal)", "TriggerCompat", 4, { flat = true })
+	MakeTog(LTrig, "Compatibility Mode", "TriggerCompat", 4, { flat = true })
 	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 5, { flat = true })
 	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 6, { flat = true })
-	MakeHint(LTrig, "Domyślnie strzela gdy wróg jest pod celownikiem — bez ruszania kamery. Compatibility = śledzi cel w FOV i strzela (Arsenal).", 7)
+	MakeHint(LTrig, "Domyślnie strzela gdy wróg jest pod celownikiem — bez ruszania kamery. Compatibility = śledzi cel w FOV i strzela (gry z własnym hitregiem).", 7)
 
 	local LTarget = MakeCard(T3, "TARGETING", nil, 4)
 	MakeTog(LTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })
@@ -2042,8 +2042,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		step = 0.05,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
-	MakeTog(RBot, "Game Compatibility (Arsenal)", "RageCompat", 9, { flat = true })
-	MakeHint(RBot, "Silent = krótki flick + powrót kamery. Track = lock. Snap = celuj i strzelaj. Compatibility = track + strzał dla gier typu Arsenal.", 10)
+	MakeTog(RBot, "Compatibility Mode", "RageCompat", 9, { flat = true })
+	MakeHint(RBot, "Silent = krótki flick + powrót kamery. Track = lock. Snap = celuj i strzelaj. Compatibility = track + strzał dla gier z własnym hitregiem.", 10)
 
 	local RTarget = MakeCard(TR, "TARGETING", nil, 4)
 	MakeTog(RTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })

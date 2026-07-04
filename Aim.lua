@@ -419,6 +419,18 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return best
 	end
 
+	local function aimCamera(targetPos)
+		local goal = CFrame.new(Cam.CFrame.Position, targetPos)
+		local alpha = math.clamp((1 - S.Smooth) * 0.22, 0.012, 0.45)
+		if S.AimCurve then
+			local j = (math.noise(tick() * 2.5, jitterSeed) - 0.5) * 0.35
+			alpha = math.clamp(alpha * (1 + j * S.Smooth), 0.008, 0.5)
+		end
+		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
+	end
+
+	local TRIGGER_CROSSHAIR_PX = 18
+
 	local function getTriggerCrosshairTarget()
 		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
 		local params = RaycastParams.new()
@@ -427,36 +439,37 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		params.IgnoreWater = true
 
 		local hit = workspace:Raycast(ray.Origin, ray.Direction * (S.MaxDist or 500), params)
-		if not hit then
-			return nil
-		end
-
-		local char = hit.Instance:FindFirstAncestorOfClass("Model")
-		if not char or not Util.isValidTarget(char, nil) then
-			return nil
-		end
-
-		local plr = Players:GetPlayerFromCharacter(char)
-		if plr then
-			if not isEnemyPlayer(plr) then
-				return nil
+		if hit then
+			local char = hit.Instance:FindFirstAncestorOfClass("Model")
+			if char and Util.isValidTarget(char, nil) then
+				local plr = Players:GetPlayerFromCharacter(char)
+				local valid = false
+				if plr then
+					valid = isEnemyPlayer(plr)
+				elseif S.AimBots then
+					valid = true
+				end
+				if valid then
+					local part = hit.Instance
+					if not part:IsA("BasePart") or not part:IsDescendantOf(char) then
+						part = resolveHitPart(char)
+					end
+					if part and (not S.VisibleCheck or isVisible(part, char)) then
+						return { part = part, char = char, plr = plr }
+					end
+				end
 			end
-		elseif not S.AimBots then
-			return nil
 		end
 
-		local part = hit.Instance
-		if not part:IsA("BasePart") or not part:IsDescendantOf(char) then
-			part = resolveHitPart(char)
+		local best, bestD = nil, math.huge
+		for _, entry in ipairs(collectTargets()) do
+			local cand = scoreTarget(entry, TRIGGER_CROSSHAIR_PX)
+			if cand and cand.score < bestD then
+				bestD = cand.score
+				best = cand
+			end
 		end
-		if not part then
-			return nil
-		end
-		if S.VisibleCheck and not isVisible(part, char) then
-			return nil
-		end
-
-		return { part = part, char = char, plr = plr }
+		return best
 	end
 
 	local function updateTriggerCompatAim()
@@ -471,16 +484,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if pos then
 			aimCamera(pos)
 		end
-	end
-
-	local function aimCamera(targetPos)
-		local goal = CFrame.new(Cam.CFrame.Position, targetPos)
-		local alpha = math.clamp((1 - S.Smooth) * 0.22, 0.012, 0.45)
-		if S.AimCurve then
-			local j = (math.noise(tick() * 2.5, jitterSeed) - 0.5) * 0.35
-			alpha = math.clamp(alpha * (1 + j * S.Smooth), 0.008, 0.5)
-		end
-		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
 	end
 
 	local function captureShotRay(aimPos)
