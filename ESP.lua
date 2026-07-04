@@ -142,7 +142,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		updateLosFilter()
 		local origin = Cam.CFrame.Position
 		for _, name in ipairs(LOS_PARTS) do
-			local part = char:FindFirstChild(name)
+			local part = Util.resolveBodyPart(char, name)
 			if part then
 				local dir = part.Position - origin
 				local mag = dir.Magnitude

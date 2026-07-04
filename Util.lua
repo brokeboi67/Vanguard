@@ -15,6 +15,13 @@ function Util.resolveBodyPart(char, name)
 	if child:IsA("BasePart") then
 		return child
 	end
+	if child:IsA("Accessory") then
+		local handle = child:FindFirstChild("Handle")
+		if handle and handle:IsA("BasePart") then
+			return handle
+		end
+		return child:FindFirstChildWhichIsA("BasePart", true)
+	end
 	if child:IsA("Model") then
 		if child.PrimaryPart and child.PrimaryPart:IsA("BasePart") then
 			return child.PrimaryPart
@@ -49,6 +56,12 @@ function Util.getPartPosition(part)
 	end
 	if part:IsA("BasePart") then
 		return part.Position
+	end
+	if part:IsA("Accessory") then
+		local handle = part:FindFirstChild("Handle")
+		if handle and handle:IsA("BasePart") then
+			return handle.Position
+		end
 	end
 	if part:IsA("Model") then
 		local ok, pos = pcall(function()
