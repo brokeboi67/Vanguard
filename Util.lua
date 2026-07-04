@@ -257,24 +257,67 @@ function Util.fireCrosshair(VIM, Cam, UIS, opts)
 		cx = Cam.ViewportSize.X / 2
 		cy = Cam.ViewportSize.Y / 2
 	end
-	VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
+	end)
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+	end)
 	task.defer(function()
-		VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+		pcall(function()
+			VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
+		end)
+		pcall(function()
+			VIM:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+		end)
 	end)
 end
 
-function Util.fireWeapon(LP, VIM, Cam, UIS)
+local function fireSignalConnections(signal)
+	if typeof(getconnections) ~= "function" or not signal then
+		return false
+	end
+	local fired = false
+	pcall(function()
+		for _, conn in ipairs(getconnections(signal)) do
+			conn:Fire()
+			fired = true
+		end
+	end)
+	return fired
+end
+
+function Util.dispatchClick(LP, UIS, VIM, Cam)
 	local cx = Cam.ViewportSize.X / 2
 	local cy = Cam.ViewportSize.Y / 2
 
 	local char = LP and LP.Character
 	if char then
-		local tool = char:FindFirstChildOfClass("Tool")
-		if tool then
-			pcall(function()
-				tool:Activate()
-			end)
+		for _, item in ipairs(char:GetChildren()) do
+			if item:IsA("Tool") then
+				pcall(function()
+					item:Activate()
+				end)
+				fireSignalConnections(item.Activated)
+			end
 		end
+	end
+
+	local mouse = LP and LP:GetMouse()
+	if mouse then
+		fireSignalConnections(mouse.Button1Down)
+		fireSignalConnections(mouse.Button1Up)
+	end
+
+	if typeof(firesignal) == "function" then
+		pcall(function()
+			local input = {
+				UserInputType = Enum.UserInputType.MouseButton1,
+				KeyCode = Enum.KeyCode.Unknown,
+			}
+			firesignal(UIS.InputBegan, input, false)
+			firesignal(UIS.InputEnded, input, false)
+		end)
 	end
 
 	pcall(function()
@@ -294,7 +337,13 @@ function Util.fireWeapon(LP, VIM, Cam, UIS)
 				pcall(mouse1release)
 			end
 		end)
+	elseif typeof(click) == "function" then
+		pcall(click)
 	end
+end
+
+function Util.fireWeapon(LP, VIM, Cam, UIS)
+	Util.dispatchClick(LP, UIS, VIM, Cam)
 end
 
 function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, UIS, LP)

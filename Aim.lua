@@ -24,6 +24,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	local silentRestoreCF = nil
 	local silentRestoreAt = 0
 	local silentSnapTarget = nil
+	local triggerAimSavedCF = nil
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
 	local fovLimit = function()
@@ -541,25 +542,41 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 
 		shotBusy = true
-		local savedCF = Cam.CFrame
 		Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
 		markShot(tgt.char, pos)
+		Util.dispatchClick(LP, UIS, VIM, Cam)
 
-		task.spawn(function()
-			for _ = 1, 2 do
-				RS.RenderStepped:Wait()
-			end
-			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
-			pcall(function()
-				Util.fireWeapon(LP, VIM, Cam, UIS)
-			end)
-			for _ = 1, 3 do
-				RS.RenderStepped:Wait()
-			end
-			Cam.CFrame = savedCF
+		task.delay(0.06, function()
 			shotBusy = false
 		end)
 		return true
+	end
+
+	local function updateTriggerAim()
+		if not S.Trigger or not triggerArmed() or S.MenuOpen or S.MasterRage or shotBusy then
+			triggerAimSavedCF = nil
+			return
+		end
+
+		local tgt = getStableTriggerTarget()
+		if not tgt or not tgt.part or not tgt.char then
+			triggerAimSavedCF = nil
+			return
+		end
+		if screenDist(tgt.part, tgt.char) > fovLimit() then
+			triggerAimSavedCF = nil
+			return
+		end
+
+		local pos = Util.getFirePosition(tgt.char, tgt.part)
+		if not pos then
+			return
+		end
+
+		if not triggerAimSavedCF then
+			triggerAimSavedCF = Cam.CFrame
+		end
+		Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
 	end
 
 	local function tryTriggerShot()
@@ -668,12 +685,14 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not S.Trigger then
 			triggerToggled = false
 			triggerLock = nil
+			triggerAimSavedCF = nil
 		end
 
 		if S.MenuOpen or S.MasterRage then
 			return
 		end
 
+		pcall(updateTriggerAim)
 		pcall(tryTriggerShot)
 
 		if S.Aimbot and not S.Silent and isBindDown(getAimBindName()) then
