@@ -32,6 +32,8 @@ GameSupport.ENTRIES = {
 	[83055872352243] = { status = "Partially Supported", note = "HEAT" },
 	[84556640895285] = { status = "Supported", note = "Deagle Arena" },
 	[131964389958213] = { status = "Supported", note = "[UPD] RELOADED GUNS" },
+	[124842176624983] = { status = "Not Supported", note = "OVERKILL" },
+	[140582629911298] = { status = "Supported", note = "[FPS] Deathshot" },
 }
 
 local STATUS_UI = {
