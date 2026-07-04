@@ -518,9 +518,20 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return
 		end
 		local pos = Util.getFirePosition(tgt.char, tgt.part)
-		markShot(tgt.char, pos)
-		task.defer(function()
+		if not pos then
+			return
+		end
+
+		task.spawn(function()
+			local savedCF = Cam.CFrame
+			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
+			markShot(tgt.char, pos)
+			for _ = 1, 2 do
+				RS.RenderStepped:Wait()
+			end
 			Util.fireTriggerClick(LP, VIM, Cam, UIS)
+			RS.RenderStepped:Wait()
+			Cam.CFrame = savedCF
 		end)
 	end
 

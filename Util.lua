@@ -273,11 +273,10 @@ function Util.fireTriggerClick(LP, VIM, Cam, UIS)
 		pcall(click)
 	elseif typeof(press) == "function" then
 		pcall(press)
-		task.defer(function()
-			if typeof(release) == "function" then
-				pcall(release)
-			end
-		end)
+		RS.RenderStepped:Wait()
+		if typeof(release) == "function" then
+			pcall(release)
+		end
 	end
 
 	if typeof(syn) == "table" and typeof(syn.mouse1click) == "function" then
@@ -291,12 +290,11 @@ function Util.fireTriggerClick(LP, VIM, Cam, UIS)
 				conn:Fire()
 			end
 		end)
-		task.defer(function()
-			pcall(function()
-				for _, conn in ipairs(getconnections(mouse.Button1Up)) do
-					conn:Fire()
-				end
-			end)
+		RS.RenderStepped:Wait()
+		pcall(function()
+			for _, conn in ipairs(getconnections(mouse.Button1Up)) do
+				conn:Fire()
+			end
 		end)
 	end
 
@@ -320,10 +318,9 @@ function Util.fireTriggerClick(LP, VIM, Cam, UIS)
 	pcall(function()
 		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
 	end)
-	task.defer(function()
-		pcall(function()
-			VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
-		end)
+	RS.RenderStepped:Wait()
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
 	end)
 end
 
