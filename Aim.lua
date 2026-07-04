@@ -18,13 +18,10 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	local triggerToggled = false
 	local botList = {}
 	local botScanAt = 0
-	local triggerLock = nil
-	local triggerLockUntil = 0
 	local shotBusy = false
 	local silentRestoreCF = nil
 	local silentRestoreAt = 0
 	local silentSnapTarget = nil
-	local triggerAimSavedCF = nil
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
 	local fovLimit = function()
@@ -422,20 +419,47 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return best
 	end
 
-	local function getStableTriggerTarget()
-		local limit = fovLimit()
-		if triggerLock and tick() < triggerLockUntil then
-			local part = triggerLock.part
-			local char = triggerLock.char
-			if part and part.Parent and char and Util.isValidTarget(char, triggerLock.plr) and isVisible(part, char) then
-				if screenDist(part, char) <= limit then
-					return triggerLock
+	local function getTriggerCrosshairTarget()
+		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
+		params.IgnoreWater = true
+
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * (S.MaxDist or 500), params)
+		if hit then
+			local char = hit.Instance:FindFirstAncestorOfClass("Model")
+			if char and char:FindFirstChildOfClass("Humanoid") then
+				local plr = Players:GetPlayerFromCharacter(char)
+				local valid = false
+				if plr then
+					valid = isEnemyPlayer(plr)
+				elseif S.AimBots then
+					valid = Util.isValidTarget(char, nil)
+				end
+				if valid then
+					local part = hit.Instance:IsA("BasePart") and hit.Instance or resolveHitPart(char)
+					if part and (not S.VisibleCheck or isVisible(part, char)) then
+						return { part = part, char = char, plr = plr }
+					end
 				end
 			end
 		end
-		triggerLock = pickBestTarget(limit)
-		triggerLockUntil = tick() + 0.4
-		return triggerLock
+
+		local radius = math.clamp(S.TriggerRadius or 14, 4, 40)
+		local best, bestDist = nil, radius
+		for _, entry in ipairs(collectTargets()) do
+			local char = entry.char
+			local part = resolveHitPart(char)
+			if part then
+				local dist = screenDist(part, char)
+				if dist <= bestDist and (not S.VisibleCheck or isVisible(part, char)) then
+					bestDist = dist
+					best = { part = part, char = char, plr = entry.plr }
+				end
+			end
+		end
+		return best
 	end
 
 	local function aimCamera(targetPos)
@@ -536,50 +560,16 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not Util.isValidTarget(tgt.char, tgt.plr) then
 			return false
 		end
-		local pos = Util.getFirePosition(tgt.char, tgt.part)
-		if not pos then
-			return false
-		end
 
 		shotBusy = true
 		task.spawn(function()
-			local savedCF = Cam.CFrame
-			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
+			local pos = Util.getFirePosition(tgt.char, tgt.part)
 			markShot(tgt.char, pos)
 			RS.RenderStepped:Wait()
 			Util.clickMouse(VIM, Cam, UIS, 4, LP)
-			RS.RenderStepped:Wait()
-			Cam.CFrame = savedCF
 			shotBusy = false
 		end)
 		return true
-	end
-
-	local function updateTriggerAim()
-		if not S.Trigger or not triggerArmed() or S.MenuOpen or S.MasterRage or shotBusy then
-			triggerAimSavedCF = nil
-			return
-		end
-
-		local tgt = getStableTriggerTarget()
-		if not tgt or not tgt.part or not tgt.char then
-			triggerAimSavedCF = nil
-			return
-		end
-		if screenDist(tgt.part, tgt.char) > fovLimit() then
-			triggerAimSavedCF = nil
-			return
-		end
-
-		local pos = Util.getFirePosition(tgt.char, tgt.part)
-		if not pos then
-			return
-		end
-
-		if not triggerAimSavedCF then
-			triggerAimSavedCF = Cam.CFrame
-		end
-		Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
 	end
 
 	local function tryTriggerShot()
@@ -594,11 +584,8 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
-		local tgt = getStableTriggerTarget()
+		local tgt = getTriggerCrosshairTarget()
 		if not tgt or not tgt.part or not tgt.char or not Util.isValidTarget(tgt.char, tgt.plr) then
-			return
-		end
-		if screenDist(tgt.part, tgt.char) > fovLimit() then
 			return
 		end
 
@@ -687,15 +674,12 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		if not S.Trigger then
 			triggerToggled = false
-			triggerLock = nil
-			triggerAimSavedCF = nil
 		end
 
 		if S.MenuOpen or S.MasterRage then
 			return
 		end
 
-		pcall(updateTriggerAim)
 		pcall(tryTriggerShot)
 
 		if S.Aimbot and not S.Silent and isBindDown(getAimBindName()) then
@@ -716,6 +700,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return S.GetRageTarget()
 		end
 		if S.Aimbot or S.Silent or S.Trigger or S.TargetInfo then
+			if S.Trigger and not S.Aimbot and not S.Silent then
+				return getTriggerCrosshairTarget()
+			end
 			return pickBestTarget(fovLimit())
 		end
 		return nil
