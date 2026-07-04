@@ -244,9 +244,13 @@ function Util.refreshBotList(list, enabled, LP)
 	end
 end
 
-function Util.fireCrosshair(VIM, Cam, UIS)
+function Util.fireCrosshair(VIM, Cam, UIS, opts)
+	opts = opts or {}
 	local cx, cy
-	if UIS then
+	if opts.center ~= false then
+		cx = Cam.ViewportSize.X / 2
+		cy = Cam.ViewportSize.Y / 2
+	elseif UIS then
 		local loc = UIS:GetMouseLocation()
 		cx, cy = loc.X, loc.Y
 	else
@@ -259,7 +263,41 @@ function Util.fireCrosshair(VIM, Cam, UIS)
 	end)
 end
 
-function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, UIS)
+function Util.fireWeapon(LP, VIM, Cam, UIS)
+	local cx = Cam.ViewportSize.X / 2
+	local cy = Cam.ViewportSize.Y / 2
+
+	local char = LP and LP.Character
+	if char then
+		local tool = char:FindFirstChildOfClass("Tool")
+		if tool then
+			pcall(function()
+				tool:Activate()
+			end)
+		end
+	end
+
+	pcall(function()
+		local VirtualUser = game:GetService("VirtualUser")
+		VirtualUser:Button1Down(Vector2.new(cx, cy))
+		VirtualUser:Button1Up(Vector2.new(cx, cy))
+	end)
+
+	Util.fireCrosshair(VIM, Cam, UIS, { center = true })
+
+	if typeof(mouse1click) == "function" then
+		pcall(mouse1click)
+	elseif typeof(mouse1press) == "function" then
+		pcall(mouse1press)
+		task.defer(function()
+			if typeof(mouse1release) == "function" then
+				pcall(mouse1release)
+			end
+		end)
+	end
+end
+
+function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, UIS, LP)
 	if not targetPos then
 		return
 	end
@@ -269,7 +307,7 @@ function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, UIS)
 	for _ = 1, aimFrames do
 		RS.RenderStepped:Wait()
 	end
-	Util.fireCrosshair(VIM, Cam, UIS)
+	Util.fireWeapon(LP, VIM, Cam, UIS)
 	RS.RenderStepped:Wait()
 	RS.RenderStepped:Wait()
 	Cam.CFrame = saved

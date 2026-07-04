@@ -461,7 +461,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 				pcall(S.RequestShotTracer, false, tgt.char, targetPos)
 			end
 			if mode == "Silent" then
-				Util.performSilentShot(RS, Cam, VIM, targetPos, 2, UIS)
+				Util.performSilentShot(RS, Cam, VIM, targetPos, 2, UIS, LP)
 			elseif mode == "Track" then
 				aimCameraAt(targetPos, false)
 				RS.RenderStepped:Wait()

@@ -521,8 +521,42 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
 			markShot(tgt.char, pos)
 			pcall(function()
-				Util.performSilentShot(RS, Cam, VIM, pos, 2, UIS)
+				Util.performSilentShot(RS, Cam, VIM, pos, 2, UIS, LP)
 			end)
+			shotBusy = false
+		end)
+		return true
+	end
+
+	local function runTriggerShot(tgt)
+		if shotBusy or not tgt or not tgt.part or not tgt.char then
+			return false
+		end
+		if not Util.isValidTarget(tgt.char, tgt.plr) then
+			return false
+		end
+		local pos = Util.getFirePosition(tgt.char, tgt.part)
+		if not pos then
+			return false
+		end
+
+		shotBusy = true
+		local savedCF = Cam.CFrame
+		Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
+		markShot(tgt.char, pos)
+
+		task.spawn(function()
+			for _ = 1, 2 do
+				RS.RenderStepped:Wait()
+			end
+			Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
+			pcall(function()
+				Util.fireWeapon(LP, VIM, Cam, UIS)
+			end)
+			for _ = 1, 3 do
+				RS.RenderStepped:Wait()
+			end
+			Cam.CFrame = savedCF
 			shotBusy = false
 		end)
 		return true
@@ -549,7 +583,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 
 		lastTrigger = tick()
-		runSilentShot(tgt)
+		runTriggerShot(tgt)
 	end
 
 	local function bindSilentAction()
