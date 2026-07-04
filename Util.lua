@@ -244,6 +244,89 @@ function Util.refreshBotList(list, enabled, LP)
 	end
 end
 
+function Util.fireTriggerClick(LP, VIM, Cam, UIS)
+	local RS = game:GetService("RunService")
+	local cx = Cam.ViewportSize.X / 2
+	local cy = Cam.ViewportSize.Y / 2
+	if UIS then
+		local loc = UIS:GetMouseLocation()
+		cx, cy = loc.X, loc.Y
+	end
+
+	local char = LP and LP.Character
+	if char then
+		for _, item in ipairs(char:GetChildren()) do
+			if item:IsA("Tool") then
+				pcall(function()
+					item:Activate()
+				end)
+			end
+		end
+	end
+
+	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+	local press = genv.mouse1press or mouse1press
+	local release = genv.mouse1release or mouse1release
+	local click = genv.mouse1click or mouse1click
+
+	if typeof(click) == "function" then
+		pcall(click)
+	elseif typeof(press) == "function" then
+		pcall(press)
+		task.defer(function()
+			if typeof(release) == "function" then
+				pcall(release)
+			end
+		end)
+	end
+
+	if typeof(syn) == "table" and typeof(syn.mouse1click) == "function" then
+		pcall(syn.mouse1click)
+	end
+
+	local mouse = LP and LP:GetMouse()
+	if mouse and typeof(getconnections) == "function" then
+		pcall(function()
+			for _, conn in ipairs(getconnections(mouse.Button1Down)) do
+				conn:Fire()
+			end
+		end)
+		task.defer(function()
+			pcall(function()
+				for _, conn in ipairs(getconnections(mouse.Button1Up)) do
+					conn:Fire()
+				end
+			end)
+		end)
+	end
+
+	if typeof(firesignal) == "function" then
+		pcall(function()
+			local input = {
+				UserInputType = Enum.UserInputType.MouseButton1,
+				KeyCode = Enum.KeyCode.Unknown,
+			}
+			firesignal(UIS.InputBegan, input, false)
+			firesignal(UIS.InputEnded, input, false)
+		end)
+	end
+
+	pcall(function()
+		local VirtualUser = game:GetService("VirtualUser")
+		VirtualUser:Button1Down(Vector2.new(cx, cy))
+		VirtualUser:Button1Up(Vector2.new(cx, cy))
+	end)
+
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
+	end)
+	task.defer(function()
+		pcall(function()
+			VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
+		end)
+	end)
+end
+
 function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 	local RS = game:GetService("RunService")
 	holdFrames = holdFrames or 0

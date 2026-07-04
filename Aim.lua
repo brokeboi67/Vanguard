@@ -419,39 +419,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return best
 	end
 
-	local function runTriggerShot(tgt)
-		if not tgt or not tgt.part or not tgt.char then
-			return false
-		end
-		if not Util.isValidTarget(tgt.char, tgt.plr) then
-			return false
-		end
-		local pos = Util.getFirePosition(tgt.char, tgt.part)
-		markShot(tgt.char, pos)
-		Util.clickMouse(VIM, Cam, UIS, 0, LP)
-		return true
-	end
-
-	local function tryTriggerShot()
-		if S.MenuOpen or S.MasterRage then
-			return
-		end
-		if not triggerArmed() then
-			return
-		end
-		if tick() - lastTrigger < math.max(S.TriggerDelay or 1, 1) / 1000 then
-			return
-		end
-
-		local tgt = pickBestTarget(fovLimit())
-		if not tgt or not tgt.part or not tgt.char or not Util.isValidTarget(tgt.char, tgt.plr) then
-			return
-		end
-
-		lastTrigger = tick()
-		runTriggerShot(tgt)
-	end
-
 	local function aimCamera(targetPos)
 		local goal = CFrame.new(Cam.CFrame.Position, targetPos)
 		local alpha = math.clamp((1 - S.Smooth) * 0.22, 0.012, 0.45)
@@ -541,6 +508,40 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			shotBusy = false
 		end)
 		return true
+	end
+
+	local function runTriggerShot(tgt)
+		if not tgt or not tgt.part or not tgt.char then
+			return
+		end
+		if not Util.isValidTarget(tgt.char, tgt.plr) then
+			return
+		end
+		local pos = Util.getFirePosition(tgt.char, tgt.part)
+		markShot(tgt.char, pos)
+		task.defer(function()
+			Util.fireTriggerClick(LP, VIM, Cam, UIS)
+		end)
+	end
+
+	local function tryTriggerShot()
+		if S.MenuOpen or S.MasterRage then
+			return
+		end
+		if not triggerArmed() then
+			return
+		end
+		if tick() - lastTrigger < math.max(S.TriggerDelay or 1, 1) / 1000 then
+			return
+		end
+
+		local tgt = pickBestTarget(fovLimit())
+		if not tgt or not tgt.part or not tgt.char then
+			return
+		end
+
+		lastTrigger = tick()
+		runTriggerShot(tgt)
 	end
 
 	local function bindSilentAction()
