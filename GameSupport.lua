@@ -27,6 +27,11 @@ GameSupport.ENTRIES = {
 	[70611375906033] = { status = "Supported", note = "FFA HEADSHOT" },
 	[93466613073564] = { status = "Not Supported", note = "[FPS]Scoped [Season]" },
 	[89772838187511] = { status = "Partially Supported", note = "CHAMBERED" },
+	[72387437800091] = { status = "Partially Supported", note = "DUELS" },
+	[131693791362588] = { status = "Supported", note = "[FPS] Sniper Wars" },
+	[83055872352243] = { status = "Partially Supported", note = "HEAT" },
+	[84556640895285] = { status = "Supported", note = "Deagle Arena" },
+	[131964389958213] = { status = "Supported", note = "[UPD] RELOADED GUNS" },
 }
 
 local STATUS_UI = {
