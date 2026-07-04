@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.22.1",
+	Version = "2.23.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -33,6 +33,7 @@ local Settings = {
 	TriggerKey = "V",
 	TriggerMode = "Hold",
 	TriggerDelay = 100,
+	TriggerCompat = false,
 	ShowTriggerHud = true,
 	TriggerHudMinimal = true,
 	VisibleCheck = true,
@@ -66,6 +67,7 @@ local Settings = {
 	RageBots = true,
 	RageMaxDist = 500,
 	RageAimMode = "Silent",
+	RageCompat = false,
 	RageTrackSmooth = 0.35,
 
 	-- WORLD

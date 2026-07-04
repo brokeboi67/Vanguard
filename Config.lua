@@ -122,6 +122,9 @@ function Config.EnforceRules(S)
 	if S.TriggerHudMinimal == nil then
 		S.TriggerHudMinimal = true
 	end
+	if S.TriggerCompat == nil then
+		S.TriggerCompat = false
+	end
 	if S.ExcludeTeam == nil then
 		S.ExcludeTeam = true
 	end
@@ -146,6 +149,9 @@ function Config.EnforceRules(S)
 	end
 	if S.RageTrackSmooth == nil then
 		S.RageTrackSmooth = 0.35
+	end
+	if S.RageCompat == nil then
+		S.RageCompat = false
 	end
 	if S.FullBright == nil then
 		S.FullBright = false

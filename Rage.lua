@@ -391,7 +391,10 @@ function Rage.Init(S, ParentGUI, TF, Util)
 	end
 
 	local function applyRageTrack()
-		if not rageArmed() or S.RageAimMode ~= "Track" then
+		if not rageArmed() then
+			return
+		end
+		if not S.RageCompat and S.RageAimMode ~= "Track" then
 			return
 		end
 		if tick() < rageShootingUntil then
@@ -453,25 +456,33 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		rageShootingUntil = tick() + 0.12
 		local mode = S.RageAimMode or "Silent"
 		task.spawn(function()
-			Cam.CFrame = CFrame.new(Cam.CFrame.Position, targetPos)
+			local savedCF = Cam.CFrame
 			local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
 			S.LastShotRayOrigin = ray.Origin
 			S.LastShotRayDir = ray.Direction
 			if S.RequestShotTracer then
 				pcall(S.RequestShotTracer, false, tgt.char, targetPos)
 			end
-			if mode == "Silent" then
+
+			if S.RageCompat then
+				Cam.CFrame = CFrame.new(Cam.CFrame.Position, targetPos)
+				for _ = 1, 2 do
+					RS.RenderStepped:Wait()
+				end
+				Util.fireTriggerClick(LP, VIM, Cam, UIS)
+				RS.RenderStepped:Wait()
+				Cam.CFrame = savedCF
+			elseif mode == "Silent" then
 				Util.performSilentShot(RS, Cam, VIM, targetPos, 2, UIS, LP)
 			elseif mode == "Track" then
 				aimCameraAt(targetPos, false)
 				RS.RenderStepped:Wait()
 				Util.fireCrosshair(VIM, Cam, UIS)
 			else
-				local saved = Cam.CFrame
 				aimCameraAt(targetPos, false)
 				RS.RenderStepped:Wait()
 				Util.fireCrosshair(VIM, Cam, UIS)
-				Cam.CFrame = saved
+				Cam.CFrame = savedCF
 			end
 		end)
 	end
