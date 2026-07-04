@@ -246,7 +246,7 @@ end
 
 function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 	local RS = game:GetService("RunService")
-	holdFrames = holdFrames or 3
+	holdFrames = holdFrames or 0
 
 	local function holdRelease(pressFn, releaseFn)
 		if typeof(pressFn) ~= "function" then
@@ -256,8 +256,10 @@ function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 		if not ok then
 			return false
 		end
-		for _ = 1, holdFrames do
-			RS.RenderStepped:Wait()
+		if holdFrames > 0 then
+			for _ = 1, holdFrames do
+				RS.RenderStepped:Wait()
+			end
 		end
 		if typeof(releaseFn) == "function" then
 			pcall(releaseFn)
@@ -267,12 +269,6 @@ function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 
 	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
 
-	if holdRelease(genv.mouse1press, genv.mouse1release) then
-		return true
-	end
-	if holdRelease(mouse1press, mouse1release) then
-		return true
-	end
 	if typeof(genv.mouse1click) == "function" then
 		pcall(genv.mouse1click)
 		return true
@@ -283,6 +279,12 @@ function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 	end
 	if typeof(syn) == "table" and typeof(syn.mouse1click) == "function" then
 		pcall(syn.mouse1click)
+		return true
+	end
+	if holdRelease(genv.mouse1press, genv.mouse1release) then
+		return true
+	end
+	if holdRelease(mouse1press, mouse1release) then
 		return true
 	end
 
@@ -296,8 +298,10 @@ function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 			end
 		end)
 		if fired then
-			for _ = 1, holdFrames do
-				RS.RenderStepped:Wait()
+			if holdFrames > 0 then
+				for _ = 1, holdFrames do
+					RS.RenderStepped:Wait()
+				end
 			end
 			pcall(function()
 				for _, conn in ipairs(getconnections(mouse.Button1Up)) do
@@ -317,8 +321,10 @@ function Util.clickMouse(VIM, Cam, UIS, holdFrames, LP)
 	pcall(function()
 		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
 	end)
-	for _ = 1, holdFrames do
-		RS.RenderStepped:Wait()
+	if holdFrames > 0 then
+		for _ = 1, holdFrames do
+			RS.RenderStepped:Wait()
+		end
 	end
 	pcall(function()
 		VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)

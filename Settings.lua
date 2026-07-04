@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.21.8",
+	Version = "2.21.9",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -33,7 +33,6 @@ local Settings = {
 	TriggerKey = "V",
 	TriggerMode = "Hold",
 	TriggerDelay = 100,
-	TriggerRadius = 14,
 	ShowTriggerHud = true,
 	TriggerHudMinimal = true,
 	VisibleCheck = true,

@@ -1979,10 +1979,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	}, 1)
 	MakeBind(LTrig, "Trigger Key", "TriggerKey", 2)
 	MakeSlider(LTrig, "Trigger Delay", "TriggerDelay", 1, 500, 3, { suffix = "ms", step = 1 })
-	MakeSlider(LTrig, "Crosshair Zone", "TriggerRadius", 4, 40, 14, { suffix = "px", step = 1 })
-	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 5, { flat = true })
-	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 6, { flat = true })
-	MakeHint(LTrig, "Strzela tylko gdy crosshair jest na wrogu. Nie rusza kamery — sam celuj i trigger kliknie.", 7)
+	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 4, { flat = true })
+	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 5, { flat = true })
+	MakeHint(LTrig, "Strzela gdy wróg jest w FOV (ten sam suwak co aim). Nie rusza kamery — sam celuj.", 6)
 
 	local LTarget = MakeCard(T3, "TARGETING", nil, 4)
 	MakeTog(LTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })

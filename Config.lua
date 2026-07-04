@@ -122,9 +122,6 @@ function Config.EnforceRules(S)
 	if S.TriggerHudMinimal == nil then
 		S.TriggerHudMinimal = true
 	end
-	if S.TriggerRadius == nil then
-		S.TriggerRadius = 14
-	end
 	if S.ExcludeTeam == nil then
 		S.ExcludeTeam = true
 	end

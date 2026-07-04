@@ -419,47 +419,37 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		return best
 	end
 
-	local function getTriggerCrosshairTarget()
-		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-		params.IgnoreWater = true
+	local function runTriggerShot(tgt)
+		if not tgt or not tgt.part or not tgt.char then
+			return false
+		end
+		if not Util.isValidTarget(tgt.char, tgt.plr) then
+			return false
+		end
+		local pos = Util.getFirePosition(tgt.char, tgt.part)
+		markShot(tgt.char, pos)
+		Util.clickMouse(VIM, Cam, UIS, 0, LP)
+		return true
+	end
 
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * (S.MaxDist or 500), params)
-		if hit then
-			local char = hit.Instance:FindFirstAncestorOfClass("Model")
-			if char and char:FindFirstChildOfClass("Humanoid") then
-				local plr = Players:GetPlayerFromCharacter(char)
-				local valid = false
-				if plr then
-					valid = isEnemyPlayer(plr)
-				elseif S.AimBots then
-					valid = Util.isValidTarget(char, nil)
-				end
-				if valid then
-					local part = hit.Instance:IsA("BasePart") and hit.Instance or resolveHitPart(char)
-					if part and (not S.VisibleCheck or isVisible(part, char)) then
-						return { part = part, char = char, plr = plr }
-					end
-				end
-			end
+	local function tryTriggerShot()
+		if S.MenuOpen or S.MasterRage then
+			return
+		end
+		if not triggerArmed() then
+			return
+		end
+		if tick() - lastTrigger < math.max(S.TriggerDelay or 1, 1) / 1000 then
+			return
 		end
 
-		local radius = math.clamp(S.TriggerRadius or 14, 4, 40)
-		local best, bestDist = nil, radius
-		for _, entry in ipairs(collectTargets()) do
-			local char = entry.char
-			local part = resolveHitPart(char)
-			if part then
-				local dist = screenDist(part, char)
-				if dist <= bestDist and (not S.VisibleCheck or isVisible(part, char)) then
-					bestDist = dist
-					best = { part = part, char = char, plr = entry.plr }
-				end
-			end
+		local tgt = pickBestTarget(fovLimit())
+		if not tgt or not tgt.part or not tgt.char or not Util.isValidTarget(tgt.char, tgt.plr) then
+			return
 		end
-		return best
+
+		lastTrigger = tick()
+		runTriggerShot(tgt)
 	end
 
 	local function aimCamera(targetPos)
@@ -551,46 +541,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			shotBusy = false
 		end)
 		return true
-	end
-
-	local function runTriggerShot(tgt)
-		if shotBusy or not tgt or not tgt.part or not tgt.char then
-			return false
-		end
-		if not Util.isValidTarget(tgt.char, tgt.plr) then
-			return false
-		end
-
-		shotBusy = true
-		task.spawn(function()
-			local pos = Util.getFirePosition(tgt.char, tgt.part)
-			markShot(tgt.char, pos)
-			RS.RenderStepped:Wait()
-			Util.clickMouse(VIM, Cam, UIS, 4, LP)
-			shotBusy = false
-		end)
-		return true
-	end
-
-	local function tryTriggerShot()
-		if S.MenuOpen or S.MasterRage or shotBusy then
-			return
-		end
-		if not triggerArmed() then
-			return
-		end
-		local baseDelay = math.max(S.TriggerDelay or 1, 1) / 1000
-		if tick() - lastTrigger < baseDelay then
-			return
-		end
-
-		local tgt = getTriggerCrosshairTarget()
-		if not tgt or not tgt.part or not tgt.char or not Util.isValidTarget(tgt.char, tgt.plr) then
-			return
-		end
-
-		lastTrigger = tick()
-		runTriggerShot(tgt)
 	end
 
 	local function bindSilentAction()
@@ -700,9 +650,6 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return S.GetRageTarget()
 		end
 		if S.Aimbot or S.Silent or S.Trigger or S.TargetInfo then
-			if S.Trigger and not S.Aimbot and not S.Silent then
-				return getTriggerCrosshairTarget()
-			end
 			return pickBestTarget(fovLimit())
 		end
 		return nil
