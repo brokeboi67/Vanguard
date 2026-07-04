@@ -1982,7 +1982,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(LTrig, "Compatibility Mode", "TriggerCompat", 4, { flat = true })
 	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 5, { flat = true })
 	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 6, { flat = true })
-	MakeHint(LTrig, "Domyślnie strzela gdy wróg jest pod celownikiem — bez ruszania kamery. Compatibility = śledzi cel w FOV i strzela (gry z własnym hitregiem).", 7)
+	MakeHint(LTrig, "Domyślnie strzela gdy wróg jest pod celownikiem — bez ruszania kamery. Compatibility = śledzi cel w FOV i strzela (gry z własnym hitregiem). Delay = przerwa między strzałami.", 7)
 
 	local LTarget = MakeCard(T3, "TARGETING", nil, 4)
 	MakeTog(LTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })

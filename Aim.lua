@@ -13,7 +13,10 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	local Cam = workspace.CurrentCamera
 
 	local jitterSeed = math.random() * 100
-	local lastTrigger = 0
+	local triggerNextShotAt = 0
+	local triggerFiring = false
+	local triggerLock = nil
+	local triggerLockUntil = 0
 	local lastTogglePress = 0
 	local triggerToggled = false
 	local botList = {}
@@ -429,7 +432,63 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
 	end
 
-	local TRIGGER_CROSSHAIR_PX = 18
+	local function getCrosshairRadius(part, char)
+		local base = 24
+		if not part or not char then
+			return base
+		end
+		local aimPos = Util.getFirePosition(char, part) or Util.getPartPosition(part)
+		if not aimPos then
+			return base
+		end
+		local center, onScreen = Cam:WorldToViewportPoint(aimPos)
+		if not onScreen then
+			return base
+		end
+		if part:IsA("BasePart") then
+			local edgeWorld = aimPos + Cam.CFrame.RightVector * math.max(part.Size.X, part.Size.Y) * 0.35
+			local edge, edgeOn = Cam:WorldToViewportPoint(edgeWorld)
+			if edgeOn then
+				local r = (Vector2.new(edge.X, edge.Y) - Vector2.new(center.X, center.Y)).Magnitude
+				base = math.max(base, r * 0.9)
+			end
+		end
+		return math.clamp(base, 24, 56)
+	end
+
+	local function finishTriggerShot()
+		triggerFiring = false
+		triggerNextShotAt = tick() + math.max(S.TriggerDelay or 1, 1) / 1000
+	end
+
+	local function clearTriggerLock()
+		triggerLock = nil
+		triggerLockUntil = 0
+	end
+
+	local function validateTriggerTarget(tgt, maxScreenDist)
+		if not tgt or not tgt.char then
+			return nil
+		end
+		if not Util.isValidTarget(tgt.char, tgt.plr) then
+			return nil
+		end
+		local part = tgt.part
+		if not part or not part.Parent or not part:IsDescendantOf(tgt.char) then
+			part = resolveHitPart(tgt.char)
+		end
+		if not part then
+			return nil
+		end
+		local dist2d = screenDist(part, tgt.char)
+		if maxScreenDist and dist2d > maxScreenDist then
+			return nil
+		end
+		if S.VisibleCheck and not isVisible(part, tgt.char) then
+			return nil
+		end
+		return { char = tgt.char, plr = tgt.plr, part = part }
+	end
 
 	local function getTriggerCrosshairTarget()
 		local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
@@ -454,8 +513,12 @@ function Aim.Init(S, ParentGUI, TF, Util)
 					if not part:IsA("BasePart") or not part:IsDescendantOf(char) then
 						part = resolveHitPart(char)
 					end
-					if part and (not S.VisibleCheck or isVisible(part, char)) then
-						return { part = part, char = char, plr = plr }
+					if part then
+						local radius = getCrosshairRadius(part, char)
+						local validated = validateTriggerTarget({ part = part, char = char, plr = plr }, radius)
+						if validated then
+							return validated
+						end
 					end
 				end
 			end
@@ -463,20 +526,51 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		local best, bestD = nil, math.huge
 		for _, entry in ipairs(collectTargets()) do
-			local cand = scoreTarget(entry, TRIGGER_CROSSHAIR_PX)
-			if cand and cand.score < bestD then
-				bestD = cand.score
-				best = cand
+			local char = entry.char
+			local part = resolveHitPart(char)
+			if part then
+				local radius = getCrosshairRadius(part, char)
+				local cand = scoreTarget(entry, radius)
+				if cand and cand.score < bestD then
+					bestD = cand.score
+					best = cand
+				end
 			end
 		end
 		return best
 	end
 
+	local function acquireTriggerTarget()
+		local maxDist = S.TriggerCompat and fovLimit() or nil
+
+		if triggerLock and tick() < triggerLockUntil then
+			local locked = validateTriggerTarget(triggerLock, maxDist)
+			if locked then
+				triggerLock = locked
+				return locked
+			end
+			clearTriggerLock()
+		end
+
+		local fresh
+		if S.TriggerCompat then
+			fresh = pickBestTarget(fovLimit())
+		else
+			fresh = getTriggerCrosshairTarget()
+		end
+
+		if fresh then
+			triggerLock = fresh
+			triggerLockUntil = tick() + 0.35
+		end
+		return fresh
+	end
+
 	local function updateTriggerCompatAim()
-		if not S.TriggerCompat or not triggerArmed() then
+		if not S.TriggerCompat or not triggerArmed() or triggerFiring then
 			return
 		end
-		local tgt = pickBestTarget(fovLimit())
+		local tgt = triggerLock or pickBestTarget(fovLimit())
 		if not tgt or not tgt.part or not tgt.char then
 			return
 		end
@@ -568,34 +662,51 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 	local function runTriggerShot(tgt)
 		if not tgt or not tgt.part or not tgt.char then
+			finishTriggerShot()
 			return
 		end
 		if not Util.isValidTarget(tgt.char, tgt.plr) then
-			return
-		end
-		local pos = Util.getFirePosition(tgt.char, tgt.part)
-		if not pos then
+			clearTriggerLock()
+			finishTriggerShot()
 			return
 		end
 
-		if S.TriggerCompat then
-			task.spawn(function()
+		task.spawn(function()
+			local char = tgt.char
+			local plr = tgt.plr
+			local part = tgt.part
+			if not part or not part.Parent or not part:IsDescendantOf(char) then
+				part = resolveHitPart(char)
+			end
+			if not part or not Util.isValidTarget(char, plr) then
+				clearTriggerLock()
+				finishTriggerShot()
+				return
+			end
+
+			local pos = Util.getFirePosition(char, part)
+			if not pos then
+				clearTriggerLock()
+				finishTriggerShot()
+				return
+			end
+
+			if S.TriggerCompat then
 				local savedCF = Cam.CFrame
 				Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
-				markShot(tgt.char, pos)
+				markShot(char, pos)
 				for _ = 1, 2 do
 					RS.RenderStepped:Wait()
 				end
 				Util.fireTriggerClick(LP, VIM, Cam, UIS)
 				RS.RenderStepped:Wait()
 				Cam.CFrame = savedCF
-			end)
-		else
-			markShot(tgt.char, pos)
-			task.spawn(function()
+			else
+				markShot(char, pos)
 				Util.fireTriggerClick(LP, VIM, Cam, UIS)
-			end)
-		end
+			end
+			finishTriggerShot()
+		end)
 	end
 
 	local function tryTriggerShot()
@@ -605,21 +716,16 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not triggerArmed() then
 			return
 		end
-		if tick() - lastTrigger < math.max(S.TriggerDelay or 1, 1) / 1000 then
+		if triggerFiring or tick() < triggerNextShotAt then
 			return
 		end
 
-		local tgt
-		if S.TriggerCompat then
-			tgt = pickBestTarget(fovLimit())
-		else
-			tgt = getTriggerCrosshairTarget()
-		end
+		local tgt = acquireTriggerTarget()
 		if not tgt or not tgt.part or not tgt.char then
 			return
 		end
 
-		lastTrigger = tick()
+		triggerFiring = true
 		runTriggerShot(tgt)
 	end
 
@@ -704,6 +810,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		if not S.Trigger then
 			triggerToggled = false
+			triggerFiring = false
+			triggerNextShotAt = 0
+			clearTriggerLock()
 		end
 
 		if S.MenuOpen or S.MasterRage then
