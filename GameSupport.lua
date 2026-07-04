@@ -34,6 +34,7 @@ GameSupport.ENTRIES = {
 	[131964389958213] = { status = "Supported", note = "[UPD] RELOADED GUNS" },
 	[124842176624983] = { status = "Not Supported", note = "OVERKILL" },
 	[140582629911298] = { status = "Supported", note = "[FPS] Deathshot" },
+	[286090429] = { status = "Supported", note = "Arsenal" },
 }
 
 local STATUS_UI = {
