@@ -41,6 +41,7 @@ function Music.Init(S)
 	local HTTP_TIMEOUT = 12
 	local queue = {}
 	local queueIndex = 0
+	local trackEnding = false
 
 	local function cloneQueueItem(item)
 		if not item then
@@ -56,33 +57,6 @@ function Music.Init(S)
 			videoId = item.videoId,
 			downloads = item.downloads,
 		}
-	end
-
-	local function handleTrackEnded()
-		if S.MusicLoop == true then
-			return
-		end
-		if S.MusicAutoQueue ~= false and queueIndex > 0 and queueIndex < #queue then
-			queueIndex += 1
-			logInfo("Auto-next:", queueIndex, "/", #queue, queue[queueIndex].title or "?")
-			Music.Play(queue[queueIndex], { keepQueue = true })
-			return
-		end
-		playGen += 1
-		disconnectProgress()
-		destroyAllMusicSounds()
-		currentSound = nil
-		paused = false
-		softPaused = false
-		nowPlaying = nil
-		loading = false
-		resuming = false
-		playClockStart = 0
-		playPosOffset = 0
-		pausePosSnapshot = 0
-		pausedSession = nil
-		cachedDuration = 0
-		notifyState()
 	end
 
 	local function logInfo(...)
@@ -1181,6 +1155,44 @@ function Music.Init(S)
 		notifyState()
 	end
 
+	local playFromQueue = nil
+
+	local function handleTrackEnded()
+		if trackEnding then
+			return
+		end
+		if S.MusicLoop == true then
+			return
+		end
+		trackEnding = true
+		if S.MusicAutoQueue ~= false and queueIndex > 0 and queueIndex < #queue then
+			queueIndex += 1
+			local nextItem = queue[queueIndex]
+			logInfo("Auto-next:", queueIndex, "/", #queue, nextItem and nextItem.title or "?")
+			trackEnding = false
+			if nextItem and playFromQueue then
+				playFromQueue(nextItem, { keepQueue = true })
+			end
+			return
+		end
+		playGen += 1
+		disconnectProgress()
+		destroyAllMusicSounds()
+		currentSound = nil
+		paused = false
+		softPaused = false
+		nowPlaying = nil
+		loading = false
+		resuming = false
+		playClockStart = 0
+		playPosOffset = 0
+		pausePosSnapshot = 0
+		pausedSession = nil
+		cachedDuration = 0
+		trackEnding = false
+		notifyState()
+	end
+
 	local function attachProgress(sound)
 		disconnectProgress()
 		endedConn = sound.Ended:Connect(function()
@@ -2145,6 +2157,7 @@ function Music.Init(S)
 
 		return true
 	end
+	playFromQueue = Music.Play
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerCleanup(function()
