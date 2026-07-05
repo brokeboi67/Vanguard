@@ -62,15 +62,20 @@ function Music.Init(S)
 		return HttpService:UrlEncode(str)
 	end
 
-	local function httpGet(url, timeoutSec)
+	local function httpGet(url, timeoutSec, extraHeaders)
 		timeoutSec = timeoutSec or HTTP_TIMEOUT
 		local box = { done = false, body = nil, err = nil, via = nil }
 
 		task.spawn(function()
 			local headers = {
-				["User-Agent"] = "Mozilla/5.0 (compatible; Vanguard/2.27.1)",
+				["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 				["Accept"] = "application/json,text/plain,*/*",
 			}
+			if typeof(extraHeaders) == "table" then
+				for key, value in pairs(extraHeaders) do
+					headers[key] = value
+				end
+			end
 
 			local req = request or (syn and syn.request) or (http and http.request)
 			if req then
@@ -621,50 +626,170 @@ function Music.Init(S)
 		return bestUrl
 	end
 
+	local INVIDIOUS_HOSTS = {
+		"https://invidious.jing.rocks",
+		"https://inv.nade.koelhaas.de",
+		"https://inv.tux.pizza",
+		"https://invidious.fdn.fr",
+		"https://yt.artemislena.eu",
+		"https://invidious.privacyredirect.com",
+	}
+
+	local PIPED_HOSTS = {
+		"https://pipedapi.in.projectsegfau.lt",
+		"https://pipedapi.adminforge.de",
+		"https://api.piped.projectsegfau.lt",
+		"https://pipedapi.leptons.xyz",
+		"https://pipedapi.moomoo.me",
+	}
+
+	local function pickInvidiousAudio(data)
+		if not data then
+			return nil
+		end
+		local bestUrl, bestScore = nil, 0
+		local lists = { data.adaptiveFormats, data.formatStreams, data.audioStreams }
+		for _, list in ipairs(lists) do
+			if typeof(list) == "table" then
+				for _, fmt in ipairs(list) do
+					if typeof(fmt) == "table" and fmt.url then
+						local mime = tostring(fmt.mimeType or fmt.type or ""):lower()
+						local isAudio = mime:find("audio") or fmt.type == "audio"
+						if isAudio or (not mime:find("video") and tonumber(fmt.audioQuality)) then
+							local score = tonumber(fmt.bitrate) or tonumber(fmt.audioQuality) or 0
+							if isAudio then
+								score += 100000
+							end
+							if score >= bestScore then
+								bestScore = score
+								bestUrl = fmt.url
+							end
+						end
+					end
+				end
+			end
+		end
+		return bestUrl
+	end
+
+	local function pickPipedAudio(data)
+		if not data or typeof(data.audioStreams) ~= "table" then
+			return nil
+		end
+		local fallbackUrl, fallbackBr = nil, 0
+		for _, stream in ipairs(data.audioStreams) do
+			local br = tonumber(stream.bitrate) or 0
+			if stream.url then
+				local fmt = tostring(stream.format or stream.mimeType or ""):upper()
+				if fmt:find("M4A") or fmt:find("MP4") then
+					if br >= fallbackBr then
+						fallbackBr = br
+						fallbackUrl = stream.url
+					end
+				elseif not fallbackUrl then
+					fallbackUrl = stream.url
+					fallbackBr = br
+				end
+			end
+		end
+		return fallbackUrl
+	end
+
+	local function tryInvidiousStream(host, videoId)
+		local apiUrl = host .. "/api/v1/videos/" .. videoId .. "?local=1"
+		local body = httpGet(apiUrl, 8)
+		if not body then
+			return nil
+		end
+		local data = decodeJson(body)
+		return pickInvidiousAudio(data)
+	end
+
+	local function tryPipedStream(host, videoId)
+		local apiUrl = host .. "/streams/" .. videoId
+		local body = httpGet(apiUrl, 8)
+		if not body then
+			return nil
+		end
+		local data = decodeJson(body)
+		return pickPipedAudio(data)
+	end
+
+	local function tryInnertubeStream(videoId)
+		local payload = HttpService:JSONEncode({
+			context = {
+				client = {
+					clientName = "WEB",
+					clientVersion = "2.20250201.01.00",
+					hl = "en",
+					gl = "US",
+				},
+			},
+			videoId = videoId,
+		})
+		local body = httpPost(
+			"https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+			payload,
+			10
+		)
+		if not body then
+			return nil
+		end
+		local data = decodeJson(body)
+		return pickYoutubeAudioUrl(data)
+	end
+
 	local function resolveYoutubeStream(videoId)
 		videoId = tostring(videoId or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		if #videoId ~= 11 then
 			return nil, "Nieprawidłowe videoId"
 		end
 
-		local clients = {
-			{
-				clientName = "ANDROID",
-				clientVersion = "19.11.43",
-				androidSdkVersion = 30,
-			},
-			{
-				clientName = "IOS",
-				clientVersion = "19.09.3",
-				deviceModel = "iPhone14,3",
-			},
-		}
+		local box = { url = nil, via = nil, done = false }
 
-		for _, client in ipairs(clients) do
-			local payload = HttpService:JSONEncode({
-				context = { client = client },
-				videoId = videoId,
-			})
-			local body, err = httpPost(
-				"https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
-				payload,
-				20
-			)
-			if body then
-				local data = decodeJson(body)
-				local url = pickYoutubeAudioUrl(data)
-				if url then
-					logInfo("YouTube stream OK:", videoId, "via", client.clientName)
-					return url
-				end
-				if data and data.playabilityStatus and data.playabilityStatus.reason then
-					err = data.playabilityStatus.reason
-				end
+		local function setResult(url, via)
+			if url and not box.done then
+				box.url = url
+				box.via = via
+				box.done = true
+				logInfo("YouTube stream OK:", videoId, "via", via)
 			end
-			logErr("YouTube player fail:", videoId, client.clientName, err)
 		end
 
-		return nil, "Nie udało się pobrać audio z YouTube"
+		task.spawn(function()
+			local url = tryInnertubeStream(videoId)
+			if url then
+				setResult(url, "InnerTube WEB")
+			end
+		end)
+
+		for _, host in ipairs(INVIDIOUS_HOSTS) do
+			task.spawn(function()
+				local url = tryInvidiousStream(host, videoId)
+				if url then
+					setResult(url, "Invidious")
+				end
+			end)
+		end
+
+		for _, host in ipairs(PIPED_HOSTS) do
+			task.spawn(function()
+				local url = tryPipedStream(host, videoId)
+				if url then
+					setResult(url, "Piped")
+				end
+			end)
+		end
+
+		local deadline = os.clock() + 14
+		while not box.done and os.clock() < deadline do
+			task.wait(0.08)
+		end
+
+		if box.url then
+			return box.url
+		end
+		return nil, "Nie udało się pobrać audio (spróbuj Audius)"
 	end
 
 	local function validateAudioBody(body, fileName)
@@ -756,14 +881,21 @@ function Music.Init(S)
 		return "rbxassetid://" .. assetRef
 	end
 
-	local function assetFromDownload(url, cacheName, skipCache)
+	local function assetFromDownload(url, cacheName, skipCache, dlHeaders)
 		cacheName = safeFileName(cacheName)
 		local relPath = CACHE_DIR .. "/" .. cacheName
 		local getAsset, via = resolveCustomAssetFn()
+		local fetchHeaders = dlHeaders
+		if not fetchHeaders and tostring(url):find("googlevideo%.com") then
+			fetchHeaders = {
+				["Referer"] = "https://www.youtube.com/",
+				["Origin"] = "https://www.youtube.com",
+			}
+		end
 
 		if typeof(writecustomasset) == "function" then
-			logInfo("Pobieranie audio (writecustomasset):", url)
-			local body, httpErr = httpGet(url, 30)
+			logInfo("Pobieranie audio (writecustomasset):", url:sub(1, 80))
+			local body, httpErr = httpGet(url, 45, fetchHeaders)
 			if not body then
 				return nil, nil, "Nie pobrano audio: " .. tostring(httpErr)
 			end
@@ -796,8 +928,8 @@ function Music.Init(S)
 			end
 		end
 
-		logInfo("Pobieranie audio:", url)
-		local body, httpErr = httpGet(url, 30)
+		logInfo("Pobieranie audio:", url:sub(1, 80))
+		local body, httpErr = httpGet(url, 45, fetchHeaders)
 		if not body then
 			return nil, nil, "Nie pobrano audio: " .. tostring(httpErr)
 		end
@@ -1522,7 +1654,11 @@ function Music.Init(S)
 					return
 				end
 				local cacheKey = safeFileName("yt_" .. item.videoId .. ".m4a")
-				local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, false)
+				local ytHeaders = {
+					["Referer"] = "https://www.youtube.com/",
+					["Origin"] = "https://www.youtube.com",
+				}
+				local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, false, ytHeaders)
 				if stale() then
 					return
 				end
