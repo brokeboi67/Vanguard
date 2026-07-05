@@ -21,6 +21,13 @@ function UIMusic.build(env)
 	local S = env.S
 	local C = env.C
 	local Music = env.Music
+	local I18n = env.I18n
+	local L = function(key, ...)
+		if I18n and I18n.t then
+			return I18n.t(key, ...)
+		end
+		return tostring(key)
+	end
 	local MakeSlider = env.MakeSlider
 	local MakeTog = env.MakeTog
 	local showNotify = env.showNotify
@@ -156,7 +163,7 @@ function UIMusic.build(env)
 				NowTitle.Text = state.title ~= "" and state.title or "Ładowanie..."
 				NowArtist.Text = "Pobieranie utworu..."
 			else
-				NowTitle.Text = "Wybierz utwór"
+				NowTitle.Text = L("music_pick_track")
 				local src = Music and Music.GetSource and Music.GetSource() or "auto"
 				local srcLabel = "Auto"
 				if src == "archive" then
@@ -166,7 +173,7 @@ function UIMusic.build(env)
 				elseif src == "youtube" then
 					srcLabel = "YouTube"
 				end
-				NowArtist.Text = state.error or (srcLabel .. " · tylko Ty słyszysz")
+				NowArtist.Text = state.error or (srcLabel .. " · " .. L("music_only_you"))
 			end
 		end
 		if PlayIcon and PauseIcon then
@@ -262,8 +269,8 @@ function UIMusic.build(env)
 			Position = UDim2.new(0, 50, 0, 26),
 			BackgroundTransparency = 1,
 			Text = (item.creator or "Unknown")
-				.. (item.source == "audius" and " · ▶ odtwarza"
-					or (item.source == "youtube" and " · YT (szukaj na Audius)" or "")),
+				.. (item.source == "audius" and (" · " .. L("music_playable"))
+					or (item.source == "youtube" and (" · " .. L("music_yt_hint")) or "")),
 			Font = Enum.Font.Gotham,
 			TextSize = 10,
 			TextColor3 = MUT,
@@ -306,9 +313,9 @@ function UIMusic.build(env)
 			end
 			local ok, err = Music.AddToQueue(item)
 			if ok then
-				showNotify("Dodano do kolejki")
+				showNotify(L("music_added_queue"), { type = "success" })
 			else
-				showNotify(tostring(err or "Już w kolejce"))
+				showNotify(tostring(err or L("music_already_queue")), { type = "warn" })
 			end
 		end)
 
@@ -393,7 +400,7 @@ function UIMusic.build(env)
 			clearResults()
 			if err and #results == 0 then
 				setSearchStatus(err)
-				showNotify(err)
+				showNotify(err, { type = "error" })
 				return
 			end
 			setSearchStatus(#results .. " wyników" .. (err and (" · " .. err) or ""))
@@ -891,7 +898,7 @@ function UIMusic.build(env)
 	C("TextLabel", {
 		Size = UDim2.new(1, -60, 0, 14),
 		BackgroundTransparency = 1,
-		Text = "DO ODTWORZENIA",
+		Text = L("music_queue_label"),
 		Font = Enum.Font.GothamBold,
 		TextSize = 8,
 		TextColor3 = MUT,
@@ -905,7 +912,7 @@ function UIMusic.build(env)
 		Size = UDim2.new(0, 52, 0, 14),
 		Position = UDim2.new(1, -52, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "Wyczyść",
+		Text = L("music_clear_queue"),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 8,
 		TextColor3 = MUT,
@@ -917,7 +924,7 @@ function UIMusic.build(env)
 	ClearQueueBtn.MouseButton1Click:Connect(function()
 		if Music and Music.ClearQueue then
 			Music.ClearQueue()
-			showNotify("Kolejka wyczyszczona")
+			showNotify(L("music_queue_cleared"), { type = "info" })
 		end
 	end)
 
@@ -983,10 +990,10 @@ function UIMusic.build(env)
 			end
 		end,
 	})
-	MakeTog(OptRow, "Auto-next (kolejka)", "MusicAutoQueue", 3, {
+	MakeTog(OptRow, L("music_auto_next"), "MusicAutoQueue", 3, {
 		flat = true,
 	})
-	MakeTog(OptRow, "Mini player (bez menu)", "ShowMusicWidget", 4, {
+	MakeTog(OptRow, L("music_mini_player"), "ShowMusicWidget", 4, {
 		flat = true,
 		onChange = function(on)
 			if UIMusic._refreshWidget then
@@ -1024,7 +1031,7 @@ function UIMusic.build(env)
 			end
 		end
 		Music.onPlayError = function(msg)
-			showNotify(tostring(msg))
+			showNotify(tostring(msg), { type = "error" })
 			refreshNowPlaying(Music.GetState())
 		end
 	end

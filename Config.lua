@@ -312,6 +312,12 @@ function Config.EnforceRules(S)
 	if S.MusicAutoQueue == nil then
 		S.MusicAutoQueue = true
 	end
+	if S.MenuLang == nil then
+		S.MenuLang = "pl"
+	end
+	if S.NotifyStyle == nil then
+		S.NotifyStyle = "pro"
+	end
 	if S.DamageNumbers == nil then
 		S.DamageNumbers = false
 	end

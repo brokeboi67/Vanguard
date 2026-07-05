@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.34.5",
+	Version = "2.35.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -108,6 +108,10 @@ local Settings = {
 	WorldSunRays = 0,
 	MenuBlur = true,
 	MenuBlurSize = 18,
+
+	-- INTERFACE
+	MenuLang = "pl",
+	NotifyStyle = "pro",
 
 	-- MOVEMENT
 	BHop = false,

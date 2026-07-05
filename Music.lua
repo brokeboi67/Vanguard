@@ -21,7 +21,14 @@ local PRESETS = {
 	{ identifier = "DanceTheMainstreamMash2010-2011", title = "Dance MainStream Mash 2010-2011", creator = "Ryan Janjuha", downloads = 7978 },
 }
 
-function Music.Init(S)
+function Music.Init(S, I18nModule)
+	local I18n = I18nModule
+	local function L(key, ...)
+		if I18n and I18n.t then
+			return I18n.t(key, ...)
+		end
+		return tostring(key)
+	end
 	local currentSound = nil
 	local progressConn = nil
 	local loading = false
@@ -2097,8 +2104,7 @@ function Music.Init(S)
 				end
 
 				loading = false
-				lastError = "Brak na Audius: " .. (song ~= "" and song or item.title or "?")
-					.. " — wybierz wiersz ▶ Audius z listy"
+				lastError = L("music_no_audius", song ~= "" and song or item.title or "?")
 				logErr("Play fail YT — utwór nie jest na Audius")
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
@@ -2112,7 +2118,7 @@ function Music.Init(S)
 					return
 				end
 				loading = false
-				lastError = "Nie pobrano z Audius — spróbuj ponownie"
+				lastError = L("music_audius_fail")
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
 				end

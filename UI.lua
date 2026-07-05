@@ -2,7 +2,8 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule)
+function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule)
+	local I18n = I18nModule
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -16,16 +17,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local pageThemes = {}
 	local tabBtnThemes = {}
 	local TAB_THEMES = {
-		Visuals = Color3.fromRGB(90, 175, 255),
-		Legit = Color3.fromRGB(80, 255, 160),
-		Rage = Color3.fromRGB(255, 85, 85),
-		Anim = Color3.fromRGB(255, 150, 230),
-		World = Color3.fromRGB(130, 210, 110),
-		Settings = Color3.fromRGB(175, 175, 195),
-		Misc = Color3.fromRGB(255, 195, 75),
-		Config = Color3.fromRGB(155, 135, 255),
-		Menus = Color3.fromRGB(255, 120, 180),
-		Music = Color3.fromRGB(29, 185, 84),
+		visuals = Color3.fromRGB(90, 175, 255),
+		legit = Color3.fromRGB(80, 255, 160),
+		rage = Color3.fromRGB(255, 85, 85),
+		anim = Color3.fromRGB(255, 150, 230),
+		world = Color3.fromRGB(130, 210, 110),
+		settings = Color3.fromRGB(175, 175, 195),
+		misc = Color3.fromRGB(255, 195, 75),
+		config = Color3.fromRGB(155, 135, 255),
+		menus = Color3.fromRGB(255, 120, 180),
+		music = Color3.fromRGB(29, 185, 84),
 	}
 
 	local function tabSoft(col)
@@ -337,11 +338,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = Top,
 	})
 
-	C("TextLabel", {
+	local StudioSubtitle = C("TextLabel", {
 		Size = UDim2.new(0, 100, 1, 0),
 		Position = UDim2.new(0, 104, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "ESP STUDIO",
+		Text = I18n and I18n.t("subtitle_studio") or "ESP STUDIO",
 		Font = Enum.Font.GothamMedium,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(130, 130, 140),
@@ -885,13 +886,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end)
 	end
 
-	local function MakeTab(name, default, showPreview, layoutOrder)
-		local tabAccent = TAB_THEMES[name] or ACC
+	local function MakeTab(nameKey, default, showPreview, layoutOrder)
+		local tabAccent = TAB_THEMES[nameKey] or ACC
 		local tabSoftCol = tabSoft(tabAccent)
+		local tabLabel = I18n and I18n.t("tab_" .. nameKey) or nameKey
 		local B = C("TextButton", {
 			Size = UDim2.new(1, 0, 0, 34),
 			BackgroundColor3 = default and tabSoftCol or Color3.fromRGB(18, 18, 22),
-			Text = "  " .. name,
+			Text = "  " .. tabLabel,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextColor3 = default and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(105, 105, 115),
 			Font = Enum.Font.GothamSemibold,
@@ -957,6 +959,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		if default then
 			ActiveTabBtn = B
 			ActivePageWrap = Wrap
+		end
+
+		if I18n and I18n.registerTabButton then
+			I18n.registerTabButton(nameKey, B)
 		end
 
 		return P
@@ -1093,33 +1099,159 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = NotifyRoot,
 	})
 
-	local function showNotify(msg)
-		local card = C("TextLabel", {
-			Size = UDim2.new(0, 300, 0, 0),
+	local function showNotify(msg, opts)
+		opts = opts or {}
+		local style = tostring(S.NotifyStyle or "pro"):lower()
+		local nType = tostring(opts.type or "info"):lower()
+		local accent = ACC
+		local icon = "ℹ"
+		local title = I18n and I18n.t("notify_info") or "Info"
+		if nType == "error" then
+			accent = Color3.fromRGB(255, 82, 96)
+			icon = "✕"
+			title = I18n and I18n.t("notify_error") or "Error"
+		elseif nType == "success" then
+			accent = Color3.fromRGB(29, 185, 84)
+			icon = "✓"
+			title = I18n and I18n.t("notify_success") or "Success"
+		elseif nType == "warn" then
+			accent = Color3.fromRGB(255, 195, 75)
+			icon = "!"
+			title = I18n and I18n.t("notify_warn") or "Warning"
+		end
+		if opts.title then
+			title = opts.title
+		end
+
+		if style == "compact" then
+			local card = C("TextLabel", {
+				Size = UDim2.new(0, 300, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+				BackgroundTransparency = 0.08,
+				Text = "  " .. tostring(msg) .. "  ",
+				Font = Enum.Font.GothamMedium,
+				TextSize = 11,
+				TextColor3 = Color3.fromRGB(220, 220, 228),
+				TextWrapped = true,
+				ZIndex = 91,
+				Parent = NotifyRoot,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = card })
+			C("UIStroke", { Color = accent, Thickness = 1, Transparency = 0.35, Parent = card })
+			C("UIPadding", {
+				PaddingTop = UDim.new(0, 8),
+				PaddingBottom = UDim.new(0, 8),
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				Parent = card,
+			})
+			task.delay(3.2, function()
+				if card.Parent then
+					TweenPlay(card, TweenInfo.new(0.25), { BackgroundTransparency = 1, TextTransparency = 1 })
+					task.delay(0.3, function()
+						pcall(function() card:Destroy() end)
+					end)
+				end
+			end)
+			return
+		end
+
+		local card = C("Frame", {
+			Size = UDim2.new(0, 340, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
-			BackgroundTransparency = 0.08,
-			Text = "  " .. msg .. "  ",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
-			TextColor3 = Color3.fromRGB(220, 220, 228),
-			TextWrapped = true,
+			BackgroundColor3 = Color3.fromRGB(12, 12, 16),
+			BackgroundTransparency = 0.02,
+			BorderSizePixel = 0,
+			ClipsDescendants = true,
 			ZIndex = 91,
 			Parent = NotifyRoot,
 		})
-		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = card })
-		C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.35, Parent = card })
-		C("UIPadding", {
-			PaddingTop = UDim.new(0, 8),
-			PaddingBottom = UDim.new(0, 8),
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
+		C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = card })
+		C("UIStroke", { Color = Color3.fromRGB(42, 42, 50), Thickness = 1, Transparency = 0.25, Parent = card })
+
+		local accentBar = C("Frame", {
+			Size = UDim2.new(0, 3, 1, 0),
+			BackgroundColor3 = accent,
+			BorderSizePixel = 0,
+			ZIndex = 92,
 			Parent = card,
 		})
-		task.delay(3.2, function()
+
+		local iconLbl = C("TextLabel", {
+			Size = UDim2.new(0, 28, 0, 28),
+			Position = UDim2.new(0, 14, 0, 10),
+			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+			Text = icon,
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = accent,
+			ZIndex = 93,
+			Parent = card,
+		})
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = iconLbl })
+
+		local titleLbl = C("TextLabel", {
+			Size = UDim2.new(1, -58, 0, 14),
+			Position = UDim2.new(0, 50, 0, 10),
+			BackgroundTransparency = 1,
+			Text = title,
+			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(245, 245, 248),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 93,
+			Parent = card,
+		})
+
+		local bodyLbl = C("TextLabel", {
+			Size = UDim2.new(1, -58, 0, 0),
+			Position = UDim2.new(0, 50, 0, 26),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			Text = tostring(msg),
+			Font = Enum.Font.Gotham,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(170, 170, 182),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			ZIndex = 93,
+			Parent = card,
+		})
+
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 10),
+			PaddingBottom = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+			Parent = card,
+		})
+
+		card.BackgroundTransparency = 1
+		titleLbl.TextTransparency = 1
+		bodyLbl.TextTransparency = 1
+		iconLbl.TextTransparency = 1
+		accentBar.BackgroundTransparency = 1
+		card.Position = UDim2.new(0, 0, 0, -8)
+		TweenPlay(card, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			BackgroundTransparency = 0.02,
+			Position = UDim2.new(0, 0, 0, 0),
+		})
+		TweenPlay(titleLbl, TweenInfo.new(0.24), { TextTransparency = 0 })
+		TweenPlay(bodyLbl, TweenInfo.new(0.24), { TextTransparency = 0 })
+		TweenPlay(iconLbl, TweenInfo.new(0.24), { TextTransparency = 0 })
+		TweenPlay(accentBar, TweenInfo.new(0.24), { BackgroundTransparency = 0 })
+
+		task.delay(4.2, function()
 			if card.Parent then
-				TweenPlay(card, TweenInfo.new(0.25), { BackgroundTransparency = 1, TextTransparency = 1 })
-				task.delay(0.3, function()
+				TweenPlay(card, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+					BackgroundTransparency = 1,
+					Position = UDim2.new(0, 0, 0, -6),
+				})
+				TweenPlay(titleLbl, TweenInfo.new(0.22), { TextTransparency = 1 })
+				TweenPlay(bodyLbl, TweenInfo.new(0.22), { TextTransparency = 1 })
+				TweenPlay(iconLbl, TweenInfo.new(0.22), { TextTransparency = 1 })
+				TweenPlay(accentBar, TweenInfo.new(0.22), { BackgroundTransparency = 1 })
+				task.delay(0.32, function()
 					pcall(function() card:Destroy() end)
 				end)
 			end
@@ -1410,7 +1542,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
-	local function MakeChoice(page, label, key, options, order)
+	local function MakeChoice(page, label, key, options, order, choiceOpts)
+		choiceOpts = choiceOpts or {}
 		local rowH = #options >= 4 and 64 or (#options >= 3 and 60 or 52)
 		local Row = C("Frame", {
 			Size = UDim2.new(1, 0, 0, rowH),
@@ -1486,6 +1619,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					end
 				end
 				UpdPreview()
+				if choiceOpts.onChange then
+					pcall(choiceOpts.onChange, opt.value)
+				end
 			end)
 		end
 		choiceRegistry[key] = { btns = btns }
@@ -1754,16 +1890,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
-	local T1 = MakeTab("Visuals", true, true, 1)
-	local T3 = MakeTab("Legit", false, false, 2)
-	local TR = MakeTab("Rage", false, false, 3)
-	local TAnim = MakeTab("Anim", false, false, 4)
-	local TWorld = MakeTab("World", false, false, 5)
-	local T2 = MakeTab("Settings", false, false, 6)
-	local TM = MakeTab("Misc", false, false, 7)
-	local TMenu = MakeTab("Menus", false, false, 8)
-	local T4 = MakeTab("Config", false, false, 9)
-	local TMusic = MakeTab("Music", false, false, 10)
+	local T1 = MakeTab("visuals", true, true, 1)
+	local T3 = MakeTab("legit", false, false, 2)
+	local TR = MakeTab("rage", false, false, 3)
+	local TAnim = MakeTab("anim", false, false, 4)
+	local TWorld = MakeTab("world", false, false, 5)
+	local T2 = MakeTab("settings", false, false, 6)
+	local TM = MakeTab("misc", false, false, 7)
+	local TMenu = MakeTab("menus", false, false, 8)
+	local T4 = MakeTab("config", false, false, 9)
+	local TMusic = MakeTab("music", false, false, 10)
 
 	if UIMusicModule and MusicModule then
 		UIMusicModule.build({
@@ -1771,8 +1907,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			S = S,
 			C = C,
 			ACC = ACC,
-			tabCol = TAB_THEMES.Music,
+			tabCol = TAB_THEMES.music,
 			Music = MusicModule,
+			I18n = I18n,
 			MakeCard = MakeCard,
 			MakeSlider = MakeSlider,
 			MakeTog = MakeTog,
@@ -2320,7 +2457,32 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end)
 	MakeHint(MFX, "Hit FX = od razu przy strzale cheata. Kill FX = przy śmierci wroga. Test = cel w crosshair.", 8)
 
-	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 1)
+	local SInterface = MakeCard(T2, I18n and I18n.t("set_interface") or "INTERFACE", nil, 1)
+	MakeChoice(SInterface, I18n and I18n.t("set_menu_lang") or "Menu language", "MenuLang", {
+		{ label = I18n and I18n.t("lang_pl") or "Polski", value = "pl" },
+		{ label = I18n and I18n.t("lang_en") or "English", value = "en" },
+	}, 1, {
+		onChange = function(val)
+			if I18n then
+				I18n.setLang(val)
+				I18n.refreshTabs()
+			end
+			if StudioSubtitle then
+				StudioSubtitle.Text = I18n and I18n.t("subtitle_studio") or "ESP STUDIO"
+			end
+			showNotify(I18n and I18n.t("lang_changed") or "Language updated.", { type = "info" })
+		end,
+	})
+	MakeChoice(SInterface, I18n and I18n.t("set_notify_style") or "Notification style", "NotifyStyle", {
+		{ label = I18n and I18n.t("notify_pro") or "Pro", value = "pro" },
+		{ label = I18n and I18n.t("notify_compact") or "Compact", value = "compact" },
+	}, 2, {
+		onChange = function()
+			showNotify(I18n and I18n.t("notify_style_changed") or "Notification style updated.", { type = "success" })
+		end,
+	})
+
+	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 2)
 	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })
 
 	local FriendListHost = C("Frame", {

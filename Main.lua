@@ -48,6 +48,9 @@ pcall(function()
 	Config.Autoload(Settings)
 end)
 
+local I18n = Get("I18n.lua")
+I18n.Init(Settings)
+
 Settings.Unloaded = false
 
 local Teleport = Get("Teleport.lua")
@@ -113,8 +116,8 @@ Features.Init(Settings, GUI, AntiBypass)
 Effects.Init(Settings, Util)
 Animations.Init(Settings)
 World.Init(Settings)
-Music.Init(Settings)
-UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic)
+Music.Init(Settings, I18n)
+UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n)
 
 Settings.Unload = function()
 	Settings.Unloaded = true
