@@ -399,6 +399,7 @@ function UIColorPicker.create(env)
 		end)
 
 		table.insert(colorRegistry, {
+			espOnly = opts.espColor == true,
 			row = Row,
 			swatch = Swatch,
 			hex = HexRow,

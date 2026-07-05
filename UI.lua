@@ -1298,6 +1298,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		for key, lbl in pairs(bindRegistry) do
 			lbl.Text = formatBindName(S[key])
 		end
+		for _, reg in ipairs(colorRegistry) do
+			if reg.refresh then
+				reg.refresh()
+			end
+		end
 		if updateEspColorControls then
 			updateEspColorControls()
 		end
@@ -1767,8 +1772,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VColors, "Team Colors", "RealTeamColor", 1, { flat = true })
 	MakeTog(VColors, "Line of Sight", "LoS", 2, { flat = true })
 	MakeHint(VColors, "Custom kolory (V/O) działają tylko gdy wyłączone: Team Colors, LoS i Chams Rainbow.", 3)
-	MakeColorPicker(VColors, "Visible Color", "V", 4)
-	MakeColorPicker(VColors, "Hidden Color", "O", 5)
+	MakeColorPicker(VColors, "Visible Color", "V", 4, { espColor = true })
+	MakeColorPicker(VColors, "Hidden Color", "O", 5, { espColor = true })
 	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 6, {
 		suffix = "px",
 		step = 0.1,
@@ -1780,9 +1785,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	updateEspColorControls = function()
 		local on = espCustomColorsEnabled()
 		for _, reg in ipairs(colorRegistry) do
-			reg.setEnabled(on)
-			if on then
-				reg.refresh()
+			if reg.espOnly then
+				reg.setEnabled(on)
+				if on then
+					reg.refresh()
+				end
 			end
 		end
 	end
