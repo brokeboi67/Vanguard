@@ -38,6 +38,13 @@ function UIMusic.build(env)
 	local SearchBox
 	local SearchStatus
 	local ArtFrame
+	local searchToken = 0
+
+	local function setSearchStatus(text)
+		if SearchStatus then
+			SearchStatus.Text = text
+		end
+	end
 
 	local function refreshNowPlaying(state)
 		state = state or (Music and Music.GetState and Music.GetState()) or {}
@@ -176,25 +183,37 @@ function UIMusic.build(env)
 
 	local function runSearch(query)
 		if not Music then
+			warn("[Vanguard Music] Music module nil — UI bez backendu")
+			setSearchStatus("Błąd: brak modułu Music")
 			return
 		end
 		query = query or (SearchBox and SearchBox.Text) or ""
-		if SearchStatus then
-			SearchStatus.Text = "Szukam..."
-		end
+		searchToken += 1
+		local token = searchToken
+		setSearchStatus("Szukam...")
 		clearResults()
+
+		task.delay(15, function()
+			if token ~= searchToken then
+				return
+			end
+			if SearchStatus and SearchStatus.Text == "Szukam..." then
+				setSearchStatus("Timeout — szczegóły w konsoli (F9)")
+				warn("[Vanguard Music] UI timeout — callback wyszukiwania nie wrócił w 15s")
+			end
+		end)
+
 		Music.Search(query, function(results, err)
+			if token ~= searchToken then
+				return
+			end
 			clearResults()
 			if err and #results == 0 then
-				if SearchStatus then
-					SearchStatus.Text = err
-				end
+				setSearchStatus(err)
 				showNotify(err)
 				return
 			end
-			if SearchStatus then
-				SearchStatus.Text = #results .. " wyników" .. (err and (" · " .. err) or "")
-			end
+			setSearchStatus(#results .. " wyników" .. (err and (" · " .. err) or ""))
 			for i, item in ipairs(results) do
 				addResultRow(item, i)
 			end

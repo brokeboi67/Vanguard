@@ -27,6 +27,15 @@ function Music.Init(S)
 	local paused = false
 	local nowPlaying = nil
 	local lastError = nil
+	local HTTP_TIMEOUT = 12
+
+	local function logInfo(...)
+		print("[Vanguard Music]", ...)
+	end
+
+	local function logErr(...)
+		warn("[Vanguard Music]", ...)
+	end
 
 	Music.onProgress = nil
 	Music.onStateChanged = nil
@@ -42,55 +51,104 @@ function Music.Init(S)
 		return HttpService:UrlEncode(str)
 	end
 
-	local function httpGet(url)
-		local headers = {
-			["User-Agent"] = "Mozilla/5.0 (compatible; Vanguard/2.27)",
-			["Accept"] = "application/json,text/plain,*/*",
-		}
+	local function httpGet(url, timeoutSec)
+		timeoutSec = timeoutSec or HTTP_TIMEOUT
+		local box = { done = false, body = nil, err = nil, via = nil }
 
-		if HttpService.RequestAsync then
-			local ok, res = pcall(function()
-				return HttpService:RequestAsync({
-					Url = url,
-					Method = "GET",
-					Headers = headers,
-				})
-			end)
-			if ok and res and res.Success and res.Body and res.Body ~= "" then
-				return res.Body
-			end
-		end
+		task.spawn(function()
+			local headers = {
+				["User-Agent"] = "Mozilla/5.0 (compatible; Vanguard/2.27.1)",
+				["Accept"] = "application/json,text/plain,*/*",
+			}
 
-		local req = request or (syn and syn.request) or (http and http.request)
-		if req then
-			local ok, res = pcall(function()
-				return req({
-					Url = url,
-					Method = "GET",
-					Headers = headers,
-				})
-			end)
-			if ok and res and res.Body and res.Body ~= "" then
-				local code = tonumber(res.StatusCode) or 200
-				if code >= 200 and code < 300 then
-					return res.Body
+			local req = request or (syn and syn.request) or (http and http.request)
+			if req then
+				local ok, res = pcall(function()
+					return req({
+						Url = url,
+						Method = "GET",
+						Headers = headers,
+					})
+				end)
+				if ok and res then
+					local code = tonumber(res.StatusCode) or 0
+					if res.Body and res.Body ~= "" and code >= 200 and code < 300 then
+						box.body = res.Body
+						box.via = "request"
+						box.done = true
+						return
+					end
+					if not box.err then
+						box.err = "request HTTP " .. tostring(code)
+					end
+				elseif not box.err then
+					box.err = "request: " .. tostring(res)
 				end
 			end
-		end
 
-		if typeof(game.HttpGetAsync) == "function" then
-			local ok, body = pcall(game.HttpGetAsync, game, url)
-			if ok and body and body ~= "" then
-				return body
+			if typeof(game.HttpGetAsync) == "function" then
+				local ok, body = pcall(game.HttpGetAsync, game, url)
+				if ok and body and body ~= "" then
+					box.body = body
+					box.via = "HttpGetAsync"
+					box.done = true
+					return
+				end
+				if not box.err then
+					box.err = "HttpGetAsync: " .. tostring(body)
+				end
 			end
-		end
 
-		local ok, body = pcall(game.HttpGet, game, url, true)
-		if ok and body and body ~= "" then
-			return body
-		end
+			if HttpService.RequestAsync then
+				local ok, res = pcall(function()
+					return HttpService:RequestAsync({
+						Url = url,
+						Method = "GET",
+						Headers = headers,
+					})
+				end)
+				if ok and res then
+					if res.Success and res.Body and res.Body ~= "" then
+						box.body = res.Body
+						box.via = "RequestAsync"
+						box.done = true
+						return
+					end
+					if not box.err then
+						box.err = "RequestAsync status " .. tostring(res.StatusCode)
+					end
+				elseif not box.err then
+					box.err = "RequestAsync: " .. tostring(res)
+				end
+			end
 
-		return nil
+			local ok, body = pcall(game.HttpGet, game, url, true)
+			if ok and body and body ~= "" then
+				box.body = body
+				box.via = "HttpGet"
+				box.done = true
+				return
+			end
+			if not box.err then
+				box.err = "HttpGet: " .. tostring(body)
+			end
+			box.done = true
+		end)
+
+		local deadline = os.clock() + timeoutSec
+		while not box.done and os.clock() < deadline do
+			task.wait(0.05)
+		end
+		if not box.done then
+			logErr("HTTP timeout (" .. timeoutSec .. "s):", url)
+			return nil, "Timeout — Archive nie odpowiada (" .. timeoutSec .. "s)"
+		end
+		if box.body then
+			logInfo("HTTP OK via", box.via, "(" .. #box.body .. " B)")
+			return box.body
+		end
+		logErr("HTTP fail:", box.err or "brak body", "|", url)
+		return nil, box.err or "Brak odpowiedzi HTTP"
 	end
 
 	local function decodeJson(body)
@@ -99,6 +157,7 @@ function Music.Init(S)
 		end
 		local trimmed = body:match("^%s*(.-)%s*$")
 		if trimmed:sub(1, 1) == "<" then
+			logErr("Odpowiedź HTML zamiast JSON:", trimmed:sub(1, 160))
 			return nil, "Archive zwrócił HTML zamiast JSON — sprawdź HttpGet w executorze"
 		end
 		local ok, data = pcall(function()
@@ -107,6 +166,7 @@ function Music.Init(S)
 		if ok then
 			return data
 		end
+		logErr("JSON decode fail:", trimmed:sub(1, 160))
 		return nil, "Nieprawidłowa odpowiedź Archive (JSON)"
 	end
 
@@ -310,23 +370,39 @@ function Music.Init(S)
 		S.MusicLastQuery = query
 
 		task.spawn(function()
+			local t0 = os.clock()
+			logInfo("Search start:", query)
+
+			local function finish(results, err)
+				local ms = math.floor((os.clock() - t0) * 1000)
+				if err then
+					logErr("Search done (" .. ms .. "ms):", err, "| wyników:", #results)
+				else
+					logInfo("Search done (" .. ms .. "ms):", #results, "wyników")
+				end
+				if callback then
+					local cbOk, cbErr = pcall(callback, results, err)
+					if not cbOk then
+						logErr("Search callback error:", cbErr)
+					end
+				end
+			end
+
 			local ok, err = pcall(function()
 				local url = buildSearchUrl(query)
-				local body = httpGet(url)
+				logInfo("GET", url)
+				local body, httpErr = httpGet(url)
 				if not body then
 					local presets = filterPresets(query)
-					if callback then
-						callback(presets, #presets == 0 and "Brak połączenia z Archive — włącz HttpGet" or "Offline — pokazuję znane hity")
-					end
+					finish(presets, #presets == 0 and ("Brak połączenia z Archive — " .. tostring(httpErr or "HttpGet")) or ("Offline — " .. tostring(httpErr or "HttpGet")))
 					return
 				end
 
 				local data, parseErr = decodeJson(body)
 				if not data or not data.response then
 					local presets = filterPresets(query)
-					if callback then
-						callback(presets, #presets == 0 and (parseErr or "Błąd odpowiedzi Archive") or parseErr or "Archive niedostępne — znane hity")
-					end
+					local msg = parseErr or "Błąd odpowiedzi Archive"
+					finish(presets, #presets == 0 and msg or (msg .. " — znane hity"))
 					return
 				end
 
@@ -348,13 +424,12 @@ function Music.Init(S)
 					end
 				end
 
-				if callback then
-					callback(results, #results == 0 and "Brak wyników — spróbuj innej frazy" or nil)
-				end
+				finish(results, #results == 0 and "Brak wyników — spróbuj innej frazy" or nil)
 			end)
-			if not ok and callback then
+			if not ok then
+				logErr("Search crash:", err)
 				local presets = filterPresets(query)
-				callback(presets, #presets == 0 and tostring(err) or tostring(err))
+				finish(presets, #presets == 0 and tostring(err) or tostring(err))
 			end
 		end)
 	end
@@ -369,10 +444,12 @@ function Music.Init(S)
 		notifyState()
 
 		task.spawn(function()
+			logInfo("Play start:", item.identifier, item.title or "?")
 			local dlUrl, fileNameOrErr = resolveDownload(item.identifier)
 			if not dlUrl then
 				loading = false
 				lastError = fileNameOrErr
+				logErr("Play metadata fail:", fileNameOrErr)
 				if Music.onPlayError then
 					pcall(Music.onPlayError, fileNameOrErr)
 				end
@@ -384,6 +461,7 @@ function Music.Init(S)
 			if not assetId then
 				loading = false
 				lastError = aerr
+				logErr("Play asset fail:", aerr, "|", dlUrl)
 				if Music.onPlayError then
 					pcall(Music.onPlayError, aerr)
 				end
@@ -405,6 +483,7 @@ function Music.Init(S)
 				sound:Destroy()
 				loading = false
 				lastError = "PlayLocalSound failed"
+				logErr("PlayLocalSound failed")
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
 				end
@@ -422,6 +501,7 @@ function Music.Init(S)
 			}
 			loading = false
 			paused = false
+			logInfo("Play OK:", nowPlaying.title)
 
 			sound.Ended:Connect(function()
 				if currentSound == sound then
