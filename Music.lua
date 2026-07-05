@@ -28,6 +28,9 @@ function Music.Init(S)
 	local nowPlaying = nil
 	local lastError = nil
 	local playGen = 0
+	local playClockStart = 0
+	local playPosOffset = 0
+	local pausePosSnapshot = 0
 	local HTTP_TIMEOUT = 12
 
 	local function logInfo(...)
@@ -372,14 +375,60 @@ function Music.Init(S)
 	end
 
 	local function destroyAllMusicSounds()
-		for _, inst in ipairs(SoundService:GetChildren()) do
+		local function kill(inst)
 			if inst:IsA("Sound") and inst.Name == "VanguardMusic" then
 				pcall(function()
 					inst:Stop()
+					inst.Playing = false
 					inst:Destroy()
 				end)
 			end
 		end
+		for _, ch in ipairs(SoundService:GetChildren()) do
+			kill(ch)
+		end
+		local lp = game:GetService("Players").LocalPlayer
+		if lp then
+			for _, d in ipairs(lp:GetDescendants()) do
+				kill(d)
+			end
+		end
+	end
+
+	local function getPlaybackPosition()
+		if not currentSound then
+			return 0, 0
+		end
+		local dur = currentSound.TimeLength
+		local pos = currentSound.TimePosition
+		if dur <= 0 then
+			return 0, 0
+		end
+		if paused then
+			return pausePosSnapshot, dur
+		end
+		if pos > 0.05 then
+			playPosOffset = pos
+			playClockStart = os.clock()
+			return pos, dur
+		end
+		if playClockStart > 0 then
+			pos = math.min(playPosOffset + (os.clock() - playClockStart), dur)
+			return pos, dur
+		end
+		return pos, dur
+	end
+
+	local function startPlayback(sound)
+		local ok = pcall(function()
+			sound:Play()
+		end)
+		if ok then
+			return true
+		end
+		return pcall(function()
+			SoundService:PlayLocalSound(sound)
+		end)
 	end
 
 	local function killSound(sound)
@@ -424,6 +473,9 @@ function Music.Init(S)
 		paused = false
 		nowPlaying = nil
 		loading = false
+		playClockStart = 0
+		playPosOffset = 0
+		pausePosSnapshot = 0
 		notifyState()
 	end
 
@@ -549,11 +601,7 @@ function Music.Init(S)
 	end
 
 	function Music.GetState()
-		local pos, dur = 0, 0
-		if currentSound then
-			pos = currentSound.TimePosition
-			dur = currentSound.TimeLength
-		end
+		local pos, dur = getPlaybackPosition()
 		return {
 			loading = loading,
 			playing = currentSound ~= nil and not paused,
@@ -570,7 +618,7 @@ function Music.Init(S)
 
 	function Music.SetVolume(v)
 		S.MusicVolume = math.clamp(v, 0, 1)
-		if currentSound then
+		if currentSound and not paused then
 			currentSound.Volume = S.MusicVolume
 		end
 		notifyState()
@@ -598,19 +646,19 @@ function Music.Init(S)
 			return
 		end
 		if paused then
-			pcall(function()
-				currentSound:Resume()
-			end)
-			if not currentSound.IsPlaying then
-				currentSound.Playing = true
-			end
 			paused = false
+			currentSound.TimePosition = pausePosSnapshot
+			currentSound.Volume = S.MusicVolume or 0.65
+			startPlayback(currentSound)
+			playPosOffset = pausePosSnapshot
+			playClockStart = os.clock()
 		else
-			pcall(function()
-				currentSound:Pause()
-			end)
-			currentSound.Playing = false
+			pausePosSnapshot = getPlaybackPosition()
 			paused = true
+			playClockStart = 0
+			pcall(function()
+				currentSound:Stop()
+			end)
 		end
 		notifyState()
 	end
@@ -757,9 +805,7 @@ function Music.Init(S)
 						sound.Parent = SoundService
 
 						if waitForSoundLoad(sound, 12, myGen) and not stale() then
-							local playOk = pcall(function()
-								SoundService:PlayLocalSound(sound)
-							end)
+							local playOk = startPlayback(sound)
 							if playOk and not stale() then
 								currentSound = sound
 								lastError = nil
@@ -771,13 +817,26 @@ function Music.Init(S)
 								}
 								loading = false
 								paused = false
+								playPosOffset = 0
+								pausePosSnapshot = 0
+								playClockStart = os.clock()
 								logInfo("Play OK:", nowPlaying.title, "→", cand.name)
 
 								sound.Ended:Connect(function()
-									if currentSound == sound then
+									if currentSound ~= sound or paused then
+										return
+									end
+									task.defer(function()
+										if currentSound ~= sound or paused then
+											return
+										end
+										local pos, dur = getPlaybackPosition()
+										if dur > 0 and pos < dur - 0.5 then
+											return
+										end
 										playGen += 1
 										stopInternal()
-									end
+									end)
 								end)
 
 								disconnectProgress()
@@ -786,9 +845,9 @@ function Music.Init(S)
 										return
 									end
 									if Music.onProgress then
-										local dur = sound.TimeLength
+										local pos, dur = getPlaybackPosition()
 										if dur > 0 then
-											pcall(Music.onProgress, sound.TimePosition, dur)
+											pcall(Music.onProgress, pos, dur)
 										end
 									end
 								end)
