@@ -156,8 +156,7 @@ function Music.Init(S)
 			task.wait(0.05)
 		end
 		if not box.done then
-			logErr("HTTP timeout (" .. timeoutSec .. "s):", url)
-			return nil, "Timeout — Archive nie odpowiada (" .. timeoutSec .. "s)"
+			return nil, "Timeout (" .. timeoutSec .. "s)"
 		end
 		if box.body then
 			logInfo("HTTP OK via", box.via, "(" .. #box.body .. " B)")
@@ -252,7 +251,10 @@ function Music.Init(S)
 		local trimmed = body:match("^%s*(.-)%s*$")
 		if trimmed:sub(1, 1) == "<" then
 			logErr("Odpowiedź HTML zamiast JSON:", trimmed:sub(1, 160))
-			return nil, "Archive zwrócił HTML zamiast JSON — sprawdź HttpGet w executorze"
+			return nil, "Serwer zwrócił HTML zamiast JSON"
+		end
+		if trimmed:find("shutdown", 1, true) or trimmed:find("error code", 1, true) then
+			return nil, "Serwis proxy niedostępny"
 		end
 		local ok, data = pcall(function()
 			return HttpService:JSONDecode(trimmed)
@@ -596,6 +598,41 @@ function Music.Init(S)
 		return results
 	end
 
+	local function cleanTitleForSearch(title)
+		title = tostring(title or "")
+		title = title:gsub("%b()", " "):gsub("%b[]", " ")
+		title = title:gsub("Official 4K Video", "", 1)
+		title = title:gsub("Official Video", "", 1)
+		title = title:gsub("Official Audio", "", 1)
+		title = title:gsub("HD", "", 1)
+		return title:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+	end
+
+	local function findAudiusForYoutube(item)
+		local title = cleanTitleForSearch(item.title)
+		local creator = tostring(item.creator or ""):gsub(" %- Topic$", ""):gsub(" %- topic$", "")
+		local queries = {}
+		if title ~= "" and creator ~= "" then
+			table.insert(queries, title .. " " .. creator)
+			table.insert(queries, creator .. " " .. title)
+		end
+		if title ~= "" then
+			table.insert(queries, title)
+		end
+
+		for _, q in ipairs(queries) do
+			local results = searchAudius(q)
+			if results and #results > 0 then
+				rankSearchResults(q, results)
+				results = filterSearchResults(q, results)
+				if results[1] then
+					return results[1]
+				end
+			end
+		end
+		return nil
+	end
+
 	local function pickYoutubeAudioUrl(data)
 		if not data or not data.streamingData then
 			return nil
@@ -626,95 +663,6 @@ function Music.Init(S)
 		return bestUrl
 	end
 
-	local INVIDIOUS_HOSTS = {
-		"https://invidious.jing.rocks",
-		"https://inv.nade.koelhaas.de",
-		"https://inv.tux.pizza",
-		"https://invidious.fdn.fr",
-		"https://yt.artemislena.eu",
-		"https://invidious.privacyredirect.com",
-	}
-
-	local PIPED_HOSTS = {
-		"https://pipedapi.in.projectsegfau.lt",
-		"https://pipedapi.adminforge.de",
-		"https://api.piped.projectsegfau.lt",
-		"https://pipedapi.leptons.xyz",
-		"https://pipedapi.moomoo.me",
-	}
-
-	local function pickInvidiousAudio(data)
-		if not data then
-			return nil
-		end
-		local bestUrl, bestScore = nil, 0
-		local lists = { data.adaptiveFormats, data.formatStreams, data.audioStreams }
-		for _, list in ipairs(lists) do
-			if typeof(list) == "table" then
-				for _, fmt in ipairs(list) do
-					if typeof(fmt) == "table" and fmt.url then
-						local mime = tostring(fmt.mimeType or fmt.type or ""):lower()
-						local isAudio = mime:find("audio") or fmt.type == "audio"
-						if isAudio or (not mime:find("video") and tonumber(fmt.audioQuality)) then
-							local score = tonumber(fmt.bitrate) or tonumber(fmt.audioQuality) or 0
-							if isAudio then
-								score += 100000
-							end
-							if score >= bestScore then
-								bestScore = score
-								bestUrl = fmt.url
-							end
-						end
-					end
-				end
-			end
-		end
-		return bestUrl
-	end
-
-	local function pickPipedAudio(data)
-		if not data or typeof(data.audioStreams) ~= "table" then
-			return nil
-		end
-		local fallbackUrl, fallbackBr = nil, 0
-		for _, stream in ipairs(data.audioStreams) do
-			local br = tonumber(stream.bitrate) or 0
-			if stream.url then
-				local fmt = tostring(stream.format or stream.mimeType or ""):upper()
-				if fmt:find("M4A") or fmt:find("MP4") then
-					if br >= fallbackBr then
-						fallbackBr = br
-						fallbackUrl = stream.url
-					end
-				elseif not fallbackUrl then
-					fallbackUrl = stream.url
-					fallbackBr = br
-				end
-			end
-		end
-		return fallbackUrl
-	end
-
-	local function tryInvidiousStream(host, videoId)
-		local apiUrl = host .. "/api/v1/videos/" .. videoId .. "?local=1"
-		local body = httpGet(apiUrl, 8)
-		if not body then
-			return nil
-		end
-		local data = decodeJson(body)
-		return pickInvidiousAudio(data)
-	end
-
-	local function tryPipedStream(host, videoId)
-		local apiUrl = host .. "/streams/" .. videoId
-		local body = httpGet(apiUrl, 8)
-		if not body then
-			return nil
-		end
-		local data = decodeJson(body)
-		return pickPipedAudio(data)
-	end
-
 	local function tryInnertubeStream(videoId)
 		local payload = HttpService:JSONEncode({
 			context = {
@@ -730,7 +678,7 @@ function Music.Init(S)
 		local body = httpPost(
 			"https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
 			payload,
-			10
+			8
 		)
 		if not body then
 			return nil
@@ -744,52 +692,12 @@ function Music.Init(S)
 		if #videoId ~= 11 then
 			return nil, "Nieprawidłowe videoId"
 		end
-
-		local box = { url = nil, via = nil, done = false }
-
-		local function setResult(url, via)
-			if url and not box.done then
-				box.url = url
-				box.via = via
-				box.done = true
-				logInfo("YouTube stream OK:", videoId, "via", via)
-			end
+		local url = tryInnertubeStream(videoId)
+		if url then
+			logInfo("YouTube stream OK:", videoId)
+			return url
 		end
-
-		task.spawn(function()
-			local url = tryInnertubeStream(videoId)
-			if url then
-				setResult(url, "InnerTube WEB")
-			end
-		end)
-
-		for _, host in ipairs(INVIDIOUS_HOSTS) do
-			task.spawn(function()
-				local url = tryInvidiousStream(host, videoId)
-				if url then
-					setResult(url, "Invidious")
-				end
-			end)
-		end
-
-		for _, host in ipairs(PIPED_HOSTS) do
-			task.spawn(function()
-				local url = tryPipedStream(host, videoId)
-				if url then
-					setResult(url, "Piped")
-				end
-			end)
-		end
-
-		local deadline = os.clock() + 14
-		while not box.done and os.clock() < deadline do
-			task.wait(0.08)
-		end
-
-		if box.url then
-			return box.url
-		end
-		return nil, "Nie udało się pobrać audio (spróbuj Audius)"
+		return nil, "YouTube zablokowany w Roblox"
 	end
 
 	local function validateAudioBody(body, fileName)
@@ -1478,22 +1386,25 @@ function Music.Init(S)
 	end
 
 	function Music.GetSource()
-		local src = tostring(S.MusicSource or "youtube"):lower()
+		local src = tostring(S.MusicSource or "auto"):lower()
 		if src == "archive" then
 			return "archive"
 		end
 		if src == "audius" then
 			return "audius"
 		end
-		return "youtube"
+		if src == "youtube" then
+			return "youtube"
+		end
+		return "auto"
 	end
 
 	function Music.SetSource(src)
 		src = tostring(src or ""):lower()
-		if src == "archive" or src == "audius" then
+		if src == "archive" or src == "audius" or src == "youtube" then
 			S.MusicSource = src
 		else
-			S.MusicSource = "youtube"
+			S.MusicSource = "auto"
 		end
 		notifyState()
 	end
@@ -1530,6 +1441,46 @@ function Music.Init(S)
 			local ok, err = pcall(function()
 				local source = Music.GetSource()
 				logInfo("Search source:", source)
+
+				if source == "auto" then
+					local box = { aud = nil, yt = nil, done = 0 }
+					task.spawn(function()
+						box.aud = searchAudius(query)
+						box.done += 1
+					end)
+					task.spawn(function()
+						box.yt = searchYoutube(query)
+						box.done += 1
+					end)
+					local deadline = os.clock() + 18
+					while box.done < 2 and os.clock() < deadline do
+						task.wait(0.05)
+					end
+
+					local results = {}
+					local seen = {}
+					for _, r in ipairs(box.aud or {}) do
+						if r.identifier and not seen[r.identifier] then
+							seen[r.identifier] = true
+							table.insert(results, r)
+						end
+					end
+					for _, r in ipairs(box.yt or {}) do
+						if r.identifier and not seen[r.identifier] then
+							seen[r.identifier] = true
+							table.insert(results, r)
+						end
+					end
+
+					if #results == 0 then
+						finish({}, "Brak wyników — sprawdź HttpGet")
+						return
+					end
+					rankSearchResults(query, results)
+					results = filterSearchResults(query, results)
+					finish(results, nil)
+					return
+				end
 
 				if source == "audius" then
 					local results, audErr = searchAudius(query)
@@ -1640,51 +1591,59 @@ function Music.Init(S)
 			end
 
 			if item.source == "youtube" and item.videoId then
-				local streamUrl, serr = resolveYoutubeStream(item.videoId)
-				if stale() then
-					return
-				end
-				if not streamUrl then
+				logInfo("YT → Audius fallback:", cleanTitleForSearch(item.title))
+				local fb = findAudiusForYoutube(item)
+				if fb then
+					logInfo("Znaleziono na Audius:", fb.title)
+					item = fb
+				else
+					local streamUrl, serr = resolveYoutubeStream(item.videoId)
+					if stale() then
+						return
+					end
+					if streamUrl then
+						local cacheKey = safeFileName("yt_" .. item.videoId .. ".m4a")
+						local ytHeaders = {
+							["Referer"] = "https://www.youtube.com/",
+							["Origin"] = "https://www.youtube.com",
+						}
+						local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, false, ytHeaders)
+						if stale() then
+							return
+						end
+						if assetRef then
+							local okPlay, playErr = tryPlayAsset(assetRef, cachePath, item, cacheKey, myGen, stale)
+							if okPlay then
+								return
+							end
+							if cachePath then
+								deleteCache(cachePath)
+							end
+							loading = false
+							lastError = playErr
+							if Music.onPlayError then
+								pcall(Music.onPlayError, playErr)
+							end
+							notifyState()
+							return
+						end
+						loading = false
+						lastError = aerr or "Nie pobrano z YouTube"
+						if Music.onPlayError then
+							pcall(Music.onPlayError, lastError)
+						end
+						notifyState()
+						return
+					end
 					loading = false
-					lastError = serr or "Brak streamu YouTube"
+					lastError = "Brak na Audius. Przełącz źródło na Audius i wybierz utwór stamtąd."
+					logErr("Play fail YT:", serr)
 					if Music.onPlayError then
 						pcall(Music.onPlayError, lastError)
 					end
 					notifyState()
 					return
 				end
-				local cacheKey = safeFileName("yt_" .. item.videoId .. ".m4a")
-				local ytHeaders = {
-					["Referer"] = "https://www.youtube.com/",
-					["Origin"] = "https://www.youtube.com",
-				}
-				local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, false, ytHeaders)
-				if stale() then
-					return
-				end
-				if assetRef then
-					local okPlay, playErr = tryPlayAsset(assetRef, cachePath, item, cacheKey, myGen, stale)
-					if okPlay then
-						return
-					end
-					if cachePath then
-						deleteCache(cachePath)
-					end
-					loading = false
-					lastError = playErr
-					if Music.onPlayError then
-						pcall(Music.onPlayError, playErr)
-					end
-					notifyState()
-					return
-				end
-				loading = false
-				lastError = aerr or "Nie pobrano z YouTube"
-				if Music.onPlayError then
-					pcall(Music.onPlayError, lastError)
-				end
-				notifyState()
-				return
 			end
 
 			if item.source == "audius" and item.streamUrl then

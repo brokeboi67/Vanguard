@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.31.1",
+	Version = "2.31.2",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -120,7 +120,7 @@ local Settings = {
 	-- MUSIC (Internet Archive)
 	MusicVolume = 0.65,
 	MusicLoop = false,
-	MusicSource = "youtube",
+	MusicSource = "auto",
 	MusicLastQuery = "",
 
 	-- HUD
