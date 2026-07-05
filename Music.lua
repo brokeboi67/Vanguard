@@ -224,20 +224,104 @@ function Music.Init(S)
 		return out
 	end
 
-	local function assetFromUrl(url)
-		if getcustomasset then
-			local ok, id = pcall(getcustomasset, url)
-			if ok and id then
-				return id
-			end
+	local CACHE_DIR = "VanguardMusic"
+
+	local function safeFileName(name)
+		return tostring(name or "track.mp3"):gsub("[^%w%.%-_]", "_")
+	end
+
+	local function resolveCustomAssetFn()
+		if typeof(getcustomasset) == "function" then
+			return getcustomasset, "getcustomasset"
 		end
 		if typeof(getsynasset) == "function" then
-			local ok, id = pcall(getsynasset, url)
-			if ok and id then
-				return id
+			return getsynasset, "getsynasset"
+		end
+		local g = (getgenv and getgenv()) or _G
+		if typeof(g.getcustomasset) == "function" then
+			return g.getcustomasset, "getcustomasset(genv)"
+		end
+		return nil
+	end
+
+	local function ensureCacheDir()
+		if typeof(makefolder) ~= "function" then
+			return
+		end
+		if typeof(isfolder) == "function" and isfolder(CACHE_DIR) then
+			return
+		end
+		pcall(makefolder, CACHE_DIR)
+	end
+
+	local function toSoundId(assetRef)
+		if typeof(assetRef) ~= "string" or assetRef == "" then
+			return nil
+		end
+		if assetRef:find("^rbxasset") then
+			return assetRef
+		end
+		return "rbxassetid://" .. assetRef
+	end
+
+	local function assetFromDownload(url, cacheName)
+		cacheName = safeFileName(cacheName)
+		local relPath = CACHE_DIR .. "/" .. cacheName
+		local getAsset, via = resolveCustomAssetFn()
+
+		if typeof(writecustomasset) == "function" then
+			logInfo("Pobieranie audio (writecustomasset):", url)
+			local body, httpErr = httpGet(url, 30)
+			if not body then
+				return nil, "Nie pobrano MP3: " .. tostring(httpErr)
+			end
+			local ok, assetRef = pcall(writecustomasset, cacheName, body)
+			if ok and assetRef and assetRef ~= "" then
+				logInfo("writecustomasset OK:", cacheName, "(" .. #body .. " B)")
+				return assetRef
+			end
+			logErr("writecustomasset fail:", assetRef)
+		end
+
+		if not getAsset then
+			return nil, "Brak getcustomasset w executorze (Potassium: włącz filesystem)"
+		end
+		if typeof(writefile) ~= "function" then
+			return nil, "Brak writefile — nie da się zapisać MP3"
+		end
+
+		ensureCacheDir()
+
+		if typeof(isfile) == "function" and isfile(relPath) then
+			local ok, assetRef = pcall(getAsset, relPath)
+			if ok and assetRef and assetRef ~= "" then
+				logInfo("Cache hit:", relPath, "via", via)
+				return assetRef
 			end
 		end
-		return nil, "Executor nie wspiera getcustomasset — wymagane do streamu z Archive"
+
+		logInfo("Pobieranie audio:", url)
+		local body, httpErr = httpGet(url, 30)
+		if not body then
+			return nil, "Nie pobrano MP3: " .. tostring(httpErr)
+		end
+		logInfo("Pobrano", #body, "B →", relPath)
+
+		local writeOk, writeErr = pcall(writefile, relPath, body)
+		if not writeOk then
+			relPath = cacheName
+			writeOk, writeErr = pcall(writefile, relPath, body)
+		end
+		if not writeOk then
+			return nil, "writefile fail: " .. tostring(writeErr)
+		end
+
+		local ok, assetRef = pcall(getAsset, relPath)
+		if ok and assetRef and assetRef ~= "" then
+			logInfo("getcustomasset OK via", via, "→", tostring(assetRef):sub(1, 48))
+			return assetRef
+		end
+		return nil, "getcustomasset fail: " .. tostring(assetRef)
 	end
 
 	local function disconnectProgress()
@@ -457,8 +541,9 @@ function Music.Init(S)
 				return
 			end
 
-			local assetId, aerr = assetFromUrl(dlUrl)
-			if not assetId then
+			local cacheKey = safeFileName(item.identifier .. "_" .. fileNameOrErr)
+			local assetRef, aerr = assetFromDownload(dlUrl, cacheKey)
+			if not assetRef then
 				loading = false
 				lastError = aerr
 				logErr("Play asset fail:", aerr, "|", dlUrl)
@@ -469,9 +554,21 @@ function Music.Init(S)
 				return
 			end
 
+			local soundId = toSoundId(assetRef)
+			if not soundId then
+				loading = false
+				lastError = "Nieprawidłowy asset ID"
+				logErr("Invalid asset ref:", assetRef)
+				if Music.onPlayError then
+					pcall(Music.onPlayError, lastError)
+				end
+				notifyState()
+				return
+			end
+
 			local sound = Instance.new("Sound")
 			sound.Name = "VanguardMusic"
-			sound.SoundId = "rbxassetid://" .. tostring(assetId)
+			sound.SoundId = soundId
 			sound.Volume = S.MusicVolume or 0.65
 			sound.Looped = S.MusicLoop == true
 			sound.Parent = SoundService
