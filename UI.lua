@@ -1828,7 +1828,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VAdv, "Chams Fill", "Chams", 4, { flat = true })
 	MakeTog(VAdv, "Chams Rainbow", "ChamsRainbow", 5, { flat = true })
 	MakeTog(VAdv, "Offscreen Arrows", "OffscreenArrows", 6, { flat = true })
-	MakeHint(VAdv, "Strzałki na krawędzi ekranu wskazują wrogów poza FOV (wymaga ESP).", 7)
+	MakeTog(VAdv, "Enhanced Trackers", "OffscreenArrowHighVis", 7, { flat = true })
+	MakeSlider(VAdv, "Tracker Size", "OffscreenArrowScale", 0.8, 2.5, 8, {
+		step = 0.05,
+		fmt = function(v)
+			return string.format("%.0f%%", v * 100)
+		end,
+	})
+	MakeTog(VAdv, "Tracker Name Label", "OffscreenArrowShowName", 9, { flat = true })
+	MakeHint(VAdv, "Strzałki na krawędzi ekranu — Enhanced = większe, tło, nick i czytelny dystans.", 10)
 
 	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 7)
 	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })

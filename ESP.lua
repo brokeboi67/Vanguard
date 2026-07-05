@@ -423,7 +423,25 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	local lastRenderBots = S.RenderBots
 	local lastESP = S.ESP
 
-	local function getOffscreenPlacement(worldPos)
+	local function getArrowConfig()
+		local high = S.OffscreenArrowHighVis == true
+		local scale = tonumber(S.OffscreenArrowScale) or (high and 1.35 or 1)
+		scale = math.clamp(scale, 0.8, 2.5)
+		return {
+			highVis = high,
+			scale = scale,
+			showName = S.OffscreenArrowShowName ~= false,
+			glyphSize = math.floor((high and 22 or 16) * scale),
+			distSize = math.floor((high and 12 or 9) * scale),
+			nameSize = math.floor((high and 10 or 8) * scale),
+			rootW = math.floor((high and 78 or 32) * scale),
+			rootH = math.floor((high and 62 or 36) * scale),
+			margin = math.floor((high and 58 or 44) * scale),
+		}
+	end
+
+	local function getOffscreenPlacement(worldPos, margin)
+		margin = margin or 44
 		local viewport = Cam.ViewportSize
 		local cx, cy = viewport.X * 0.5, viewport.Y * 0.5
 		local pos, onScreen = Cam:WorldToViewportPoint(worldPos)
@@ -443,7 +461,6 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			dir = dir.Unit
 		end
 
-		local margin = 44
 		local maxX = cx - margin
 		local maxY = cy - margin
 		local t = math.huge
@@ -463,7 +480,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 		local edge = Vector2.new(cx, cy) + dir * t
 		local angle = math.deg(math.atan2(dir.Y, dir.X)) + 90
-		return edge, angle
+		return edge, angle, dir
 	end
 
 	local function ensureArrow(key)
@@ -471,34 +488,107 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			return arrowCache[key]
 		end
 		local root = C("Frame", {
-			Size = UDim2.new(0, 30, 0, 36),
+			Size = UDim2.new(0, 32, 0, 36),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
 			Visible = false,
 			Parent = Arrow_C,
 		})
+		local rotWrap = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 24),
+			Position = UDim2.new(0.5, 0, 0, 0),
+			AnchorPoint = Vector2.new(0.5, 0),
+			BackgroundTransparency = 1,
+			Parent = root,
+		})
 		local glyph = C("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 20),
+			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
 			Text = "▲",
 			Font = Enum.Font.GothamBlack,
 			TextSize = 16,
 			TextStrokeTransparency = 0.35,
 			TextColor3 = S.V,
+			Parent = rotWrap,
+		})
+		local stack = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 28),
+			Position = UDim2.new(0.5, 0, 1, 0),
+			AnchorPoint = Vector2.new(0.5, 1),
+			BackgroundTransparency = 1,
+			ClipsDescendants = false,
 			Parent = root,
 		})
-		local distLbl = C("TextLabel", {
+		local bg = C("Frame", {
+			Size = UDim2.new(1, 8, 1, 6),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = Color3.fromRGB(8, 8, 12),
+			BackgroundTransparency = 0.28,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 1,
+			Parent = stack,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = bg })
+		C("UIStroke", {
+			Color = Color3.fromRGB(255, 255, 255),
+			Thickness = 1,
+			Transparency = 0.72,
+			Parent = bg,
+		})
+		local nameLbl = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 12),
-			Position = UDim2.new(0, 0, 0, 20),
+			Position = UDim2.new(0, 0, 0, 2),
 			BackgroundTransparency = 1,
 			Text = "",
 			Font = Enum.Font.GothamBold,
 			TextSize = 9,
-			TextColor3 = Color3.fromRGB(220, 220, 228),
-			Parent = root,
+			TextStrokeTransparency = 0.5,
+			TextColor3 = Color3.fromRGB(235, 235, 240),
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			ZIndex = 2,
+			Visible = false,
+			Parent = stack,
 		})
-		arrowCache[key] = { root = root, glyph = glyph, distLbl = distLbl }
+		local distLbl = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 12),
+			Position = UDim2.new(0, 0, 0, 14),
+			BackgroundTransparency = 1,
+			Text = "",
+			Font = Enum.Font.GothamBold,
+			TextSize = 9,
+			TextStrokeTransparency = 0.35,
+			TextColor3 = Color3.fromRGB(220, 220, 228),
+			ZIndex = 2,
+			Parent = stack,
+		})
+		arrowCache[key] = {
+			root = root,
+			rotWrap = rotWrap,
+			glyph = glyph,
+			stack = stack,
+			bg = bg,
+			nameLbl = nameLbl,
+			distLbl = distLbl,
+		}
 		return arrowCache[key]
+	end
+
+	local function applyArrowStyle(ch, cfg)
+		ch.root.Size = UDim2.new(0, cfg.rootW, 0, cfg.rootH)
+		ch.rotWrap.Size = UDim2.new(1, 0, 0, math.floor(cfg.glyphSize + 6))
+		ch.glyph.TextSize = cfg.glyphSize
+		ch.glyph.TextStrokeTransparency = cfg.highVis and 0.08 or 0.35
+		ch.distLbl.TextSize = cfg.distSize
+		ch.distLbl.TextStrokeTransparency = cfg.highVis and 0.05 or 0.35
+		ch.nameLbl.TextSize = cfg.nameSize
+		ch.nameLbl.TextStrokeTransparency = cfg.highVis and 0.1 or 0.45
+		ch.bg.Visible = cfg.highVis
+		local showName = cfg.showName and cfg.highVis
+		ch.nameLbl.Visible = showName
+		ch.distLbl.Position = UDim2.new(0, 0, 0, showName and 14 or 4)
+		ch.stack.Size = UDim2.new(1, 0, 0, showName and 28 or 18)
 	end
 
 	local function hideArrow(key)
@@ -508,18 +598,27 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 	end
 
-	local function renderOffscreen(key, worldPos, clr, dist)
-		local edge, angle = getOffscreenPlacement(worldPos)
+	local function renderOffscreen(key, worldPos, clr, dist, displayName)
+		local cfg = getArrowConfig()
+		local edge, angle = getOffscreenPlacement(worldPos, cfg.margin)
 		if not edge then
 			hideArrow(key)
 			return
 		end
 		local ch = ensureArrow(key)
+		applyArrowStyle(ch, cfg)
 		ch.root.Position = UDim2.new(0, edge.X, 0, edge.Y)
-		ch.root.Rotation = angle
+		ch.root.Rotation = 0
+		ch.rotWrap.Rotation = angle
 		ch.glyph.TextColor3 = clr
 		ch.distLbl.Text = math.floor(dist) .. "m"
-		ch.distLbl.TextColor3 = clr
+		ch.distLbl.TextColor3 = cfg.highVis and Color3.fromRGB(245, 245, 248) or clr
+		if cfg.showName and cfg.highVis then
+			ch.nameLbl.Text = tostring(displayName or "")
+			ch.nameLbl.TextColor3 = clr
+		else
+			ch.nameLbl.Text = ""
+		end
 		ch.root.Visible = true
 	end
 
@@ -604,11 +703,13 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				if dist > S.MaxDist then
 					return
 				end
-				local edge = getOffscreenPlacement(hrp.Position)
+				local cfg = getArrowConfig()
+				local edge = getOffscreenPlacement(hrp.Position, cfg.margin)
 				if edge then
 					arrowActive[key] = true
 					local clr = GetColor(plr, char, isBot)
-					pcall(renderOffscreen, key, hrp.Position, clr, dist)
+					local label = plr and plr.Name or (char and char.Name or "?")
+					pcall(renderOffscreen, key, hrp.Position, clr, dist, label)
 				else
 					hideArrow(key)
 				end

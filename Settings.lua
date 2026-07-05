@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.33.0",
+	Version = "2.33.1",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -16,6 +16,9 @@ local Settings = {
 	Chams = false,
 	ChamsRainbow = false,
 	OffscreenArrows = false,
+	OffscreenArrowHighVis = true,
+	OffscreenArrowScale = 1.35,
+	OffscreenArrowShowName = true,
 	RenderBots = false,
 	Team = false,
 	ExcludeTeam = true,

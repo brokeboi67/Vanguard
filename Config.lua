@@ -300,6 +300,15 @@ function Config.EnforceRules(S)
 	if S.OffscreenArrows == nil then
 		S.OffscreenArrows = false
 	end
+	if S.OffscreenArrowHighVis == nil then
+		S.OffscreenArrowHighVis = true
+	end
+	if S.OffscreenArrowScale == nil then
+		S.OffscreenArrowScale = 1.35
+	end
+	if S.OffscreenArrowShowName == nil then
+		S.OffscreenArrowShowName = true
+	end
 	if S.DamageNumbers == nil then
 		S.DamageNumbers = false
 	end
