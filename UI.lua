@@ -1936,7 +1936,32 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VOver, "Health Text", "HealthText", 5, { flat = true })
 	MakeTog(VOver, "Weapon ESP", "Weapon", 6, { flat = true })
 
-	local VAdv = MakeCard(T1, "ADVANCED", "Rainbow / Team Colors / LoS się wykluczają.", 5)
+	local VColors = MakeCard(T1, "ESP COLORS", "Tryby kolorów — wykluczają się nawzajem.", 5)
+	MakeTog(VColors, "Team Colors", "RealTeamColor", 1, { flat = true })
+	MakeTog(VColors, "Line of Sight", "LoS", 2, { flat = true })
+	MakeHint(VColors, "Custom kolory (V/O) działają tylko gdy wyłączone: Team Colors, LoS i Chams Rainbow.", 3)
+	MakeColorPicker(VColors, "Visible Color", "V", 4)
+	MakeColorPicker(VColors, "Hidden Color", "O", 5)
+	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 6, {
+		suffix = "px",
+		step = 0.1,
+		fmt = function(v)
+			return string.format("%.1f px", v)
+		end,
+	})
+
+	updateEspColorControls = function()
+		local on = espCustomColorsEnabled()
+		for _, reg in ipairs(colorRegistry) do
+			reg.setEnabled(on)
+			if on then
+				reg.refresh()
+			end
+		end
+	end
+	updateEspColorControls()
+
+	local VAdv = MakeCard(T1, "ADVANCED", "Rainbow / Team Colors / LoS się wykluczają.", 6)
 	MakeTog(VAdv, "Render Bots", "RenderBots", 1, { flat = true })
 	MakeTog(VAdv, "Skeleton", "Skel", 2, { flat = true })
 	MakeTog(VAdv, "Tracers", "Trace", 3, { flat = true })
@@ -1945,7 +1970,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VAdv, "Offscreen Arrows", "OffscreenArrows", 6, { flat = true })
 	MakeHint(VAdv, "Strzałki na krawędzi ekranu wskazują wrogów poza FOV (wymaga ESP).", 7)
 
-	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 6)
+	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 7)
 	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })
 	MakeTog(VTrace, "Kill Tracer (grubszy + glow)", "KillShotTracers", 2, { flat = true })
 	MakeHint(VTrace, "Linia od crosshaira przez cel (przebija postać). Kill = grubsza czerwona + kula.", 3)
@@ -2316,32 +2341,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		TF.Init(S, ParentGUI, ACC, refreshFriendList)
 	end
 
-	local SFilt = MakeCard(T2, "ESP COLORS", "Tryby kolorów — wykluczają się nawzajem.", 2)
-	MakeTog(SFilt, "Team Colors", "RealTeamColor", 1, { flat = true })
-	MakeTog(SFilt, "Line of Sight", "LoS", 2, { flat = true })
-	MakeHint(SFilt, "Custom kolory (V/O) działają tylko gdy wyłączone: Team Colors, LoS i Chams Rainbow.", 3)
-	MakeColorPicker(SFilt, "Visible Color", "V", 4)
-	MakeColorPicker(SFilt, "Hidden Color", "O", 5)
-	MakeSlider(SFilt, "Line Thickness", "Th", 0.5, 4, 6, {
-		suffix = "px",
-		step = 0.1,
-		fmt = function(v)
-			return string.format("%.1f px", v)
-		end,
-	})
-
-	updateEspColorControls = function()
-		local on = espCustomColorsEnabled()
-		for _, reg in ipairs(colorRegistry) do
-			reg.setEnabled(on)
-			if on then
-				reg.refresh()
-			end
-		end
-	end
-	updateEspColorControls()
-
-	local SHud = MakeCard(T2, "HUD", nil, 3)
+	local SHud = MakeCard(T2, "HUD", nil, 2)
 	MakeTog(SHud, "Crosshair", "Crosshair", 1, { flat = true })
 	MakeChoice(SHud, "Crosshair Style", "CrosshairStyle", {
 		{ label = "Dot", value = "Dot" },
@@ -2386,7 +2386,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(SHud, "Spectator list pokazuje tylko graczy, którzy faktycznie Cię obserwują (atrybuty / kamera).", 19)
 
 	local SettingsAutoloadLbl
-	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 4)
+	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 3)
 
 	SettingsAutoloadLbl = C("TextLabel", {
 		Size = UDim2.new(1, -8, 0, 0),

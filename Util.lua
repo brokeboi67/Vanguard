@@ -465,16 +465,84 @@ function Util.performSilentShot(RS, Cam, VIM, targetPos, aimFrames, UIS, LP)
 	Cam.CFrame = saved
 end
 
-function Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, aimFrames, LP)
+function Util.holdMouseClick(RS, VIM, Cam, UIS, LP, holdFrames)
+	holdFrames = holdFrames or 4
+
+	local cx = Cam.ViewportSize.X / 2
+	local cy = Cam.ViewportSize.Y / 2
+	if UIS then
+		local loc = UIS:GetMouseLocation()
+		cx, cy = loc.X, loc.Y
+	end
+
+	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
+	local press = genv.mouse1press or mouse1press
+	local release = genv.mouse1release or mouse1release
+	local click = genv.mouse1click or mouse1click
+
+	if typeof(press) == "function" then
+		pcall(press)
+		for _ = 1, holdFrames do
+			RS.RenderStepped:Wait()
+		end
+		if typeof(release) == "function" then
+			pcall(release)
+		end
+		return true
+	end
+
+	if typeof(click) == "function" then
+		pcall(click)
+		return true
+	end
+
+	if typeof(syn) == "table" and typeof(syn.mouse1click) == "function" then
+		pcall(syn.mouse1click)
+		return true
+	end
+
+	local mouse = LP and LP:GetMouse()
+	if mouse and typeof(getconnections) == "function" then
+		local fired = false
+		pcall(function()
+			for _, conn in ipairs(getconnections(mouse.Button1Down)) do
+				conn:Fire()
+				fired = true
+			end
+		end)
+		if fired then
+			for _ = 1, holdFrames do
+				RS.RenderStepped:Wait()
+			end
+			pcall(function()
+				for _, conn in ipairs(getconnections(mouse.Button1Up)) do
+					conn:Fire()
+				end
+			end)
+			return true
+		end
+	end
+
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
+	end)
+	for _ = 1, holdFrames do
+		RS.RenderStepped:Wait()
+	end
+	pcall(function()
+		VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
+	end)
+	return true
+end
+
+function Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, aimFrames, UIS, LP)
 	if not targetPos then
 		return
 	end
-	aimFrames = aimFrames or 3
+
 	local saved = Cam.CFrame
 	Cam.CFrame = CFrame.new(saved.Position, targetPos)
-	for _ = 1, aimFrames do
-		RS.RenderStepped:Wait()
-	end
+	RS.RenderStepped:Wait()
 
 	local char = LP and LP.Character
 	if char then
@@ -487,49 +555,7 @@ function Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, aimFrames, LP)
 		end
 	end
 
-	local genv = (typeof(getgenv) == "function" and getgenv()) or _G
-	local click = genv.mouse1click or mouse1click
-	local press = genv.mouse1press or mouse1press
-	local release = genv.mouse1release or mouse1release
-
-	if typeof(click) == "function" then
-		pcall(click)
-	elseif typeof(press) == "function" then
-		pcall(press)
-		RS.RenderStepped:Wait()
-		if typeof(release) == "function" then
-			pcall(release)
-		end
-	end
-
-	if typeof(syn) == "table" and typeof(syn.mouse1click) == "function" then
-		pcall(syn.mouse1click)
-	end
-
-	local mouse = LP and LP:GetMouse()
-	if mouse and typeof(getconnections) == "function" then
-		pcall(function()
-			for _, conn in ipairs(getconnections(mouse.Button1Down)) do
-				conn:Fire()
-			end
-		end)
-		RS.RenderStepped:Wait()
-		pcall(function()
-			for _, conn in ipairs(getconnections(mouse.Button1Up)) do
-				conn:Fire()
-			end
-		end)
-	end
-
-	local cx = Cam.ViewportSize.X / 2
-	local cy = Cam.ViewportSize.Y / 2
-	pcall(function()
-		VIM:SendMouseButtonEvent(cx, cy, 0, true, 1, false)
-	end)
-	RS.RenderStepped:Wait()
-	pcall(function()
-		VIM:SendMouseButtonEvent(cx, cy, 0, false, 1, false)
-	end)
+	Util.holdMouseClick(RS, VIM, Cam, UIS, LP, 4)
 
 	RS.RenderStepped:Wait()
 	Cam.CFrame = saved

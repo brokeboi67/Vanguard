@@ -466,7 +466,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 
 			if S.RageCompat then
 				pcall(function()
-					Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, 3, LP)
+					Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, 1, UIS, LP)
 				end)
 			elseif mode == "Silent" then
 				Util.performSilentShot(RS, Cam, VIM, targetPos, 2, UIS, LP)

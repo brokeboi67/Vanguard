@@ -637,7 +637,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			if S.TriggerCompat then
 				markShot(char, pos)
 				pcall(function()
-					Util.performCompatTriggerShot(RS, Cam, VIM, pos, 3, LP)
+					Util.performCompatTriggerShot(RS, Cam, VIM, pos, 1, UIS, LP)
 				end)
 			else
 				markShot(char, pos)
