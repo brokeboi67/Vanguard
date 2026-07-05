@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.25.0",
+	Version = "2.26.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -116,6 +116,11 @@ local Settings = {
 	AnimLoop = true,
 	AnimPreferChat = true,
 	AnimMovementPack = "",
+
+	-- MUSIC (Internet Archive)
+	MusicVolume = 0.65,
+	MusicLoop = false,
+	MusicLastQuery = "",
 
 	-- HUD
 	Crosshair = false,

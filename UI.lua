@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus)
+function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule)
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -25,6 +25,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Misc = Color3.fromRGB(255, 195, 75),
 		Config = Color3.fromRGB(155, 135, 255),
 		Menus = Color3.fromRGB(255, 120, 180),
+		Music = Color3.fromRGB(30, 215, 96),
 	}
 
 	local function tabSoft(col)
@@ -1740,6 +1741,24 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local TM = MakeTab("Misc", false, false, 7)
 	local TMenu = MakeTab("Menus", false, false, 8)
 	local T4 = MakeTab("Config", false, false, 9)
+	local TMusic = MakeTab("Music", false, false, 10)
+
+	if UIMusicModule and MusicModule then
+		UIMusicModule.build({
+			TMusic = TMusic,
+			S = S,
+			C = C,
+			ACC = ACC,
+			tabCol = TAB_THEMES.Music,
+			Music = MusicModule,
+			MakeCard = MakeCard,
+			MakeSlider = MakeSlider,
+			MakeTog = MakeTog,
+			showNotify = showNotify,
+			setFooterStatus = setFooterStatus,
+			TweenPlay = TweenPlay,
+		})
+	end
 
 	local function refreshWorld()
 		if WorldModule and WorldModule.OnSettingChanged then
