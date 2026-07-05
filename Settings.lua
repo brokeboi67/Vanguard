@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.24.4",
+	Version = "2.25.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -109,6 +109,13 @@ local Settings = {
 	-- MOVEMENT
 	BHop = false,
 	AutoStrafe = false,
+
+	-- ANIMATIONS
+	AnimSpeed = 1,
+	AnimWeight = 1,
+	AnimLoop = true,
+	AnimPreferChat = true,
+	AnimMovementPack = "",
 
 	-- HUD
 	Crosshair = false,

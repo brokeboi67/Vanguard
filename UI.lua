@@ -1994,24 +1994,149 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(WUi, "Menu Blur", "MenuBlur", 1, worldChange)
 	MakeSlider(WUi, "Blur Strength", "MenuBlurSize", 4, 48, 2, { suffix = "px", step = 1, onChange = refreshWorld })
 
-	local APlay = MakeCard(TAnim, "EMOTES", "Animacje przez Humanoid — inni widzą je w większości gier.", 1)
+	local APlayback = MakeCard(TAnim, "PLAYBACK", "Speed/weight działają na emote i local FX. Loop = tańce w kółko.", 1)
+	MakeSlider(APlayback, "Speed", "AnimSpeed", 0.25, 3, 1, {
+		suffix = "x",
+		step = 0.05,
+		fmt = function(v)
+			return string.format("%.2fx", v)
+		end,
+	})
+	MakeSlider(APlayback, "Weight", "AnimWeight", 0.1, 1, 2, {
+		suffix = "",
+		step = 0.05,
+		fmt = function(v)
+			return string.format("%.0f%%", v * 100)
+		end,
+	})
+	MakeTog(APlayback, "Loop Emotes", "AnimLoop", 3, { flat = true })
+	MakeTog(APlayback, "Prefer /e Chat First", "AnimPreferChat", 4, { flat = true })
+	MakeHint(APlayback, "✦ = inni widzą (replikowane)   ·   ◎ = tylko u Ciebie (local FX). Rig: " .. (AnimationsModule and AnimationsModule.GetRigLabel() or "?") .. ".", 5)
+
+	local function MakeAnimRow(page, entry, order, onPlay)
+		local meta = AnimationsModule and AnimationsModule.GetEntryMeta(entry) or { icon = "?", rig = "?", visible = "?" }
+		local visColor = meta.visible == "Others" and Color3.fromRGB(100, 220, 150) or Color3.fromRGB(150, 150, 165)
+
+		local Row = C("TextButton", {
+			Size = UDim2.new(1, 0, 0, 40),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			Text = "",
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			LayoutOrder = order,
+			ZIndex = 5,
+			Parent = page,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
+
+		C("TextLabel", {
+			Size = UDim2.new(0, 18, 1, 0),
+			Position = UDim2.new(0, 10, 0, 0),
+			BackgroundTransparency = 1,
+			Text = meta.icon,
+			Font = Enum.Font.GothamBold,
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(200, 200, 210),
+			TextXAlignment = Enum.TextXAlignment.Center,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		C("TextLabel", {
+			Size = UDim2.new(1, -130, 1, 0),
+			Position = UDim2.new(0, 30, 0, 0),
+			BackgroundTransparency = 1,
+			Text = entry.label,
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 220, 228),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		C("TextLabel", {
+			Size = UDim2.new(0, 52, 0, 12),
+			Position = UDim2.new(1, -118, 0, 7),
+			BackgroundTransparency = 1,
+			Text = meta.rig,
+			Font = Enum.Font.Gotham,
+			TextSize = 9,
+			TextColor3 = Color3.fromRGB(110, 110, 125),
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		C("TextLabel", {
+			Size = UDim2.new(0, 52, 0, 12),
+			Position = UDim2.new(1, -118, 0, 21),
+			BackgroundTransparency = 1,
+			Text = meta.visible,
+			Font = Enum.Font.GothamBold,
+			TextSize = 9,
+			TextColor3 = visColor,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			ZIndex = 6,
+			Parent = Row,
+		})
+
+		Row.MouseEnter:Connect(function()
+			TweenPlay(Row, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(22, 22, 28) })
+		end)
+		Row.MouseLeave:Connect(function()
+			TweenPlay(Row, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(17, 17, 21) })
+		end)
+		Row.MouseButton1Click:Connect(onPlay)
+	end
+
+	local AMove = MakeCard(TAnim, "MOVEMENT PACK", "Idle/walk/run/jump — podmiana Animate. Inni widzą nowy styl ruchu.", 2)
+	if AnimationsModule and AnimationsModule.MOVEMENT then
+		local moveOrder = 1
+		for _, pack in ipairs(AnimationsModule.MOVEMENT) do
+			local p = pack
+			MakeAnimRow(AMove, {
+				label = p.label,
+				icon = p.icon or "↺",
+				rig = "both",
+				visibleToOthers = p.visibleToOthers ~= false,
+			}, moveOrder, function()
+				if not AnimationsModule then
+					return
+				end
+				local ok, err = AnimationsModule.ApplyMovement(p)
+				if ok then
+					showNotify("Movement: " .. p.label)
+					setFooterStatus("Anim · " .. p.label)
+				else
+					showNotify(err or "Błąd movement pack")
+				end
+			end)
+			moveOrder += 1
+		end
+	end
+
+	local APlay = MakeCard(TAnim, "EMOTES", "Najpierw /e (jeśli gra wspiera), potem asset ID z replikacją.", 3)
 	MakeButton(APlay, "Stop Animation", 1, function()
 		if AnimationsModule then
 			AnimationsModule.Stop()
 			showNotify("Animacja zatrzymana")
+			setFooterStatus("Anim · stopped")
 		end
 	end)
 	local animOrder = 2
 	if AnimationsModule and AnimationsModule.LIST then
 		for _, entry in ipairs(AnimationsModule.LIST) do
 			local e = entry
-			MakeButton(APlay, e.label, animOrder, function()
+			MakeAnimRow(APlay, e, animOrder, function()
 				if not AnimationsModule then
 					return
 				end
 				local ok, err = AnimationsModule.Play(e)
 				if ok then
 					showNotify("Animacja: " .. e.label)
+					setFooterStatus("Anim · " .. e.label)
 				else
 					showNotify(err or "Błąd animacji")
 				end
@@ -2019,7 +2144,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			animOrder += 1
 		end
 	end
-	MakeHint(APlay, "Procedural: Twerk, Floss, Griddy, Spin, Thunder, Matrix, Disco, Levitate. Reszta = Animate gry lub /e chat.", animOrder)
+	MakeHint(APlay, "Wave/Point/Laugh = jednorazowe. Wyłącz Loop dla pozostałych emote.", animOrder)
 
 	local MMove = MakeCard(TM, "MOVEMENT", "Auto Strafe działa w powietrzu (razem z BHop).", 1)
 	MakeTog(MMove, "Bunny Hop", "BHop", 1, { flat = true })
