@@ -1044,9 +1044,6 @@ function Music.Init(S)
 		notifyState()
 	end
 
-		return out
-	end
-
 	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen)
 		currentSound = sound
 		lastError = nil
