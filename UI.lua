@@ -4,6 +4,12 @@ local UI = {}
 
 function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule)
 	local I18n = I18nModule
+	local function L(key, ...)
+		if I18n and I18n.t then
+			return I18n.t(key, ...)
+		end
+		return tostring(key)
+	end
 	local UIS = game:GetService("UserInputService")
 	local TS = game:GetService("TweenService")
 
@@ -968,7 +974,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		return P
 	end
 
-	local function MakeCard(page, title, subtitle, order)
+	local function MakeCard(page, title, subtitleKey, order)
+		local subtitle = subtitleKey and L(subtitleKey) or nil
 		local tabCol = pageThemes[page] or ACC
 		local Card = C("Frame", {
 			Size = UDim2.new(1, -2, 0, 0),
@@ -1009,7 +1016,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 
 		if subtitle then
-			C("TextLabel", {
+			local subLbl = C("TextLabel", {
 				Size = UDim2.new(1, 0, 0, 0),
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
@@ -1023,6 +1030,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				ZIndex = 6,
 				Parent = Card,
 			})
+			if subtitleKey and I18n and I18n.registerText then
+				I18n.registerText(subLbl, subtitleKey)
+			end
 		end
 
 		local Body = C("Frame", {
@@ -1052,8 +1062,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 	end
 
-	local function MakeHint(page, text, order)
-		C("TextLabel", {
+	local function MakeHint(page, hintKey, order, argsFn)
+		local text = argsFn and L(hintKey, argsFn()) or L(hintKey)
+		local hintLbl = C("TextLabel", {
 			Size = UDim2.new(1, -8, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
@@ -1067,6 +1078,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			ZIndex = 5,
 			Parent = page,
 		})
+		if hintKey and I18n and I18n.registerText then
+			I18n.registerText(hintLbl, hintKey, argsFn)
+		end
 	end
 
 	local function setToggleVisual(key, enabled)
@@ -1291,7 +1305,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end
 		if #off > 0 then
-			showNotify("Wyłączono: " .. table.concat(off, ", "))
+			showNotify(L("notify_disabled", table.concat(off, ", ")))
 		end
 	end
 
@@ -1302,11 +1316,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		if fromKey == "Silent" and S.Aimbot then
 			S.Aimbot = false
 			setToggleVisual("Aimbot", false)
-			showNotify("Wyłączono: Aimbot")
+			showNotify(L("notify_disabled", "Aimbot"))
 		elseif fromKey == "Aimbot" and S.Silent then
 			S.Silent = false
 			setToggleVisual("Silent", false)
-			showNotify("Wyłączono: Silent Aim")
+			showNotify(L("notify_disabled", "Silent Aim"))
 		end
 	end
 
@@ -1327,13 +1341,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end
 			if #off > 0 then
-				showNotify("Wyłączono Legit: " .. table.concat(off, ", "))
+				showNotify(L("notify_disabled_legit", table.concat(off, ", ")))
 			end
 		elseif fromKey == "Aimbot" or fromKey == "Silent" or fromKey == "Trigger" then
 			if S.MasterRage then
 				S.MasterRage = false
 				setToggleVisual("MasterRage", false)
-				showNotify("Wyłączono: Master Rage")
+				showNotify(L("notify_disabled_master_rage"))
 			end
 		end
 	end
@@ -1855,11 +1869,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
-	local function MakeButton(page, label, order, callback)
+	local function MakeButton(page, label, order, callback, textKey)
+		local text = textKey and L(textKey) or label
 		local Row = C("TextButton", {
 			Size = UDim2.new(1, 0, 0, 34),
 			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
-			Text = label,
+			Text = text,
 			Font = Enum.Font.GothamSemibold,
 			TextSize = 11,
 			TextColor3 = Color3.fromRGB(220, 220, 228),
@@ -1880,6 +1895,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Row.MouseButton1Click:Connect(function()
 			callback()
 		end)
+		if textKey and I18n and I18n.registerText then
+			I18n.registerText(Row, textKey)
+		end
 	end
 
 	local FooterStatus = Footer:FindFirstChild("FooterStatus")
@@ -1922,6 +1940,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			S = S,
 			C = C,
 			Music = MusicModule,
+			I18n = I18n,
 			TweenPlay = TweenPlay,
 		})
 	end
@@ -1935,9 +1954,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local VCore = MakeCard(T1, "ESP", nil, 1)
 	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
-	local VFilter = MakeCard(T1, "FILTERS", "Ukrywanie teammateów i znajomych z ESP.", 2)
+	local VFilter = MakeCard(T1, "FILTERS", "card_vfilter_desc", 2)
 	MakeTog(VFilter, "Hide Teammates", "Team", 1, { flat = true })
-	MakeHint(VFilter, "Ctrl+Click na gracza dodaje znajomego — ukryty jak teammate (Settings).", 2)
+	MakeHint(VFilter, "hint_vfilter", 2)
 
 	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
 	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })
@@ -1953,10 +1972,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VOver, "Health Text", "HealthText", 5, { flat = true })
 	MakeTog(VOver, "Weapon ESP", "Weapon", 6, { flat = true })
 
-	local VColors = MakeCard(T1, "ESP COLORS", "Tryby kolorów — wykluczają się nawzajem.", 5)
+	local VColors = MakeCard(T1, "ESP COLORS", "card_vcolors_desc", 5)
 	MakeTog(VColors, "Team Colors", "RealTeamColor", 1, { flat = true })
 	MakeTog(VColors, "Line of Sight", "LoS", 2, { flat = true })
-	MakeHint(VColors, "Custom kolory (V/O) działają tylko gdy wyłączone: Team Colors, LoS i Chams Rainbow.", 3)
+	MakeHint(VColors, "hint_vcolors", 3)
 	MakeColorPicker(VColors, "Visible Color", "V", 4, { espColor = true })
 	MakeColorPicker(VColors, "Hidden Color", "O", 5, { espColor = true })
 	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 6, {
@@ -1980,7 +1999,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 	updateEspColorControls()
 
-	local VAdv = MakeCard(T1, "ADVANCED", "Rainbow / Team Colors / LoS się wykluczają.", 6)
+	local VAdv = MakeCard(T1, "ADVANCED", "card_vadv_desc", 6)
 	MakeTog(VAdv, "Render Bots", "RenderBots", 1, { flat = true })
 	MakeTog(VAdv, "Skeleton", "Skel", 2, { flat = true })
 	MakeTog(VAdv, "Tracers", "Trace", 3, { flat = true })
@@ -2047,14 +2066,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end,
 	})
 	syncOffscreenTrackerUi()
-	MakeHint(VAdv, "Strzałki na krawędzi ekranu — Enhanced = większe, tło, nick i czytelny dystans.", 10)
+	MakeHint(VAdv, "hint_vadv", 10)
 
-	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 7)
+	local VTrace = MakeCard(T1, "SHOT TRACERS", "card_vtrace_desc", 7)
 	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })
 	MakeTog(VTrace, "Kill Tracer (grubszy + glow)", "KillShotTracers", 2, { flat = true })
-	MakeHint(VTrace, "Linia od crosshaira przez cel (przebija postać). Kill = grubsza czerwona + kula.", 3)
+	MakeHint(VTrace, "hint_vtrace", 3)
 
-	local LAim = MakeCard(T3, "AIMBOT", "Aimbot i Silent się wykluczają.", 1)
+	local LAim = MakeCard(T3, "AIMBOT", "card_laim_desc", 1)
 	MakeTog(LAim, "Aimbot", "Aimbot", 1, { flat = true })
 	MakeTog(LAim, "Silent Aim (flick)", "Silent", 2, {
 		flat = true,
@@ -2066,7 +2085,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	MakeTog(LAim, "Triggerbot", "Trigger", 3, { flat = true })
 
-	local LAimBind = MakeCard(T3, "KEYBINDS", "Kliknij wiersz i naciśnij klawisz lub M1/M2/M3.", 2)
+	local LAimBind = MakeCard(T3, "KEYBINDS", "card_laimbind_desc", 2)
 	MakeBind(LAimBind, "Aimbot Key", "AimKey", 1)
 	MakeBind(LAimBind, "Silent Key", "SilentKey", 2, {
 		onChange = function()
@@ -2086,7 +2105,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(LTrig, "Compatibility Mode", "TriggerCompat", 4, { flat = true })
 	MakeTog(LTrig, "Trigger Status HUD", "ShowTriggerHud", 5, { flat = true })
 	MakeTog(LTrig, "Minimal Trigger HUD", "TriggerHudMinimal", 6, { flat = true })
-	MakeHint(LTrig, "Ten sam FOV i TARGETING co aim/silent. Bez Compatibility = strzela bez ruszania kamery. Compatibility = śledzi + strzela (gry z własnym hitregiem).", 7)
+	MakeHint(LTrig, "hint_ltrig", 7)
 
 	local LTarget = MakeCard(T3, "TARGETING", nil, 4)
 	MakeTog(LTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })
@@ -2104,7 +2123,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		{ label = "Closest", value = "Closest" },
 	}, 5)
 
-	local LFov = MakeCard(T3, "FOV & SMOOTH", "Smooth działa tylko z Aimbot (hold keybind).", 5)
+	local LFov = MakeCard(T3, "FOV & SMOOTH", "card_lfov_desc", 5)
 	MakeTog(LFov, "Show FOV Circle", "ShowFOV", 1, { flat = true })
 	MakeSlider(LFov, "FOV Size", "FOV", 20, 300, 2, { suffix = "px", step = 5 })
 	MakeSlider(LFov, "Smoothing", "Smooth", 0.05, 0.95, 3, {
@@ -2114,10 +2133,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	MakeTog(LFov, "Aim Curve + Jitter", "AimCurve", 4, { flat = true })
 
-	local RMaster = MakeCard(TR, "MASTER", "Wyłącza wszystkie funkcje Legit.", 1)
+	local RMaster = MakeCard(TR, "MASTER", "card_rmaster_desc", 1)
 	MakeTog(RMaster, "Master Rage", "MasterRage", 1, { flat = true })
 
-	local RAA = MakeCard(TR, "ANTI-AIM", "Obrót postaci od kamery + offsety.", 2)
+	local RAA = MakeCard(TR, "ANTI-AIM", "card_raa_desc", 2)
 	MakeTog(RAA, "Anti-Aim", "AntiAim", 1, { flat = true })
 	MakeTog(RAA, "Spin", "AASpin", 2, { flat = true })
 	MakeSlider(RAA, "Spin Speed", "AASpinSpeed", 1, 20, 3, { suffix = "", step = 1 })
@@ -2126,7 +2145,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(RAA, "Yaw Jitter", "AAJitter", 6, { flat = true })
 	MakeSlider(RAA, "Jitter Range", "AAJitterRange", 5, 180, 7, { suffix = "°", step = 5 })
 
-	local RBot = MakeCard(TR, "RAGEBOT", "Bez FOV — strzela gdy hitbox widoczny z kamery.", 3)
+	local RBot = MakeCard(TR, "RAGEBOT", "card_rbot_desc", 3)
 	MakeTog(RBot, "Ragebot", "RageBot", 1, { flat = true })
 	MakeChoice(RBot, "Rage Mode", "RageMode", {
 		{ label = "Hold", value = "Hold" },
@@ -2147,7 +2166,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 	})
 	MakeTog(RBot, "Compatibility Mode", "RageCompat", 9, { flat = true })
-	MakeHint(RBot, "Silent = krótki flick + powrót kamery. Track = lock. Snap = celuj i strzelaj. Compatibility = track + strzał dla gier z własnym hitregiem.", 10)
+	MakeHint(RBot, "hint_rbot", 10)
 
 	local RTarget = MakeCard(TR, "TARGETING", nil, 4)
 	MakeTog(RTarget, "Exclude Teammates & Friends", "ExcludeTeam", 1, { flat = true })
@@ -2161,7 +2180,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	}, 4)
 	MakeSlider(RTarget, "Max Distance", "RageMaxDist", 50, 1500, 5, { suffix = "m", step = 25 })
 
-	local WQuick = MakeCard(TWorld, "QUICK", "Szybkie presety — lokalne, tylko u Ciebie.", 1)
+	local WQuick = MakeCard(TWorld, "QUICK", "card_wquick_desc", 1)
 	MakeTog(WQuick, "FullBright", "FullBright", 1, worldChange)
 	MakeTog(WQuick, "No Fog", "NoFog", 2, worldChange)
 	MakeTog(WQuick, "Lock Time", "WorldTimeLock", 3, worldChange)
@@ -2171,9 +2190,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		fmt = function(v) return string.format("%.1f", v) end,
 		onChange = refreshWorld,
 	})
-	MakeHint(WQuick, "FullBright = bez cieni + jasne Ambient. No Fog = wyłącza mgłę i Atmosphere.", 5)
+	MakeHint(WQuick, "hint_wquick", 5)
 
-	local WLight = MakeCard(TWorld, "LIGHTING", "Jasność, cienie, ambient i ekspozycja.", 2)
+	local WLight = MakeCard(TWorld, "LIGHTING", "card_wlight_desc", 2)
 	MakeTog(WLight, "Custom Lighting", "WorldLight", 1, worldChange)
 	MakeSlider(WLight, "Brightness", "WorldBrightness", 0, 10, 2, { suffix = "", step = 0.1, onChange = refreshWorld })
 	MakeSlider(WLight, "Exposure", "WorldExposure", -3, 3, 3, { suffix = "", step = 0.05, onChange = refreshWorld })
@@ -2181,7 +2200,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeColorPicker(WLight, "Ambient", "WorldAmbient", 5, worldChange)
 	MakeColorPicker(WLight, "Outdoor Ambient", "WorldOutdoorAmbient", 6, worldChange)
 
-	local WFog = MakeCard(TWorld, "FOG & ATMOSPHERE", "Mgła, kolor i gęstość atmosfery.", 3)
+	local WFog = MakeCard(TWorld, "FOG & ATMOSPHERE", "card_wfog_desc", 3)
 	MakeTog(WFog, "Custom Fog", "WorldFog", 1, worldChange)
 	MakeColorPicker(WFog, "Fog Color", "WorldFogColor", 2, worldChange)
 	MakeSlider(WFog, "Fog Start", "WorldFogStart", 0, 1000, 3, { suffix = "m", step = 10, onChange = refreshWorld })
@@ -2202,7 +2221,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		onChange = refreshWorld,
 	})
 
-	local WGrade = MakeCard(TWorld, "COLOR GRADING", "ColorCorrection + ColorShift (jak world mod w CS).", 4)
+	local WGrade = MakeCard(TWorld, "COLOR GRADING", "card_wgrade_desc", 4)
 	MakeTog(WGrade, "Custom Grading", "WorldGrade", 1, worldChange)
 	MakeSlider(WGrade, "CC Brightness", "WorldCCBrightness", -1, 1, 2, { suffix = "", step = 0.01, onChange = refreshWorld })
 	MakeSlider(WGrade, "CC Contrast", "WorldCCContrast", -1, 1, 3, { suffix = "", step = 0.01, onChange = refreshWorld })
@@ -2223,9 +2242,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
 		onChange = refreshWorld,
 	})
-	MakeHint(WGrade, "Quick Tint działa gdy Custom Grading wyłączone. Włącz Grading dla pełnej kontroli.", 11)
+	MakeHint(WGrade, "hint_wgrade", 11)
 
-	local WPost = MakeCard(TWorld, "POST PROCESSING", "Bloom i Sun Rays (jeśli gra ma te efekty).", 5)
+	local WPost = MakeCard(TWorld, "POST PROCESSING", "card_wpost_desc", 5)
 	MakeTog(WPost, "Custom Post FX", "WorldPost", 1, worldChange)
 	MakeSlider(WPost, "Bloom Intensity", "WorldBloom", 0, 3, 2, { suffix = "", step = 0.05, onChange = refreshWorld })
 	MakeSlider(WPost, "Sun Rays", "WorldSunRays", 0, 1, 3, {
@@ -2239,7 +2258,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(WUi, "Menu Blur", "MenuBlur", 1, worldChange)
 	MakeSlider(WUi, "Blur Strength", "MenuBlurSize", 4, 48, 2, { suffix = "px", step = 1, onChange = refreshWorld })
 
-	local APlayback = MakeCard(TAnim, "PLAYBACK", "Speed/weight działają na emote i local FX. Loop = tańce w kółko.", 1)
+	local APlayback = MakeCard(TAnim, "PLAYBACK", "card_aplayback_desc", 1)
 	MakeSlider(APlayback, "Speed", "AnimSpeed", 0.25, 3, 1, {
 		suffix = "x",
 		step = 0.05,
@@ -2256,7 +2275,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	MakeTog(APlayback, "Loop Emotes", "AnimLoop", 3, { flat = true })
 	MakeTog(APlayback, "Prefer /e Chat First", "AnimPreferChat", 4, { flat = true })
-	MakeHint(APlayback, "✦ = inni widzą (replikowane)   ·   ◎ = tylko u Ciebie (local FX). Rig: " .. (AnimationsModule and AnimationsModule.GetRigLabel() or "?") .. ".", 5)
+	MakeHint(APlayback, "hint_aplayback", 5, function()
+		return AnimationsModule and AnimationsModule.GetRigLabel() or "?"
+	end)
 
 	local function MakeAnimRow(page, entry, order, onPlay)
 		local meta = AnimationsModule and AnimationsModule.GetEntryMeta(entry) or { icon = "?", rig = "?", visible = "?" }
@@ -2336,7 +2357,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Row.MouseButton1Click:Connect(onPlay)
 	end
 
-	local AMove = MakeCard(TAnim, "MOVEMENT PACK", "Idle/walk/run/jump — podmiana Animate. Inni widzą nowy styl ruchu.", 2)
+	local AMove = MakeCard(TAnim, "MOVEMENT PACK", "card_amove_desc", 2)
 	if AnimationsModule and AnimationsModule.MOVEMENT then
 		local moveOrder = 1
 		for _, pack in ipairs(AnimationsModule.MOVEMENT) do
@@ -2352,21 +2373,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 				local ok, err = AnimationsModule.ApplyMovement(p)
 				if ok then
-					showNotify("Movement: " .. p.label)
+					showNotify(L("notify_movement", p.label))
 					setFooterStatus("Anim · " .. p.label)
 				else
-					showNotify(err or "Błąd movement pack")
+					showNotify(err or L("notify_movement_err"))
 				end
 			end)
 			moveOrder += 1
 		end
 	end
 
-	local APlay = MakeCard(TAnim, "EMOTES", "Najpierw /e (jeśli gra wspiera), potem asset ID z replikacją.", 3)
+	local APlay = MakeCard(TAnim, "EMOTES", "card_aplay_desc", 3)
 	MakeButton(APlay, "Stop Animation", 1, function()
 		if AnimationsModule then
 			AnimationsModule.Stop()
-			showNotify("Animacja zatrzymana")
+			showNotify(L("notify_anim_stopped"))
 			setFooterStatus("Anim · stopped")
 		end
 	end)
@@ -2380,22 +2401,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 				local ok, err = AnimationsModule.Play(e)
 				if ok then
-					showNotify("Animacja: " .. e.label)
+					showNotify(L("notify_anim", e.label))
 					setFooterStatus("Anim · " .. e.label)
 				else
-					showNotify(err or "Błąd animacji")
+					showNotify(err or L("notify_anim_err"))
 				end
 			end)
 			animOrder += 1
 		end
 	end
-	MakeHint(APlay, "Wave/Point/Laugh = jednorazowe. Wyłącz Loop dla pozostałych emote.", animOrder)
+	MakeHint(APlay, "hint_aplay", animOrder)
 
-	local MMove = MakeCard(TM, "MOVEMENT", "Auto Strafe działa w powietrzu (razem z BHop).", 1)
+	local MMove = MakeCard(TM, "MOVEMENT", "card_mmove_desc", 1)
 	MakeTog(MMove, "Bunny Hop", "BHop", 1, { flat = true })
 	MakeTog(MMove, "Auto Strafe", "AutoStrafe", 2, { flat = true })
 
-	local MHit = MakeCard(TM, "HITBOX EXPANDER", "Niewidoczne hitboxy — nie powiększa modelu postaci.", 2)
+	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })
 	MakeSlider(MHit, "Head Scale", "HeadSizeScale", 1, 6, 2, {
 		suffix = "x",
@@ -2410,14 +2431,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	MakeTog(MHit, "Include Friends / Team", "MiscAffectFriends", 5, { flat = true })
 	MakeTog(MHit, "Apply To Bots", "MiscBots", 6, { flat = true })
-	MakeHint(MHit, "Powiększa hitboxy lokalnie dla aim/trigger (folder VG_Hitboxes). Nie zmienia serwera.", 7)
-	MakeHint(MHit, "Domyślnie pomija teammateów i znajomych (zgodnie z Exclude Team).", 8)
+	MakeHint(MHit, "hint_mhit1", 7)
+	MakeHint(MHit, "hint_mhit2", 8)
 
-	local MSec = MakeCard(TM, "SECURITY", "gethui + protect_gui + losowe nazwy GUI (bez lagujących hooków).", 3)
+	local MSec = MakeCard(TM, "SECURITY", "card_msec_desc", 3)
 	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
-	MakeHint(MSec, "267 = gra wykrywa skrypt/executor. Używaj gethui i nie ładuj 2 cheatów naraz.", 2)
+	MakeHint(MSec, "hint_msec", 2)
 
-	local MFX = MakeCard(TM, "LOCAL FX", "Tylko Ty widzisz — efekty przy hit / kill.", 4)
+	local MFX = MakeCard(TM, "LOCAL FX", "card_mfx_desc", 4)
 	MakeTog(MFX, "Kill Effects", "KillEffects", 1, { flat = true })
 	MakeChoice(MFX, "Kill Style", "KillEffectStyle", {
 		{ label = "Neon", value = "Neon" },
@@ -2439,9 +2460,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		if S.TestKillEffect then
 			local ok, err = S.TestKillEffect()
 			if ok == false then
-				showNotify(err or "Brak celu")
+				showNotify(err or L("notify_no_target"))
 			else
-				showNotify("Kill FX na wrogu w crosshair")
+				showNotify(L("notify_kill_fx"))
 			end
 		end
 	end)
@@ -2449,13 +2470,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		if S.TestHitEffect then
 			local ok, err = S.TestHitEffect()
 			if ok == false then
-				showNotify(err or "Brak celu")
+				showNotify(err or L("notify_no_target"))
 			else
-				showNotify("Hit FX na wrogu w crosshair")
+				showNotify(L("notify_hit_fx"))
 			end
 		end
 	end)
-	MakeHint(MFX, "Hit FX = od razu przy strzale cheata. Kill FX = przy śmierci wroga. Test = cel w crosshair.", 8)
+	MakeHint(MFX, "hint_mfx", 8)
 
 	local SInterface = MakeCard(T2, I18n and I18n.t("set_interface") or "INTERFACE", nil, 1)
 	MakeChoice(SInterface, I18n and I18n.t("set_menu_lang") or "Menu language", "MenuLang", {
@@ -2465,7 +2486,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		onChange = function(val)
 			if I18n then
 				I18n.setLang(val)
-				I18n.refreshTabs()
+				I18n.refreshAll()
+			end
+			if UIMusicModule and UIMusicModule.refreshLang then
+				UIMusicModule.refreshLang()
 			end
 			if StudioSubtitle then
 				StudioSubtitle.Text = I18n and I18n.t("subtitle_studio") or "ESP STUDIO"
@@ -2482,7 +2506,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end,
 	})
 
-	local SFriend = MakeCard(T2, "FRIENDS", "Ctrl + Click na gracza — dodaj / usuń z wykluczeń.", 2)
+	local SFriend = MakeCard(T2, "FRIENDS", "card_sfriend_desc", 2)
 	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })
 
 	local FriendListHost = C("Frame", {
@@ -2506,7 +2530,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			C("TextLabel", {
 				Size = UDim2.new(1, 0, 0, 28),
 				BackgroundTransparency = 1,
-				Text = "Brak znajomych na liście",
+				Text = L("friends_empty"),
 				Font = Enum.Font.Gotham,
 				TextSize = 10,
 				TextColor3 = Color3.fromRGB(95, 95, 105),
@@ -2601,20 +2625,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					end
 				end
 				refreshFriendList()
-				showNotify("Usunięto z listy")
+				showNotify(L("notify_friend_removed"))
 			end)
 		end
 	end
 
-	MakeButton(SFriend, "Wyczyść listę", 3, function()
+	MakeButton(SFriend, nil, 3, function()
 		if TF then
 			TF.clearFriends(S)
 		else
 			S.FriendIds = {}
 		end
 		refreshFriendList()
-		showNotify("Lista znajomych wyczyszczona")
-	end)
+		showNotify(L("notify_friends_cleared"))
+	end, "btn_clear_list")
 	refreshFriendList()
 	if TF then
 		TF.Init(S, ParentGUI, ACC, refreshFriendList)
@@ -2650,23 +2674,23 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeButton(SHud, "Test Hitmarker + Sound", 11, function()
 		if S.TestHitFeedback then
 			S.TestHitFeedback()
-			showNotify("Test hitmarker / dźwięku")
+			showNotify(L("notify_test_hitmarker"))
 		else
-			showNotify("Features nie załadowane")
+			showNotify(L("notify_features_missing"))
 		end
 	end)
-	MakeHint(SHud, "Hitmarker: krzyżyk na środku ekranu po trafieniu (1.5s od strzału). Damage log pokazuje -HP.", 12)
+	MakeHint(SHud, "hint_shud1", 12)
 	MakeTog(SHud, "Damage Log", "DamageLog", 13, { flat = true })
 	MakeTog(SHud, "3D Damage Numbers", "DamageNumbers", 14, { flat = true })
 	MakeTog(SHud, "Watermark", "Watermark", 15, { flat = true })
 	MakeTog(SHud, "Keybind List", "KeybindList", 16, { flat = true })
 	MakeTog(SHud, "Session Stats", "SessionStats", 17, { flat = true })
 	MakeTog(SHud, "Kill Feed", "KillFeed", 18, { flat = true })
-	MakeHint(SHud, "Spectator list pokazuje tylko graczy, którzy faktycznie Cię obserwują (atrybuty / kamera).", 19)
+	MakeHint(SHud, "hint_shud2", 19)
 
 	local refreshConfigList
 	local SettingsAutoloadLbl
-	local SAuto = MakeCard(T2, "AUTOLOAD", "Config ładuje się przy starcie skryptu.", 3)
+	local SAuto = MakeCard(T2, "AUTOLOAD", "card_sauto_desc", 3)
 
 	SettingsAutoloadLbl = C("TextLabel", {
 		Size = UDim2.new(1, -8, 0, 0),
@@ -2682,34 +2706,34 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ZIndex = 6,
 		Parent = SAuto,
 	})
-	MakeButton(SAuto, "Załaduj autoload teraz", 2, function()
+	MakeButton(SAuto, nil, 2, function()
 		if not ConfigModule then
-			showNotify("Brak modułu config")
+			showNotify(L("notify_no_config"))
 			return
 		end
 		local ok, msg = ConfigModule.Autoload(S)
 		if ok then
 			refreshAllControls()
-			showNotify("Autoload: " .. tostring(msg))
+			showNotify(L("notify_autoload", tostring(msg)))
 			setFooterStatus("Autoload · " .. tostring(msg))
 			refreshConfigList()
 			if SettingsAutoloadLbl then
 				SettingsAutoloadLbl.Text = "Autoload: " .. tostring(msg)
 			end
 		else
-			showNotify("Brak autoload lub błąd wczytywania")
+			showNotify(L("notify_autoload_fail"))
 		end
-	end)
+	end, "btn_autoload_now")
 
-	local SSession = MakeCard(T2, "SESSION", "Zarządzanie skryptem.", 6)
+	local SSession = MakeCard(T2, "SESSION", "card_ssession_desc", 6)
 	MakeButton(SSession, "Unload Vanguard", 1, function()
 		if S.Unload then
-			showNotify("Vanguard wyładowany — możesz reinject")
+			showNotify(L("notify_unloaded"))
 			task.delay(0.15, function()
 				pcall(S.Unload)
 			end)
 		else
-			showNotify("Unload niedostępny")
+			showNotify(L("notify_unload_unavail"))
 		end
 	end)
 	MakeTog(SSession, "Transfer Script", "TransferScript", 2, {
@@ -2725,36 +2749,36 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end
 			if enabled then
-				showNotify("Transfer ON — działa tylko z queue_on_teleport executora")
+				showNotify(L("notify_transfer_on"))
 			else
-				showNotify("Transfer wyłączony — kolejka wyczyszczona")
+				showNotify(L("notify_transfer_off"))
 			end
 		end,
 	})
-	MakeHint(SSession, "Transfer: wymaga queue_on_teleport. Blokuje inne gry (GameId). Teleport w grze = autoload. Inject ręczny = bez autoload przy wyjściu.", 3)
+	MakeHint(SSession, "hint_ssession1", 3)
 	MakeButton(SSession, "Rejoin Game", 4, function()
-		showNotify("Rejoin...")
+		showNotify(L("notify_rejoin"))
 		if S.RejoinGame then
 			local ok, err = S.RejoinGame()
 			if not ok then
-				showNotify(err or "Błąd rejoin")
+				showNotify(err or L("notify_rejoin_err"))
 			end
 		else
-			showNotify("Rejoin niedostępny")
+			showNotify(L("notify_rejoin_unavail"))
 		end
 	end)
 	MakeButton(SSession, "Server Hop", 5, function()
-		showNotify("Szukam serwera...")
+		showNotify(L("notify_searching_server"))
 		if S.ServerHop then
 			local ok, err = S.ServerHop()
 			if not ok then
-				showNotify(err or "Błąd server hop")
+				showNotify(err or L("notify_hop_err"))
 			end
 		else
-			showNotify("Server hop niedostępny")
+			showNotify(L("notify_hop_unavail"))
 		end
 	end)
-	MakeHint(SSession, "Unload usuwa menu, HUD i hooki. Po reinject menu załaduje się od nowa.", 6)
+	MakeHint(SSession, "hint_ssession2", 6)
 
 	refreshConfigList = UIConfigMenus.build({
 		T4 = T4,

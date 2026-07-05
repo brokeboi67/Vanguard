@@ -2,6 +2,8 @@
 
 local UIMusic = {}
 
+local langRefs = {}
+
 local SPOTIFY = Color3.fromRGB(29, 185, 84)
 local BG = Color3.fromRGB(12, 12, 14)
 local BG2 = Color3.fromRGB(18, 18, 22)
@@ -157,11 +159,11 @@ function UIMusic.build(env)
 		if NowTitle then
 			if state.playing or state.paused or state.hasTrack then
 				NowTitle.Text = state.title ~= "" and state.title or "—"
-				NowArtist.Text = state.paused and "Pauza"
+				NowArtist.Text = state.paused and L("music_pause")
 					or (state.artist ~= "" and state.artist or "Audius")
 			elseif state.loading then
-				NowTitle.Text = state.title ~= "" and state.title or "Ładowanie..."
-				NowArtist.Text = "Pobieranie utworu..."
+				NowTitle.Text = state.title ~= "" and state.title or L("music_loading")
+				NowArtist.Text = L("music_downloading")
 			else
 				NowTitle.Text = L("music_pick_track")
 				local src = Music and Music.GetSource and Music.GetSource() or "auto"
@@ -357,43 +359,47 @@ function UIMusic.build(env)
 		end
 	end
 
+	local searchPending = false
+
 	local function setSource(src)
 		if Music and Music.SetSource then
 			Music.SetSource(src)
 		end
 		refreshSourceButtons()
 		local labels = {
-			auto = "Auto (Audius + YT podgląd)",
-			audius = "Audius · odtwarza",
-			youtube = "YouTube · tylko szukaj",
-			archive = "Archive.org",
+			auto = L("music_src_auto"),
+			audius = L("music_src_audius"),
+			youtube = L("music_src_youtube"),
+			archive = L("music_src_archive"),
 		}
-		setSearchStatus("Źródło: " .. (labels[src] or labels.auto))
+		setSearchStatus(L("music_status_source", labels[src] or labels.auto))
 	end
 
 	local function runSearch(query)
 		if not Music then
 			warn("[Vanguard Music] Music module nil — UI bez backendu")
-			setSearchStatus("Błąd: brak modułu Music")
+			setSearchStatus(L("music_no_module"))
 			return
 		end
 		query = query or (SearchBox and SearchBox.Text) or ""
 		searchToken += 1
 		local token = searchToken
-		setSearchStatus("Szukam...")
+		searchPending = true
+		setSearchStatus(L("music_searching"))
 		clearResults()
 
 		task.delay(15, function()
 			if token ~= searchToken then
 				return
 			end
-			if SearchStatus and SearchStatus.Text == "Szukam..." then
-				setSearchStatus("Timeout — szczegóły w konsoli (F9)")
+			if searchPending then
+				setSearchStatus(L("music_search_timeout"))
 				warn("[Vanguard Music] UI timeout — callback wyszukiwania nie wrócił w 15s")
 			end
 		end)
 
 		Music.Search(query, function(results, err)
+			searchPending = false
 			if token ~= searchToken then
 				return
 			end
@@ -403,7 +409,7 @@ function UIMusic.build(env)
 				showNotify(err, { type = "error" })
 				return
 			end
-			setSearchStatus(#results .. " wyników" .. (err and (" · " .. err) or ""))
+			setSearchStatus(L("music_results", #results, err and (" · " .. err) or ""))
 			lastSearchResults = results
 			for i, item in ipairs(results) do
 				addResultRow(item, i)
@@ -447,7 +453,7 @@ function UIMusic.build(env)
 		Position = UDim2.new(0, 12, 0, 4),
 		BackgroundTransparency = 1,
 		Text = S.MusicLastQuery or "",
-		PlaceholderText = "Szukaj na Archive.org...",
+		PlaceholderText = L("music_search_ph"),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
 		TextColor3 = TXT,
@@ -462,7 +468,7 @@ function UIMusic.build(env)
 		Size = UDim2.new(0, 56, 0, 26),
 		Position = UDim2.new(1, -64, 0.5, -13),
 		BackgroundColor3 = SPOTIFY,
-		Text = "Szukaj",
+		Text = L("music_search_btn"),
 		Font = Enum.Font.GothamBold,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(8, 8, 10),
@@ -521,7 +527,7 @@ function UIMusic.build(env)
 	SearchStatus = C("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 12),
 		BackgroundTransparency = 1,
-		Text = "Auto — szuka YT+Audius, odtwarza z Audius",
+		Text = L("music_status_auto"),
 		Font = Enum.Font.Gotham,
 		TextSize = 9,
 		TextColor3 = MUT,
@@ -709,7 +715,7 @@ function UIMusic.build(env)
 	NowTitle = C("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 16),
 		BackgroundTransparency = 1,
-		Text = "Wybierz utwór",
+		Text = L("music_pick_track"),
 		Font = Enum.Font.GothamBold,
 		TextSize = 12,
 		TextColor3 = TXT,
@@ -722,7 +728,7 @@ function UIMusic.build(env)
 		Size = UDim2.new(1, 0, 0, 14),
 		Position = UDim2.new(0, 0, 0, 18),
 		BackgroundTransparency = 1,
-		Text = "Archive.org · tylko Ty słyszysz",
+		Text = "Archive.org · " .. L("music_only_you"),
 		Font = Enum.Font.Gotham,
 		TextSize = 10,
 		TextColor3 = MUT,
@@ -895,7 +901,7 @@ function UIMusic.build(env)
 	})
 	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = QueueSection })
 
-	C("TextLabel", {
+	local QueueLabel = C("TextLabel", {
 		Size = UDim2.new(1, -60, 0, 14),
 		BackgroundTransparency = 1,
 		Text = L("music_queue_label"),
@@ -1036,13 +1042,48 @@ function UIMusic.build(env)
 		end
 	end
 
+	if I18n and I18n.registerText then
+		I18n.registerText(SearchBox, "music_search_ph", nil, "PlaceholderText")
+		I18n.registerText(SearchBtn, "music_search_btn")
+		I18n.registerText(QueueLabel, "music_queue_label")
+		I18n.registerText(ClearQueueBtn, "music_clear_queue")
+	end
+
+	langRefs.I18n = I18n
+	langRefs.Music = Music
+	langRefs.setSource = setSource
+	langRefs.refreshNowPlaying = refreshNowPlaying
+
 	refreshNowPlaying()
+end
+
+function UIMusic.refreshLang()
+	local r = langRefs
+	if not r.I18n then
+		return
+	end
+	if r.Music and r.setSource then
+		r.setSource(r.Music.GetSource and r.Music.GetSource() or "auto")
+	end
+	if r.refreshNowPlaying then
+		r.refreshNowPlaying(r.Music and r.Music.GetState and r.Music.GetState() or {})
+	end
+	if UIMusic._refreshWidget and r.Music then
+		UIMusic._refreshWidget(r.Music.GetState and r.Music.GetState() or {})
+	end
 end
 
 function UIMusic.buildWidget(env)
 	local S = env.S
 	local C = env.C
 	local Music = env.Music
+	local I18n = env.I18n
+	local L = function(key, ...)
+		if I18n and I18n.t then
+			return I18n.t(key, ...)
+		end
+		return tostring(key)
+	end
 	local ParentGUI = env.ParentGUI
 	local TweenPlay = env.TweenPlay
 	local TS = game:GetService("TweenService")
@@ -1329,9 +1370,9 @@ function UIMusic.buildWidget(env)
 		local wasHidden = not widgetVisible
 		showWidget(wasHidden)
 
-		TitleLbl.Text = state.title ~= "" and state.title or (state.loading and "Ładowanie..." or "—")
-		ArtistLbl.Text = state.paused and "Pauza"
-			or (state.loading and "Pobieranie utworu..."
+		TitleLbl.Text = state.title ~= "" and state.title or (state.loading and L("music_loading") or "—")
+		ArtistLbl.Text = state.paused and L("music_pause")
+			or (state.loading and L("music_downloading")
 				or (state.artist ~= "" and state.artist or "Audius"))
 
 		local initial = string.sub(state.title or "?", 1, 1):upper()
