@@ -59,6 +59,47 @@ function Music.Init(S)
 		}
 	end
 
+	local function findQueueIndexForItem(item)
+		if not item or #queue == 0 then
+			return 0
+		end
+		local id = item.identifier
+		if id then
+			for i, q in ipairs(queue) do
+				if q.identifier == id then
+					return i
+				end
+			end
+		end
+		local title = (item.title or ""):lower():gsub("%s+", " ")
+		if title == "" then
+			return 0
+		end
+		for i, q in ipairs(queue) do
+			local qt = (q.title or ""):lower():gsub("%s+", " ")
+			if qt == title then
+				return i
+			end
+			if #title >= 4 and (qt:find(title, 1, true) or title:find(qt, 1, true)) then
+				return i
+			end
+		end
+		return 0
+	end
+
+	local function resolveCurrentQueueIndex()
+		if nowPlaying and nowPlaying.queueSlot and nowPlaying.queueSlot > 0 then
+			return nowPlaying.queueSlot
+		end
+		if queueIndex > 0 and queueIndex <= #queue then
+			return queueIndex
+		end
+		if nowPlaying then
+			return findQueueIndexForItem(nowPlaying)
+		end
+		return 0
+	end
+
 	local function logInfo(...)
 		print("[Vanguard Music]", ...)
 	end
@@ -1165,16 +1206,28 @@ function Music.Init(S)
 			return
 		end
 		trackEnding = true
-		if S.MusicAutoQueue ~= false and queueIndex > 0 and queueIndex < #queue then
-			queueIndex += 1
-			local nextItem = queue[queueIndex]
-			logInfo("Auto-next:", queueIndex, "/", #queue, nextItem and nextItem.title or "?")
+
+		local curIdx = resolveCurrentQueueIndex()
+		if S.MusicAutoQueue ~= false and #queue > 0 and curIdx > 0 and curIdx < #queue then
+			local nextIdx = curIdx + 1
+			queueIndex = nextIdx
+			local nextItem = queue[nextIdx]
+			logInfo("Auto-next:", nextIdx, "/", #queue, nextItem and nextItem.title or "?")
 			trackEnding = false
-			if nextItem and playFromQueue then
-				playFromQueue(nextItem, { keepQueue = true })
-			end
+			task.defer(function()
+				if nextItem and playFromQueue then
+					playFromQueue(nextItem, { keepQueue = true, queueIndex = nextIdx })
+				else
+					logErr("Auto-next fail — brak playFromQueue")
+				end
+			end)
 			return
 		end
+
+		if S.MusicAutoQueue ~= false and #queue > 0 and curIdx <= 0 then
+			logInfo("Auto-next pominięty — utwór spoza kolejki (queueIndex=0)")
+		end
+
 		playGen += 1
 		disconnectProgress()
 		destroyAllMusicSounds()
@@ -1441,6 +1494,7 @@ function Music.Init(S)
 
 	function Music.GetState()
 		local pos, dur = getPlaybackPosition()
+		local qIdx = resolveCurrentQueueIndex()
 		return {
 			loading = loading or resuming,
 			playing = currentSound ~= nil and not paused,
@@ -1453,10 +1507,10 @@ function Music.Init(S)
 			volume = S.MusicVolume or 0.65,
 			error = lastError,
 			hasTrack = nowPlaying ~= nil or (paused and pausedSession ~= nil),
-			queueIndex = queueIndex,
+			queueIndex = qIdx,
 			queueCount = #queue,
-			hasNext = queueIndex > 0 and queueIndex < #queue,
-			hasPrev = queueIndex > 1,
+			hasNext = qIdx > 0 and qIdx < #queue,
+			hasPrev = qIdx > 1,
 		}
 	end
 
@@ -1536,11 +1590,15 @@ function Music.Init(S)
 	end
 
 	function Music.PlayNext()
-		if loading or resuming or queueIndex >= #queue then
+		if loading or resuming then
 			return false
 		end
-		queueIndex += 1
-		Music.Play(queue[queueIndex], { keepQueue = true })
+		local curIdx = resolveCurrentQueueIndex()
+		if curIdx >= #queue then
+			return false
+		end
+		queueIndex = curIdx + 1
+		Music.Play(queue[queueIndex], { keepQueue = true, queueIndex = queueIndex })
 		return true
 	end
 
@@ -1666,6 +1724,10 @@ function Music.Init(S)
 	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen)
 		currentSound = sound
 		lastError = nil
+		local idx = findQueueIndexForItem(item)
+		if idx > 0 then
+			queueIndex = idx
+		end
 		nowPlaying = {
 			identifier = item.identifier,
 			title = item.title or item.identifier,
@@ -1674,6 +1736,7 @@ function Music.Init(S)
 			soundId = soundId,
 			cachePath = cachePath,
 			source = item.source,
+			queueSlot = idx > 0 and idx or nil,
 		}
 		loading = false
 		paused = false
@@ -1983,20 +2046,14 @@ function Music.Init(S)
 		if not item or not item.identifier then
 			return false, "Brak utworu"
 		end
-		if not opts.keepQueue then
-			queueIndex = 0
-			for i, q in ipairs(queue) do
-				if q.identifier == item.identifier then
-					queueIndex = i
-					break
-				end
-			end
+		if opts.queueIndex then
+			queueIndex = math.clamp(math.floor(opts.queueIndex), 1, math.max(1, #queue))
 		else
-			for i, q in ipairs(queue) do
-				if q.identifier == item.identifier then
-					queueIndex = i
-					break
-				end
+			local idx = findQueueIndexForItem(item)
+			if idx > 0 then
+				queueIndex = idx
+			elseif not opts.keepQueue then
+				queueIndex = 0
 			end
 		end
 		playGen += 1
@@ -2098,30 +2155,7 @@ function Music.Init(S)
 						if waitForSoundLoad(sound, 12, myGen) and not stale() then
 							local playOk = startPlayback(sound)
 							if playOk and not stale() then
-								currentSound = sound
-								lastError = nil
-								nowPlaying = {
-									identifier = item.identifier,
-									title = item.title or item.identifier,
-									creator = item.creator or "",
-									file = cand.name,
-									soundId = soundId,
-									cachePath = cachePath,
-								}
-								loading = false
-								paused = false
-								softPaused = false
-								pausedSession = nil
-								playPosOffset = 0
-								pausePosSnapshot = 0
-								playClockStart = os.clock()
-								cachedDuration = sound.TimeLength
-								logInfo("Play OK:", nowPlaying.title, "→", cand.name)
-
-								attachProgress(sound)
-
-								notifyState()
-								task.defer(notifyState)
+								applySuccessfulPlay(sound, soundId, cachePath, item, cand.name, myGen)
 								return
 							end
 						end
