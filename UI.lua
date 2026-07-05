@@ -755,12 +755,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = ParentGUI,
 	})
 
-	local ColorPickerPanel = C("Frame", {
+	local ColorPickerPanel = C("TextButton", {
 		Name = "ColorPickerPanel",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.new(0.5, 0, 0.5, 0),
 		Size = UDim2.new(0, 248, 0, 292),
 		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+		Text = "",
+		AutoButtonColor = false,
 		BorderSizePixel = 0,
 		ZIndex = 201,
 		Parent = ColorPickerOverlay,

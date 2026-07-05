@@ -1,7 +1,26 @@
 local repo = "https://raw.githubusercontent.com/ihatelgbt2-art/Test/main/"
 
 local function Get(file)
-	return loadstring(game:HttpGet(repo .. file))()
+	local src = game:HttpGet(repo .. file, true)
+	if not src or src == "" then
+		error("[Vanguard] HttpGet failed: " .. file, 2)
+	end
+	local compile = loadstring or load
+	if not compile then
+		error("[Vanguard] Executor missing loadstring/load", 2)
+	end
+	local fn, err = compile(src)
+	if not fn then
+		error("[Vanguard] Compile " .. file .. ": " .. tostring(err), 2)
+	end
+	local ok, res = pcall(fn)
+	if not ok then
+		error("[Vanguard] Run " .. file .. ": " .. tostring(res), 2)
+	end
+	if res == nil then
+		error("[Vanguard] Module returned nil: " .. file, 2)
+	end
+	return res
 end
 
 local isTransferLoad = _G.VG_FROM_TRANSFER == true
