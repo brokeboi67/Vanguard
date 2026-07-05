@@ -332,7 +332,11 @@ function Music.Init(S)
 				s -= 80
 			end
 			if title:find("lyrics") or title:find("multitrack") or title:find("cover") then
-				s += 10
+				if title:find("multitrack") then
+					s -= 90
+				else
+					s += 10
+				end
 			end
 
 			s += math.min((item.downloads or 0) / 2000, 15)
@@ -380,6 +384,45 @@ function Music.Init(S)
 			end
 		end
 		return out
+	end
+
+	local AUDIUS_API = "https://discoveryprovider.audius.co"
+
+	local function normalizeAudiusTrack(track)
+		local user = track.user
+		local creator = "Audius"
+		if user then
+			creator = tostring(user.name or user.handle or creator)
+		end
+		return {
+			identifier = "audius:" .. tostring(track.id or "?"),
+			audiusId = track.id,
+			title = tostring(track.title or track.id or "?"),
+			creator = creator,
+			downloads = tonumber(track.play_count) or 0,
+			source = "audius",
+			streamUrl = track.stream and track.stream.url,
+		}
+	end
+
+	local function searchAudius(query)
+		local url = AUDIUS_API .. "/v1/tracks/search?query=" .. urlEncode(query) .. "&app_name=Vanguard"
+		logInfo("Audius GET", url)
+		local body, httpErr = httpGet(url)
+		if not body then
+			return nil, httpErr or "Audius nie odpowiada"
+		end
+		local data, parseErr = decodeJson(body)
+		if not data or not data.data then
+			return nil, parseErr or "Błąd odpowiedzi Audius"
+		end
+		local results = {}
+		for _, track in ipairs(data.data) do
+			if track.is_streamable ~= false and track.stream and track.stream.url then
+				table.insert(results, normalizeAudiusTrack(track))
+			end
+		end
+		return results
 	end
 
 	local function validateAudioBody(body, fileName)
@@ -1001,6 +1044,70 @@ function Music.Init(S)
 		notifyState()
 	end
 
+		return out
+	end
+
+	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen)
+		currentSound = sound
+		lastError = nil
+		nowPlaying = {
+			identifier = item.identifier,
+			title = item.title or item.identifier,
+			creator = item.creator or "",
+			file = fileLabel,
+			soundId = soundId,
+			cachePath = cachePath,
+			source = item.source,
+		}
+		loading = false
+		paused = false
+		softPaused = false
+		pausedSession = nil
+		playPosOffset = 0
+		pausePosSnapshot = 0
+		playClockStart = os.clock()
+		cachedDuration = sound.TimeLength
+		logInfo("Play OK:", nowPlaying.title, "→", fileLabel)
+		attachProgress(sound)
+		notifyState()
+		task.defer(notifyState)
+	end
+
+	local function tryPlayAsset(assetRef, cachePath, item, fileLabel, myGen, stale)
+		local soundId = toSoundId(assetRef)
+		if not soundId then
+			return false, "Nieprawidłowy asset ID"
+		end
+		local sound = Instance.new("Sound")
+		sound.Name = "VanguardMusic"
+		sound.SoundId = soundId
+		sound.Volume = S.MusicVolume or 0.65
+		sound.Looped = S.MusicLoop == true
+		sound.Parent = SoundService
+		if waitForSoundLoad(sound, 12, myGen) and not stale() then
+			if startPlayback(sound) and not stale() then
+				applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen)
+				return true
+			end
+		end
+		killSound(sound)
+		return false, "Roblox odrzucił format: " .. fileLabel
+	end
+
+	function Music.GetSource()
+		local src = tostring(S.MusicSource or "audius"):lower()
+		if src ~= "archive" then
+			return "audius"
+		end
+		return "archive"
+	end
+
+	function Music.SetSource(src)
+		src = tostring(src or ""):lower()
+		S.MusicSource = src == "archive" and "archive" or "audius"
+		notifyState()
+	end
+
 	function Music.Search(query, callback)
 		query = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		if query == "" then
@@ -1031,6 +1138,25 @@ function Music.Init(S)
 			end
 
 			local ok, err = pcall(function()
+				local source = Music.GetSource()
+				logInfo("Search source:", source)
+
+				if source == "audius" then
+					local results, audErr = searchAudius(query)
+					if not results then
+						finish({}, audErr or "Audius niedostępny")
+						return
+					end
+					for _, preset in ipairs(filterPresets(query)) do
+						preset.source = "archive"
+						table.insert(results, 1, preset)
+					end
+					rankSearchResults(query, results)
+					results = filterSearchResults(query, results)
+					finish(results, #results == 0 and "Brak wyników na Audius" or nil)
+					return
+				end
+
 				local urls = buildSearchUrls(query)
 				local results = {}
 				local seen = {}
@@ -1112,6 +1238,37 @@ function Music.Init(S)
 
 			logInfo("Play start:", item.identifier, item.title or "?")
 			if stale() then
+				return
+			end
+
+			if item.source == "audius" and item.streamUrl then
+				local cacheKey = safeFileName("audius_" .. tostring(item.audiusId or item.identifier) .. ".mp3")
+				local assetRef, cachePath, aerr = assetFromDownload(item.streamUrl, cacheKey, false)
+				if stale() then
+					return
+				end
+				if assetRef then
+					local okPlay, playErr = tryPlayAsset(assetRef, cachePath, item, cacheKey, myGen, stale)
+					if okPlay then
+						return
+					end
+					if cachePath then
+						deleteCache(cachePath)
+					end
+					loading = false
+					lastError = playErr
+					if Music.onPlayError then
+						pcall(Music.onPlayError, playErr)
+					end
+					notifyState()
+					return
+				end
+				loading = false
+				lastError = aerr or "Nie pobrano z Audius"
+				if Music.onPlayError then
+					pcall(Music.onPlayError, lastError)
+				end
+				notifyState()
 				return
 			end
 

@@ -37,6 +37,8 @@ function UIMusic.build(env)
 	local ResultsHost
 	local SearchBox
 	local SearchStatus
+	local SourceAudiusBtn
+	local SourceArchiveBtn
 	local ArtFrame
 	local searchToken = 0
 
@@ -52,13 +54,15 @@ function UIMusic.build(env)
 			if state.playing or state.paused or state.hasTrack then
 				NowTitle.Text = state.title ~= "" and state.title or "—"
 				NowArtist.Text = state.paused and "Pauza"
-					or (state.artist ~= "" and state.artist or "Internet Archive")
+					or (state.artist ~= "" and state.artist or "Audius")
 			elseif state.loading then
 				NowTitle.Text = state.title ~= "" and state.title or "Ładowanie..."
-				NowArtist.Text = "Pobieranie z Archive..."
+				NowArtist.Text = "Pobieranie utworu..."
 			else
 				NowTitle.Text = "Wybierz utwór"
-				NowArtist.Text = state.error or "Archive.org · tylko Ty słyszysz"
+				local src = Music and Music.GetSource and Music.GetSource() or "audius"
+				local srcLabel = src == "archive" and "Archive.org" or "Audius"
+				NowArtist.Text = state.error or (srcLabel .. " · tylko Ty słyszysz")
 			end
 		end
 		if PlayIcon and PauseIcon then
@@ -183,6 +187,27 @@ function UIMusic.build(env)
 			Music.Play(item)
 			setFooterStatus("♪ " .. (item.title or "?"))
 		end)
+	end
+
+	local function refreshSourceButtons()
+		local src = Music and Music.GetSource and Music.GetSource() or "audius"
+		if SourceAudiusBtn then
+			SourceAudiusBtn.BackgroundColor3 = src == "audius" and SPOTIFY or BG2
+			SourceAudiusBtn.TextColor3 = src == "audius" and Color3.fromRGB(8, 8, 10) or MUT
+		end
+		if SourceArchiveBtn then
+			SourceArchiveBtn.BackgroundColor3 = src == "archive" and SPOTIFY or BG2
+			SourceArchiveBtn.TextColor3 = src == "archive" and Color3.fromRGB(8, 8, 10) or MUT
+		end
+	end
+
+	local function setSource(src)
+		if Music and Music.SetSource then
+			Music.SetSource(src)
+		end
+		refreshSourceButtons()
+		local label = src == "archive" and "Archive.org" or "Audius"
+		setSearchStatus("Źródło: " .. label)
 	end
 
 	local function runSearch(query)
@@ -334,7 +359,7 @@ function UIMusic.build(env)
 	SearchStatus = C("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 12),
 		BackgroundTransparency = 1,
-		Text = "Wpisz frazę lub wybierz tag",
+		Text = "Audius — pełne utwory · Archive — stems/multitrack",
 		Font = Enum.Font.Gotham,
 		TextSize = 9,
 		TextColor3 = MUT,
@@ -343,6 +368,60 @@ function UIMusic.build(env)
 		ZIndex = 6,
 		Parent = Root,
 	})
+
+	local SourceRow = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 26),
+		BackgroundTransparency = 1,
+		LayoutOrder = 4,
+		ZIndex = 6,
+		Parent = Root,
+	})
+	C("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = SourceRow,
+	})
+
+	SourceAudiusBtn = C("TextButton", {
+		Size = UDim2.new(0, 0, 0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = BG2,
+		Text = "  Audius  ",
+		Font = Enum.Font.GothamBold,
+		TextSize = 9,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		LayoutOrder = 1,
+		ZIndex = 7,
+		Parent = SourceRow,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceAudiusBtn })
+
+	SourceArchiveBtn = C("TextButton", {
+		Size = UDim2.new(0, 0, 0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = BG2,
+		Text = "  Archive  ",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
+		ZIndex = 7,
+		Parent = SourceRow,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceArchiveBtn })
+
+	SourceAudiusBtn.MouseButton1Click:Connect(function()
+		setSource("audius")
+	end)
+	SourceArchiveBtn.MouseButton1Click:Connect(function()
+		setSource("archive")
+	end)
+	refreshSourceButtons()
 
 	local ResultsScroll = C("ScrollingFrame", {
 		Size = UDim2.new(1, 0, 0, 200),
@@ -353,7 +432,7 @@ function UIMusic.build(env)
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		BorderSizePixel = 0,
-		LayoutOrder = 4,
+		LayoutOrder = 5,
 		ZIndex = 6,
 		Parent = Root,
 	})
@@ -378,7 +457,7 @@ function UIMusic.build(env)
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = BG2,
 		BorderSizePixel = 0,
-		LayoutOrder = 5,
+		LayoutOrder = 6,
 		ZIndex = 6,
 		Parent = Root,
 	})
