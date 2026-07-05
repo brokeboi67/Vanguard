@@ -1553,7 +1553,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		bindRegistry[key] = KeyLbl
 	end
 
-	local function MakeColorPicker(page, label, key, order)
+	local function MakeColorPicker(page, label, key, order, opts)
+		opts = opts or {}
 		local host = C("Frame", {
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
@@ -1610,6 +1611,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			S[key] = Color3.fromRGB(r, g, b)
 			Swatch.BackgroundColor3 = S[key]
 			UpdPreview()
+			if opts.onChange then
+				pcall(opts.onChange, S[key])
+			end
 		end
 
 		local function addChannel(ch, channelKey, layoutOrder)
@@ -1838,6 +1842,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			local p = (val - min) / (max - min)
 			Fill.Size = UDim2.new(p, 0, 1, 0)
 			Knob.Position = UDim2.new(p, 0, 0.5, 0)
+			if opts.onChange then
+				pcall(opts.onChange, val)
+			end
 		end
 
 		local function fromInput(x)
@@ -1913,8 +1920,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local TWorld = MakeTab("World", false, false, 5)
 	local T2 = MakeTab("Settings", false, false, 6)
 	local TM = MakeTab("Misc", false, false, 7)
-	local T4 = MakeTab("Config", false, false, 8)
-	local TMenu = MakeTab("Menus", false, false, 9)
+	local TMenu = MakeTab("Menus", false, false, 8)
+	local T4 = MakeTab("Config", false, false, 9)
+
+	local function refreshWorld()
+		if WorldModule and WorldModule.OnSettingChanged then
+			pcall(WorldModule.OnSettingChanged)
+		end
+	end
+	local worldChange = { onChange = refreshWorld }
 
 	local VCore = MakeCard(T1, "ESP", nil, 1)
 	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
@@ -2082,33 +2096,83 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	}, 4)
 	MakeSlider(RTarget, "Max Distance", "RageMaxDist", 50, 1500, 5, { suffix = "m", step = 25 })
 
-	local WEnv = MakeCard(TWorld, "ENVIRONMENT", "Zmiany tylko u Ciebie (lokalne).", 1)
-	MakeTog(WEnv, "FullBright", "FullBright", 1, { flat = true })
-	MakeTog(WEnv, "No Fog", "NoFog", 2, { flat = true })
-	MakeTog(WEnv, "Lock Time", "WorldTimeLock", 3, { flat = true })
-	MakeSlider(WEnv, "Clock Time", "WorldTime", 0, 24, 4, {
+	local WQuick = MakeCard(TWorld, "QUICK", "Szybkie presety — lokalne, tylko u Ciebie.", 1)
+	MakeTog(WQuick, "FullBright", "FullBright", 1, worldChange)
+	MakeTog(WQuick, "No Fog", "NoFog", 2, worldChange)
+	MakeTog(WQuick, "Lock Time", "WorldTimeLock", 3, worldChange)
+	MakeSlider(WQuick, "Clock Time", "WorldTime", 0, 24, 4, {
 		suffix = "h",
 		step = 0.25,
 		fmt = function(v) return string.format("%.1f", v) end,
+		onChange = refreshWorld,
 	})
-	MakeHint(WEnv, "FullBright wyłącza cienie i podbija Ambient. No Fog czyści Atmosphere.", 5)
+	MakeHint(WQuick, "FullBright = bez cieni + jasne Ambient. No Fog = wyłącza mgłę i Atmosphere.", 5)
 
-	local WLight = MakeCard(TWorld, "CUSTOM LIGHT", "Kolor otoczenia (ColorShift).", 2)
-	MakeTog(WLight, "Custom Tint", "WorldCustomLight", 1, { flat = true })
-	MakeSlider(WLight, "Tint Hue", "WorldColorHue", 0, 1, 2, {
-		suffix = "",
-		step = 0.01,
-		fmt = function(v) return math.floor(v * 360) .. "°" end,
-	})
-	MakeSlider(WLight, "Tint Saturation", "WorldColorSat", 0, 1, 3, {
+	local WLight = MakeCard(TWorld, "LIGHTING", "Jasność, cienie, ambient i ekspozycja.", 2)
+	MakeTog(WLight, "Custom Lighting", "WorldLight", 1, worldChange)
+	MakeSlider(WLight, "Brightness", "WorldBrightness", 0, 10, 2, { suffix = "", step = 0.1, onChange = refreshWorld })
+	MakeSlider(WLight, "Exposure", "WorldExposure", -3, 3, 3, { suffix = "", step = 0.05, onChange = refreshWorld })
+	MakeTog(WLight, "Global Shadows", "WorldShadows", 4, worldChange)
+	MakeColorPicker(WLight, "Ambient", "WorldAmbient", 5, worldChange)
+	MakeColorPicker(WLight, "Outdoor Ambient", "WorldOutdoorAmbient", 6, worldChange)
+
+	local WFog = MakeCard(TWorld, "FOG & ATMOSPHERE", "Mgła, kolor i gęstość atmosfery.", 3)
+	MakeTog(WFog, "Custom Fog", "WorldFog", 1, worldChange)
+	MakeColorPicker(WFog, "Fog Color", "WorldFogColor", 2, worldChange)
+	MakeSlider(WFog, "Fog Start", "WorldFogStart", 0, 1000, 3, { suffix = "m", step = 10, onChange = refreshWorld })
+	MakeSlider(WFog, "Fog End", "WorldFogEnd", 100, 100000, 4, { suffix = "m", step = 500, onChange = refreshWorld })
+	MakeColorPicker(WFog, "Atmosphere Color", "WorldAtmoColor", 5, worldChange)
+	MakeSlider(WFog, "Atmo Density", "WorldAtmoDensity", 0, 1, 6, {
 		suffix = "",
 		step = 0.01,
 		fmt = function(v) return math.floor(v * 100) .. "%" end,
+		onChange = refreshWorld,
+	})
+	MakeSlider(WFog, "Atmo Haze", "WorldAtmoHaze", 0, 10, 7, { suffix = "", step = 0.1, onChange = refreshWorld })
+	MakeSlider(WFog, "Atmo Glare", "WorldAtmoGlare", 0, 10, 8, { suffix = "", step = 0.1, onChange = refreshWorld })
+	MakeSlider(WFog, "Atmo Offset", "WorldAtmoOffset", 0, 1, 9, {
+		suffix = "",
+		step = 0.01,
+		fmt = function(v) return math.floor(v * 100) .. "%" end,
+		onChange = refreshWorld,
 	})
 
-	local WUi = MakeCard(TWorld, "MENU", nil, 3)
-	MakeTog(WUi, "Menu Blur", "MenuBlur", 1, { flat = true })
-	MakeSlider(WUi, "Blur Strength", "MenuBlurSize", 4, 48, 2, { suffix = "px", step = 1 })
+	local WGrade = MakeCard(TWorld, "COLOR GRADING", "ColorCorrection + ColorShift (jak world mod w CS).", 4)
+	MakeTog(WGrade, "Custom Grading", "WorldGrade", 1, worldChange)
+	MakeSlider(WGrade, "CC Brightness", "WorldCCBrightness", -1, 1, 2, { suffix = "", step = 0.01, onChange = refreshWorld })
+	MakeSlider(WGrade, "CC Contrast", "WorldCCContrast", -1, 1, 3, { suffix = "", step = 0.01, onChange = refreshWorld })
+	MakeSlider(WGrade, "CC Saturation", "WorldCCSaturation", -1, 1, 4, { suffix = "", step = 0.01, onChange = refreshWorld })
+	MakeColorPicker(WGrade, "CC Tint", "WorldCCTint", 5, worldChange)
+	MakeColorPicker(WGrade, "ColorShift Top", "WorldColorShiftTop", 6, worldChange)
+	MakeColorPicker(WGrade, "ColorShift Bottom", "WorldColorShiftBottom", 7, worldChange)
+	MakeTog(WGrade, "Quick Tint (HSV)", "WorldCustomLight", 8, worldChange)
+	MakeSlider(WGrade, "Tint Hue", "WorldColorHue", 0, 1, 9, {
+		suffix = "",
+		step = 0.01,
+		fmt = function(v) return math.floor(v * 360) .. "°" end,
+		onChange = refreshWorld,
+	})
+	MakeSlider(WGrade, "Tint Saturation", "WorldColorSat", 0, 1, 10, {
+		suffix = "",
+		step = 0.01,
+		fmt = function(v) return math.floor(v * 100) .. "%" end,
+		onChange = refreshWorld,
+	})
+	MakeHint(WGrade, "Quick Tint działa gdy Custom Grading wyłączone. Włącz Grading dla pełnej kontroli.", 11)
+
+	local WPost = MakeCard(TWorld, "POST PROCESSING", "Bloom i Sun Rays (jeśli gra ma te efekty).", 5)
+	MakeTog(WPost, "Custom Post FX", "WorldPost", 1, worldChange)
+	MakeSlider(WPost, "Bloom Intensity", "WorldBloom", 0, 3, 2, { suffix = "", step = 0.05, onChange = refreshWorld })
+	MakeSlider(WPost, "Sun Rays", "WorldSunRays", 0, 1, 3, {
+		suffix = "",
+		step = 0.01,
+		fmt = function(v) return math.floor(v * 100) .. "%" end,
+		onChange = refreshWorld,
+	})
+
+	local WUi = MakeCard(TWorld, "MENU", nil, 6)
+	MakeTog(WUi, "Menu Blur", "MenuBlur", 1, worldChange)
+	MakeSlider(WUi, "Blur Strength", "MenuBlurSize", 4, 48, 2, { suffix = "px", step = 1, onChange = refreshWorld })
 
 	local APlay = MakeCard(TAnim, "EMOTES", "Animacje przez Humanoid — inni widzą je w większości gier.", 1)
 	MakeButton(APlay, "Stop Animation", 1, function()

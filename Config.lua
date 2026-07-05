@@ -180,6 +180,81 @@ function Config.EnforceRules(S)
 	if S.MenuBlurSize == nil then
 		S.MenuBlurSize = 18
 	end
+	if S.WorldLight == nil then
+		S.WorldLight = false
+	end
+	if S.WorldBrightness == nil then
+		S.WorldBrightness = 2
+	end
+	if S.WorldExposure == nil then
+		S.WorldExposure = 0
+	end
+	if S.WorldShadows == nil then
+		S.WorldShadows = true
+	end
+	if typeof(S.WorldAmbient) ~= "Color3" then
+		S.WorldAmbient = Color3.fromRGB(128, 128, 128)
+	end
+	if typeof(S.WorldOutdoorAmbient) ~= "Color3" then
+		S.WorldOutdoorAmbient = Color3.fromRGB(128, 128, 128)
+	end
+	if S.WorldFog == nil then
+		S.WorldFog = false
+	end
+	if typeof(S.WorldFogColor) ~= "Color3" then
+		S.WorldFogColor = Color3.fromRGB(192, 192, 192)
+	end
+	if S.WorldFogStart == nil then
+		S.WorldFogStart = 0
+	end
+	if S.WorldFogEnd == nil then
+		S.WorldFogEnd = 100000
+	end
+	if S.WorldAtmoDensity == nil then
+		S.WorldAtmoDensity = 0.3
+	end
+	if S.WorldAtmoHaze == nil then
+		S.WorldAtmoHaze = 0
+	end
+	if S.WorldAtmoGlare == nil then
+		S.WorldAtmoGlare = 0
+	end
+	if S.WorldAtmoOffset == nil then
+		S.WorldAtmoOffset = 0
+	end
+	if typeof(S.WorldAtmoColor) ~= "Color3" then
+		S.WorldAtmoColor = Color3.fromRGB(199, 199, 199)
+	end
+	if S.WorldGrade == nil then
+		S.WorldGrade = false
+	end
+	if S.WorldCCBrightness == nil then
+		S.WorldCCBrightness = 0
+	end
+	if S.WorldCCContrast == nil then
+		S.WorldCCContrast = 0
+	end
+	if S.WorldCCSaturation == nil then
+		S.WorldCCSaturation = 0
+	end
+	if typeof(S.WorldCCTint) ~= "Color3" then
+		S.WorldCCTint = Color3.fromRGB(255, 255, 255)
+	end
+	if typeof(S.WorldColorShiftTop) ~= "Color3" then
+		S.WorldColorShiftTop = Color3.fromRGB(255, 255, 255)
+	end
+	if typeof(S.WorldColorShiftBottom) ~= "Color3" then
+		S.WorldColorShiftBottom = Color3.fromRGB(255, 255, 255)
+	end
+	if S.WorldPost == nil then
+		S.WorldPost = false
+	end
+	if S.WorldBloom == nil then
+		S.WorldBloom = 0
+	end
+	if S.WorldSunRays == nil then
+		S.WorldSunRays = 0
+	end
 	if S.KillEffects == nil then
 		S.KillEffects = false
 	end
