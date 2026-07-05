@@ -1758,6 +1758,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			setFooterStatus = setFooterStatus,
 			TweenPlay = TweenPlay,
 		})
+		UIMusicModule.buildWidget({
+			ParentGUI = ParentGUI,
+			S = S,
+			C = C,
+			Music = MusicModule,
+			TweenPlay = TweenPlay,
+		})
 	end
 
 	local function refreshWorld()

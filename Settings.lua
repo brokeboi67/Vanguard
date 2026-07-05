@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.32.0",
+	Version = "2.33.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -122,6 +122,7 @@ local Settings = {
 	MusicLoop = false,
 	MusicSource = "audius",
 	MusicLastQuery = "",
+	ShowMusicWidget = true,
 
 	-- HUD
 	Crosshair = false,

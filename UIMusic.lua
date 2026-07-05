@@ -739,6 +739,14 @@ function UIMusic.build(env)
 			end
 		end,
 	})
+	MakeTog(OptRow, "Mini player (bez menu)", "ShowMusicWidget", 3, {
+		flat = true,
+		onChange = function(on)
+			if UIMusic._refreshWidget then
+				UIMusic._refreshWidget(Music and Music.GetState and Music.GetState() or {})
+			end
+		end,
+	})
 
 	SearchBtn.MouseButton1Click:Connect(function()
 		runSearch(SearchBox and SearchBox.Text)
@@ -775,6 +783,360 @@ function UIMusic.build(env)
 	end
 
 	refreshNowPlaying()
+end
+
+function UIMusic.buildWidget(env)
+	local S = env.S
+	local C = env.C
+	local Music = env.Music
+	local ParentGUI = env.ParentGUI
+	local TweenPlay = env.TweenPlay
+	local TS = game:GetService("TweenService")
+	local RS = game:GetService("RunService")
+
+	local SPOTIFY = Color3.fromRGB(29, 185, 84)
+	local BG = Color3.fromRGB(18, 18, 22)
+	local BG2 = Color3.fromRGB(28, 28, 34)
+	local TXT = Color3.fromRGB(245, 245, 248)
+	local MUT = Color3.fromRGB(130, 130, 142)
+
+	local function fmtTime(sec)
+		sec = math.max(0, math.floor(sec or 0))
+		return string.format("%d:%02d", math.floor(sec / 60), sec % 60)
+	end
+
+	local widgetVisible = false
+	local pulseConn = nil
+	local activeTweens = {}
+
+	local function cancelTweens()
+		for _, tw in ipairs(activeTweens) do
+			pcall(function()
+				tw:Cancel()
+			end)
+		end
+		table.clear(activeTweens)
+	end
+
+	local function tween(obj, info, props)
+		local tw = TweenPlay(obj, info, props)
+		table.insert(activeTweens, tw)
+		return tw
+	end
+
+	local Root = C("Frame", {
+		Name = "VanguardMusicWidget",
+		Size = UDim2.new(0, 340, 0, 72),
+		Position = UDim2.new(0, 18, 1, -88),
+		AnchorPoint = Vector2.new(0, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 80,
+		Parent = ParentGUI,
+	})
+
+	local Shell = C("Frame", {
+		Name = "Shell",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = BG,
+		BackgroundTransparency = 0.06,
+		BorderSizePixel = 0,
+		ZIndex = 81,
+		Parent = Root,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 14), Parent = Shell })
+	C("UIStroke", {
+		Color = Color3.fromRGB(42, 42, 50),
+		Thickness = 1,
+		Transparency = 0.35,
+		Parent = Shell,
+	})
+
+	local Glow = C("Frame", {
+		Size = UDim2.new(1, 10, 1, 10),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = SPOTIFY,
+		BackgroundTransparency = 0.92,
+		BorderSizePixel = 0,
+		ZIndex = 80,
+		Parent = Shell,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 18), Parent = Glow })
+
+	local ArtWrap = C("Frame", {
+		Size = UDim2.new(0, 48, 0, 48),
+		Position = UDim2.new(0, 12, 0, 12),
+		BackgroundTransparency = 1,
+		ZIndex = 82,
+		Parent = Shell,
+	})
+	local ArtScale = C("UIScale", { Scale = 1, Parent = ArtWrap })
+
+	local ArtRing = C("Frame", {
+		Size = UDim2.new(1, 6, 1, 6),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = SPOTIFY,
+		BackgroundTransparency = 0.75,
+		BorderSizePixel = 0,
+		ZIndex = 82,
+		Parent = ArtWrap,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = ArtRing })
+
+	local Art = C("Frame", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = BG2,
+		BorderSizePixel = 0,
+		ZIndex = 83,
+		Parent = ArtWrap,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = Art })
+
+	local ArtLetter = C("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "♪",
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextColor3 = SPOTIFY,
+		ZIndex = 84,
+		Parent = Art,
+	})
+
+	local InfoCol = C("Frame", {
+		Size = UDim2.new(1, -168, 0, 48),
+		Position = UDim2.new(0, 68, 0, 10),
+		BackgroundTransparency = 1,
+		ZIndex = 82,
+		Parent = Shell,
+	})
+
+	local TitleLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 16),
+		BackgroundTransparency = 1,
+		Text = "—",
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = TXT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 83,
+		Parent = InfoCol,
+	})
+
+	local ArtistLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.new(0, 0, 0, 18),
+		BackgroundTransparency = 1,
+		Text = "Vanguard Music",
+		Font = Enum.Font.Gotham,
+		TextSize = 10,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 83,
+		Parent = InfoCol,
+	})
+
+	local ProgressTrack = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 3),
+		Position = UDim2.new(0, 0, 1, -6),
+		BackgroundColor3 = Color3.fromRGB(38, 38, 44),
+		BorderSizePixel = 0,
+		ZIndex = 83,
+		Parent = InfoCol,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressTrack })
+
+	local ProgressFill = C("Frame", {
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = SPOTIFY,
+		BorderSizePixel = 0,
+		ZIndex = 84,
+		Parent = ProgressTrack,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressFill })
+
+	local TimeLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 10),
+		Position = UDim2.new(0, 0, 1, -18),
+		BackgroundTransparency = 1,
+		Text = "0:00",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 8,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 83,
+		Parent = InfoCol,
+	})
+
+	local PlayBtn = C("TextButton", {
+		Size = UDim2.new(0, 38, 0, 38),
+		Position = UDim2.new(1, -52, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = SPOTIFY,
+		Text = "",
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 83,
+		Parent = Shell,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PlayBtn })
+	local PlayBtnScale = C("UIScale", { Scale = 1, Parent = PlayBtn })
+
+	local PlayIcon = C("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "▶",
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = Color3.fromRGB(8, 8, 10),
+		ZIndex = 84,
+		Parent = PlayBtn,
+	})
+	local PauseIcon = C("TextLabel", {
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "❚❚",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(8, 8, 10),
+		Visible = false,
+		ZIndex = 84,
+		Parent = PlayBtn,
+	})
+
+	local function setPulse(on)
+		if pulseConn then
+			pulseConn:Disconnect()
+			pulseConn = nil
+		end
+		if not on then
+			ArtRing.BackgroundTransparency = 0.85
+			ArtScale.Scale = 1
+			return
+		end
+		local t0 = os.clock()
+		pulseConn = RS.Heartbeat:Connect(function()
+			local wave = (math.sin((os.clock() - t0) * 3.2) + 1) * 0.5
+			ArtRing.BackgroundTransparency = 0.55 + wave * 0.35
+			ArtScale.Scale = 1 + wave * 0.04
+		end)
+	end
+
+	local function showWidget(animateIn)
+		if widgetVisible or S.ShowMusicWidget == false then
+			return
+		end
+		widgetVisible = true
+		Root.Visible = true
+		if animateIn then
+			cancelTweens()
+			Shell.Position = UDim2.new(0, 0, 0, 14)
+			Shell.BackgroundTransparency = 1
+			tween(Shell, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+				Position = UDim2.new(0, 0, 0, 0),
+				BackgroundTransparency = 0.06,
+			})
+		end
+	end
+
+	local function hideWidget()
+		if not widgetVisible then
+			return
+		end
+		widgetVisible = false
+		setPulse(false)
+		cancelTweens()
+		local tw = tween(Shell, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+			Position = UDim2.new(0, 0, 0, 18),
+			BackgroundTransparency = 1,
+		})
+		tw.Completed:Connect(function()
+			if not widgetVisible then
+				Root.Visible = false
+				Shell.Position = UDim2.new(0, 0, 0, 0)
+			end
+		end)
+	end
+
+	local function refreshWidget(state)
+		state = state or (Music and Music.GetState and Music.GetState()) or {}
+		local shouldShow = S.ShowMusicWidget ~= false
+			and (state.hasTrack or state.loading or state.paused)
+
+		if not shouldShow then
+			hideWidget()
+			return
+		end
+
+		local wasHidden = not widgetVisible
+		showWidget(wasHidden)
+
+		TitleLbl.Text = state.title ~= "" and state.title or (state.loading and "Ładowanie..." or "—")
+		ArtistLbl.Text = state.paused and "Pauza"
+			or (state.loading and "Pobieranie utworu..."
+				or (state.artist ~= "" and state.artist or "Audius"))
+
+		local initial = string.sub(state.title or "?", 1, 1):upper()
+		ArtLetter.Text = initial ~= "" and initial or "♪"
+
+		local showPause = (state.playing and not state.paused) or state.loading
+		PlayIcon.Visible = not showPause
+		PauseIcon.Visible = showPause
+
+		if state.duration and state.duration > 0 then
+			ProgressFill.Size = UDim2.new(math.clamp(state.position / state.duration, 0, 1), 0, 1, 0)
+			TimeLbl.Text = fmtTime(state.position) .. " / " .. fmtTime(state.duration)
+		else
+			ProgressFill.Size = UDim2.new(0, 0, 1, 0)
+			TimeLbl.Text = state.loading and "..." or "0:00"
+		end
+
+		setPulse(state.playing and not state.paused and not state.loading)
+	end
+
+	UIMusic._refreshWidget = refreshWidget
+
+	PlayBtn.MouseEnter:Connect(function()
+		tween(PlayBtnScale, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Scale = 1.08 })
+	end)
+	PlayBtn.MouseLeave:Connect(function()
+		tween(PlayBtnScale, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Scale = 1 })
+	end)
+	PlayBtn.MouseButton1Click:Connect(function()
+		tween(PlayBtnScale, TweenInfo.new(0.08, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 0.92 })
+		task.delay(0.08, function()
+			tween(PlayBtnScale, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
+		end)
+		if Music and not (Music.IsBusy and Music.IsBusy()) then
+			Music.TogglePause()
+		end
+	end)
+
+	if Music then
+		Music.AddStateListener(refreshWidget)
+		local prevProgress = Music.onProgress
+		Music.onProgress = function(pos, dur)
+			if prevProgress then
+				prevProgress(pos, dur)
+			end
+			if dur and dur > 0 then
+				ProgressFill.Size = UDim2.new(math.clamp(pos / dur, 0, 1), 0, 1, 0)
+				TimeLbl.Text = fmtTime(pos) .. " / " .. fmtTime(dur)
+			end
+			if Music.GetState then
+				local st = Music.GetState()
+				local showPause = st.playing and not st.paused
+				PlayIcon.Visible = not showPause
+				PauseIcon.Visible = showPause
+			end
+		end
+	end
+
+	refreshWidget(Music and Music.GetState and Music.GetState() or {})
 end
 
 return UIMusic

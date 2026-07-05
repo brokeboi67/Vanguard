@@ -51,10 +51,21 @@ function Music.Init(S)
 	Music.onProgress = nil
 	Music.onStateChanged = nil
 	Music.onPlayError = nil
+	local stateListeners = {}
+
+	function Music.AddStateListener(fn)
+		if typeof(fn) == "function" then
+			table.insert(stateListeners, fn)
+		end
+	end
 
 	local function notifyState()
+		local state = Music.GetState()
 		if Music.onStateChanged then
-			pcall(Music.onStateChanged, Music.GetState())
+			pcall(Music.onStateChanged, state)
+		end
+		for _, fn in ipairs(stateListeners) do
+			pcall(fn, state)
 		end
 	end
 
@@ -1128,7 +1139,7 @@ function Music.Init(S)
 	local function attachProgress(sound)
 		disconnectProgress()
 		endedConn = sound.Ended:Connect(function()
-			if currentSound ~= sound or paused or S.MusicLoop == true then
+			if currentSound ~= sound or paused or resuming or S.MusicLoop == true then
 				return
 			end
 			playGen += 1
@@ -1427,30 +1438,31 @@ function Music.Init(S)
 		end
 
 		if paused then
-			if currentSound and softPaused then
+			if currentSound and currentSound.Parent then
 				paused = false
-				softPaused = false
-				currentSound.Volume = S.MusicVolume or 0.65
-				playPosOffset = pausePosSnapshot
-				playClockStart = os.clock()
-				pcall(function()
-					if currentSound.TimePosition < pausePosSnapshot - 0.5 or currentSound.TimePosition < 0.05 then
-						currentSound.TimePosition = pausePosSnapshot
-					end
-				end)
-				if not currentSound.IsPlaying then
-					startPlayback(currentSound)
-					task.defer(function()
-						if currentSound and not paused then
-							pcall(function()
-								currentSound.TimePosition = pausePosSnapshot
-							end)
-						end
+				local resumePos = pausePosSnapshot
+
+				if softPaused then
+					currentSound.Volume = S.MusicVolume or 0.65
+					softPaused = false
+				else
+					pcall(function()
+						currentSound:Resume()
 					end)
+					if not currentSound.IsPlaying then
+						pcall(function()
+							currentSound.TimePosition = resumePos
+						end)
+						startPlayback(currentSound)
+					end
+					currentSound.Volume = S.MusicVolume or 0.65
 				end
+
+				playPosOffset = resumePos
+				playClockStart = os.clock()
 				pausedSession = nil
 				lastError = nil
-				logInfo("Resume soft @", string.format("%.1fs", pausePosSnapshot))
+				logInfo("Resume @", string.format("%.1fs", resumePos))
 				notifyState()
 				return
 			end
@@ -1458,7 +1470,7 @@ function Music.Init(S)
 			return
 		end
 
-		if not currentSound then
+		if not currentSound or not currentSound.Parent then
 			return
 		end
 
@@ -1471,11 +1483,23 @@ function Music.Init(S)
 			cachePath = nowPlaying and nowPlaying.cachePath,
 			identifier = nowPlaying and nowPlaying.identifier,
 		}
+
+		local usedNative = false
+		pcall(function()
+			currentSound:Pause()
+			usedNative = not currentSound.IsPlaying
+		end)
+
 		paused = true
-		softPaused = true
 		playClockStart = 0
-		currentSound.Volume = 0
-		logInfo("Pause soft @", string.format("%.1fs", pos))
+		if usedNative then
+			softPaused = false
+			logInfo("Pause native @", string.format("%.1fs", pos))
+		else
+			softPaused = true
+			currentSound.Volume = 0
+			logInfo("Pause soft @", string.format("%.1fs", pos))
+		end
 		notifyState()
 	end
 
