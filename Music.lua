@@ -7,11 +7,11 @@ local SoundService = game:GetService("SoundService")
 local RS = game:GetService("RunService")
 
 local AUDIO_SCORE = {
-	["VBR MP3"] = 100,
-	["MP3"] = 95,
-	["Ogg Vorbis"] = 80,
-	["Opus"] = 75,
-	["Flac"] = 40,
+	["Ogg Vorbis"] = 150,
+	["Opus"] = 130,
+	["MP3"] = 100,
+	["VBR MP3"] = 35,
+	["Flac"] = 20,
 }
 
 local PRESETS = {
@@ -224,6 +224,37 @@ function Music.Init(S)
 		return out
 	end
 
+	local function validateAudioBody(body, fileName)
+		if not body or #body < 1000 then
+			return false, "plik za mały (" .. tostring(body and #body or 0) .. " B)"
+		end
+		if body:sub(1, 1) == "<" then
+			return false, "pobrano HTML zamiast audio"
+		end
+		local lower = tostring(fileName or ""):lower()
+		if lower:find("%.ogg") or lower:find("%.opus") then
+			return body:sub(1, 4) == "OggS", "nieprawidłowy OGG"
+		end
+		if lower:find("%.mp3") then
+			local b1, b2, b3 = body:byte(1, 3)
+			if b1 == 0x49 and b2 == 0x44 and b3 == 0x33 then
+				return true
+			end
+			if b1 == 0xFF and b2 and b2 >= 0xE0 then
+				return true
+			end
+			return false, "nieprawidłowy MP3"
+		end
+		return true
+	end
+
+	local function deleteCache(relPath)
+		if typeof(delfile) == "function" and typeof(isfile) == "function" and isfile(relPath) then
+			pcall(delfile, relPath)
+			logInfo("Usunięto cache:", relPath)
+		end
+	end
+
 	local CACHE_DIR = "VanguardMusic"
 
 	local function safeFileName(name)
@@ -264,7 +295,7 @@ function Music.Init(S)
 		return "rbxassetid://" .. assetRef
 	end
 
-	local function assetFromDownload(url, cacheName)
+	local function assetFromDownload(url, cacheName, skipCache)
 		cacheName = safeFileName(cacheName)
 		local relPath = CACHE_DIR .. "/" .. cacheName
 		local getAsset, via = resolveCustomAssetFn()
@@ -273,37 +304,46 @@ function Music.Init(S)
 			logInfo("Pobieranie audio (writecustomasset):", url)
 			local body, httpErr = httpGet(url, 30)
 			if not body then
-				return nil, "Nie pobrano MP3: " .. tostring(httpErr)
+				return nil, nil, "Nie pobrano audio: " .. tostring(httpErr)
+			end
+			local valid, validErr = validateAudioBody(body, cacheName)
+			if not valid then
+				return nil, nil, validErr
 			end
 			local ok, assetRef = pcall(writecustomasset, cacheName, body)
 			if ok and assetRef and assetRef ~= "" then
 				logInfo("writecustomasset OK:", cacheName, "(" .. #body .. " B)")
-				return assetRef
+				return assetRef, relPath
 			end
 			logErr("writecustomasset fail:", assetRef)
 		end
 
 		if not getAsset then
-			return nil, "Brak getcustomasset w executorze (Potassium: włącz filesystem)"
+			return nil, nil, "Brak getcustomasset w executorze (Potassium: włącz filesystem)"
 		end
 		if typeof(writefile) ~= "function" then
-			return nil, "Brak writefile — nie da się zapisać MP3"
+			return nil, nil, "Brak writefile — nie da się zapisać audio"
 		end
 
 		ensureCacheDir()
 
-		if typeof(isfile) == "function" and isfile(relPath) then
+		if not skipCache and typeof(isfile) == "function" and isfile(relPath) then
 			local ok, assetRef = pcall(getAsset, relPath)
 			if ok and assetRef and assetRef ~= "" then
 				logInfo("Cache hit:", relPath, "via", via)
-				return assetRef
+				return assetRef, relPath
 			end
 		end
 
 		logInfo("Pobieranie audio:", url)
 		local body, httpErr = httpGet(url, 30)
 		if not body then
-			return nil, "Nie pobrano MP3: " .. tostring(httpErr)
+			return nil, nil, "Nie pobrano audio: " .. tostring(httpErr)
+		end
+		local valid, validErr = validateAudioBody(body, cacheName)
+		if not valid then
+			logErr("Walidacja audio fail:", validErr)
+			return nil, nil, validErr
 		end
 		logInfo("Pobrano", #body, "B →", relPath)
 
@@ -313,15 +353,27 @@ function Music.Init(S)
 			writeOk, writeErr = pcall(writefile, relPath, body)
 		end
 		if not writeOk then
-			return nil, "writefile fail: " .. tostring(writeErr)
+			return nil, nil, "writefile fail: " .. tostring(writeErr)
 		end
 
 		local ok, assetRef = pcall(getAsset, relPath)
 		if ok and assetRef and assetRef ~= "" then
 			logInfo("getcustomasset OK via", via, "→", tostring(assetRef):sub(1, 48))
-			return assetRef
+			return assetRef, relPath
 		end
-		return nil, "getcustomasset fail: " .. tostring(assetRef)
+		return nil, relPath, "getcustomasset fail: " .. tostring(assetRef)
+	end
+
+	local function waitForSoundLoad(sound, timeoutSec)
+		timeoutSec = timeoutSec or 10
+		local deadline = os.clock() + timeoutSec
+		while os.clock() < deadline do
+			if sound.IsLoaded and sound.TimeLength > 0 then
+				return true
+			end
+			task.wait(0.1)
+		end
+		return sound.IsLoaded == true and sound.TimeLength > 0
 	end
 
 	local function disconnectProgress()
@@ -345,35 +397,75 @@ function Music.Init(S)
 		notifyState()
 	end
 
-	local function pickAudioFile(files)
-		local best, bestScore = nil, -1
+	local function scoreAudioFile(f)
+		local name = tostring(f.name or "")
+		local fmt = tostring(f.format or "")
+		local lower = name:lower()
+		local score = AUDIO_SCORE[fmt] or 0
+		if lower:find("%.ogg") then
+			score = math.max(score, 150)
+		elseif lower:find("%.opus") then
+			score = math.max(score, 130)
+		elseif lower:find("%.mp3") then
+			if fmt == "VBR MP3" then
+				score = math.max(score, 35)
+			else
+				score = math.max(score, 90)
+			end
+		end
+		return score
+	end
+
+	local function listAudioFiles(files, titleHint)
+		local list = {}
+		local hint = titleHint and tostring(titleHint):lower() or ""
 		for _, f in ipairs(files or {}) do
 			local name = tostring(f.name or "")
 			local fmt = tostring(f.format or "")
 			local size = tonumber(f.size) or 0
 			if size >= 40000 and size <= 30000000 then
 				local lower = name:lower()
-				local skip = lower:find("sample") or lower:find("preview") or lower:find(".m3u") or lower:find(".xml")
+				local skip = lower:find("sample")
+					or lower:find("preview")
+					or lower:find(".m3u")
+					or lower:find(".xml")
+					or lower:find(".png")
+					or lower:find(".jpg")
+					or lower:find(".sqlite")
+					or lower:find(".torrent")
+					or lower:find(".afpk")
+					or lower:find("_spectrogram")
+					or lower:find("_meta%.")
 				if not skip then
-					local score = AUDIO_SCORE[fmt] or 0
-					if fmt == "" and lower:find("%.mp3") then
-						score = 90
-					elseif lower:find("%.opus") then
-						score = math.max(score, 75)
-					elseif lower:find("%.ogg") then
-						score = math.max(score, 80)
-					end
-					if score > 0 and score >= bestScore then
-						bestScore = score
-						best = f
+					local score = scoreAudioFile(f)
+					if score > 0 then
+						if hint ~= "" then
+							for word in hint:lower():gmatch("[%w]+") do
+								if #word >= 3 and lower:find(word, 1, true) then
+									score += 15
+									break
+								end
+							end
+						end
+						table.insert(list, {
+							name = name,
+							format = fmt,
+							score = score,
+						})
 					end
 				end
 			end
 		end
-		return best
+		table.sort(list, function(a, b)
+			if a.score ~= b.score then
+				return a.score > b.score
+			end
+			return a.name < b.name
+		end)
+		return list
 	end
 
-	local function resolveDownload(identifier)
+	local function resolveDownloadList(identifier, titleHint)
 		local id = tostring(identifier or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		if id == "" then
 			return nil, "Brak identyfikatora Archive"
@@ -389,12 +481,20 @@ function Music.Init(S)
 		if not meta.files then
 			return nil, "Brak plików w tym uploadzie"
 		end
-		local file = pickAudioFile(meta.files)
-		if not file then
-			return nil, "Brak pliku audio (MP3/OGG) w tym uploadzie"
+		local hint = titleHint or (meta.metadata and meta.metadata.title) or ""
+		local files = listAudioFiles(meta.files, hint)
+		if #files == 0 then
+			return nil, "Brak pliku audio (OGG/MP3) w tym uploadzie"
 		end
-		local dl = "https://archive.org/download/" .. id .. "/" .. urlEncode(file.name)
-		return dl, file.name
+		local out = {}
+		for _, f in ipairs(files) do
+			table.insert(out, {
+				url = "https://archive.org/download/" .. id .. "/" .. urlEncode(f.name),
+				name = f.name,
+				format = f.format,
+			})
+		end
+		return out
 	end
 
 	function Music.GetState()
@@ -529,94 +629,94 @@ function Music.Init(S)
 
 		task.spawn(function()
 			logInfo("Play start:", item.identifier, item.title or "?")
-			local dlUrl, fileNameOrErr = resolveDownload(item.identifier)
-			if not dlUrl then
+			local candidates, listErr = resolveDownloadList(item.identifier, item.title)
+			if not candidates then
 				loading = false
-				lastError = fileNameOrErr
-				logErr("Play metadata fail:", fileNameOrErr)
+				lastError = listErr
+				logErr("Play metadata fail:", listErr)
 				if Music.onPlayError then
-					pcall(Music.onPlayError, fileNameOrErr)
+					pcall(Music.onPlayError, listErr)
 				end
 				notifyState()
 				return
 			end
 
-			local cacheKey = safeFileName(item.identifier .. "_" .. fileNameOrErr)
-			local assetRef, aerr = assetFromDownload(dlUrl, cacheKey)
-			if not assetRef then
-				loading = false
-				lastError = aerr
-				logErr("Play asset fail:", aerr, "|", dlUrl)
-				if Music.onPlayError then
-					pcall(Music.onPlayError, aerr)
+			local lastFail = nil
+			for i, cand in ipairs(candidates) do
+				logInfo("Próba", i .. "/" .. #candidates .. ":", cand.name, "(" .. cand.format .. ")")
+				local cacheKey = safeFileName(item.identifier .. "_" .. cand.name)
+				local skipCache = i > 1
+				local assetRef, cachePath, aerr = assetFromDownload(cand.url, cacheKey, skipCache)
+				if assetRef then
+					local soundId = toSoundId(assetRef)
+					if soundId then
+						local sound = Instance.new("Sound")
+						sound.Name = "VanguardMusic"
+						sound.SoundId = soundId
+						sound.Volume = S.MusicVolume or 0.65
+						sound.Looped = S.MusicLoop == true
+						sound.Parent = SoundService
+
+						local playOk = pcall(function()
+							SoundService:PlayLocalSound(sound)
+						end)
+						if playOk and waitForSoundLoad(sound, 10) then
+							currentSound = sound
+							lastError = nil
+							nowPlaying = {
+								identifier = item.identifier,
+								title = item.title or item.identifier,
+								creator = item.creator or "",
+								file = cand.name,
+							}
+							loading = false
+							paused = false
+							logInfo("Play OK:", nowPlaying.title, "→", cand.name)
+
+							sound.Ended:Connect(function()
+								if currentSound == sound then
+									stopInternal()
+								end
+							end)
+
+							disconnectProgress()
+							progressConn = RS.Heartbeat:Connect(function()
+								if currentSound ~= sound or not Music.onProgress then
+									return
+								end
+								local dur = sound.TimeLength
+								if dur > 0 then
+									pcall(Music.onProgress, sound.TimePosition, dur)
+								end
+							end)
+
+							notifyState()
+							return
+						end
+
+						lastFail = "Roblox odrzucił format: " .. cand.name
+						logErr("Sound load fail (unsupported format?):", cand.name, soundId)
+						sound:Destroy()
+					else
+						lastFail = "Nieprawidłowy asset ID"
+						logErr("Invalid asset ref:", assetRef)
+					end
+				else
+					lastFail = aerr
+					logErr("Asset fail:", aerr)
 				end
-				notifyState()
-				return
+				if cachePath then
+					deleteCache(cachePath)
+				end
 			end
 
-			local soundId = toSoundId(assetRef)
-			if not soundId then
-				loading = false
-				lastError = "Nieprawidłowy asset ID"
-				logErr("Invalid asset ref:", assetRef)
-				if Music.onPlayError then
-					pcall(Music.onPlayError, lastError)
-				end
-				notifyState()
-				return
-			end
-
-			local sound = Instance.new("Sound")
-			sound.Name = "VanguardMusic"
-			sound.SoundId = soundId
-			sound.Volume = S.MusicVolume or 0.65
-			sound.Looped = S.MusicLoop == true
-			sound.Parent = SoundService
-
-			local playOk = pcall(function()
-				SoundService:PlayLocalSound(sound)
-			end)
-			if not playOk then
-				sound:Destroy()
-				loading = false
-				lastError = "PlayLocalSound failed"
-				logErr("PlayLocalSound failed")
-				if Music.onPlayError then
-					pcall(Music.onPlayError, lastError)
-				end
-				notifyState()
-				return
-			end
-
-			currentSound = sound
-			lastError = nil
-			nowPlaying = {
-				identifier = item.identifier,
-				title = item.title or item.identifier,
-				creator = item.creator or "",
-				file = fileNameOrErr,
-			}
 			loading = false
-			paused = false
-			logInfo("Play OK:", nowPlaying.title)
-
-			sound.Ended:Connect(function()
-				if currentSound == sound then
-					stopInternal()
-				end
-			end)
-
-			disconnectProgress()
-			progressConn = RS.Heartbeat:Connect(function()
-				if currentSound ~= sound or not Music.onProgress then
-					return
-				end
-				local dur = sound.TimeLength
-				if dur > 0 then
-					pcall(Music.onProgress, sound.TimePosition, dur)
-				end
-			end)
-
+			lastError = lastFail
+				or "Roblox nie odtwarza tego uploadu — spróbuj Lady lub innego wyniku z .ogg"
+			logErr("Play failed po wszystkich formatach:", lastError)
+			if Music.onPlayError then
+				pcall(Music.onPlayError, lastError)
+			end
 			notifyState()
 		end)
 
