@@ -51,7 +51,8 @@ function UIMusic.build(env)
 		if NowTitle then
 			if state.playing or state.paused then
 				NowTitle.Text = state.title ~= "" and state.title or "—"
-				NowArtist.Text = state.artist ~= "" and state.artist or "Internet Archive"
+				NowArtist.Text = state.paused and "Pauza"
+					or (state.artist ~= "" and state.artist or "Internet Archive")
 			elseif state.loading then
 				NowTitle.Text = state.title ~= "" and state.title or "Ładowanie..."
 				NowArtist.Text = "Pobieranie z Archive..."
