@@ -1208,8 +1208,16 @@ function Music.Init(S)
 		trackEnding = true
 
 		local curIdx = resolveCurrentQueueIndex()
-		if S.MusicAutoQueue ~= false and #queue > 0 and curIdx > 0 and curIdx < #queue then
-			local nextIdx = curIdx + 1
+		local nextIdx = nil
+		if S.MusicAutoQueue ~= false and #queue > 0 then
+			if curIdx > 0 and curIdx < #queue then
+				nextIdx = curIdx + 1
+			elseif curIdx <= 0 then
+				nextIdx = 1
+			end
+		end
+
+		if nextIdx then
 			queueIndex = nextIdx
 			local nextItem = queue[nextIdx]
 			logInfo("Auto-next:", nextIdx, "/", #queue, nextItem and nextItem.title or "?")
@@ -1222,10 +1230,6 @@ function Music.Init(S)
 				end
 			end)
 			return
-		end
-
-		if S.MusicAutoQueue ~= false and #queue > 0 and curIdx <= 0 then
-			logInfo("Auto-next pominięty — utwór spoza kolejki (queueIndex=0)")
 		end
 
 		playGen += 1
@@ -1509,7 +1513,7 @@ function Music.Init(S)
 			hasTrack = nowPlaying ~= nil or (paused and pausedSession ~= nil),
 			queueIndex = qIdx,
 			queueCount = #queue,
-			hasNext = qIdx > 0 and qIdx < #queue,
+			hasNext = #queue > 0 and (qIdx <= 0 or qIdx < #queue),
 			hasPrev = qIdx > 1,
 		}
 	end
@@ -1590,14 +1594,15 @@ function Music.Init(S)
 	end
 
 	function Music.PlayNext()
-		if loading or resuming then
+		if loading or resuming or #queue == 0 then
 			return false
 		end
 		local curIdx = resolveCurrentQueueIndex()
-		if curIdx >= #queue then
+		local nextIdx = curIdx > 0 and curIdx + 1 or 1
+		if nextIdx > #queue then
 			return false
 		end
-		queueIndex = curIdx + 1
+		queueIndex = nextIdx
 		Music.Play(queue[queueIndex], { keepQueue = true, queueIndex = queueIndex })
 		return true
 	end
