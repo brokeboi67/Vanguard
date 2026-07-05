@@ -556,7 +556,7 @@ function Music.Init(S)
 		end
 		return {
 			loading = loading,
-			playing = currentSound ~= nil and not paused and currentSound.IsPlaying,
+			playing = currentSound ~= nil and not paused,
 			paused = paused,
 			title = nowPlaying and nowPlaying.title or "",
 			artist = nowPlaying and nowPlaying.creator or "",
@@ -585,15 +585,31 @@ function Music.Init(S)
 		return loading
 	end
 
+	function Music.SetLoop(on)
+		S.MusicLoop = on == true
+		if currentSound then
+			currentSound.Looped = S.MusicLoop
+		end
+		notifyState()
+	end
+
 	function Music.TogglePause()
 		if not currentSound then
 			return
 		end
 		if paused then
-			currentSound:Resume()
+			pcall(function()
+				currentSound:Resume()
+			end)
+			if not currentSound.IsPlaying then
+				currentSound.Playing = true
+			end
 			paused = false
 		else
-			currentSound:Pause()
+			pcall(function()
+				currentSound:Pause()
+			end)
+			currentSound.Playing = false
 			paused = true
 		end
 		notifyState()
@@ -766,16 +782,19 @@ function Music.Init(S)
 
 								disconnectProgress()
 								progressConn = RS.Heartbeat:Connect(function()
-									if currentSound ~= sound or not Music.onProgress then
+									if currentSound ~= sound then
 										return
 									end
-									local dur = sound.TimeLength
-									if dur > 0 then
-										pcall(Music.onProgress, sound.TimePosition, dur)
+									if Music.onProgress then
+										local dur = sound.TimeLength
+										if dur > 0 then
+											pcall(Music.onProgress, sound.TimePosition, dur)
+										end
 									end
 								end)
 
 								notifyState()
+								task.defer(notifyState)
 								return
 							end
 						end

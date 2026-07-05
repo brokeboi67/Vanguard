@@ -588,7 +588,14 @@ function UIMusic.build(env)
 			end
 		end,
 	})
-	MakeTog(OptRow, "Loop", "MusicLoop", 2, { flat = true })
+	MakeTog(OptRow, "Loop", "MusicLoop", 2, {
+		flat = true,
+		onChange = function(on)
+			if Music and Music.SetLoop then
+				Music.SetLoop(on)
+			end
+		end,
+	})
 
 	SearchBtn.MouseButton1Click:Connect(function()
 		runSearch(SearchBox and SearchBox.Text)
@@ -610,6 +617,12 @@ function UIMusic.build(env)
 			end
 			if ProgressFill and dur > 0 then
 				ProgressFill.Size = UDim2.new(math.clamp(pos / dur, 0, 1), 0, 1, 0)
+			end
+			if PlayIcon and PauseIcon and Music.GetState then
+				local st = Music.GetState()
+				local showPause = st.playing and not st.paused
+				PlayIcon.Visible = not showPause
+				PauseIcon.Visible = showPause
 			end
 		end
 		Music.onPlayError = function(msg)
