@@ -919,7 +919,7 @@ function UIMusic.build(env)
 			Music.ClearQueue()
 			showNotify("Kolejka wyczyszczona")
 		end
-	})
+	end)
 
 	local QueueScroll = C("ScrollingFrame", {
 		Size = UDim2.new(1, 0, 0, 96),
