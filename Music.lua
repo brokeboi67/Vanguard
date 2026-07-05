@@ -17,6 +17,7 @@ local AUDIO_SCORE = {
 local PRESETS = {
 	{ identifier = "stereo-love", title = "Stereo Love", creator = "Edward Maya", downloads = 22591 },
 	{ identifier = "ModjoLadyHearMeTonight", title = "Lady (Hear Me Tonight)", creator = "Modjo", downloads = 33449 },
+	{ identifier = "hnm-1982", title = "Human Nature (Multitracks)", creator = "Michael Jackson", downloads = 12000 },
 	{ identifier = "DanceTheMainstreamMash2010-2011", title = "Dance MainStream Mash 2010-2011", creator = "Ryan Janjuha", downloads = 7978 },
 }
 
@@ -34,6 +35,9 @@ function Music.Init(S)
 	local lastToggleAt = 0
 	local pausedSession = nil
 	local cachedDuration = 0
+	local resuming = false
+	local softPaused = false
+	local endedConn = nil
 	local HTTP_TIMEOUT = 12
 
 	local function logInfo(...)
@@ -177,18 +181,94 @@ function Music.Init(S)
 		return nil, "Nieprawidłowa odpowiedź Archive (JSON)"
 	end
 
-	local function buildSearchUrl(query)
-		local term = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
-		if term:find("%s") and not term:find(":") and not term:find('"') then
-			local clean = term:gsub('"', "")
-			term = '(title:"' .. clean .. '" OR "' .. clean .. '" OR creator:"' .. clean .. '")'
+	local function queryWords(query)
+		local words = {}
+		for w in tostring(query or ""):lower():gmatch("[%w']+") do
+			if #w >= 2 then
+				table.insert(words, w)
+			end
 		end
-		local lucene = term .. " AND mediatype:audio"
-		return "https://archive.org/advancedsearch.php?q="
-			.. urlEncode(lucene)
-			.. "&fl[]=identifier,title,creator,downloads"
-			.. "&sort[]=downloads+desc"
-			.. "&rows=24&page=1&output=json"
+		return words
+	end
+
+	local function buildSearchUrls(query)
+		local clean = tostring(query or ""):gsub('"', ""):gsub("^%s+", ""):gsub("%s+$", "")
+		local terms = {}
+		local seen = {}
+
+		local function add(term)
+			if term == "" or seen[term] then
+				return
+			end
+			seen[term] = true
+			table.insert(terms, term)
+		end
+
+		if clean:find(":") or clean:find('"') then
+			add(clean)
+		else
+			local words = {}
+			for w in clean:gmatch("%S+") do
+				table.insert(words, w)
+			end
+
+			if #words >= 4 then
+				local artist = words[#words - 1] .. " " .. words[#words]
+				local songParts = {}
+				for i = 1, #words - 2 do
+					table.insert(songParts, words[i])
+				end
+				local song = table.concat(songParts, " ")
+				add('title:"' .. song .. '" AND creator:"' .. artist .. '"')
+				add('title:"' .. song .. '" AND "' .. artist .. '"')
+			elseif #words == 3 then
+				local artist = words[2] .. " " .. words[3]
+				add('title:"' .. words[1] .. '" AND creator:"' .. artist .. '"')
+				add('title:"' .. words[1] .. '" AND "' .. artist .. '"')
+			elseif #words == 2 then
+				add('title:"' .. words[1] .. '" AND creator:"' .. words[2] .. '"')
+				add('creator:"' .. words[2] .. '" AND title:"' .. words[1] .. '"')
+			end
+
+			add('(title:"' .. clean .. '" OR creator:"' .. clean .. '" OR "' .. clean .. '")')
+			add('creator:"' .. clean .. '"')
+		end
+
+		local urls = {}
+		for _, term in ipairs(terms) do
+			local lucene = term .. " AND mediatype:audio"
+			table.insert(urls, "https://archive.org/advancedsearch.php?q="
+				.. urlEncode(lucene)
+				.. "&fl[]=identifier,title,creator,downloads"
+				.. "&sort[]=downloads+desc"
+				.. "&rows=48&page=1&output=json")
+		end
+		return urls
+	end
+
+	local function filterSearchResults(query, results)
+		local words = queryWords(query)
+		if #words < 2 or #results == 0 then
+			return results
+		end
+		local minMatch = math.max(2, math.ceil(#words * 0.45))
+		local filtered = {}
+		for _, item in ipairs(results) do
+			local hay = ((item.title or "") .. " " .. (item.creator or "")):lower()
+			local matched = 0
+			for _, w in ipairs(words) do
+				if hay:find(w, 1, true) then
+					matched += 1
+				end
+			end
+			if matched >= minMatch then
+				table.insert(filtered, item)
+			end
+		end
+		if #filtered >= 2 then
+			return filtered
+		end
+		return results
 	end
 
 	local function normalizeDoc(doc)
@@ -247,8 +327,9 @@ function Music.Init(S)
 			end
 
 			if title:find("podcast") or title:find("radio") or title:find("program")
-				or title:find("mix") or title:find("voice of america") or title:find("voa") then
-				s -= 50
+				or title:find("mix") or title:find("voice of america") or title:find("voa")
+				or title:find("crap from") or title:find("kmart") or title:find("tape%-a%-thon") then
+				s -= 80
 			end
 			if title:find("lyrics") or title:find("multitrack") or title:find("cover") then
 				s += 10
@@ -543,6 +624,10 @@ function Music.Init(S)
 			progressConn:Disconnect()
 			progressConn = nil
 		end
+		if endedConn then
+			endedConn:Disconnect()
+			endedConn = nil
+		end
 	end
 
 	local function stopInternal()
@@ -550,8 +635,10 @@ function Music.Init(S)
 		destroyAllMusicSounds()
 		currentSound = nil
 		paused = false
+		softPaused = false
 		nowPlaying = nil
 		loading = false
+		resuming = false
 		playClockStart = 0
 		playPosOffset = 0
 		pausePosSnapshot = 0
@@ -562,81 +649,130 @@ function Music.Init(S)
 
 	local function attachProgress(sound)
 		disconnectProgress()
+		endedConn = sound.Ended:Connect(function()
+			if currentSound ~= sound or paused or S.MusicLoop == true then
+				return
+			end
+			playGen += 1
+			stopInternal()
+		end)
 		progressConn = RS.Heartbeat:Connect(function()
-			if currentSound ~= sound then
+			if currentSound ~= sound or paused or loading or resuming then
 				return
 			end
 			local pos, dur = getPlaybackPosition()
 			if Music.onProgress and dur > 0 then
 				pcall(Music.onProgress, pos, dur)
 			end
-			if not paused and dur > 0 and pos >= dur - 0.35 and S.MusicLoop ~= true then
+			if S.MusicLoop == true or dur <= 0 then
+				return
+			end
+			local tp = sound.TimePosition
+			if tp > 0.5 and tp >= dur - 0.35 then
 				playGen += 1
 				stopInternal()
+				return
+			end
+			if tp <= 0.05 and playClockStart > 0 then
+				local clockPos = playPosOffset + (os.clock() - playClockStart)
+				if clockPos >= dur - 0.35 and clockPos >= dur * 0.88 then
+					playGen += 1
+					stopInternal()
+				end
 			end
 		end)
 	end
 
+	local function soundIdFromSession(session)
+		local soundId = session.soundId
+		if session.cachePath and typeof(isfile) == "function" and isfile(session.cachePath) then
+			local getAsset, via = resolveCustomAssetFn()
+			if getAsset then
+				local ok, assetRef = pcall(getAsset, session.cachePath)
+				if ok and assetRef and assetRef ~= "" then
+					local sid = toSoundId(assetRef)
+					if sid then
+						logInfo("Resume z cache via", via)
+						return sid
+					end
+				end
+			end
+		end
+		return soundId
+	end
+
 	local function resumePausedSession()
+		if resuming then
+			return
+		end
 		if not pausedSession or not pausedSession.soundId then
 			paused = false
+			softPaused = false
 			notifyState()
 			return
 		end
 
+		resuming = true
 		loading = true
 		notifyState()
 
-		local session = pausedSession
-		local sound = Instance.new("Sound")
-		sound.Name = "VanguardMusic"
-		sound.SoundId = session.soundId
-		sound.Volume = S.MusicVolume or 0.65
-		sound.Looped = S.MusicLoop == true
-		sound.Parent = SoundService
+		local ok, err = pcall(function()
+			local session = pausedSession
+			local soundId = soundIdFromSession(session)
+			if not soundId then
+				error("Brak SoundId do wznowienia")
+			end
 
-		if not waitForSoundLoad(sound, 12) then
-			loading = false
-			lastError = "Nie udało się wznowić odtwarzania"
-			logErr("Resume load fail")
-			notifyState()
-			return
-		end
+			local sound = Instance.new("Sound")
+			sound.Name = "VanguardMusic"
+			sound.SoundId = soundId
+			sound.Volume = S.MusicVolume or 0.65
+			sound.Looped = S.MusicLoop == true
+			sound.Parent = SoundService
 
-		local pos = math.min(session.position or 0, math.max(0, sound.TimeLength - 0.1))
-		pcall(function()
-			sound.TimePosition = pos
-		end)
+			if not waitForSoundLoad(sound, 12) then
+				killSound(sound)
+				error("Nie udało się wznowić odtwarzania")
+			end
 
-		if not startPlayback(sound) then
-			killSound(sound)
-			loading = false
-			lastError = "Resume play fail"
-			logErr("Resume play fail")
-			notifyState()
-			return
-		end
-
-		task.wait(0.2)
-		if pos > 0.05 then
+			local pos = math.min(session.position or 0, math.max(0, sound.TimeLength - 0.1))
 			pcall(function()
 				sound.TimePosition = pos
 			end)
-		end
 
-		currentSound = sound
-		paused = false
-		pausedSession = nil
+			if not startPlayback(sound) then
+				killSound(sound)
+				error("Resume play fail")
+			end
+
+			task.wait(0.15)
+			if pos > 0.05 then
+				pcall(function()
+					sound.TimePosition = pos
+				end)
+			end
+
+			currentSound = sound
+			paused = false
+			softPaused = false
+			pausedSession = nil
+			lastError = nil
+			playPosOffset = pos
+			pausePosSnapshot = pos
+			playClockStart = os.clock()
+			cachedDuration = sound.TimeLength
+
+			attachProgress(sound)
+			logInfo("Resume OK @", string.format("%.1fs", pos))
+		end)
+
 		loading = false
-		lastError = nil
-		playPosOffset = pos
-		pausePosSnapshot = pos
-		playClockStart = os.clock()
-		cachedDuration = sound.TimeLength
-
-		attachProgress(sound)
+		resuming = false
+		if not ok then
+			lastError = tostring(err)
+			logErr("Resume fail:", err)
+		end
 		notifyState()
-		logInfo("Resume OK @", string.format("%.1fs", pos))
 	end
 
 	local function scoreAudioFile(f)
@@ -763,7 +899,7 @@ function Music.Init(S)
 	function Music.GetState()
 		local pos, dur = getPlaybackPosition()
 		return {
-			loading = loading,
+			loading = loading or resuming,
 			playing = currentSound ~= nil and not paused,
 			paused = paused,
 			title = nowPlaying and nowPlaying.title or "",
@@ -773,6 +909,7 @@ function Music.Init(S)
 			duration = dur,
 			volume = S.MusicVolume or 0.65,
 			error = lastError,
+			hasTrack = nowPlaying ~= nil or (paused and pausedSession ~= nil),
 		}
 	end
 
@@ -790,7 +927,7 @@ function Music.Init(S)
 	end
 
 	function Music.IsBusy()
-		return loading
+		return loading or resuming
 	end
 
 	function Music.SetLoop(on)
@@ -802,12 +939,43 @@ function Music.Init(S)
 	end
 
 	function Music.TogglePause()
-		if os.clock() - lastToggleAt < 0.3 then
+		if os.clock() - lastToggleAt < 0.35 then
 			return
 		end
 		lastToggleAt = os.clock()
 
+		if loading or resuming then
+			return
+		end
+
 		if paused then
+			if currentSound and softPaused then
+				paused = false
+				softPaused = false
+				currentSound.Volume = S.MusicVolume or 0.65
+				playPosOffset = pausePosSnapshot
+				playClockStart = os.clock()
+				pcall(function()
+					if currentSound.TimePosition < pausePosSnapshot - 0.5 or currentSound.TimePosition < 0.05 then
+						currentSound.TimePosition = pausePosSnapshot
+					end
+				end)
+				if not currentSound.IsPlaying then
+					startPlayback(currentSound)
+					task.defer(function()
+						if currentSound and not paused then
+							pcall(function()
+								currentSound.TimePosition = pausePosSnapshot
+							end)
+						end
+					end)
+				end
+				pausedSession = nil
+				lastError = nil
+				logInfo("Resume soft @", string.format("%.1fs", pausePosSnapshot))
+				notifyState()
+				return
+			end
 			task.spawn(resumePausedSession)
 			return
 		end
@@ -816,18 +984,20 @@ function Music.Init(S)
 			return
 		end
 
-		pausePosSnapshot = getPlaybackPosition()
-		local _, dur = getPlaybackPosition()
+		local pos, dur = getPlaybackPosition()
+		pausePosSnapshot = pos
 		pausedSession = {
 			soundId = currentSound.SoundId,
-			position = pausePosSnapshot,
+			position = pos,
 			duration = dur > 0 and dur or cachedDuration,
+			cachePath = nowPlaying and nowPlaying.cachePath,
+			identifier = nowPlaying and nowPlaying.identifier,
 		}
 		paused = true
+		softPaused = true
 		playClockStart = 0
-		killSound(currentSound)
-		currentSound = nil
-		logInfo("Pause @", string.format("%.1fs", pausePosSnapshot))
+		currentSound.Volume = 0
+		logInfo("Pause soft @", string.format("%.1fs", pos))
 		notifyState()
 	end
 
@@ -861,42 +1031,48 @@ function Music.Init(S)
 			end
 
 			local ok, err = pcall(function()
-				local url = buildSearchUrl(query)
-				logInfo("GET", url)
-				local body, httpErr = httpGet(url)
-				if not body then
+				local urls = buildSearchUrls(query)
+				local results = {}
+				local seen = {}
+				local httpErr = nil
+
+				for i, url in ipairs(urls) do
+					logInfo("GET", i .. "/" .. #urls, url)
+					local body, err = httpGet(url)
+					if body then
+						local data = decodeJson(body)
+						if data and data.response then
+							for _, doc in ipairs(data.response.docs or {}) do
+								local item = normalizeDoc(doc)
+								if item.identifier and not seen[item.identifier] then
+									seen[item.identifier] = true
+									table.insert(results, item)
+								end
+							end
+						end
+					else
+						httpErr = err
+					end
+					if i == 1 and #results >= 8 then
+						break
+					end
+				end
+
+				for _, preset in ipairs(filterPresets(query)) do
+					if not seen[preset.identifier] then
+						seen[preset.identifier] = true
+						table.insert(results, 1, preset)
+					end
+				end
+
+				if #results == 0 then
 					local presets = filterPresets(query)
 					finish(presets, #presets == 0 and ("Brak połączenia z Archive — " .. tostring(httpErr or "HttpGet")) or ("Offline — " .. tostring(httpErr or "HttpGet")))
 					return
 				end
 
-				local data, parseErr = decodeJson(body)
-				if not data or not data.response then
-					local presets = filterPresets(query)
-					local msg = parseErr or "Błąd odpowiedzi Archive"
-					finish(presets, #presets == 0 and msg or (msg .. " — znane hity"))
-					return
-				end
-
-				local results = {}
-				local seen = {}
-				for _, doc in ipairs(data.response.docs or {}) do
-					local item = normalizeDoc(doc)
-					if item.identifier and not seen[item.identifier] then
-						seen[item.identifier] = true
-						table.insert(results, item)
-					end
-				end
-
-				if #results == 0 then
-					for _, preset in ipairs(filterPresets(query)) do
-						if not seen[preset.identifier] then
-							table.insert(results, preset)
-						end
-					end
-				end
-
 				rankSearchResults(query, results)
+				results = filterSearchResults(query, results)
 
 				finish(results, #results == 0 and "Brak wyników — spróbuj innej frazy" or nil)
 			end)
@@ -918,6 +1094,7 @@ function Music.Init(S)
 		destroyAllMusicSounds()
 		currentSound = nil
 		paused = false
+		softPaused = false
 		pausedSession = nil
 		nowPlaying = {
 			identifier = item.identifier,
@@ -985,9 +1162,12 @@ function Music.Init(S)
 									title = item.title or item.identifier,
 									creator = item.creator or "",
 									file = cand.name,
+									soundId = soundId,
+									cachePath = cachePath,
 								}
 								loading = false
 								paused = false
+								softPaused = false
 								pausedSession = nil
 								playPosOffset = 0
 								pausePosSnapshot = 0

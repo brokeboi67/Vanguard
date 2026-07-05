@@ -49,7 +49,7 @@ function UIMusic.build(env)
 	local function refreshNowPlaying(state)
 		state = state or (Music and Music.GetState and Music.GetState()) or {}
 		if NowTitle then
-			if state.playing or state.paused then
+			if state.playing or state.paused or state.hasTrack then
 				NowTitle.Text = state.title ~= "" and state.title or "—"
 				NowArtist.Text = state.paused and "Pauza"
 					or (state.artist ~= "" and state.artist or "Internet Archive")
@@ -302,6 +302,7 @@ function UIMusic.build(env)
 
 	local chips = {
 		{ "Lady", "Modjo Lady" },
+		{ "Human Nature", "human nature michael jackson" },
 		{ "MJ", "Michael Jackson" },
 		{ "Stereo Love", "Stereo Love Edward Maya" },
 	}
