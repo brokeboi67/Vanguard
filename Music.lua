@@ -478,7 +478,42 @@ function Music.Init(S)
 		return out
 	end
 
-	local AUDIUS_API = "https://discoveryprovider.audius.co"
+	local AUDIUS_NODES = {
+		"https://discoveryprovider.audius.co",
+		"https://audius-discovery-3.altego.net",
+		"https://audius-discovery-7.cultur3stake.com",
+	}
+	local AUDIUS_API = AUDIUS_NODES[1]
+
+	local function audiusGet(path, timeoutSec)
+		timeoutSec = timeoutSec or HTTP_TIMEOUT
+		local lastErr = nil
+		for _, base in ipairs(AUDIUS_NODES) do
+			local url = base .. path
+			local body, err = httpGet(url, timeoutSec)
+			if body then
+				AUDIUS_API = base
+				return body
+			end
+			lastErr = err
+		end
+		return nil, lastErr or "Audius nie odpowiada"
+	end
+
+	local function refreshAudiusStream(trackId)
+		if not trackId then
+			return nil
+		end
+		local body = audiusGet("/v1/tracks/" .. tostring(trackId) .. "?app_name=Vanguard", 10)
+		if not body then
+			return nil
+		end
+		local data = decodeJson(body)
+		if data and data.data and data.data.stream and data.data.stream.url then
+			return data.data.stream.url
+		end
+		return nil
+	end
 
 	local function normalizeAudiusTrack(track)
 		local user = track.user
@@ -498,9 +533,9 @@ function Music.Init(S)
 	end
 
 	local function searchAudius(query)
-		local url = AUDIUS_API .. "/v1/tracks/search?query=" .. urlEncode(query) .. "&app_name=Vanguard"
-		logInfo("Audius GET", url)
-		local body, httpErr = httpGet(url)
+		local path = "/v1/tracks/search?query=" .. urlEncode(query) .. "&app_name=Vanguard"
+		logInfo("Audius GET", query)
+		local body, httpErr = audiusGet(path)
 		if not body then
 			return nil, httpErr or "Audius nie odpowiada"
 		end
@@ -644,7 +679,7 @@ function Music.Init(S)
 			s += 100
 		elseif sw ~= "" then
 			for w in sw:gmatch("%S+") do
-				if #w >= 3 and hay:find(w, 1, true) then
+				if #w >= 2 and hay:find(w, 1, true) then
 					s += 25
 				end
 			end
@@ -657,7 +692,8 @@ function Music.Init(S)
 	end
 
 	local function findAudiusCandidates(item, limit)
-		limit = limit or 8
+		limit = limit or 12
+		local rawTitle = tostring(item.title or "")
 		local song, artist = extractSongFromYoutube(item)
 		local queries = {}
 		local seenQ = {}
@@ -670,30 +706,48 @@ function Music.Init(S)
 			end
 		end
 
+		addQ(rawTitle)
+		addQ(rawTitle:gsub("%b[]", " "):gsub("%b()", " "):gsub("%s+", " "))
 		if song ~= "" and artist ~= "" then
 			addQ(song .. " " .. artist)
 			addQ(artist .. " " .. song)
 		end
 		if song ~= "" then
 			addQ(song)
+			addQ(song:gsub("[?%.!,]", " "))
 		end
 		if artist ~= "" then
-			addQ(artist .. " " .. (song:match("^(%S+)") or ""))
+			addQ(artist)
+			local firstWords = song:match("^(%S+%s+%S+)") or song:match("^(%S+)")
+			if firstWords and firstWords ~= "" then
+				addQ(artist .. " " .. firstWords)
+			end
 		end
 
 		local seen = {}
 		local ranked = {}
-		for _, q in ipairs(queries) do
-			local results = searchAudius(q)
-			if results then
-				for _, r in ipairs(results) do
-					if r.streamUrl and r.identifier and not seen[r.identifier] then
-						seen[r.identifier] = true
-						r._fb = scoreAudiusFallback(song, artist, r)
+		local function ingest(results)
+			if not results then
+				return
+			end
+			for _, r in ipairs(results) do
+				if r.streamUrl and r.identifier and not seen[r.identifier] then
+					seen[r.identifier] = true
+					r._fb = scoreAudiusFallback(song, artist, r)
+					if r._fb >= 20 then
 						table.insert(ranked, r)
 					end
 				end
 			end
+		end
+
+		for _, q in ipairs(queries) do
+			ingest(searchAudius(q))
+		end
+
+		if #ranked < 3 and artist ~= "" then
+			logInfo("Audius rozszerzone:", artist)
+			ingest(searchAudius(artist))
 		end
 
 		table.sort(ranked, function(a, b)
@@ -875,7 +929,8 @@ function Music.Init(S)
 		return "rbxassetid://" .. assetRef
 	end
 
-	local function assetFromDownload(url, cacheName, skipCache, dlHeaders)
+	local function assetFromDownload(url, cacheName, skipCache, dlHeaders, timeoutSec)
+		timeoutSec = timeoutSec or 45
 		cacheName = safeFileName(cacheName)
 		local relPath = CACHE_DIR .. "/" .. cacheName
 		local getAsset, via = resolveCustomAssetFn()
@@ -889,7 +944,7 @@ function Music.Init(S)
 
 		if typeof(writecustomasset) == "function" then
 			logInfo("Pobieranie audio (writecustomasset):", url:sub(1, 80))
-			local body, httpErr = httpGet(url, 45, fetchHeaders)
+			local body, httpErr = httpGet(url, timeoutSec, fetchHeaders)
 			if not body then
 				return nil, nil, "Nie pobrano audio: " .. tostring(httpErr)
 			end
@@ -923,7 +978,7 @@ function Music.Init(S)
 		end
 
 		logInfo("Pobieranie audio:", url:sub(1, 80))
-		local body, httpErr = httpGet(url, 45, fetchHeaders)
+		local body, httpErr = httpGet(url, timeoutSec, fetchHeaders)
 		if not body then
 			return nil, nil, "Nie pobrano audio: " .. tostring(httpErr)
 		end
@@ -1471,8 +1526,88 @@ function Music.Init(S)
 		return false, "Roblox odrzucił format: " .. fileLabel
 	end
 
+	local function downloadAudiusCandidate(cand, timeoutSec, skipCache)
+		local streamUrl = cand.streamUrl
+		if cand.audiusId then
+			local fresh = refreshAudiusStream(cand.audiusId)
+			if fresh then
+				streamUrl = fresh
+			end
+		end
+		local cacheKey = safeFileName("audius_" .. tostring(cand.audiusId or cand.identifier) .. ".mp3")
+		local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, skipCache, nil, timeoutSec)
+		return assetRef, cachePath, aerr
+	end
+
+	local function playAudiusCandidates(candidates, myGen, stale, logPrefix)
+		if not candidates or #candidates == 0 then
+			return false
+		end
+		logPrefix = logPrefix or "Audius"
+		local batchSize = 3
+		local idx = 1
+		while idx <= #candidates do
+			if stale() then
+				return false
+			end
+			local batchEnd = math.min(idx + batchSize - 1, #candidates)
+			local winner = nil
+			local claimed = false
+			local expected = batchEnd - idx + 1
+			local finished = 0
+			local batchTimeout = idx == 1 and 26 or 20
+
+			for bi = idx, batchEnd do
+				local cand = candidates[bi]
+				local perTimeout = (idx == 1 and bi == idx) and 28 or 18
+				task.spawn(function()
+					logInfo(logPrefix, "próba", bi .. "/" .. #candidates .. ":", cand.title)
+					local assetRef, cachePath, aerr = downloadAudiusCandidate(cand, perTimeout, bi > 1)
+					finished += 1
+					if assetRef and not claimed and not stale() then
+						claimed = true
+						winner = {
+							cand = cand,
+							assetRef = assetRef,
+							cachePath = cachePath,
+							cacheKey = safeFileName("audius_" .. tostring(cand.audiusId or cand.identifier) .. ".mp3"),
+						}
+					elseif not assetRef then
+						logErr("Audius pobieranie fail:", aerr)
+					end
+				end)
+			end
+
+			local deadline = os.clock() + batchTimeout
+			while finished < expected and not winner and os.clock() < deadline do
+				task.wait(0.08)
+			end
+
+			if winner then
+				local okPlay, playErr = tryPlayAsset(
+					winner.assetRef,
+					winner.cachePath,
+					winner.cand,
+					winner.cacheKey,
+					myGen,
+					stale
+				)
+				if okPlay then
+					return true
+				end
+				if winner.cachePath then
+					deleteCache(winner.cachePath)
+				end
+				logErr("Audius próba fail:", playErr)
+			end
+
+			idx = batchEnd + 1
+		end
+		return false
+	end
+
 	function Music.GetSource()
-		local src = tostring(S.MusicSource or "auto"):lower()
+		local src = tostring(S.MusicSource or "audius"):lower()
 		if src == "archive" then
 			return "archive"
 		end
@@ -1563,6 +1698,20 @@ function Music.Init(S)
 						return
 					end
 					rankSearchResults(query, results)
+					local aud, yt = {}, {}
+					for _, r in ipairs(results) do
+						if r.source == "youtube" then
+							if #yt < 6 then
+								table.insert(yt, r)
+							end
+						else
+							table.insert(aud, r)
+						end
+					end
+					results = aud
+					for _, r in ipairs(yt) do
+						table.insert(results, r)
+					end
 					results = filterSearchResults(query, results)
 					finish(results, nil)
 					return
@@ -1677,36 +1826,17 @@ function Music.Init(S)
 			end
 
 			if item.source == "youtube" and item.videoId then
-				local candidates, song, artist = findAudiusCandidates(item, 8)
+				local candidates, song, artist = findAudiusCandidates(item, 12)
 				logInfo("YT → Audius:", song, "|", artist, "| kandydatów:", #candidates)
 
-				for i, cand in ipairs(candidates) do
-					if stale() then
-						return
-					end
-					logInfo("Audius próba", i .. "/" .. #candidates .. ":", cand.title)
-					local cacheKey = safeFileName("audius_" .. tostring(cand.audiusId or cand.identifier) .. ".mp3")
-					local assetRef, cachePath, aerr = assetFromDownload(cand.streamUrl, cacheKey, i > 1)
-					if stale() then
-						return
-					end
-					if assetRef then
-						local okPlay, playErr = tryPlayAsset(assetRef, cachePath, cand, cacheKey, myGen, stale)
-						if okPlay then
-							return
-						end
-						if cachePath then
-							deleteCache(cachePath)
-						end
-						logErr("Audius próba fail:", playErr)
-					else
-						logErr("Audius pobieranie fail:", aerr)
-					end
+				if playAudiusCandidates(candidates, myGen, stale, "YT→Audius") then
+					return
 				end
 
 				loading = false
-				lastError = "Brak wersji na Audius dla: " .. (song ~= "" and song or item.title or "?")
-				logErr("Play fail — wybierz wynik z etykietą Audius na liście")
+				lastError = "Brak na Audius: " .. (song ~= "" and song or item.title or "?")
+					.. " — wybierz wiersz ▶ Audius z listy"
+				logErr("Play fail YT — utwór nie jest na Audius")
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
 				end
@@ -1715,29 +1845,11 @@ function Music.Init(S)
 			end
 
 			if item.source == "audius" and item.streamUrl then
-				local cacheKey = safeFileName("audius_" .. tostring(item.audiusId or item.identifier) .. ".mp3")
-				local assetRef, cachePath, aerr = assetFromDownload(item.streamUrl, cacheKey, false)
-				if stale() then
-					return
-				end
-				if assetRef then
-					local okPlay, playErr = tryPlayAsset(assetRef, cachePath, item, cacheKey, myGen, stale)
-					if okPlay then
-						return
-					end
-					if cachePath then
-						deleteCache(cachePath)
-					end
-					loading = false
-					lastError = playErr
-					if Music.onPlayError then
-						pcall(Music.onPlayError, playErr)
-					end
-					notifyState()
+				if playAudiusCandidates({ item }, myGen, stale, "Audius") then
 					return
 				end
 				loading = false
-				lastError = aerr or "Nie pobrano z Audius"
+				lastError = "Nie pobrano z Audius — spróbuj ponownie"
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
 				end

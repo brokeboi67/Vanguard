@@ -158,7 +158,8 @@ function UIMusic.build(env)
 			Position = UDim2.new(0, 50, 0, 26),
 			BackgroundTransparency = 1,
 			Text = (item.creator or "Unknown")
-				.. (item.source == "audius" and " · ▶ Audius" or (item.source == "youtube" and " · YT" or "")),
+				.. (item.source == "audius" and " · ▶ odtwarza"
+					or (item.source == "youtube" and " · YT (szukaj na Audius)" or "")),
 			Font = Enum.Font.Gotham,
 			TextSize = 10,
 			TextColor3 = MUT,
@@ -224,7 +225,12 @@ function UIMusic.build(env)
 			Music.SetSource(src)
 		end
 		refreshSourceButtons()
-		local labels = { auto = "Auto (YT+Audius)", audius = "Audius", youtube = "YouTube", archive = "Archive.org" }
+		local labels = {
+			auto = "Auto (Audius + YT podgląd)",
+			audius = "Audius · odtwarza",
+			youtube = "YouTube · tylko szukaj",
+			archive = "Archive.org",
+		}
 		setSearchStatus("Źródło: " .. (labels[src] or labels.auto))
 	end
 
@@ -401,17 +407,33 @@ function UIMusic.build(env)
 		Parent = SourceRow,
 	})
 
-	SourceAutoBtn = C("TextButton", {
+	SourceAudiusBtn = C("TextButton", {
 		Size = UDim2.new(0, 0, 0, 24),
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundColor3 = BG2,
-		Text = "  Auto  ",
+		Text = "  Audius  ",
 		Font = Enum.Font.GothamBold,
 		TextSize = 9,
 		TextColor3 = MUT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
 		LayoutOrder = 1,
+		ZIndex = 7,
+		Parent = SourceRow,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceAudiusBtn })
+
+	SourceAutoBtn = C("TextButton", {
+		Size = UDim2.new(0, 0, 0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = BG2,
+		Text = "  Auto  ",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
 		ZIndex = 7,
 		Parent = SourceRow,
 	})
@@ -427,27 +449,11 @@ function UIMusic.build(env)
 		TextColor3 = MUT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
-		LayoutOrder = 2,
-		ZIndex = 7,
-		Parent = SourceRow,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceYoutubeBtn })
-
-	SourceAudiusBtn = C("TextButton", {
-		Size = UDim2.new(0, 0, 0, 24),
-		AutomaticSize = Enum.AutomaticSize.X,
-		BackgroundColor3 = BG2,
-		Text = "  Audius  ",
-		Font = Enum.Font.GothamMedium,
-		TextSize = 9,
-		TextColor3 = MUT,
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
 		LayoutOrder = 3,
 		ZIndex = 7,
 		Parent = SourceRow,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceAudiusBtn })
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceYoutubeBtn })
 
 	SourceArchiveBtn = C("TextButton", {
 		Size = UDim2.new(0, 0, 0, 24),
