@@ -31,6 +31,7 @@ function Music.Init(S)
 	local playClockStart = 0
 	local playPosOffset = 0
 	local pausePosSnapshot = 0
+	local lastToggleAt = 0
 	local HTTP_TIMEOUT = 12
 
 	local function logInfo(...)
@@ -645,20 +646,23 @@ function Music.Init(S)
 		if not currentSound then
 			return
 		end
+		if os.clock() - lastToggleAt < 0.3 then
+			return
+		end
+		lastToggleAt = os.clock()
+
 		if paused then
 			paused = false
-			currentSound.TimePosition = pausePosSnapshot
 			currentSound.Volume = S.MusicVolume or 0.65
-			startPlayback(currentSound)
 			playPosOffset = pausePosSnapshot
 			playClockStart = os.clock()
+			logInfo("Resume @", string.format("%.1fs", pausePosSnapshot))
 		else
 			pausePosSnapshot = getPlaybackPosition()
 			paused = true
 			playClockStart = 0
-			pcall(function()
-				currentSound:Stop()
-			end)
+			currentSound.Volume = 0
+			logInfo("Pause @", string.format("%.1fs", pausePosSnapshot))
 		end
 		notifyState()
 	end
@@ -822,33 +826,18 @@ function Music.Init(S)
 								playClockStart = os.clock()
 								logInfo("Play OK:", nowPlaying.title, "→", cand.name)
 
-								sound.Ended:Connect(function()
-									if currentSound ~= sound or paused then
-										return
-									end
-									task.defer(function()
-										if currentSound ~= sound or paused then
-											return
-										end
-										local pos, dur = getPlaybackPosition()
-										if dur > 0 and pos < dur - 0.5 then
-											return
-										end
-										playGen += 1
-										stopInternal()
-									end)
-								end)
-
 								disconnectProgress()
 								progressConn = RS.Heartbeat:Connect(function()
 									if currentSound ~= sound then
 										return
 									end
-									if Music.onProgress then
-										local pos, dur = getPlaybackPosition()
-										if dur > 0 then
-											pcall(Music.onProgress, pos, dur)
-										end
+									local pos, dur = getPlaybackPosition()
+									if Music.onProgress and dur > 0 then
+										pcall(Music.onProgress, pos, dur)
+									end
+									if not paused and dur > 0 and pos >= dur - 0.35 and S.MusicLoop ~= true then
+										playGen += 1
+										stopInternal()
 									end
 								end)
 
