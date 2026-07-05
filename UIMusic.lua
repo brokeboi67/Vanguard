@@ -157,7 +157,8 @@ function UIMusic.build(env)
 			Size = UDim2.new(1, -96, 0, 14),
 			Position = UDim2.new(0, 50, 0, 26),
 			BackgroundTransparency = 1,
-			Text = item.creator or "Unknown",
+			Text = (item.creator or "Unknown")
+				.. (item.source == "audius" and " · ▶ Audius" or (item.source == "youtube" and " · YT" or "")),
 			Font = Enum.Font.Gotham,
 			TextSize = 10,
 			TextColor3 = MUT,

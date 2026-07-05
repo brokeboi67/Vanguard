@@ -425,13 +425,10 @@ function Music.Init(S)
 				s -= 70
 			end
 
-			if item.source == "youtube" then
-				if creator:find("vevo") or creator:find("official") then
-					s += 40
-				end
-				if title:find("official") or title:find("audio") then
-					s += 25
-				end
+			if item.source == "audius" then
+				s += 180
+			elseif item.source == "youtube" then
+				s -= 40
 			end
 
 			s += math.min((item.downloads or 0) / 2000, 15)
@@ -608,29 +605,118 @@ function Music.Init(S)
 		return title:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
 	end
 
-	local function findAudiusForYoutube(item)
-		local title = cleanTitleForSearch(item.title)
+	local function extractSongFromYoutube(item)
+		local raw = cleanTitleForSearch(item.title or "")
 		local creator = tostring(item.creator or ""):gsub(" %- Topic$", ""):gsub(" %- topic$", "")
-		local queries = {}
-		if title ~= "" and creator ~= "" then
-			table.insert(queries, title .. " " .. creator)
-			table.insert(queries, creator .. " " .. title)
-		end
-		if title ~= "" then
-			table.insert(queries, title)
+		local song = raw
+		local artist = creator
+
+		local a, t = raw:match("^(.-)%s+-%s+(.+)$")
+		if a and t and #t >= 2 then
+			artist = a:gsub("^%s+", ""):gsub("%s+$", "")
+			song = t:gsub("^%s+", ""):gsub("%s+$", "")
 		end
 
-		for _, q in ipairs(queries) do
-			local results = searchAudius(q)
-			if results and #results > 0 then
-				rankSearchResults(q, results)
-				results = filterSearchResults(q, results)
-				if results[1] then
-					return results[1]
+		if artist ~= "" and artist ~= "YouTube" then
+			local al = artist:lower()
+			local sl = song:lower()
+			if sl:sub(1, #al) == al then
+				song = song:sub(#artist + 1):gsub("^[%s%-]+", ""):gsub("%s+", " ")
+			end
+		end
+
+		song = song:gsub("^%s+", ""):gsub("%s+$", "")
+		if artist == "YouTube" then
+			artist = ""
+		end
+		return song, artist
+	end
+
+	local function scoreAudiusFallback(song, artist, track)
+		local title = (track.title or ""):lower()
+		local creator = (track.creator or ""):lower()
+		local hay = title .. " " .. creator
+		local s = 0
+		local sw = song:lower()
+		local aw = artist:lower()
+
+		if sw ~= "" and title:find(sw, 1, true) then
+			s += 100
+		elseif sw ~= "" then
+			for w in sw:gmatch("%S+") do
+				if #w >= 3 and hay:find(w, 1, true) then
+					s += 25
 				end
 			end
 		end
-		return nil
+		if aw ~= "" and hay:find(aw, 1, true) then
+			s += 60
+		end
+		s += math.min((track.downloads or 0) / 1000, 20)
+		return s
+	end
+
+	local function findAudiusCandidates(item, limit)
+		limit = limit or 8
+		local song, artist = extractSongFromYoutube(item)
+		local queries = {}
+		local seenQ = {}
+
+		local function addQ(q)
+			q = tostring(q or ""):gsub("^%s+", ""):gsub("%s+$", "")
+			if q ~= "" and not seenQ[q:lower()] then
+				seenQ[q:lower()] = true
+				table.insert(queries, q)
+			end
+		end
+
+		if song ~= "" and artist ~= "" then
+			addQ(song .. " " .. artist)
+			addQ(artist .. " " .. song)
+		end
+		if song ~= "" then
+			addQ(song)
+		end
+		if artist ~= "" then
+			addQ(artist .. " " .. (song:match("^(%S+)") or ""))
+		end
+
+		local seen = {}
+		local ranked = {}
+		for _, q in ipairs(queries) do
+			local results = searchAudius(q)
+			if results then
+				for _, r in ipairs(results) do
+					if r.streamUrl and r.identifier and not seen[r.identifier] then
+						seen[r.identifier] = true
+						r._fb = scoreAudiusFallback(song, artist, r)
+						table.insert(ranked, r)
+					end
+				end
+			end
+		end
+
+		table.sort(ranked, function(a, b)
+			if a._fb ~= b._fb then
+				return a._fb > b._fb
+			end
+			return (a.downloads or 0) > (b.downloads or 0)
+		end)
+
+		local out = {}
+		for i, r in ipairs(ranked) do
+			r._fb = nil
+			table.insert(out, r)
+			if i >= limit then
+				break
+			end
+		end
+		return out, song, artist
+	end
+
+	local function findAudiusForYoutube(item)
+		local candidates = findAudiusCandidates(item, 1)
+		return candidates[1]
 	end
 
 	local function pickYoutubeAudioUrl(data)
@@ -1591,59 +1677,41 @@ function Music.Init(S)
 			end
 
 			if item.source == "youtube" and item.videoId then
-				logInfo("YT → Audius fallback:", cleanTitleForSearch(item.title))
-				local fb = findAudiusForYoutube(item)
-				if fb then
-					logInfo("Znaleziono na Audius:", fb.title)
-					item = fb
-				else
-					local streamUrl, serr = resolveYoutubeStream(item.videoId)
+				local candidates, song, artist = findAudiusCandidates(item, 8)
+				logInfo("YT → Audius:", song, "|", artist, "| kandydatów:", #candidates)
+
+				for i, cand in ipairs(candidates) do
 					if stale() then
 						return
 					end
-					if streamUrl then
-						local cacheKey = safeFileName("yt_" .. item.videoId .. ".m4a")
-						local ytHeaders = {
-							["Referer"] = "https://www.youtube.com/",
-							["Origin"] = "https://www.youtube.com",
-						}
-						local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, false, ytHeaders)
-						if stale() then
-							return
-						end
-						if assetRef then
-							local okPlay, playErr = tryPlayAsset(assetRef, cachePath, item, cacheKey, myGen, stale)
-							if okPlay then
-								return
-							end
-							if cachePath then
-								deleteCache(cachePath)
-							end
-							loading = false
-							lastError = playErr
-							if Music.onPlayError then
-								pcall(Music.onPlayError, playErr)
-							end
-							notifyState()
-							return
-						end
-						loading = false
-						lastError = aerr or "Nie pobrano z YouTube"
-						if Music.onPlayError then
-							pcall(Music.onPlayError, lastError)
-						end
-						notifyState()
+					logInfo("Audius próba", i .. "/" .. #candidates .. ":", cand.title)
+					local cacheKey = safeFileName("audius_" .. tostring(cand.audiusId or cand.identifier) .. ".mp3")
+					local assetRef, cachePath, aerr = assetFromDownload(cand.streamUrl, cacheKey, i > 1)
+					if stale() then
 						return
 					end
-					loading = false
-					lastError = "Brak na Audius. Przełącz źródło na Audius i wybierz utwór stamtąd."
-					logErr("Play fail YT:", serr)
-					if Music.onPlayError then
-						pcall(Music.onPlayError, lastError)
+					if assetRef then
+						local okPlay, playErr = tryPlayAsset(assetRef, cachePath, cand, cacheKey, myGen, stale)
+						if okPlay then
+							return
+						end
+						if cachePath then
+							deleteCache(cachePath)
+						end
+						logErr("Audius próba fail:", playErr)
+					else
+						logErr("Audius pobieranie fail:", aerr)
 					end
-					notifyState()
-					return
 				end
+
+				loading = false
+				lastError = "Brak wersji na Audius dla: " .. (song ~= "" and song or item.title or "?")
+				logErr("Play fail — wybierz wynik z etykietą Audius na liście")
+				if Music.onPlayError then
+					pcall(Music.onPlayError, lastError)
+				end
+				notifyState()
+				return
 			end
 
 			if item.source == "audius" and item.streamUrl then
