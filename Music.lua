@@ -181,7 +181,7 @@ function Music.Init(S)
 		local term = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		if term:find("%s") and not term:find(":") and not term:find('"') then
 			local clean = term:gsub('"', "")
-			term = '(creator:"' .. clean .. '" OR title:"' .. clean .. '" OR "' .. clean .. '")'
+			term = '(title:"' .. clean .. '" OR "' .. clean .. '" OR creator:"' .. clean .. '")'
 		end
 		local lucene = term .. " AND mediatype:audio"
 		return "https://archive.org/advancedsearch.php?q="
@@ -206,6 +206,71 @@ function Music.Init(S)
 			creator = tostring(creator or "Unknown"),
 			downloads = tonumber(doc.downloads) or 0,
 		}
+	end
+
+	local function rankSearchResults(query, results)
+		local q = query:lower()
+		local words = {}
+		for w in q:gmatch("[%w]+") do
+			if #w >= 2 then
+				table.insert(words, w)
+			end
+		end
+
+		local function relevance(item)
+			local title = (item.title or ""):lower()
+			local creator = (item.creator or ""):lower()
+			local hay = title .. " " .. creator
+			local s = 0
+
+			if title == q then
+				s += 250
+			end
+			if title:find(q, 1, true) then
+				s += 180
+			end
+			if hay:find(q, 1, true) then
+				s += 120
+			end
+
+			local matched = 0
+			for _, w in ipairs(words) do
+				if hay:find(w, 1, true) then
+					matched += 1
+				end
+			end
+			if #words > 0 then
+				s += (matched / #words) * 100
+			end
+			if matched == #words and #words >= 2 then
+				s += 60
+			end
+
+			if title:find("podcast") or title:find("radio") or title:find("program")
+				or title:find("mix") or title:find("voice of america") or title:find("voa") then
+				s -= 50
+			end
+			if title:find("lyrics") or title:find("multitrack") or title:find("cover") then
+				s += 10
+			end
+
+			s += math.min((item.downloads or 0) / 2000, 15)
+			return s
+		end
+
+		for _, item in ipairs(results) do
+			item._rel = relevance(item)
+		end
+		table.sort(results, function(a, b)
+			if a._rel ~= b._rel then
+				return a._rel > b._rel
+			end
+			return (a.downloads or 0) > (b.downloads or 0)
+		end)
+		for _, item in ipairs(results) do
+			item._rel = nil
+		end
+		return results
 	end
 
 	local function filterPresets(query)
@@ -433,6 +498,68 @@ function Music.Init(S)
 		return pos, dur
 	end
 
+	local function startPlayback(sound)
+		local ok = pcall(function()
+			sound:Play()
+		end)
+		if ok then
+			return true
+		end
+		return pcall(function()
+			SoundService:PlayLocalSound(sound)
+		end)
+	end
+
+	local function killSound(sound)
+		if not sound then
+			return
+		end
+		pcall(function()
+			sound:Stop()
+			sound:Destroy()
+		end)
+	end
+
+	local function waitForSoundLoad(sound, timeoutSec, gen)
+		timeoutSec = timeoutSec or 12
+		local deadline = os.clock() + timeoutSec
+		while os.clock() < deadline do
+			if gen and gen ~= playGen then
+				return false
+			end
+			if not sound.Parent then
+				return false
+			end
+			if sound.IsLoaded and sound.TimeLength > 0 then
+				return true
+			end
+			task.wait(0.1)
+		end
+		return sound.Parent ~= nil and sound.IsLoaded == true and sound.TimeLength > 0
+	end
+
+	local function disconnectProgress()
+		if progressConn then
+			progressConn:Disconnect()
+			progressConn = nil
+		end
+	end
+
+	local function stopInternal()
+		disconnectProgress()
+		destroyAllMusicSounds()
+		currentSound = nil
+		paused = false
+		nowPlaying = nil
+		loading = false
+		playClockStart = 0
+		playPosOffset = 0
+		pausePosSnapshot = 0
+		pausedSession = nil
+		cachedDuration = 0
+		notifyState()
+	end
+
 	local function attachProgress(sound)
 		disconnectProgress()
 		progressConn = RS.Heartbeat:Connect(function()
@@ -510,68 +637,6 @@ function Music.Init(S)
 		attachProgress(sound)
 		notifyState()
 		logInfo("Resume OK @", string.format("%.1fs", pos))
-	end
-
-	local function startPlayback(sound)
-		local ok = pcall(function()
-			sound:Play()
-		end)
-		if ok then
-			return true
-		end
-		return pcall(function()
-			SoundService:PlayLocalSound(sound)
-		end)
-	end
-
-	local function killSound(sound)
-		if not sound then
-			return
-		end
-		pcall(function()
-			sound:Stop()
-			sound:Destroy()
-		end)
-	end
-
-	local function waitForSoundLoad(sound, timeoutSec, gen)
-		timeoutSec = timeoutSec or 12
-		local deadline = os.clock() + timeoutSec
-		while os.clock() < deadline do
-			if gen and gen ~= playGen then
-				return false
-			end
-			if not sound.Parent then
-				return false
-			end
-			if sound.IsLoaded and sound.TimeLength > 0 then
-				return true
-			end
-			task.wait(0.1)
-		end
-		return sound.Parent ~= nil and sound.IsLoaded == true and sound.TimeLength > 0
-	end
-
-	local function disconnectProgress()
-		if progressConn then
-			progressConn:Disconnect()
-			progressConn = nil
-		end
-	end
-
-	local function stopInternal()
-		disconnectProgress()
-		destroyAllMusicSounds()
-		currentSound = nil
-		paused = false
-		nowPlaying = nil
-		loading = false
-		playClockStart = 0
-		playPosOffset = 0
-		pausePosSnapshot = 0
-		pausedSession = nil
-		cachedDuration = 0
-		notifyState()
 	end
 
 	local function scoreAudioFile(f)
@@ -830,6 +895,8 @@ function Music.Init(S)
 						end
 					end
 				end
+
+				rankSearchResults(query, results)
 
 				finish(results, #results == 0 and "Brak wyników — spróbuj innej frazy" or nil)
 			end)
