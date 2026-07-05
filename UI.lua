@@ -25,7 +25,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Misc = Color3.fromRGB(255, 195, 75),
 		Config = Color3.fromRGB(155, 135, 255),
 		Menus = Color3.fromRGB(255, 120, 180),
-		Music = Color3.fromRGB(30, 215, 96),
+		Music = Color3.fromRGB(29, 185, 84),
 	}
 
 	local function tabSoft(col)

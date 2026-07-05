@@ -14,6 +14,12 @@ local AUDIO_SCORE = {
 	["Flac"] = 40,
 }
 
+local PRESETS = {
+	{ identifier = "stereo-love", title = "Stereo Love", creator = "Edward Maya", downloads = 22591 },
+	{ identifier = "ModjoLadyHearMeTonight", title = "Lady (Hear Me Tonight)", creator = "Modjo", downloads = 33449 },
+	{ identifier = "DanceTheMainstreamMash2010-2011", title = "Dance MainStream Mash 2010-2011", creator = "Ryan Janjuha", downloads = 7978 },
+}
+
 function Music.Init(S)
 	local currentSound = nil
 	local progressConn = nil
@@ -32,38 +38,130 @@ function Music.Init(S)
 		end
 	end
 
+	local function urlEncode(str)
+		return HttpService:UrlEncode(str)
+	end
+
 	local function httpGet(url)
+		local headers = {
+			["User-Agent"] = "Mozilla/5.0 (compatible; Vanguard/2.27)",
+			["Accept"] = "application/json,text/plain,*/*",
+		}
+
+		if HttpService.RequestAsync then
+			local ok, res = pcall(function()
+				return HttpService:RequestAsync({
+					Url = url,
+					Method = "GET",
+					Headers = headers,
+				})
+			end)
+			if ok and res and res.Success and res.Body and res.Body ~= "" then
+				return res.Body
+			end
+		end
+
 		local req = request or (syn and syn.request) or (http and http.request)
 		if req then
 			local ok, res = pcall(function()
 				return req({
 					Url = url,
 					Method = "GET",
-					Headers = { ["User-Agent"] = "Vanguard/1.0" },
+					Headers = headers,
 				})
 			end)
-			if ok and res and res.Body then
-				return res.Body
+			if ok and res and res.Body and res.Body ~= "" then
+				local code = tonumber(res.StatusCode) or 200
+				if code >= 200 and code < 300 then
+					return res.Body
+				end
 			end
 		end
-		return game:HttpGet(url, true)
-	end
 
-	local function urlEncode(str)
-		return HttpService:UrlEncode(str)
+		if typeof(game.HttpGetAsync) == "function" then
+			local ok, body = pcall(game.HttpGetAsync, game, url)
+			if ok and body and body ~= "" then
+				return body
+			end
+		end
+
+		local ok, body = pcall(game.HttpGet, game, url, true)
+		if ok and body and body ~= "" then
+			return body
+		end
+
+		return nil
 	end
 
 	local function decodeJson(body)
 		if not body or body == "" then
 			return nil
 		end
+		local trimmed = body:match("^%s*(.-)%s*$")
+		if trimmed:sub(1, 1) == "<" then
+			return nil, "Archive zwrócił HTML zamiast JSON — sprawdź HttpGet w executorze"
+		end
 		local ok, data = pcall(function()
-			return HttpService:JSONDecode(body)
+			return HttpService:JSONDecode(trimmed)
 		end)
 		if ok then
 			return data
 		end
-		return nil
+		return nil, "Nieprawidłowa odpowiedź Archive (JSON)"
+	end
+
+	local function buildSearchUrl(query)
+		local lucene = query .. " AND mediatype:audio"
+		return "https://archive.org/advancedsearch.php?q="
+			.. urlEncode(lucene)
+			.. "&fl[]=identifier,title,creator,downloads"
+			.. "&sort[]=downloads+desc"
+			.. "&rows=24&page=1&output=json"
+	end
+
+	local function normalizeDoc(doc)
+		local title = doc.title
+		if typeof(title) == "table" then
+			title = title[1]
+		end
+		local creator = doc.creator
+		if typeof(creator) == "table" then
+			creator = table.concat(creator, ", ")
+		end
+		return {
+			identifier = doc.identifier,
+			title = tostring(title or doc.identifier or "?"),
+			creator = tostring(creator or "Unknown"),
+			downloads = tonumber(doc.downloads) or 0,
+		}
+	end
+
+	local function filterPresets(query)
+		local q = query:lower()
+		local words = {}
+		for word in q:gmatch("[%w%p]+") do
+			if #word >= 2 then
+				table.insert(words, word)
+			end
+		end
+		local out = {}
+		for _, preset in ipairs(PRESETS) do
+			local hay = (preset.title .. " " .. preset.creator):lower()
+			local match = q ~= "" and hay:find(q, 1, true)
+			if not match and #words > 0 then
+				match = true
+				for _, w in ipairs(words) do
+					if not hay:find(w, 1, true) then
+						match = false
+						break
+					end
+				end
+			end
+			if match then
+				table.insert(out, preset)
+			end
+		end
+		return out
 	end
 
 	local function assetFromUrl(url)
@@ -132,16 +230,26 @@ function Music.Init(S)
 	end
 
 	local function resolveDownload(identifier)
-		local body = httpGet("https://archive.org/metadata/" .. urlEncode(identifier))
-		local meta = decodeJson(body)
-		if not meta or not meta.files then
-			return nil, "Brak metadanych Archive"
+		local id = tostring(identifier or ""):gsub("^%s+", ""):gsub("%s+$", "")
+		if id == "" then
+			return nil, "Brak identyfikatora Archive"
+		end
+		local body = httpGet("https://archive.org/metadata/" .. id)
+		if not body then
+			return nil, "Brak połączenia z Archive (HttpGet)"
+		end
+		local meta, parseErr = decodeJson(body)
+		if not meta then
+			return nil, parseErr or "Brak metadanych Archive"
+		end
+		if not meta.files then
+			return nil, "Brak plików w tym uploadzie"
 		end
 		local file = pickAudioFile(meta.files)
 		if not file then
 			return nil, "Brak pliku audio (MP3/OGG) w tym uploadzie"
 		end
-		local dl = "https://archive.org/download/" .. identifier .. "/" .. urlEncode(file.name)
+		local dl = "https://archive.org/download/" .. id .. "/" .. urlEncode(file.name)
 		return dl, file.name
 	end
 
@@ -202,45 +310,51 @@ function Music.Init(S)
 		S.MusicLastQuery = query
 
 		task.spawn(function()
-			local q = urlEncode(query .. " AND mediatype:audio")
-			local url = "https://archive.org/advancedsearch.php?q="
-				.. q
-				.. "&fl[]=identifier,title,creator,downloads,description"
-				.. "&sort[]=downloads desc&rows=24&page=1&output=json"
-
 			local ok, err = pcall(function()
+				local url = buildSearchUrl(query)
 				local body = httpGet(url)
-				local data = decodeJson(body)
-				if not data or not data.response then
+				if not body then
+					local presets = filterPresets(query)
 					if callback then
-						callback({}, "Błąd odpowiedzi Archive")
+						callback(presets, #presets == 0 and "Brak połączenia z Archive — włącz HttpGet" or "Offline — pokazuję znane hity")
 					end
 					return
 				end
-				local docs = data.response.docs or {}
-				local results = {}
-				for _, doc in ipairs(docs) do
-					local title = doc.title
-					if typeof(title) == "table" then
-						title = title[1]
+
+				local data, parseErr = decodeJson(body)
+				if not data or not data.response then
+					local presets = filterPresets(query)
+					if callback then
+						callback(presets, #presets == 0 and (parseErr or "Błąd odpowiedzi Archive") or parseErr or "Archive niedostępne — znane hity")
 					end
-					local creator = doc.creator
-					if typeof(creator) == "table" then
-						creator = table.concat(creator, ", ")
-					end
-					table.insert(results, {
-						identifier = doc.identifier,
-						title = tostring(title or doc.identifier or "?"),
-						creator = tostring(creator or "Unknown"),
-						downloads = tonumber(doc.downloads) or 0,
-					})
+					return
 				end
+
+				local results = {}
+				local seen = {}
+				for _, doc in ipairs(data.response.docs or {}) do
+					local item = normalizeDoc(doc)
+					if item.identifier and not seen[item.identifier] then
+						seen[item.identifier] = true
+						table.insert(results, item)
+					end
+				end
+
+				if #results == 0 then
+					for _, preset in ipairs(filterPresets(query)) do
+						if not seen[preset.identifier] then
+							table.insert(results, preset)
+						end
+					end
+				end
+
 				if callback then
 					callback(results, #results == 0 and "Brak wyników — spróbuj innej frazy" or nil)
 				end
 			end)
 			if not ok and callback then
-				callback({}, tostring(err))
+				local presets = filterPresets(query)
+				callback(presets, #presets == 0 and tostring(err) or tostring(err))
 			end
 		end)
 	end
@@ -251,6 +365,7 @@ function Music.Init(S)
 		end
 		stopInternal()
 		loading = true
+		lastError = nil
 		notifyState()
 
 		task.spawn(function()
