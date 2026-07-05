@@ -27,6 +27,7 @@ function Music.Init(S)
 	local paused = false
 	local nowPlaying = nil
 	local lastError = nil
+	local playGen = 0
 	local HTTP_TIMEOUT = 12
 
 	local function logInfo(...)
@@ -243,6 +244,12 @@ function Music.Init(S)
 			if b1 == 0xFF and b2 and b2 >= 0xE0 then
 				return true
 			end
+			for i = 1, math.min(#body - 1, 4096) do
+				local a, b = body:byte(i, i + 1)
+				if a == 0xFF and b and b >= 0xE0 then
+					return true
+				end
+			end
 			return false, "nieprawidłowy MP3"
 		end
 		return true
@@ -364,16 +371,43 @@ function Music.Init(S)
 		return nil, relPath, "getcustomasset fail: " .. tostring(assetRef)
 	end
 
-	local function waitForSoundLoad(sound, timeoutSec)
-		timeoutSec = timeoutSec or 10
+	local function destroyAllMusicSounds()
+		for _, inst in ipairs(SoundService:GetChildren()) do
+			if inst:IsA("Sound") and inst.Name == "VanguardMusic" then
+				pcall(function()
+					inst:Stop()
+					inst:Destroy()
+				end)
+			end
+		end
+	end
+
+	local function killSound(sound)
+		if not sound then
+			return
+		end
+		pcall(function()
+			sound:Stop()
+			sound:Destroy()
+		end)
+	end
+
+	local function waitForSoundLoad(sound, timeoutSec, gen)
+		timeoutSec = timeoutSec or 12
 		local deadline = os.clock() + timeoutSec
 		while os.clock() < deadline do
+			if gen and gen ~= playGen then
+				return false
+			end
+			if not sound.Parent then
+				return false
+			end
 			if sound.IsLoaded and sound.TimeLength > 0 then
 				return true
 			end
 			task.wait(0.1)
 		end
-		return sound.IsLoaded == true and sound.TimeLength > 0
+		return sound.Parent ~= nil and sound.IsLoaded == true and sound.TimeLength > 0
 	end
 
 	local function disconnectProgress()
@@ -385,15 +419,11 @@ function Music.Init(S)
 
 	local function stopInternal()
 		disconnectProgress()
-		if currentSound then
-			pcall(function()
-				currentSound:Stop()
-				currentSound:Destroy()
-			end)
-			currentSound = nil
-		end
+		destroyAllMusicSounds()
+		currentSound = nil
 		paused = false
 		nowPlaying = nil
+		loading = false
 		notifyState()
 	end
 
@@ -462,6 +492,27 @@ function Music.Init(S)
 			end
 			return a.name < b.name
 		end)
+
+		local hasOgg = false
+		for _, f in ipairs(list) do
+			if f.name:lower():find("%.ogg") then
+				hasOgg = true
+				break
+			end
+		end
+		if hasOgg then
+			local filtered = {}
+			for _, f in ipairs(list) do
+				local lower = f.name:lower()
+				if not (lower:find("%.mp3") and f.format == "VBR MP3") then
+					table.insert(filtered, f)
+				end
+			end
+			if #filtered > 0 then
+				list = filtered
+			end
+		end
+
 		return list
 	end
 
@@ -505,7 +556,7 @@ function Music.Init(S)
 		end
 		return {
 			loading = loading,
-			playing = currentSound ~= nil and not paused,
+			playing = currentSound ~= nil and not paused and currentSound.IsPlaying,
 			paused = paused,
 			title = nowPlaying and nowPlaying.title or "",
 			artist = nowPlaying and nowPlaying.creator or "",
@@ -526,7 +577,12 @@ function Music.Init(S)
 	end
 
 	function Music.Stop()
+		playGen += 1
 		stopInternal()
+	end
+
+	function Music.IsBusy()
+		return loading
 	end
 
 	function Music.TogglePause()
@@ -622,14 +678,35 @@ function Music.Init(S)
 		if not item or not item.identifier then
 			return false, "Brak utworu"
 		end
-		stopInternal()
+		playGen += 1
+		local myGen = playGen
+		disconnectProgress()
+		destroyAllMusicSounds()
+		currentSound = nil
+		paused = false
+		nowPlaying = {
+			identifier = item.identifier,
+			title = item.title or item.identifier,
+			creator = item.creator or "",
+		}
 		loading = true
 		lastError = nil
 		notifyState()
 
 		task.spawn(function()
+			local function stale()
+				return myGen ~= playGen
+			end
+
 			logInfo("Play start:", item.identifier, item.title or "?")
+			if stale() then
+				return
+			end
+
 			local candidates, listErr = resolveDownloadList(item.identifier, item.title)
+			if stale() then
+				return
+			end
 			if not candidates then
 				loading = false
 				lastError = listErr
@@ -643,10 +720,16 @@ function Music.Init(S)
 
 			local lastFail = nil
 			for i, cand in ipairs(candidates) do
+				if stale() then
+					return
+				end
 				logInfo("Próba", i .. "/" .. #candidates .. ":", cand.name, "(" .. cand.format .. ")")
 				local cacheKey = safeFileName(item.identifier .. "_" .. cand.name)
-				local skipCache = i > 1
-				local assetRef, cachePath, aerr = assetFromDownload(cand.url, cacheKey, skipCache)
+				local assetRef, cachePath, aerr = assetFromDownload(cand.url, cacheKey, i > 1)
+				if stale() then
+					return
+				end
+
 				if assetRef then
 					local soundId = toSoundId(assetRef)
 					if soundId then
@@ -657,46 +740,49 @@ function Music.Init(S)
 						sound.Looped = S.MusicLoop == true
 						sound.Parent = SoundService
 
-						local playOk = pcall(function()
-							SoundService:PlayLocalSound(sound)
-						end)
-						if playOk and waitForSoundLoad(sound, 10) then
-							currentSound = sound
-							lastError = nil
-							nowPlaying = {
-								identifier = item.identifier,
-								title = item.title or item.identifier,
-								creator = item.creator or "",
-								file = cand.name,
-							}
-							loading = false
-							paused = false
-							logInfo("Play OK:", nowPlaying.title, "→", cand.name)
-
-							sound.Ended:Connect(function()
-								if currentSound == sound then
-									stopInternal()
-								end
+						if waitForSoundLoad(sound, 12, myGen) and not stale() then
+							local playOk = pcall(function()
+								SoundService:PlayLocalSound(sound)
 							end)
+							if playOk and not stale() then
+								currentSound = sound
+								lastError = nil
+								nowPlaying = {
+									identifier = item.identifier,
+									title = item.title or item.identifier,
+									creator = item.creator or "",
+									file = cand.name,
+								}
+								loading = false
+								paused = false
+								logInfo("Play OK:", nowPlaying.title, "→", cand.name)
 
-							disconnectProgress()
-							progressConn = RS.Heartbeat:Connect(function()
-								if currentSound ~= sound or not Music.onProgress then
-									return
-								end
-								local dur = sound.TimeLength
-								if dur > 0 then
-									pcall(Music.onProgress, sound.TimePosition, dur)
-								end
-							end)
+								sound.Ended:Connect(function()
+									if currentSound == sound then
+										playGen += 1
+										stopInternal()
+									end
+								end)
 
-							notifyState()
-							return
+								disconnectProgress()
+								progressConn = RS.Heartbeat:Connect(function()
+									if currentSound ~= sound or not Music.onProgress then
+										return
+									end
+									local dur = sound.TimeLength
+									if dur > 0 then
+										pcall(Music.onProgress, sound.TimePosition, dur)
+									end
+								end)
+
+								notifyState()
+								return
+							end
 						end
 
 						lastFail = "Roblox odrzucił format: " .. cand.name
-						logErr("Sound load fail (unsupported format?):", cand.name, soundId)
-						sound:Destroy()
+						logErr("Sound load fail:", cand.name, soundId)
+						killSound(sound)
 					else
 						lastFail = "Nieprawidłowy asset ID"
 						logErr("Invalid asset ref:", assetRef)
@@ -710,9 +796,12 @@ function Music.Init(S)
 				end
 			end
 
+			if stale() then
+				return
+			end
 			loading = false
 			lastError = lastFail
-				or "Roblox nie odtwarza tego uploadu — spróbuj Lady lub innego wyniku z .ogg"
+				or "Ten upload nie ma OGG — Roblox odrzuca większość VBR MP3 z Archive"
 			logErr("Play failed po wszystkich formatach:", lastError)
 			if Music.onPlayError then
 				pcall(Music.onPlayError, lastError)

@@ -49,12 +49,12 @@ function UIMusic.build(env)
 	local function refreshNowPlaying(state)
 		state = state or (Music and Music.GetState and Music.GetState()) or {}
 		if NowTitle then
-			if state.loading then
-				NowTitle.Text = state.title ~= "" and state.title or "Ładowanie..."
-				NowArtist.Text = "Pobieranie z Archive..."
-			elseif state.playing or state.paused then
+			if state.playing or state.paused then
 				NowTitle.Text = state.title ~= "" and state.title or "—"
 				NowArtist.Text = state.artist ~= "" and state.artist or "Internet Archive"
+			elseif state.loading then
+				NowTitle.Text = state.title ~= "" and state.title or "Ładowanie..."
+				NowArtist.Text = "Pobieranie z Archive..."
 			else
 				NowTitle.Text = "Wybierz utwór"
 				NowArtist.Text = state.error or "Archive.org · tylko Ty słyszysz"
@@ -174,6 +174,9 @@ function UIMusic.build(env)
 		end)
 		Row.MouseButton1Click:Connect(function()
 			if not Music then
+				return
+			end
+			if Music.IsBusy and Music.IsBusy() then
 				return
 			end
 			Music.Play(item)
