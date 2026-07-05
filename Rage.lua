@@ -465,13 +465,9 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			end
 
 			if S.RageCompat then
-				Cam.CFrame = CFrame.new(Cam.CFrame.Position, targetPos)
-				for _ = 1, 2 do
-					RS.RenderStepped:Wait()
-				end
-				Util.fireTriggerClick(LP, VIM, Cam, UIS)
-				RS.RenderStepped:Wait()
-				Cam.CFrame = savedCF
+				pcall(function()
+					Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, 3, LP)
+				end)
 			elseif mode == "Silent" then
 				Util.performSilentShot(RS, Cam, VIM, targetPos, 2, UIS, LP)
 			elseif mode == "Track" then

@@ -442,24 +442,32 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		triggerLockUntil = 0
 	end
 
-	local function validateTriggerTarget(tgt)
+	local function validateTriggerTargetStrict(tgt)
+		if not tgt or not tgt.char then
+			return nil
+		end
+		return scoreTarget({ char = tgt.char, plr = tgt.plr }, fovLimit())
+	end
+
+	local function validateTriggerLockSoft(tgt)
 		if not tgt or not tgt.char then
 			return nil
 		end
 		if not Util.isValidTarget(tgt.char, tgt.plr) then
 			return nil
 		end
-		local part = tgt.part
-		if not part or not part.Parent or not part:IsDescendantOf(tgt.char) then
-			part = resolveHitPart(tgt.char)
-		end
+		local part = resolveHitPart(tgt.char)
 		if not part then
 			return nil
 		end
 		if screenDist(part, tgt.char) > fovLimit() then
 			return nil
 		end
-		if S.VisibleCheck and not isVisible(part, tgt.char) then
+		local partPos = Util.getFirePosition(tgt.char, part)
+		if not partPos then
+			return nil
+		end
+		if (Cam.CFrame.Position - partPos).Magnitude > S.MaxDist then
 			return nil
 		end
 		return { char = tgt.char, plr = tgt.plr, part = part }
@@ -467,7 +475,12 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 	local function acquireTriggerTarget()
 		if triggerLock and tick() < triggerLockUntil then
-			local locked = validateTriggerTarget(triggerLock)
+			local locked
+			if S.TriggerCompat then
+				locked = validateTriggerLockSoft(triggerLock)
+			else
+				locked = validateTriggerTargetStrict(triggerLock)
+			end
 			if locked then
 				triggerLock = locked
 				return locked
@@ -478,16 +491,26 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		local fresh = pickBestTarget(fovLimit())
 		if fresh then
 			triggerLock = fresh
-			triggerLockUntil = tick() + 0.35
+			triggerLockUntil = tick() + (S.TriggerCompat and 0.5 or 0.35)
 		end
 		return fresh
+	end
+
+	local function getCompatTrackTarget()
+		if triggerLock and tick() < triggerLockUntil then
+			local soft = validateTriggerLockSoft(triggerLock)
+			if soft then
+				return soft
+			end
+		end
+		return pickBestTarget(fovLimit())
 	end
 
 	local function updateTriggerCompatAim()
 		if not S.TriggerCompat or not triggerArmed() or triggerFiring then
 			return
 		end
-		local tgt = triggerLock or pickBestTarget(fovLimit())
+		local tgt = getCompatTrackTarget()
 		if not tgt or not tgt.part or not tgt.char then
 			return
 		end
@@ -591,10 +614,13 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		task.spawn(function()
 			local char = tgt.char
 			local plr = tgt.plr
-			local part = tgt.part
-			if not part or not part.Parent or not part:IsDescendantOf(char) then
-				part = resolveHitPart(char)
+			local strict = scoreTarget({ char = char, plr = plr }, fovLimit())
+			if not strict then
+				clearTriggerLock()
+				finishTriggerShot()
+				return
 			end
+			local part = strict.part
 			if not part or not Util.isValidTarget(char, plr) then
 				clearTriggerLock()
 				finishTriggerShot()
@@ -609,15 +635,10 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			end
 
 			if S.TriggerCompat then
-				local savedCF = Cam.CFrame
-				Cam.CFrame = CFrame.new(Cam.CFrame.Position, pos)
 				markShot(char, pos)
-				for _ = 1, 2 do
-					RS.RenderStepped:Wait()
-				end
-				Util.fireTriggerClick(LP, VIM, Cam, UIS)
-				RS.RenderStepped:Wait()
-				Cam.CFrame = savedCF
+				pcall(function()
+					Util.performCompatTriggerShot(RS, Cam, VIM, pos, 3, LP)
+				end)
 			else
 				markShot(char, pos)
 				Util.fireTriggerClick(LP, VIM, Cam, UIS)
@@ -642,8 +663,13 @@ function Aim.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
+		local strict = validateTriggerTargetStrict(tgt)
+		if not strict then
+			return
+		end
+
 		triggerFiring = true
-		runTriggerShot(tgt)
+		runTriggerShot(strict)
 	end
 
 	local function bindSilentAction()
