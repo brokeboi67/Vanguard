@@ -309,6 +309,9 @@ function Config.EnforceRules(S)
 	if S.OffscreenArrowShowName == nil then
 		S.OffscreenArrowShowName = true
 	end
+	if S.MusicAutoQueue == nil then
+		S.MusicAutoQueue = true
+	end
 	if S.DamageNumbers == nil then
 		S.DamageNumbers = false
 	end

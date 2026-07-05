@@ -39,6 +39,51 @@ function Music.Init(S)
 	local softPaused = false
 	local endedConn = nil
 	local HTTP_TIMEOUT = 12
+	local queue = {}
+	local queueIndex = 0
+
+	local function cloneQueueItem(item)
+		if not item then
+			return nil
+		end
+		return {
+			identifier = item.identifier,
+			title = item.title,
+			creator = item.creator,
+			source = item.source,
+			streamUrl = item.streamUrl,
+			audiusId = item.audiusId,
+			videoId = item.videoId,
+			downloads = item.downloads,
+		}
+	end
+
+	local function handleTrackEnded()
+		if S.MusicLoop == true then
+			return
+		end
+		if S.MusicAutoQueue ~= false and queueIndex > 0 and queueIndex < #queue then
+			queueIndex += 1
+			logInfo("Auto-next:", queueIndex, "/", #queue, queue[queueIndex].title or "?")
+			Music.Play(queue[queueIndex], { keepQueue = true })
+			return
+		end
+		playGen += 1
+		disconnectProgress()
+		destroyAllMusicSounds()
+		currentSound = nil
+		paused = false
+		softPaused = false
+		nowPlaying = nil
+		loading = false
+		resuming = false
+		playClockStart = 0
+		playPosOffset = 0
+		pausePosSnapshot = 0
+		pausedSession = nil
+		cachedDuration = 0
+		notifyState()
+	end
 
 	local function logInfo(...)
 		print("[Vanguard Music]", ...)
@@ -1142,8 +1187,7 @@ function Music.Init(S)
 			if currentSound ~= sound or paused or resuming or S.MusicLoop == true then
 				return
 			end
-			playGen += 1
-			stopInternal()
+			handleTrackEnded()
 		end)
 		progressConn = RS.Heartbeat:Connect(function()
 			if currentSound ~= sound or paused or loading or resuming then
@@ -1158,15 +1202,13 @@ function Music.Init(S)
 			end
 			local tp = sound.TimePosition
 			if tp > 0.5 and tp >= dur - 0.35 then
-				playGen += 1
-				stopInternal()
+				handleTrackEnded()
 				return
 			end
 			if tp <= 0.05 and playClockStart > 0 then
 				local clockPos = playPosOffset + (os.clock() - playClockStart)
 				if clockPos >= dur - 0.35 and clockPos >= dur * 0.88 then
-					playGen += 1
-					stopInternal()
+					handleTrackEnded()
 				end
 			end
 		end)
@@ -1399,6 +1441,10 @@ function Music.Init(S)
 			volume = S.MusicVolume or 0.65,
 			error = lastError,
 			hasTrack = nowPlaying ~= nil or (paused and pausedSession ~= nil),
+			queueIndex = queueIndex,
+			queueCount = #queue,
+			hasNext = queueIndex > 0 and queueIndex < #queue,
+			hasPrev = queueIndex > 1,
 		}
 	end
 
@@ -1412,7 +1458,74 @@ function Music.Init(S)
 
 	function Music.Stop()
 		playGen += 1
+		queue = {}
+		queueIndex = 0
 		stopInternal()
+	end
+
+	function Music.GetQueue()
+		local out = {}
+		for _, item in ipairs(queue) do
+			table.insert(out, cloneQueueItem(item))
+		end
+		return out, queueIndex
+	end
+
+	function Music.PlayQueue(items, startIdx)
+		local built = {}
+		for _, it in ipairs(items or {}) do
+			local copy = cloneQueueItem(it)
+			if copy and copy.identifier then
+				table.insert(built, copy)
+			end
+		end
+		if #built == 0 then
+			return false, "Pusta kolejka"
+		end
+		queue = built
+		queueIndex = math.clamp(math.floor(tonumber(startIdx) or 1), 1, #built)
+		Music.Play(queue[queueIndex], { keepQueue = true })
+		return true
+	end
+
+	function Music.PlayNext()
+		if loading or resuming or queueIndex >= #queue then
+			return false
+		end
+		queueIndex += 1
+		Music.Play(queue[queueIndex], { keepQueue = true })
+		return true
+	end
+
+	function Music.PlayPrevious()
+		if loading or resuming then
+			return false
+		end
+		if queueIndex > 1 then
+			queueIndex -= 1
+			Music.Play(queue[queueIndex], { keepQueue = true })
+			return true
+		end
+		if currentSound and currentSound.Parent then
+			local pos = getPlaybackPosition()
+			if pos > 3 then
+				pcall(function()
+					currentSound.TimePosition = 0
+				end)
+				playPosOffset = 0
+				pausePosSnapshot = 0
+				playClockStart = os.clock()
+				notifyState()
+				return true
+			end
+		end
+		return false
+	end
+
+	function Music.ClearQueue()
+		queue = {}
+		queueIndex = 0
+		notifyState()
 	end
 
 	function Music.IsBusy()
@@ -1818,9 +1931,21 @@ function Music.Init(S)
 		end)
 	end
 
-	function Music.Play(item)
+	function Music.Play(item, opts)
+		opts = opts or {}
 		if not item or not item.identifier then
 			return false, "Brak utworu"
+		end
+		if not opts.keepQueue then
+			queue = { cloneQueueItem(item) }
+			queueIndex = 1
+		else
+			for i, q in ipairs(queue) do
+				if q.identifier == item.identifier then
+					queueIndex = i
+					break
+				end
+			end
 		end
 		playGen += 1
 		local myGen = playGen

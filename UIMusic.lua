@@ -37,6 +37,8 @@ function UIMusic.build(env)
 	local ResultsHost
 	local SearchBox
 	local SearchStatus
+	local QueueHost
+	local lastSearchResults = {}
 	local SourceAutoBtn
 	local SourceYoutubeBtn
 	local SourceAudiusBtn
@@ -47,6 +49,75 @@ function UIMusic.build(env)
 	local function setSearchStatus(text)
 		if SearchStatus then
 			SearchStatus.Text = text
+		end
+	end
+
+	local function clearQueueRows()
+		if not QueueHost then
+			return
+		end
+		for _, ch in ipairs(QueueHost:GetChildren()) do
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then
+				ch:Destroy()
+			end
+		end
+	end
+
+	local function refreshQueue(state)
+		if not QueueHost then
+			return
+		end
+		clearQueueRows()
+		local items, idx = {}, 0
+		if Music and Music.GetQueue then
+			items, idx = Music.GetQueue()
+		end
+		if #items == 0 then
+			return
+		end
+		for i, item in ipairs(items) do
+			local active = i == idx
+			local Row = C("TextButton", {
+				Size = UDim2.new(1, -4, 0, 28),
+				BackgroundColor3 = active and Color3.fromRGB(24, 40, 30) or BG2,
+				Text = "",
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+				ZIndex = 8,
+				Parent = QueueHost,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 4), Parent = Row })
+			C("TextLabel", {
+				Size = UDim2.new(0, 18, 1, 0),
+				Position = UDim2.new(0, 6, 0, 0),
+				BackgroundTransparency = 1,
+				Text = active and "♪" or tostring(i),
+				Font = Enum.Font.GothamBold,
+				TextSize = 9,
+				TextColor3 = active and SPOTIFY or MUT,
+				ZIndex = 9,
+				Parent = Row,
+			})
+			C("TextLabel", {
+				Size = UDim2.new(1, -56, 1, 0),
+				Position = UDim2.new(0, 26, 0, 0),
+				BackgroundTransparency = 1,
+				Text = item.title or "?",
+				Font = active and Enum.Font.GothamSemibold or Enum.Font.Gotham,
+				TextSize = 10,
+				TextColor3 = active and TXT or MUT,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				ZIndex = 9,
+				Parent = Row,
+			})
+			Row.MouseButton1Click:Connect(function()
+				if Music and Music.PlayQueue then
+					Music.PlayQueue(items, i)
+					setFooterStatus("♪ " .. (item.title or "?"))
+				end
+			end)
 		end
 	end
 
@@ -92,6 +163,7 @@ function UIMusic.build(env)
 				ProgressFill.Size = UDim2.new(0, 0, 1, 0)
 			end
 		end
+		refreshQueue(state)
 	end
 
 	local function clearResults()
@@ -195,7 +267,11 @@ function UIMusic.build(env)
 			if Music.IsBusy and Music.IsBusy() then
 				return
 			end
-			Music.Play(item)
+			if Music.PlayQueue and #lastSearchResults > 0 then
+				Music.PlayQueue(lastSearchResults, order)
+			else
+				Music.Play(item)
+			end
 			setFooterStatus("♪ " .. (item.title or "?"))
 		end)
 	end
@@ -267,6 +343,7 @@ function UIMusic.build(env)
 				return
 			end
 			setSearchStatus(#results .. " wyników" .. (err and (" · " .. err) or ""))
+			lastSearchResults = results
 			for i, item in ipairs(results) do
 				addResultRow(item, i)
 			end
@@ -561,7 +638,7 @@ function UIMusic.build(env)
 	})
 
 	local InfoCol = C("Frame", {
-		Size = UDim2.new(1, -108, 0, 44),
+		Size = UDim2.new(1, -148, 0, 44),
 		Position = UDim2.new(0, 52, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 8,
@@ -595,11 +672,24 @@ function UIMusic.build(env)
 	})
 
 	local CtrlCol = C("Frame", {
-		Size = UDim2.new(0, 48, 0, 44),
-		Position = UDim2.new(1, -48, 0, 0),
+		Size = UDim2.new(0, 88, 0, 44),
+		Position = UDim2.new(1, -88, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 8,
 		Parent = PlayerTop,
+	})
+
+	local PrevBtn = C("TextButton", {
+		Size = UDim2.new(0, 22, 0, 22),
+		Position = UDim2.new(0, 0, 0.5, -11),
+		BackgroundTransparency = 1,
+		Text = "⏮",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		ZIndex = 9,
+		Parent = CtrlCol,
 	})
 
 	local PlayPauseBtn = C("TextButton", {
@@ -635,6 +725,19 @@ function UIMusic.build(env)
 		Parent = PlayPauseBtn,
 	})
 
+	local NextBtn = C("TextButton", {
+		Size = UDim2.new(0, 22, 0, 22),
+		Position = UDim2.new(1, -22, 0.5, -11),
+		BackgroundTransparency = 1,
+		Text = "⏭",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		ZIndex = 9,
+		Parent = CtrlCol,
+	})
+
 	local StopBtn = C("TextButton", {
 		Size = UDim2.new(0, 24, 0, 24),
 		Position = UDim2.new(1, -24, 1, -24),
@@ -651,6 +754,16 @@ function UIMusic.build(env)
 	PlayPauseBtn.MouseButton1Click:Connect(function()
 		if Music then
 			Music.TogglePause()
+		end
+	end)
+	PrevBtn.MouseButton1Click:Connect(function()
+		if Music and Music.PlayPrevious then
+			Music.PlayPrevious()
+		end
+	end)
+	NextBtn.MouseButton1Click:Connect(function()
+		if Music and Music.PlayNext then
+			Music.PlayNext()
 		end
 	end)
 	StopBtn.MouseButton1Click:Connect(function()
@@ -710,11 +823,68 @@ function UIMusic.build(env)
 		Parent = ProgressRow,
 	})
 
-	local OptRow = C("Frame", {
+	local QueueSection = C("Frame", {
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		LayoutOrder = 3,
+		Visible = false,
+		ZIndex = 7,
+		Parent = Player,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = QueueSection })
+
+	C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 14),
+		BackgroundTransparency = 1,
+		Text = "DO ODTWORZENIA",
+		Font = Enum.Font.GothamBold,
+		TextSize = 8,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		LayoutOrder = 1,
+		ZIndex = 8,
+		Parent = QueueSection,
+	})
+
+	local QueueScroll = C("ScrollingFrame", {
+		Size = UDim2.new(1, 0, 0, 96),
+		BackgroundColor3 = BG,
+		BackgroundTransparency = 0.5,
+		ScrollBarThickness = 2,
+		ScrollBarImageColor3 = Color3.fromRGB(50, 50, 58),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
+		ZIndex = 7,
+		Parent = QueueSection,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = QueueScroll })
+	C("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), Parent = QueueScroll })
+
+	QueueHost = C("Frame", {
+		Size = UDim2.new(1, -4, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = QueueScroll,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 2), SortOrder = Enum.SortOrder.LayoutOrder, Parent = QueueHost })
+
+	local origRefreshQueue = refreshQueue
+	refreshQueue = function(state)
+		origRefreshQueue(state)
+		local count = state and state.queueCount or 0
+		if QueueSection then
+			QueueSection.Visible = count > 1
+		end
+	end
+
+	local OptRow = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 4,
 		ZIndex = 7,
 		Parent = Player,
 	})
@@ -739,7 +909,10 @@ function UIMusic.build(env)
 			end
 		end,
 	})
-	MakeTog(OptRow, "Mini player (bez menu)", "ShowMusicWidget", 3, {
+	MakeTog(OptRow, "Auto-next (kolejka)", "MusicAutoQueue", 3, {
+		flat = true,
+	})
+	MakeTog(OptRow, "Mini player (bez menu)", "ShowMusicWidget", 4, {
 		flat = true,
 		onChange = function(on)
 			if UIMusic._refreshWidget then

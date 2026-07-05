@@ -1377,6 +1377,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end)
 
 		Row.MouseButton1Click:Connect(function()
+			if opts.requires and S[opts.requires] ~= true then
+				return
+			end
 			S[key] = not S[key]
 			local enabled = S[key]
 
@@ -1401,7 +1404,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		if not toggleRegistry[key] then
 			toggleRegistry[key] = {}
 		end
-		table.insert(toggleRegistry[key], { SwitchBg = SwitchBg, SwitchDot = SwitchDot })
+		table.insert(toggleRegistry[key], { SwitchBg = SwitchBg, SwitchDot = SwitchDot, Row = Row, Title = Title })
+		if opts.onRowCreated then
+			opts.onRowCreated(Row, Title)
+		end
 	end
 
 	local function MakeChoice(page, label, key, options, order)
@@ -1600,7 +1606,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = Row,
 		})
 
-		C("TextLabel", {
+		local TitleLbl = C("TextLabel", {
 			Size = UDim2.new(1, -72, 0, 14),
 			Position = UDim2.new(0, 12, 0, 8),
 			BackgroundTransparency = 1,
@@ -1646,8 +1652,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Knob })
 
 		local draggingSlider = false
+		local sliderEnabled = true
+
+		local function setSliderEnabled(on)
+			sliderEnabled = on == true
+			Row.Active = sliderEnabled
+			Track.Active = sliderEnabled
+			TitleLbl.TextColor3 = sliderEnabled and Color3.fromRGB(200, 200, 208) or Color3.fromRGB(90, 90, 100)
+			ValLbl.TextColor3 = sliderEnabled and ACC or Color3.fromRGB(90, 90, 100)
+		end
 
 		local function setValue(raw)
+			if not sliderEnabled then
+				return
+			end
 			local pct = math.clamp(raw, 0, 1)
 			local val = min + (max - min) * pct
 			if step >= 1 then
@@ -1694,7 +1712,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				local p = (val - min) / (max - min)
 				setValue(p)
 			end,
+			setEnabled = setSliderEnabled,
 		}
+		if opts.onRowCreated then
+			opts.onRowCreated(Row, TitleLbl, setSliderEnabled)
+		end
 	end
 
 	local function MakeButton(page, label, order, callback)
@@ -1827,15 +1849,67 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VAdv, "Tracers", "Trace", 3, { flat = true })
 	MakeTog(VAdv, "Chams Fill", "Chams", 4, { flat = true })
 	MakeTog(VAdv, "Chams Rainbow", "ChamsRainbow", 5, { flat = true })
-	MakeTog(VAdv, "Offscreen Arrows", "OffscreenArrows", 6, { flat = true })
-	MakeTog(VAdv, "Enhanced Trackers", "OffscreenArrowHighVis", 7, { flat = true })
+	local offscreenChildRows = {}
+	local syncOffscreenTrackerUi
+	MakeTog(VAdv, "Offscreen Arrows", "OffscreenArrows", 6, {
+		flat = true,
+		onChange = function(on)
+			if not on then
+				S.OffscreenArrowHighVis = false
+				setToggleVisual("OffscreenArrowHighVis", false)
+			end
+			if syncOffscreenTrackerUi then
+				syncOffscreenTrackerUi()
+			end
+		end,
+	})
+	local function greyTogRow(row, title, on)
+		row.Active = on
+		title.TextColor3 = on and Color3.fromRGB(200, 200, 208) or Color3.fromRGB(90, 90, 100)
+	end
+	syncOffscreenTrackerUi = function()
+		local on = S.OffscreenArrows == true
+		for _, pair in ipairs(offscreenChildRows) do
+			greyTogRow(pair.Row, pair.Title, on)
+		end
+		local reg = sliderRegistry.OffscreenArrowScale
+		if reg and reg.setEnabled then
+			reg.setEnabled(on)
+		end
+	end
+	MakeTog(VAdv, "Enhanced Trackers", "OffscreenArrowHighVis", 7, {
+		flat = true,
+		requires = "OffscreenArrows",
+		onRowCreated = function(row, title)
+			table.insert(offscreenChildRows, { Row = row, Title = title })
+		end,
+		onChange = function(on)
+			if on and not S.OffscreenArrows then
+				S.OffscreenArrows = true
+				setToggleVisual("OffscreenArrows", true)
+			end
+			syncOffscreenTrackerUi()
+		end,
+	})
 	MakeSlider(VAdv, "Tracker Size", "OffscreenArrowScale", 0.8, 2.5, 8, {
 		step = 0.05,
 		fmt = function(v)
 			return string.format("%.0f%%", v * 100)
 		end,
+		onRowCreated = function(_, __, setEnabled)
+			if setEnabled then
+				setEnabled(S.OffscreenArrows == true)
+			end
+		end,
 	})
-	MakeTog(VAdv, "Tracker Name Label", "OffscreenArrowShowName", 9, { flat = true })
+	MakeTog(VAdv, "Tracker Name Label", "OffscreenArrowShowName", 9, {
+		flat = true,
+		requires = "OffscreenArrows",
+		onRowCreated = function(row, title)
+			table.insert(offscreenChildRows, { Row = row, Title = title })
+		end,
+	})
+	syncOffscreenTrackerUi()
 	MakeHint(VAdv, "Strzałki na krawędzi ekranu — Enhanced = większe, tło, nick i czytelny dystans.", 10)
 
 	local VTrace = MakeCard(T1, "SHOT TRACERS", "Neonowa linia od broni do celu — tylko Ty widzisz.", 7)
