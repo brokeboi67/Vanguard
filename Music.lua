@@ -162,6 +162,84 @@ function Music.Init(S)
 		return nil, box.err or "Brak odpowiedzi HTTP"
 	end
 
+	local function httpPost(url, jsonBody, timeoutSec)
+		timeoutSec = timeoutSec or HTTP_TIMEOUT
+		local box = { done = false, body = nil, err = nil, via = nil }
+
+		task.spawn(function()
+			local headers = {
+				["User-Agent"] = "Mozilla/5.0 (compatible; Vanguard/2.31)",
+				["Content-Type"] = "application/json",
+				["Accept"] = "application/json,text/plain,*/*",
+			}
+
+			local req = request or (syn and syn.request) or (http and http.request)
+			if req then
+				local ok, res = pcall(function()
+					return req({
+						Url = url,
+						Method = "POST",
+						Headers = headers,
+						Body = jsonBody,
+					})
+				end)
+				if ok and res then
+					local code = tonumber(res.StatusCode) or 0
+					if res.Body and res.Body ~= "" and code >= 200 and code < 300 then
+						box.body = res.Body
+						box.via = "request POST"
+						box.done = true
+						return
+					end
+					if not box.err then
+						box.err = "request POST HTTP " .. tostring(code)
+					end
+				elseif not box.err then
+					box.err = "request POST: " .. tostring(res)
+				end
+			end
+
+			if HttpService.RequestAsync then
+				local ok, res = pcall(function()
+					return HttpService:RequestAsync({
+						Url = url,
+						Method = "POST",
+						Headers = headers,
+						Body = jsonBody,
+					})
+				end)
+				if ok and res then
+					if res.Success and res.Body and res.Body ~= "" then
+						box.body = res.Body
+						box.via = "RequestAsync POST"
+						box.done = true
+						return
+					end
+					if not box.err then
+						box.err = "RequestAsync POST status " .. tostring(res.StatusCode)
+					end
+				elseif not box.err then
+					box.err = "RequestAsync POST: " .. tostring(res)
+				end
+			end
+
+			box.done = true
+		end)
+
+		local deadline = os.clock() + timeoutSec
+		while not box.done and os.clock() < deadline do
+			task.wait(0.05)
+		end
+		if not box.done then
+			return nil, "Timeout POST (" .. timeoutSec .. "s)"
+		end
+		if box.body then
+			logInfo("HTTP POST OK via", box.via, "(" .. #box.body .. " B)")
+			return box.body
+		end
+		return nil, box.err or "Brak odpowiedzi POST"
+	end
+
 	local function decodeJson(body)
 		if not body or body == "" then
 			return nil
@@ -331,11 +409,21 @@ function Music.Init(S)
 				or title:find("crap from") or title:find("kmart") or title:find("tape%-a%-thon") then
 				s -= 80
 			end
-			if title:find("lyrics") or title:find("multitrack") or title:find("cover") then
-				if title:find("multitrack") then
-					s -= 90
-				else
-					s += 10
+			if title:find("lyrics") or title:find("multitrack") then
+				s -= 120
+			elseif title:find("cover") or title:find("remix") or title:find("edit")
+				or title:find("mashup") or title:find("bootleg") or title:find("karaoke")
+				or title:find("8d audio") or title:find("slowed") or title:find("sped up")
+				or title:find("reaction") or title:find("tutorial") or title:find("lesson") then
+				s -= 70
+			end
+
+			if item.source == "youtube" then
+				if creator:find("vevo") or creator:find("official") then
+					s += 40
+				end
+				if title:find("official") or title:find("audio") then
+					s += 25
 				end
 			end
 
@@ -425,6 +513,160 @@ function Music.Init(S)
 		return results
 	end
 
+	local function walkYoutubeTree(node, results, seen, limit)
+		if not node or #results >= limit then
+			return
+		end
+		if typeof(node) ~= "table" then
+			return
+		end
+
+		local vid = node.videoId
+		if typeof(vid) == "string" and #vid == 11 and not seen[vid] and node.title then
+			local title = nil
+			if typeof(node.title) == "table" then
+				if node.title.simpleText then
+					title = node.title.simpleText
+				elseif node.title.runs and node.title.runs[1] then
+					title = node.title.runs[1].text
+				end
+			end
+			if title and title ~= "" then
+				local creator = "YouTube"
+				if node.ownerText and node.ownerText.runs and node.ownerText.runs[1] then
+					creator = node.ownerText.runs[1].text
+				elseif node.longBylineText and node.longBylineText.runs and node.longBylineText.runs[1] then
+					creator = node.longBylineText.runs[1].text
+				end
+				local views = 0
+				if node.viewCountText and node.viewCountText.simpleText then
+					views = tonumber(node.viewCountText.simpleText:gsub("[^%d]", "")) or 0
+				end
+				seen[vid] = true
+				table.insert(results, {
+					identifier = "yt:" .. vid,
+					videoId = vid,
+					title = title,
+					creator = creator,
+					downloads = views,
+					source = "youtube",
+				})
+			end
+		end
+
+		for _, v in pairs(node) do
+			walkYoutubeTree(v, results, seen, limit)
+			if #results >= limit then
+				return
+			end
+		end
+	end
+
+	local function searchYoutube(query)
+		local payload = HttpService:JSONEncode({
+			context = {
+				client = {
+					clientName = "WEB",
+					clientVersion = "2.20250201.01.00",
+				},
+			},
+			query = query,
+		})
+		logInfo("YouTube search:", query)
+		local body, httpErr = httpPost(
+			"https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
+			payload,
+			15
+		)
+		if not body then
+			return nil, httpErr or "YouTube nie odpowiada"
+		end
+		local data, parseErr = decodeJson(body)
+		if not data then
+			return nil, parseErr or "Błąd odpowiedzi YouTube"
+		end
+		local results = {}
+		local seen = {}
+		walkYoutubeTree(data, results, seen, 24)
+		return results
+	end
+
+	local function pickYoutubeAudioUrl(data)
+		if not data or not data.streamingData then
+			return nil
+		end
+		local sd = data.streamingData
+		local bestUrl, bestBr = nil, 0
+
+		local function consider(list)
+			if typeof(list) ~= "table" then
+				return
+			end
+			for _, fmt in ipairs(list) do
+				if typeof(fmt) == "table" and fmt.url and fmt.mimeType then
+					local mime = tostring(fmt.mimeType):lower()
+					if mime:find("audio/") and not mime:find("video") then
+						local br = tonumber(fmt.bitrate) or tonumber(fmt.averageBitrate) or 0
+						if br >= bestBr then
+							bestBr = br
+							bestUrl = fmt.url
+						end
+					end
+				end
+			end
+		end
+
+		consider(sd.adaptiveFormats)
+		consider(sd.formats)
+		return bestUrl
+	end
+
+	local function resolveYoutubeStream(videoId)
+		videoId = tostring(videoId or ""):gsub("^%s+", ""):gsub("%s+$", "")
+		if #videoId ~= 11 then
+			return nil, "Nieprawidłowe videoId"
+		end
+
+		local clients = {
+			{
+				clientName = "ANDROID",
+				clientVersion = "19.11.43",
+				androidSdkVersion = 30,
+			},
+			{
+				clientName = "IOS",
+				clientVersion = "19.09.3",
+				deviceModel = "iPhone14,3",
+			},
+		}
+
+		for _, client in ipairs(clients) do
+			local payload = HttpService:JSONEncode({
+				context = { client = client },
+				videoId = videoId,
+			})
+			local body, err = httpPost(
+				"https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+				payload,
+				20
+			)
+			if body then
+				local data = decodeJson(body)
+				local url = pickYoutubeAudioUrl(data)
+				if url then
+					logInfo("YouTube stream OK:", videoId, "via", client.clientName)
+					return url
+				end
+				if data and data.playabilityStatus and data.playabilityStatus.reason then
+					err = data.playabilityStatus.reason
+				end
+			end
+			logErr("YouTube player fail:", videoId, client.clientName, err)
+		end
+
+		return nil, "Nie udało się pobrać audio z YouTube"
+	end
+
 	local function validateAudioBody(body, fileName)
 		if not body or #body < 1000 then
 			return false, "plik za mały (" .. tostring(body and #body or 0) .. " B)"
@@ -451,6 +693,18 @@ function Music.Init(S)
 				end
 			end
 			return false, "nieprawidłowy MP3"
+		end
+		if lower:find("%.m4a") or lower:find("%.mp4") then
+			if body:sub(5, 8) == "ftyp" then
+				return true
+			end
+			local b1, b2, b3 = body:byte(1, 3)
+			if b1 == 0x49 and b2 == 0x44 and b3 == 0x33 then
+				return true
+			end
+			if b1 == 0xFF and b2 and b2 >= 0xE0 then
+				return true
+			end
 		end
 		return true
 	end
@@ -1092,16 +1346,23 @@ function Music.Init(S)
 	end
 
 	function Music.GetSource()
-		local src = tostring(S.MusicSource or "audius"):lower()
-		if src ~= "archive" then
+		local src = tostring(S.MusicSource or "youtube"):lower()
+		if src == "archive" then
+			return "archive"
+		end
+		if src == "audius" then
 			return "audius"
 		end
-		return "archive"
+		return "youtube"
 	end
 
 	function Music.SetSource(src)
 		src = tostring(src or ""):lower()
-		S.MusicSource = src == "archive" and "archive" or "audius"
+		if src == "archive" or src == "audius" then
+			S.MusicSource = src
+		else
+			S.MusicSource = "youtube"
+		end
 		notifyState()
 	end
 
@@ -1144,13 +1405,21 @@ function Music.Init(S)
 						finish({}, audErr or "Audius niedostępny")
 						return
 					end
-					for _, preset in ipairs(filterPresets(query)) do
-						preset.source = "archive"
-						table.insert(results, 1, preset)
-					end
 					rankSearchResults(query, results)
 					results = filterSearchResults(query, results)
 					finish(results, #results == 0 and "Brak wyników na Audius" or nil)
+					return
+				end
+
+				if source == "youtube" then
+					local results, ytErr = searchYoutube(query)
+					if not results then
+						finish({}, ytErr or "YouTube niedostępny")
+						return
+					end
+					rankSearchResults(query, results)
+					results = filterSearchResults(query, results)
+					finish(results, #results == 0 and "Brak wyników na YouTube" or nil)
 					return
 				end
 
@@ -1235,6 +1504,50 @@ function Music.Init(S)
 
 			logInfo("Play start:", item.identifier, item.title or "?")
 			if stale() then
+				return
+			end
+
+			if item.source == "youtube" and item.videoId then
+				local streamUrl, serr = resolveYoutubeStream(item.videoId)
+				if stale() then
+					return
+				end
+				if not streamUrl then
+					loading = false
+					lastError = serr or "Brak streamu YouTube"
+					if Music.onPlayError then
+						pcall(Music.onPlayError, lastError)
+					end
+					notifyState()
+					return
+				end
+				local cacheKey = safeFileName("yt_" .. item.videoId .. ".m4a")
+				local assetRef, cachePath, aerr = assetFromDownload(streamUrl, cacheKey, false)
+				if stale() then
+					return
+				end
+				if assetRef then
+					local okPlay, playErr = tryPlayAsset(assetRef, cachePath, item, cacheKey, myGen, stale)
+					if okPlay then
+						return
+					end
+					if cachePath then
+						deleteCache(cachePath)
+					end
+					loading = false
+					lastError = playErr
+					if Music.onPlayError then
+						pcall(Music.onPlayError, playErr)
+					end
+					notifyState()
+					return
+				end
+				loading = false
+				lastError = aerr or "Nie pobrano z YouTube"
+				if Music.onPlayError then
+					pcall(Music.onPlayError, lastError)
+				end
+				notifyState()
 				return
 			end
 

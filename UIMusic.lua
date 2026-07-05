@@ -37,6 +37,7 @@ function UIMusic.build(env)
 	local ResultsHost
 	local SearchBox
 	local SearchStatus
+	local SourceYoutubeBtn
 	local SourceAudiusBtn
 	local SourceArchiveBtn
 	local ArtFrame
@@ -60,8 +61,8 @@ function UIMusic.build(env)
 				NowArtist.Text = "Pobieranie utworu..."
 			else
 				NowTitle.Text = "Wybierz utwór"
-				local src = Music and Music.GetSource and Music.GetSource() or "audius"
-				local srcLabel = src == "archive" and "Archive.org" or "Audius"
+				local src = Music and Music.GetSource and Music.GetSource() or "youtube"
+				local srcLabel = src == "archive" and "Archive.org" or (src == "audius" and "Audius" or "YouTube")
 				NowArtist.Text = state.error or (srcLabel .. " · tylko Ty słyszysz")
 			end
 		end
@@ -190,7 +191,11 @@ function UIMusic.build(env)
 	end
 
 	local function refreshSourceButtons()
-		local src = Music and Music.GetSource and Music.GetSource() or "audius"
+		local src = Music and Music.GetSource and Music.GetSource() or "youtube"
+		if SourceYoutubeBtn then
+			SourceYoutubeBtn.BackgroundColor3 = src == "youtube" and SPOTIFY or BG2
+			SourceYoutubeBtn.TextColor3 = src == "youtube" and Color3.fromRGB(8, 8, 10) or MUT
+		end
 		if SourceAudiusBtn then
 			SourceAudiusBtn.BackgroundColor3 = src == "audius" and SPOTIFY or BG2
 			SourceAudiusBtn.TextColor3 = src == "audius" and Color3.fromRGB(8, 8, 10) or MUT
@@ -206,7 +211,7 @@ function UIMusic.build(env)
 			Music.SetSource(src)
 		end
 		refreshSourceButtons()
-		local label = src == "archive" and "Archive.org" or "Audius"
+		local label = src == "archive" and "Archive.org" or (src == "audius" and "Audius" or "YouTube")
 		setSearchStatus("Źródło: " .. label)
 	end
 
@@ -359,7 +364,7 @@ function UIMusic.build(env)
 	SearchStatus = C("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 12),
 		BackgroundTransparency = 1,
-		Text = "Audius — pełne utwory · Archive — stems/multitrack",
+		Text = "YouTube — hity · Audius — remixy · Archive — stems",
 		Font = Enum.Font.Gotham,
 		TextSize = 9,
 		TextColor3 = MUT,
@@ -383,17 +388,33 @@ function UIMusic.build(env)
 		Parent = SourceRow,
 	})
 
-	SourceAudiusBtn = C("TextButton", {
+	SourceYoutubeBtn = C("TextButton", {
 		Size = UDim2.new(0, 0, 0, 24),
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundColor3 = BG2,
-		Text = "  Audius  ",
+		Text = "  YouTube  ",
 		Font = Enum.Font.GothamBold,
 		TextSize = 9,
 		TextColor3 = MUT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
 		LayoutOrder = 1,
+		ZIndex = 7,
+		Parent = SourceRow,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceYoutubeBtn })
+
+	SourceAudiusBtn = C("TextButton", {
+		Size = UDim2.new(0, 0, 0, 24),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = BG2,
+		Text = "  Audius  ",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
 		ZIndex = 7,
 		Parent = SourceRow,
 	})
@@ -409,12 +430,15 @@ function UIMusic.build(env)
 		TextColor3 = MUT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
-		LayoutOrder = 2,
+		LayoutOrder = 3,
 		ZIndex = 7,
 		Parent = SourceRow,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SourceArchiveBtn })
 
+	SourceYoutubeBtn.MouseButton1Click:Connect(function()
+		setSource("youtube")
+	end)
 	SourceAudiusBtn.MouseButton1Click:Connect(function()
 		setSource("audius")
 	end)
