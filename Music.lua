@@ -1471,6 +1471,41 @@ function Music.Init(S)
 		return out, queueIndex
 	end
 
+	function Music.AddToQueue(item)
+		local copy = cloneQueueItem(item)
+		if not copy or not copy.identifier then
+			return false, "Brak utworu"
+		end
+		for _, q in ipairs(queue) do
+			if q.identifier == copy.identifier then
+				notifyState()
+				return false, "Już w kolejce"
+			end
+		end
+		table.insert(queue, copy)
+		logInfo("Dodano do kolejki:", copy.title)
+		notifyState()
+		return true
+	end
+
+	function Music.RemoveFromQueue(index)
+		index = math.floor(tonumber(index) or 0)
+		if index < 1 or index > #queue then
+			return false
+		end
+		local wasCurrent = index == queueIndex
+		table.remove(queue, index)
+		if queueIndex > index then
+			queueIndex -= 1
+		elseif wasCurrent then
+			queueIndex = 0
+		elseif queueIndex > #queue then
+			queueIndex = #queue
+		end
+		notifyState()
+		return true
+	end
+
 	function Music.PlayQueue(items, startIdx)
 		local built = {}
 		for _, it in ipairs(items or {}) do
@@ -1937,8 +1972,13 @@ function Music.Init(S)
 			return false, "Brak utworu"
 		end
 		if not opts.keepQueue then
-			queue = { cloneQueueItem(item) }
-			queueIndex = 1
+			queueIndex = 0
+			for i, q in ipairs(queue) do
+				if q.identifier == item.identifier then
+					queueIndex = i
+					break
+				end
+			end
 		else
 			for i, q in ipairs(queue) do
 				if q.identifier == item.identifier then

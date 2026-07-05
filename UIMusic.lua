@@ -77,17 +77,24 @@ function UIMusic.build(env)
 		end
 		for i, item in ipairs(items) do
 			local active = i == idx
-			local Row = C("TextButton", {
+			local Row = C("Frame", {
 				Size = UDim2.new(1, -4, 0, 28),
 				BackgroundColor3 = active and Color3.fromRGB(24, 40, 30) or BG2,
-				Text = "",
-				AutoButtonColor = false,
 				BorderSizePixel = 0,
 				LayoutOrder = i,
 				ZIndex = 8,
 				Parent = QueueHost,
 			})
 			C("UICorner", { CornerRadius = UDim.new(0, 4), Parent = Row })
+			local PlayHit = C("TextButton", {
+				Size = UDim2.new(1, -24, 1, 0),
+				BackgroundTransparency = 1,
+				Text = "",
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				ZIndex = 9,
+				Parent = Row,
+			})
 			C("TextLabel", {
 				Size = UDim2.new(0, 18, 1, 0),
 				Position = UDim2.new(0, 6, 0, 0),
@@ -112,10 +119,27 @@ function UIMusic.build(env)
 				ZIndex = 9,
 				Parent = Row,
 			})
-			Row.MouseButton1Click:Connect(function()
-				if Music and Music.PlayQueue then
-					Music.PlayQueue(items, i)
+			PlayHit.MouseButton1Click:Connect(function()
+				if Music and Music.Play then
+					Music.Play(items[i], { keepQueue = true })
 					setFooterStatus("♪ " .. (item.title or "?"))
+				end
+			end)
+			local RemoveBtn = C("TextButton", {
+				Size = UDim2.new(0, 22, 1, 0),
+				Position = UDim2.new(1, -24, 0, 0),
+				BackgroundTransparency = 1,
+				Text = "×",
+				Font = Enum.Font.GothamBold,
+				TextSize = 14,
+				TextColor3 = MUT,
+				AutoButtonColor = false,
+				ZIndex = 10,
+				Parent = Row,
+			})
+			RemoveBtn.MouseButton1Click:Connect(function()
+				if Music and Music.RemoveFromQueue then
+					Music.RemoveFromQueue(i)
 				end
 			end)
 		end
@@ -179,17 +203,25 @@ function UIMusic.build(env)
 
 	local function addResultRow(item, order)
 		local initial = string.sub(item.title or "?", 1, 1):upper()
-		local Row = C("TextButton", {
+		local Row = C("Frame", {
 			Size = UDim2.new(1, -8, 0, 48),
 			BackgroundColor3 = BG2,
-			Text = "",
-			AutoButtonColor = false,
 			BorderSizePixel = 0,
 			LayoutOrder = order,
 			ZIndex = 8,
 			Parent = ResultsHost,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
+
+		local PlayHit = C("TextButton", {
+			Size = UDim2.new(1, -36, 1, 0),
+			BackgroundTransparency = 1,
+			Text = "",
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			ZIndex = 9,
+			Parent = Row,
+		})
 
 		local Art = C("Frame", {
 			Size = UDim2.new(0, 36, 0, 36),
@@ -242,8 +274,8 @@ function UIMusic.build(env)
 		})
 
 		C("TextLabel", {
-			Size = UDim2.new(0, 28, 1, 0),
-			Position = UDim2.new(1, -34, 0, 0),
+			Size = UDim2.new(0, 22, 1, 0),
+			Position = UDim2.new(1, -52, 0, 0),
 			BackgroundTransparency = 1,
 			Text = "▶",
 			Font = Enum.Font.GothamBold,
@@ -254,24 +286,46 @@ function UIMusic.build(env)
 			Parent = Row,
 		})
 
+		local AddBtn = C("TextButton", {
+			Size = UDim2.new(0, 26, 0, 26),
+			Position = UDim2.new(1, -30, 0.5, -13),
+			BackgroundColor3 = BG3,
+			Text = "+",
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = SPOTIFY,
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			ZIndex = 10,
+			Parent = Row,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = AddBtn })
+		AddBtn.MouseButton1Click:Connect(function()
+			if not Music or not Music.AddToQueue then
+				return
+			end
+			local ok, err = Music.AddToQueue(item)
+			if ok then
+				showNotify("Dodano do kolejki")
+			else
+				showNotify(tostring(err or "Już w kolejce"))
+			end
+		end)
+
 		Row.MouseEnter:Connect(function()
 			TweenPlay(Row, TweenInfo.new(0.08), { BackgroundColor3 = BG3 })
 		end)
 		Row.MouseLeave:Connect(function()
 			TweenPlay(Row, TweenInfo.new(0.08), { BackgroundColor3 = BG2 })
 		end)
-		Row.MouseButton1Click:Connect(function()
+		PlayHit.MouseButton1Click:Connect(function()
 			if not Music then
 				return
 			end
 			if Music.IsBusy and Music.IsBusy() then
 				return
 			end
-			if Music.PlayQueue and #lastSearchResults > 0 then
-				Music.PlayQueue(lastSearchResults, order)
-			else
-				Music.Play(item)
-			end
+			Music.Play(item)
 			setFooterStatus("♪ " .. (item.title or "?"))
 		end)
 	end
@@ -835,7 +889,7 @@ function UIMusic.build(env)
 	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = QueueSection })
 
 	C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 14),
+		Size = UDim2.new(1, -60, 0, 14),
 		BackgroundTransparency = 1,
 		Text = "DO ODTWORZENIA",
 		Font = Enum.Font.GothamBold,
@@ -845,6 +899,26 @@ function UIMusic.build(env)
 		LayoutOrder = 1,
 		ZIndex = 8,
 		Parent = QueueSection,
+	})
+
+	local ClearQueueBtn = C("TextButton", {
+		Size = UDim2.new(0, 52, 0, 14),
+		Position = UDim2.new(1, -52, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "Wyczyść",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 8,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		LayoutOrder = 1,
+		ZIndex = 9,
+		Parent = QueueSection,
+	})
+	ClearQueueBtn.MouseButton1Click:Connect(function()
+		if Music and Music.ClearQueue then
+			Music.ClearQueue()
+			showNotify("Kolejka wyczyszczona")
+		end
 	})
 
 	local QueueScroll = C("ScrollingFrame", {
@@ -876,7 +950,7 @@ function UIMusic.build(env)
 		origRefreshQueue(state)
 		local count = state and state.queueCount or 0
 		if QueueSection then
-			QueueSection.Visible = count > 1
+			QueueSection.Visible = count > 0
 		end
 	end
 
