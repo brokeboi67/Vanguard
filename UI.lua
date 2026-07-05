@@ -880,7 +880,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Position = UDim2.new(0, 56, 0, 210),
 		BackgroundTransparency = 1,
 		Text = "#FFFFFF",
-		Font = Enum.Font.Code,
+		Font = Enum.Font.GothamMedium,
 		TextSize = 13,
 		TextColor3 = Color3.fromRGB(200, 200, 210),
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -1028,7 +1028,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end)
 	ColorPickerOverlay.MouseButton1Click:Connect(closeColorPicker)
 	PickerDone.MouseButton1Click:Connect(closeColorPicker)
-	ColorPickerPanel.MouseButton1Click:Connect(function() end)
 
 	local function MakeColorPicker(page, label, key, order, opts)
 		opts = opts or {}
@@ -1065,7 +1064,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Position = UDim2.new(1, -92, 0, 0),
 			BackgroundTransparency = 1,
 			Text = formatHex(S[key] or Color3.new(1, 1, 1)),
-			Font = Enum.Font.Code,
+			Font = Enum.Font.GothamMedium,
 			TextSize = 10,
 			TextColor3 = Color3.fromRGB(130, 130, 145),
 			TextXAlignment = Enum.TextXAlignment.Right,
