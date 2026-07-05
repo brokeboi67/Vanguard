@@ -32,6 +32,8 @@ function Music.Init(S)
 	local playPosOffset = 0
 	local pausePosSnapshot = 0
 	local lastToggleAt = 0
+	local pausedSession = nil
+	local cachedDuration = 0
 	local HTTP_TIMEOUT = 12
 
 	local function logInfo(...)
@@ -176,7 +178,12 @@ function Music.Init(S)
 	end
 
 	local function buildSearchUrl(query)
-		local lucene = query .. " AND mediatype:audio"
+		local term = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
+		if term:find("%s") and not term:find(":") and not term:find('"') then
+			local clean = term:gsub('"', "")
+			term = '(creator:"' .. clean .. '" OR title:"' .. clean .. '" OR "' .. clean .. '")'
+		end
+		local lucene = term .. " AND mediatype:audio"
 		return "https://archive.org/advancedsearch.php?q="
 			.. urlEncode(lucene)
 			.. "&fl[]=identifier,title,creator,downloads"
@@ -398,13 +405,19 @@ function Music.Init(S)
 
 	local function getPlaybackPosition()
 		if not currentSound then
-			return 0, 0
+			if paused and pausedSession then
+				return pausePosSnapshot, pausedSession.duration or cachedDuration
+			end
+			return 0, cachedDuration
 		end
 		local dur = currentSound.TimeLength
-		local pos = currentSound.TimePosition
-		if dur <= 0 then
-			return 0, 0
+		if dur > 0 then
+			cachedDuration = dur
 		end
+		if dur <= 0 then
+			return 0, cachedDuration
+		end
+		local pos = currentSound.TimePosition
 		if paused then
 			return pausePosSnapshot, dur
 		end
@@ -418,6 +431,85 @@ function Music.Init(S)
 			return pos, dur
 		end
 		return pos, dur
+	end
+
+	local function attachProgress(sound)
+		disconnectProgress()
+		progressConn = RS.Heartbeat:Connect(function()
+			if currentSound ~= sound then
+				return
+			end
+			local pos, dur = getPlaybackPosition()
+			if Music.onProgress and dur > 0 then
+				pcall(Music.onProgress, pos, dur)
+			end
+			if not paused and dur > 0 and pos >= dur - 0.35 and S.MusicLoop ~= true then
+				playGen += 1
+				stopInternal()
+			end
+		end)
+	end
+
+	local function resumePausedSession()
+		if not pausedSession or not pausedSession.soundId then
+			paused = false
+			notifyState()
+			return
+		end
+
+		loading = true
+		notifyState()
+
+		local session = pausedSession
+		local sound = Instance.new("Sound")
+		sound.Name = "VanguardMusic"
+		sound.SoundId = session.soundId
+		sound.Volume = S.MusicVolume or 0.65
+		sound.Looped = S.MusicLoop == true
+		sound.Parent = SoundService
+
+		if not waitForSoundLoad(sound, 12) then
+			loading = false
+			lastError = "Nie udało się wznowić odtwarzania"
+			logErr("Resume load fail")
+			notifyState()
+			return
+		end
+
+		local pos = math.min(session.position or 0, math.max(0, sound.TimeLength - 0.1))
+		pcall(function()
+			sound.TimePosition = pos
+		end)
+
+		if not startPlayback(sound) then
+			killSound(sound)
+			loading = false
+			lastError = "Resume play fail"
+			logErr("Resume play fail")
+			notifyState()
+			return
+		end
+
+		task.wait(0.2)
+		if pos > 0.05 then
+			pcall(function()
+				sound.TimePosition = pos
+			end)
+		end
+
+		currentSound = sound
+		paused = false
+		pausedSession = nil
+		loading = false
+		lastError = nil
+		playPosOffset = pos
+		pausePosSnapshot = pos
+		playClockStart = os.clock()
+		cachedDuration = sound.TimeLength
+
+		attachProgress(sound)
+		notifyState()
+		logInfo("Resume OK @", string.format("%.1fs", pos))
 	end
 
 	local function startPlayback(sound)
@@ -477,6 +569,8 @@ function Music.Init(S)
 		playClockStart = 0
 		playPosOffset = 0
 		pausePosSnapshot = 0
+		pausedSession = nil
+		cachedDuration = 0
 		notifyState()
 	end
 
@@ -643,27 +737,32 @@ function Music.Init(S)
 	end
 
 	function Music.TogglePause()
-		if not currentSound then
-			return
-		end
 		if os.clock() - lastToggleAt < 0.3 then
 			return
 		end
 		lastToggleAt = os.clock()
 
 		if paused then
-			paused = false
-			currentSound.Volume = S.MusicVolume or 0.65
-			playPosOffset = pausePosSnapshot
-			playClockStart = os.clock()
-			logInfo("Resume @", string.format("%.1fs", pausePosSnapshot))
-		else
-			pausePosSnapshot = getPlaybackPosition()
-			paused = true
-			playClockStart = 0
-			currentSound.Volume = 0
-			logInfo("Pause @", string.format("%.1fs", pausePosSnapshot))
+			task.spawn(resumePausedSession)
+			return
 		end
+
+		if not currentSound then
+			return
+		end
+
+		pausePosSnapshot = getPlaybackPosition()
+		local _, dur = getPlaybackPosition()
+		pausedSession = {
+			soundId = currentSound.SoundId,
+			position = pausePosSnapshot,
+			duration = dur > 0 and dur or cachedDuration,
+		}
+		paused = true
+		playClockStart = 0
+		killSound(currentSound)
+		currentSound = nil
+		logInfo("Pause @", string.format("%.1fs", pausePosSnapshot))
 		notifyState()
 	end
 
@@ -752,6 +851,7 @@ function Music.Init(S)
 		destroyAllMusicSounds()
 		currentSound = nil
 		paused = false
+		pausedSession = nil
 		nowPlaying = {
 			identifier = item.identifier,
 			title = item.title or item.identifier,
@@ -821,25 +921,14 @@ function Music.Init(S)
 								}
 								loading = false
 								paused = false
+								pausedSession = nil
 								playPosOffset = 0
 								pausePosSnapshot = 0
 								playClockStart = os.clock()
+								cachedDuration = sound.TimeLength
 								logInfo("Play OK:", nowPlaying.title, "→", cand.name)
 
-								disconnectProgress()
-								progressConn = RS.Heartbeat:Connect(function()
-									if currentSound ~= sound then
-										return
-									end
-									local pos, dur = getPlaybackPosition()
-									if Music.onProgress and dur > 0 then
-										pcall(Music.onProgress, pos, dur)
-									end
-									if not paused and dur > 0 and pos >= dur - 0.35 and S.MusicLoop ~= true then
-										playGen += 1
-										stopInternal()
-									end
-								end)
+								attachProgress(sound)
 
 								notifyState()
 								task.defer(notifyState)

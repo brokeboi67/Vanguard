@@ -302,8 +302,8 @@ function UIMusic.build(env)
 
 	local chips = {
 		{ "Lady", "Modjo Lady" },
+		{ "MJ", "Michael Jackson" },
 		{ "Stereo Love", "Stereo Love Edward Maya" },
-		{ "Phonk", "phonk mix" },
 	}
 	for i, c in ipairs(chips) do
 		local Chip = C("TextButton", {
