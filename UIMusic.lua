@@ -556,14 +556,12 @@ function UIMusic.build(env)
 
 	local PLAYER_H = 118
 	local HEADER_H = 82
-	local LOCAL_PANEL_GAP = 6
-	local LOCAL_BAR_H = 66
-	local CACHE_BAR_H = 38
+	local LOCAL_PANEL_GAP = 4
+	local LOCAL_BAR_H = 36
 	local MUSIC_VOL_MAX = 3
 	local LocalPathLbl
-	local LocalFormatsLbl
+	local LocalTipLbl
 	local CacheStatsLbl
-	local CacheHintLbl
 	local ClearCacheBtn
 	local cacheConfirmUntil = 0
 	local Body
@@ -574,10 +572,10 @@ function UIMusic.build(env)
 
 	local function cachePathLabel()
 		local ok, path = pcall(function()
-			if Music and Music.GetCacheDirAbsolute then
-				local abs = Music.GetCacheDirAbsolute()
-				if abs and abs ~= "" then
-					return abs
+			if Music and Music.GetCacheDirEnvPath then
+				local envPath = Music.GetCacheDirEnvPath()
+				if envPath and envPath ~= "" then
+					return envPath
 				end
 			end
 			if Music and Music.GetCacheDir then
@@ -589,6 +587,21 @@ function UIMusic.build(env)
 			return path
 		end
 		return "VanguardMusic"
+	end
+
+	local function formatCacheCompactText(stats)
+		stats = stats or {}
+		local count = stats.fileCount or 0
+		if stats.error then
+			return L("music_cache_unavail")
+		end
+		if count == 0 then
+			return L("music_cache_empty")
+		end
+		if stats.sizeKnown and Music and Music.FormatCacheBytes then
+			return L("music_cache_compact", count, Music.FormatCacheBytes(stats.totalBytes or 0))
+		end
+		return L("music_cache_compact_nosize", count)
 	end
 
 	local function formatCacheStatsText(stats)
@@ -612,10 +625,7 @@ function UIMusic.build(env)
 			return
 		end
 		local stats = (Music and Music.GetCacheStats) and Music.GetCacheStats() or {}
-		CacheStatsLbl.Text = formatCacheStatsText(stats)
-		if CacheHintLbl then
-			CacheHintLbl.Text = L("music_cache_hint")
-		end
+		CacheStatsLbl.Text = formatCacheCompactText(stats)
 		if ClearCacheBtn then
 			local disabled = stats.error ~= nil or (stats.fileCount or 0) == 0
 			ClearCacheBtn.AutoButtonColor = false
@@ -624,7 +634,7 @@ function UIMusic.build(env)
 			if cacheConfirmUntil <= os.clock() then
 				ClearCacheBtn.Text = L("music_cache_clear")
 				ClearCacheBtn.BackgroundColor3 = BG3
-				ClearCacheBtn.TextColor3 = TXT
+				ClearCacheBtn.TextColor3 = MUT
 			end
 		end
 	end
@@ -736,13 +746,23 @@ function UIMusic.build(env)
 		return Btn
 	end
 
+	local function copyLocalPath()
+		local path = localPathLabel()
+		if typeof(setclipboard) == "function" then
+			pcall(setclipboard, path)
+		elseif typeof(toclipboard) == "function" then
+			pcall(toclipboard, path)
+		end
+		showNotify(L("music_local_copied", path), { type = "info", duration = 8 })
+	end
+
 	local function updateLocalPanelLabels()
 		local path = localPathLabel()
 		if LocalPathLbl then
-			LocalPathLbl.Text = L("music_local_folder", path)
+			LocalPathLbl.Text = path
 		end
-		if LocalFormatsLbl then
-			LocalFormatsLbl.Text = L("music_local_formats")
+		if LocalTipLbl then
+			LocalTipLbl.Text = L("music_local_tip")
 		end
 	end
 
@@ -800,7 +820,7 @@ function UIMusic.build(env)
 		if HeaderFrame then
 			HeaderFrame.Size = UDim2.new(1, -8, 0, headerH)
 		end
-		Body.Size = UDim2.new(1, -8, 1, -(headerH + PLAYER_H + CACHE_BAR_H + 8))
+		Body.Size = UDim2.new(1, -8, 1, -(headerH + PLAYER_H + 8))
 		Body.Position = UDim2.new(0, 4, 0, headerH + 4)
 	end
 
@@ -924,96 +944,88 @@ function UIMusic.build(env)
 		Name = "LocalPanel",
 		Size = UDim2.new(1, 0, 0, LOCAL_BAR_H),
 		Position = UDim2.new(0, 0, 0, HEADER_H + LOCAL_PANEL_GAP),
-		BackgroundColor3 = ELEV,
+		BackgroundColor3 = BG3,
+		BackgroundTransparency = 0.35,
 		BorderSizePixel = 0,
 		Visible = false,
 		ZIndex = 9,
 		Parent = Header,
 	})
-	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = LocalPanel })
-	C("UIStroke", {
-		Color = SPOTIFY,
-		Thickness = 1,
-		Transparency = 0.55,
-		Parent = LocalPanel,
-	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = LocalPanel })
 
-	C("TextLabel", {
-		Size = UDim2.new(0, 16, 0, 16),
-		Position = UDim2.new(0, 12, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
+	LocalTipLbl = C("TextLabel", {
+		Size = UDim2.new(0, 150, 1, 0),
+		Position = UDim2.new(0, 10, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "♪",
-		Font = Enum.Font.GothamBold,
-		TextSize = 13,
-		TextColor3 = SPOTIFY,
-		ZIndex = 10,
-		Parent = LocalPanel,
-	})
-
-	local LocalInfoCol = C("Frame", {
-		Size = UDim2.new(1, -198, 1, -12),
-		Position = UDim2.new(0, 34, 0, 6),
-		BackgroundTransparency = 1,
+		Text = L("music_local_tip"),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		ZIndex = 10,
 		Parent = LocalPanel,
 	})
 
 	LocalPathLbl = C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 18),
-		Position = UDim2.new(0, 0, 0, 4),
+		Size = UDim2.new(1, -268, 1, 0),
+		Position = UDim2.new(0, 162, 0, 0),
 		BackgroundTransparency = 1,
-		Text = L("music_local_folder", localPathLabel()),
-		Font = Enum.Font.GothamMedium,
-		TextSize = 10,
-		TextColor3 = TXT,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 11,
-		Parent = LocalInfoCol,
-	})
-
-	LocalFormatsLbl = C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 16),
-		Position = UDim2.new(0, 0, 0, 26),
-		BackgroundTransparency = 1,
-		Text = L("music_local_formats"),
+		Text = localPathLabel(),
 		Font = Enum.Font.Gotham,
 		TextSize = 9,
-		TextColor3 = MUT,
+		TextColor3 = Color3.fromRGB(165, 165, 178),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 11,
-		Parent = LocalInfoCol,
+		ZIndex = 10,
+		Parent = LocalPanel,
 	})
 
 	local LocalBtnCol = C("Frame", {
-		Size = UDim2.new(0, 178, 0, 32),
-		Position = UDim2.new(1, -10, 0.5, 0),
-		AnchorPoint = Vector2.new(1, 0.5),
+		Size = UDim2.new(0, 196, 1, 0),
+		Position = UDim2.new(1, -6, 0, 0),
+		AnchorPoint = Vector2.new(1, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 10,
 		Parent = LocalPanel,
 	})
 	C("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
-		Padding = UDim.new(0, 8),
+		Padding = UDim.new(0, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Right,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Parent = LocalBtnCol,
 	})
 
-	OpenLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 94, 0, 30),
-		BackgroundColor3 = SPOTIFY,
-		Text = L("music_local_open"),
-		Font = Enum.Font.GothamBold,
-		TextSize = 10,
-		TextColor3 = Color3.fromRGB(8, 8, 10),
+	local CopyPathBtn = C("TextButton", {
+		Size = UDim2.new(0, 52, 0, 24),
+		BackgroundColor3 = BG2,
+		Text = L("music_local_copy"),
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 9,
+		TextColor3 = MUT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
 		LayoutOrder = 1,
+		ZIndex = 10,
+		Parent = LocalBtnCol,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = CopyPathBtn })
+	CopyPathBtn.MouseButton1Click:Connect(function()
+		copyLocalPath()
+	end)
+
+	OpenLocalBtn = C("TextButton", {
+		Size = UDim2.new(0, 58, 0, 24),
+		BackgroundColor3 = SPOTIFY,
+		Text = L("music_local_open"),
+		Font = Enum.Font.GothamBold,
+		TextSize = 9,
+		TextColor3 = Color3.fromRGB(8, 8, 10),
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
 		ZIndex = 10,
 		Parent = LocalBtnCol,
 	})
@@ -1023,15 +1035,15 @@ function UIMusic.build(env)
 	end)
 
 	RefreshLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 72, 0, 30),
-		BackgroundColor3 = BG3,
+		Size = UDim2.new(0, 68, 0, 24),
+		BackgroundColor3 = BG2,
 		Text = L("music_local_refresh"),
 		Font = Enum.Font.GothamSemibold,
-		TextSize = 10,
+		TextSize = 9,
 		TextColor3 = TXT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
-		LayoutOrder = 2,
+		LayoutOrder = 3,
 		ZIndex = 10,
 		Parent = LocalBtnCol,
 	})
@@ -1041,7 +1053,7 @@ function UIMusic.build(env)
 	end)
 
 	local BodyFrame = C("Frame", {
-		Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + CACHE_BAR_H + 6)),
+		Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + 6)),
 		Position = UDim2.new(0, 4, 0, HEADER_H + 2),
 		BackgroundTransparency = 1,
 		ZIndex = 6,
@@ -1214,72 +1226,6 @@ function UIMusic.build(env)
 			QueueScroll.Visible = count > 0
 		end
 	end
-
-	local CacheBar = C("Frame", {
-		Name = "CacheBar",
-		Size = UDim2.new(1, -8, 0, CACHE_BAR_H),
-		Position = UDim2.new(0, 4, 1, -(PLAYER_H + CACHE_BAR_H + 2)),
-		BackgroundColor3 = ELEV,
-		BorderSizePixel = 0,
-		ZIndex = 8,
-		Parent = Shell,
-	})
-	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = CacheBar })
-
-	local CacheInfoCol = C("Frame", {
-		Size = UDim2.new(1, -118, 1, -8),
-		Position = UDim2.new(0, 10, 0, 4),
-		BackgroundTransparency = 1,
-		ZIndex = 9,
-		Parent = CacheBar,
-	})
-
-	CacheStatsLbl = C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 16),
-		Position = UDim2.new(0, 0, 0, 2),
-		BackgroundTransparency = 1,
-		Text = formatCacheStatsText(Music and Music.GetCacheStats and Music.GetCacheStats() or {}),
-		Font = Enum.Font.GothamMedium,
-		TextSize = 9,
-		TextColor3 = TXT,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 10,
-		Parent = CacheInfoCol,
-	})
-
-	CacheHintLbl = C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 14),
-		Position = UDim2.new(0, 0, 0, 18),
-		BackgroundTransparency = 1,
-		Text = L("music_cache_hint"),
-		Font = Enum.Font.Gotham,
-		TextSize = 8,
-		TextColor3 = MUT,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 10,
-		Parent = CacheInfoCol,
-	})
-
-	ClearCacheBtn = C("TextButton", {
-		Size = UDim2.new(0, 98, 0, 28),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundColor3 = BG3,
-		Text = L("music_cache_clear"),
-		Font = Enum.Font.GothamSemibold,
-		TextSize = 9,
-		TextColor3 = TXT,
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 10,
-		Parent = CacheBar,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ClearCacheBtn })
-	ClearCacheBtn.MouseButton1Click:Connect(function()
-		clearDownloadCache()
-	end)
 
 	local PlayerDock = C("Frame", {
 		Size = UDim2.new(1, 0, 0, PLAYER_H),
@@ -1545,6 +1491,65 @@ function UIMusic.build(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = VolKnob })
 
+	local CacheRow = C("Frame", {
+		Size = UDim2.new(0, 0, 0, 22),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Position = UDim2.new(0, 238, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundTransparency = 1,
+		ZIndex = 10,
+		Parent = SettingsRow,
+	})
+	C("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
+		Parent = CacheRow,
+	})
+
+	CacheStatsLbl = C("TextLabel", {
+		Size = UDim2.new(0, 0, 0, 14),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		Text = formatCacheCompactText(Music and Music.GetCacheStats and Music.GetCacheStats() or {}),
+		Font = Enum.Font.Gotham,
+		TextSize = 8,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		LayoutOrder = 1,
+		ZIndex = 11,
+		Parent = CacheRow,
+	})
+
+	ClearCacheBtn = C("TextButton", {
+		Size = UDim2.new(0, 0, 0, 18),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundColor3 = BG3,
+		Text = L("music_cache_clear"),
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 8,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		LayoutOrder = 2,
+		ZIndex = 11,
+		Parent = CacheRow,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ClearCacheBtn })
+	C("UIPadding", {
+		PaddingTop = UDim.new(0, 2),
+		PaddingBottom = UDim.new(0, 2),
+		PaddingLeft = UDim.new(0, 8),
+		PaddingRight = UDim.new(0, 8),
+		Parent = ClearCacheBtn,
+	})
+	ClearCacheBtn.MouseButton1Click:Connect(function()
+		clearDownloadCache()
+	end)
+
 	local volDragging = false
 	local UIS = game:GetService("UserInputService")
 
@@ -1711,25 +1716,11 @@ function UIMusic.build(env)
 		if ClearCacheBtn then
 			I18n.registerText(ClearCacheBtn, "music_cache_clear")
 		end
-		if CacheHintLbl then
-			I18n.registerText(CacheHintLbl, "music_cache_hint")
+		if LocalTipLbl then
+			I18n.registerText(LocalTipLbl, "music_local_tip")
 		end
-		if LocalFormatsLbl then
-			I18n.registerText(LocalFormatsLbl, "music_local_formats")
-		end
-		if LocalPathLbl and I18n.registerText then
-			I18n.registerText(LocalPathLbl, "music_local_folder", function()
-				if Music and Music.GetLocalDirEnvPath then
-					local envPath = Music.GetLocalDirEnvPath()
-					if envPath and envPath ~= "" then
-						return envPath
-					end
-				end
-				if Music and Music.GetLocalDir then
-					return Music.GetLocalDir()
-				end
-				return "VanguardMusic/local"
-			end)
+		if CopyPathBtn then
+			I18n.registerText(CopyPathBtn, "music_local_copy")
 		end
 	end
 
@@ -1739,7 +1730,7 @@ function UIMusic.build(env)
 	langRefs.refreshNowPlaying = refreshNowPlaying
 	langRefs.updateBodyLayout = updateBodyLayout
 	langRefs.LocalPathLbl = LocalPathLbl
-	langRefs.LocalFormatsLbl = LocalFormatsLbl
+	langRefs.LocalTipLbl = LocalTipLbl
 	langRefs.updateLocalPanelLabels = updateLocalPanelLabels
 	langRefs.refreshCachePanelLabels = refreshCachePanelLabels
 

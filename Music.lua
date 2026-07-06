@@ -1053,6 +1053,94 @@ function Music.Init(S, I18nModule)
 		return ""
 	end
 
+	local function inferLocalAppData()
+		local fromEnv = normalizeWinPath(safeGetEnv("LOCALAPPDATA"))
+		if fromEnv ~= "" then
+			return fromEnv
+		end
+		local user = safeGetEnv("USERNAME")
+		if user ~= "" then
+			return joinWinPath(joinWinPath("C:\\Users", user), "AppData\\Local")
+		end
+		return ""
+	end
+
+	local function isWinAbsPath(path)
+		path = normalizeWinPath(path)
+		return path:match("^%a:[\\/]") ~= nil
+	end
+
+	local function isExecutorWorkspaceRelPath(path)
+		path = normalizeWinPath(path)
+		if path == "" or isWinAbsPath(path) then
+			return false
+		end
+		if path:lower():find("\\workspace\\", 1, true) or path:lower():match("\\workspace$") then
+			return true
+		end
+		local head = path:match("^([^\\]+)\\")
+		if not head then
+			return false
+		end
+		local known = {
+			potassium = true,
+			krnl = true,
+			fluxus = true,
+			synapse = true,
+			["script-ware"] = true,
+			scriptware = true,
+			valyse = true,
+			celery = true,
+			solara = true,
+			wave = true,
+			codex = true,
+			jjsploit = true,
+			electron = true,
+			ronix = true,
+			matcha = true,
+			opiumware = true,
+			hydrogen = true,
+			xeno = true,
+			vega = true,
+			comet = true,
+		}
+		return known[head:lower()] == true
+	end
+
+	local function expandEnvVarTokens(path)
+		path = normalizeWinPath(path)
+		if path == "" then
+			return path
+		end
+		local localApp = inferLocalAppData()
+		if localApp ~= "" then
+			local lower = path:lower()
+			local token = "%%localappdata%%"
+			local idx = lower:find(token, 1, true)
+			if idx then
+				return path:sub(1, idx - 1) .. localApp .. path:sub(idx + #token)
+			end
+		end
+		return path
+	end
+
+	local function resolveAbsoluteWindowsPath(path)
+		path = normalizeWinPath(expandEnvVarTokens(path))
+		if path == "" then
+			return path
+		end
+		if isWinAbsPath(path) then
+			return path
+		end
+		if isExecutorWorkspaceRelPath(path) then
+			local localApp = inferLocalAppData()
+			if localApp ~= "" then
+				return joinWinPath(localApp, path)
+			end
+		end
+		return path
+	end
+
 	local function resolveExecutorWorkspace()
 		local ok, result = pcall(function()
 			if typeof(getsynapsepath) == "function" then
@@ -1132,8 +1220,11 @@ function Music.Init(S, I18nModule)
 		if absPath == "" then
 			return absPath
 		end
-		local localApp = normalizeWinPath(safeGetEnv("LOCALAPPDATA"))
-		if localApp ~= "" then
+		if absPath:lower():find("%%localappdata%%", 1, true) then
+			return absPath
+		end
+		local localApp = inferLocalAppData()
+		if localApp ~= "" and isWinAbsPath(absPath) then
 			local absLower = absPath:lower()
 			local appLower = localApp:lower()
 			if #appLower > 0 and absLower:sub(1, #appLower) == appLower then
@@ -1141,7 +1232,41 @@ function Music.Init(S, I18nModule)
 				return "%localappdata%\\" .. rest
 			end
 		end
+		if isExecutorWorkspaceRelPath(absPath) then
+			return "%localappdata%\\" .. absPath
+		end
+		if not isWinAbsPath(absPath) and absPath:find("\\", 1, true) then
+			local localAppRel = inferLocalAppData()
+			if localAppRel ~= "" then
+				local expanded = joinWinPath(localAppRel, absPath)
+				local absLower = expanded:lower()
+				local appLower = localAppRel:lower()
+				if absLower:sub(1, #appLower) == appLower then
+					local rest = expanded:sub(#localAppRel + 1):gsub("^\\+", "")
+					return "%localappdata%\\" .. rest
+				end
+			end
+		end
 		return absPath
+	end
+
+	local function relPathToEnvPath(relPath)
+		relPath = tostring(relPath or ""):gsub("/", "\\"):gsub("^\\+", ""):gsub("\\+$", "")
+		if relPath == "" then
+			return relPath
+		end
+		local root = resolveExecutorWorkspace()
+		if root then
+			local abs = joinWinPath(root, relPath)
+			local env = toEnvVarPath(abs)
+			if env:lower():find("%%localappdata%%", 1, true) then
+				return env
+			end
+		end
+		if isExecutorWorkspaceRelPath(relPath) then
+			return "%localappdata%\\" .. relPath
+		end
+		return relPath
 	end
 
 	local function localDirToWindowsPath()
@@ -1153,7 +1278,7 @@ function Music.Init(S, I18nModule)
 	end
 
 	local function tryOpenWindowsFolder(absPath)
-		absPath = normalizeWinPath(absPath)
+		absPath = resolveAbsoluteWindowsPath(absPath)
 		if absPath == "" then
 			return false
 		end
@@ -2263,7 +2388,7 @@ function Music.Init(S, I18nModule)
 		ensureLocalDir()
 		local ok, path = pcall(localDirToWindowsPath)
 		if ok and type(path) == "string" and path ~= "" then
-			return path
+			return resolveAbsoluteWindowsPath(path)
 		end
 		local user = safeGetEnv("USERNAME")
 		local execName = ""
@@ -2285,9 +2410,12 @@ function Music.Init(S, I18nModule)
 	function Music.GetLocalDirEnvPath()
 		local abs = Music.GetLocalDirAbsolute()
 		if abs and abs ~= "" then
-			return toEnvVarPath(abs)
+			local env = toEnvVarPath(abs)
+			if env:lower():find("%%localappdata%%", 1, true) then
+				return env
+			end
 		end
-		return LOCAL_DIR
+		return relPathToEnvPath(LOCAL_DIR)
 	end
 
 	function Music.EnsureLocalDir()
@@ -2296,8 +2424,8 @@ function Music.Init(S, I18nModule)
 
 	function Music.OpenLocalFolder()
 		ensureLocalDir()
-		local abs = localDirToWindowsPath()
-		local clip = (abs and abs ~= "") and toEnvVarPath(abs) or LOCAL_DIR
+		local abs = Music.GetLocalDirAbsolute()
+		local clip = Music.GetLocalDirEnvPath()
 		local opened = abs and tryOpenWindowsFolder(abs) or false
 		if typeof(setclipboard) == "function" then
 			pcall(setclipboard, clip)
@@ -2411,20 +2539,32 @@ function Music.Init(S, I18nModule)
 		ensureCacheDir()
 		local ok, path = pcall(cacheDirToWindowsPath)
 		if ok and type(path) == "string" and path ~= "" then
-			return path
+			return resolveAbsoluteWindowsPath(path)
 		end
 		return nil
 	end
 
+	function Music.GetCacheDirEnvPath()
+		local abs = Music.GetCacheDirAbsolute()
+		if abs and abs ~= "" then
+			local env = toEnvVarPath(abs)
+			if env:lower():find("%%localappdata%%", 1, true) then
+				return env
+			end
+		end
+		return relPathToEnvPath(CACHE_DIR)
+	end
+
 	function Music.GetCacheStats()
 		local files, err = listDownloadCacheFiles()
+		local envPath = Music.GetCacheDirEnvPath()
 		if not files then
 			return {
 				fileCount = 0,
 				totalBytes = 0,
 				sizeKnown = false,
-				path = Music.GetCacheDirAbsolute() or CACHE_DIR,
-				localPath = Music.GetLocalDirAbsolute() or LOCAL_DIR,
+				path = envPath,
+				localPath = Music.GetLocalDirEnvPath(),
 				error = err,
 			}
 		end
@@ -2442,8 +2582,8 @@ function Music.Init(S, I18nModule)
 			fileCount = #files,
 			totalBytes = totalBytes,
 			sizeKnown = sizeKnown,
-			path = Music.GetCacheDirAbsolute() or CACHE_DIR,
-			localPath = Music.GetLocalDirAbsolute() or LOCAL_DIR,
+			path = envPath,
+			localPath = Music.GetLocalDirEnvPath(),
 			error = nil,
 		}
 	end
