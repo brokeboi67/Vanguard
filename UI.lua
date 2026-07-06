@@ -167,6 +167,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = Track,
 	})
 
+	if _G.VG_BOOT and _G.VG_BOOT.destroy then
+		pcall(_G.VG_BOOT.destroy)
+		_G.VG_BOOT = nil
+	end
+
 	local LoaderGame = C("Frame", {
 		Name = "LoaderGame",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -2988,22 +2993,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 
 		local steps = {
-			{ text = "Loading modules", pct = 0.25 },
-			{ text = "Initializing ESP", pct = 0.55 },
-			{ text = "Preparing interface", pct = 0.82 },
+			{ text = "Initializing ESP", pct = 0.45 },
+			{ text = "Preparing interface", pct = 0.78 },
 			{ text = "Ready", pct = 1 },
 		}
 
 		for _, step in ipairs(steps) do
 			LoaderStatus.Text = step.text
 			LoaderPct.Text = math.floor(step.pct * 100) .. "%"
-			TweenPlay(Fill, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			TweenPlay(Fill, TweenInfo.new(0.16, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				Size = UDim2.new(step.pct, 0, 1, 0),
 			})
-			task.wait(0.22)
+			task.wait(0.12)
 		end
 
-		task.wait(0.08)
+		task.wait(0.05)
 		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 			Position = UDim2.new(0, 0, 0, -56),
 		})

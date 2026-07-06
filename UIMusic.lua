@@ -1496,8 +1496,8 @@ function UIMusic.buildWidget(env)
 
 	local Root = C("Frame", {
 		Name = "VanguardMusicWidget",
-		Size = UDim2.new(0, 420, 0, 82),
-		Position = UDim2.new(0, 18, 1, -98),
+		Size = UDim2.new(0, 440, 0, 74),
+		Position = UDim2.new(0, 18, 1, -90),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundTransparency = 1,
 		Visible = false,
@@ -1535,53 +1535,16 @@ function UIMusic.buildWidget(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 20), Parent = Glow })
 
-	local ProgressHit = C("TextButton", {
-		Size = UDim2.new(1, -16, 0, 14),
-		Position = UDim2.new(0, 8, 0, 4),
-		BackgroundTransparency = 1,
-		Text = "",
-		AutoButtonColor = false,
-		ZIndex = 90,
-		Parent = Shell,
-	})
-	local ProgressTrack = C("Frame", {
-		Size = UDim2.new(1, 0, 0, 4),
-		Position = UDim2.new(0, 0, 0.5, -2),
-		BackgroundColor3 = Color3.fromRGB(36, 36, 44),
-		BorderSizePixel = 0,
-		ZIndex = 91,
-		Parent = ProgressHit,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressTrack })
-	local ProgressFill = C("Frame", {
-		Size = UDim2.new(0, 0, 1, 0),
-		BackgroundColor3 = SPOTIFY,
-		BorderSizePixel = 0,
-		ZIndex = 92,
-		Parent = ProgressTrack,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressFill })
-	local ProgressKnob = C("Frame", {
-		Size = UDim2.new(0, 8, 0, 8),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(0, 0, 0.5, 0),
-		BackgroundColor3 = TXT,
-		BorderSizePixel = 0,
-		ZIndex = 93,
-		Parent = ProgressTrack,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressKnob })
-
 	local MainRow = C("Frame", {
-		Size = UDim2.new(1, -12, 0, 56),
-		Position = UDim2.new(0, 6, 0, 20),
+		Size = UDim2.new(1, -12, 0, 54),
+		Position = UDim2.new(0, 6, 0, 6),
 		BackgroundTransparency = 1,
 		ZIndex = 82,
 		Parent = Shell,
 	})
 
 	local DragZone = C("TextButton", {
-		Size = UDim2.new(1, -148, 1, 0),
+		Size = UDim2.new(1, -138, 1, 0),
 		BackgroundTransparency = 1,
 		Text = "",
 		AutoButtonColor = false,
@@ -1589,9 +1552,26 @@ function UIMusic.buildWidget(env)
 		Parent = MainRow,
 	})
 
+	local CloseBtn = C("TextButton", {
+		Size = UDim2.new(0, 20, 0, 20),
+		Position = UDim2.new(1, -2, 0, 0),
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
+		BackgroundTransparency = 0.25,
+		Text = "×",
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = MUT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 88,
+		Parent = DragZone,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = CloseBtn })
+
 	local ArtWrap = C("Frame", {
-		Size = UDim2.new(0, 46, 0, 46),
-		Position = UDim2.new(0, 4, 0.5, -23),
+		Size = UDim2.new(0, 42, 0, 42),
+		Position = UDim2.new(0, 2, 0.5, -21),
 		BackgroundTransparency = 1,
 		ZIndex = 83,
 		Parent = DragZone,
@@ -1636,15 +1616,15 @@ function UIMusic.buildWidget(env)
 	})
 
 	local InfoCol = C("Frame", {
-		Size = UDim2.new(1, -58, 1, 0),
-		Position = UDim2.new(0, 54, 0, 0),
+		Size = UDim2.new(1, -52, 1, 0),
+		Position = UDim2.new(0, 50, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 83,
 		Parent = DragZone,
 	})
 	local TitleLbl = C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 17),
-		Position = UDim2.new(0, 0, 0, 4),
+		Size = UDim2.new(1, -24, 0, 18),
+		Position = UDim2.new(0, 0, 0, 8),
 		BackgroundTransparency = 1,
 		Text = "—",
 		Font = Enum.Font.GothamBold,
@@ -1657,7 +1637,7 @@ function UIMusic.buildWidget(env)
 	})
 	local MetaLbl = C("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 14),
-		Position = UDim2.new(0, 0, 0, 22),
+		Position = UDim2.new(0, 0, 0, 28),
 		BackgroundTransparency = 1,
 		Text = "Vanguard Music",
 		Font = Enum.Font.Gotham,
@@ -1668,30 +1648,18 @@ function UIMusic.buildWidget(env)
 		ZIndex = 84,
 		Parent = InfoCol,
 	})
-	local TimeLbl = C("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 12),
-		Position = UDim2.new(0, 0, 1, -14),
-		BackgroundTransparency = 1,
-		Text = "0:00 / 0:00",
-		Font = Enum.Font.GothamMedium,
-		TextSize = 9,
-		TextColor3 = MUT,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 84,
-		Parent = InfoCol,
-	})
 
 	local CtrlCol = C("Frame", {
-		Size = UDim2.new(0, 132, 1, 0),
-		Position = UDim2.new(1, -132, 0, 0),
+		Size = UDim2.new(0, 128, 1, 0),
+		Position = UDim2.new(1, -128, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 85,
 		Parent = MainRow,
 	})
-	local PrevBtn, _ = makeTransportBtn(CtrlCol, "⏮", 0, 30)
+	local PrevBtn, _ = makeTransportBtn(CtrlCol, "⏮", 0, 28)
 	local PlayBtn = C("TextButton", {
-		Size = UDim2.new(0, 40, 0, 40),
-		Position = UDim2.new(0, 38, 0.5, -20),
+		Size = UDim2.new(0, 36, 0, 36),
+		Position = UDim2.new(0, 34, 0.5, -18),
 		BackgroundColor3 = SPOTIFY,
 		Text = "",
 		AutoButtonColor = false,
@@ -1722,36 +1690,69 @@ function UIMusic.buildWidget(env)
 		ZIndex = 87,
 		Parent = PlayBtn,
 	})
-	local NextBtn, _ = makeTransportBtn(CtrlCol, "⏭", 84, 30)
+	local NextBtn, _ = makeTransportBtn(CtrlCol, "⏭", 80, 28)
 
-	local CloseBtn = C("TextButton", {
-		Size = UDim2.new(0, 22, 0, 22),
-		Position = UDim2.new(1, -6, 0, -16),
-		AnchorPoint = Vector2.new(1, 0),
-		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
-		BackgroundTransparency = 0.2,
-		Text = "×",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = MUT,
+	local ProgressHit = C("TextButton", {
+		Size = UDim2.new(1, -16, 0, 10),
+		Position = UDim2.new(0, 8, 1, -12),
+		BackgroundTransparency = 1,
+		Text = "",
 		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 95,
+		ZIndex = 90,
 		Parent = Shell,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = CloseBtn })
+	local ProgressTrack = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 3),
+		Position = UDim2.new(0, 0, 0.5, -1),
+		BackgroundColor3 = Color3.fromRGB(36, 36, 44),
+		BorderSizePixel = 0,
+		ZIndex = 91,
+		Parent = ProgressHit,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressTrack })
+	local ProgressFill = C("Frame", {
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = SPOTIFY,
+		BorderSizePixel = 0,
+		ZIndex = 92,
+		Parent = ProgressTrack,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressFill })
+	local ProgressKnob = C("Frame", {
+		Size = UDim2.new(0, 7, 0, 7),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		BackgroundColor3 = TXT,
+		BorderSizePixel = 0,
+		ZIndex = 93,
+		Parent = ProgressTrack,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressKnob })
 
 	local LoopBadge = C("TextLabel", {
-		Size = UDim2.new(0, 18, 0, 14),
-		Position = UDim2.new(1, -28, 1, -10),
+		Size = UDim2.new(0, 16, 0, 12),
+		Position = UDim2.new(0, 10, 1, -11),
 		BackgroundTransparency = 1,
 		Text = "🔁",
 		Font = Enum.Font.Gotham,
-		TextSize = 10,
+		TextSize = 9,
 		Visible = false,
 		ZIndex = 94,
 		Parent = Shell,
 	})
+
+	local function formatMeta(state, pos, dur)
+		local artist = state.artist ~= "" and state.artist or "Audius"
+		if state.paused then
+			return artist .. " · " .. L("music_pause")
+		end
+		if state.loading then
+			return L("music_downloading")
+		end
+		local volPct = math.floor((state.volume or 0.65) * 100 / (Music.GetVolumeMax and Music.GetVolumeMax() or 1))
+		local timePart = (dur and dur > 0) and (fmtTime(pos or 0) .. " / " .. fmtTime(dur)) or "0:00"
+		return artist .. " · " .. timePart .. " · " .. volPct .. "%"
+	end
 
 	local function setTransportEnabled(btn, enabled)
 		btn.TextTransparency = enabled and 0 or 0.55
@@ -1900,15 +1901,7 @@ function UIMusic.buildWidget(env)
 		showWidget(wasHidden)
 
 		TitleLbl.Text = state.title ~= "" and state.title or (state.loading and L("music_loading") or "—")
-		local artist = state.artist ~= "" and state.artist or "Audius"
-		if state.paused then
-			MetaLbl.Text = artist .. " · " .. L("music_pause")
-		elseif state.loading then
-			MetaLbl.Text = L("music_downloading")
-		else
-			local volPct = math.floor((state.volume or 0.65) * 100 / (Music.GetVolumeMax and Music.GetVolumeMax() or 1))
-			MetaLbl.Text = artist .. " · " .. volPct .. "%"
-		end
+		MetaLbl.Text = formatMeta(state, state.position, state.duration)
 
 		local accent = artAccent(state.title)
 		ArtGrad.Color = ColorSequence.new({
@@ -1930,11 +1923,9 @@ function UIMusic.buildWidget(env)
 		if state.duration and state.duration > 0 then
 			widgetDuration = state.duration
 			setProgressRatio(state.position / state.duration)
-			TimeLbl.Text = fmtTime(state.position) .. " / " .. fmtTime(state.duration)
 		else
 			widgetDuration = 0
 			setProgressRatio(0)
-			TimeLbl.Text = state.loading and "..." or "0:00"
 		end
 
 		setPulse(state.playing and not state.paused and not state.loading, accent)
@@ -1975,7 +1966,7 @@ function UIMusic.buildWidget(env)
 		TweenPlay(CloseBtn, TweenInfo.new(0.1), { TextColor3 = TXT, BackgroundTransparency = 0 })
 	end)
 	CloseBtn.MouseLeave:Connect(function()
-		TweenPlay(CloseBtn, TweenInfo.new(0.1), { TextColor3 = MUT, BackgroundTransparency = 0.2 })
+		TweenPlay(CloseBtn, TweenInfo.new(0.1), { TextColor3 = MUT, BackgroundTransparency = 0.25 })
 	end)
 
 	if Music then
@@ -1990,7 +1981,9 @@ function UIMusic.buildWidget(env)
 				if not draggingSeek then
 					setProgressRatio(pos / dur)
 				end
-				TimeLbl.Text = fmtTime(pos) .. " / " .. fmtTime(dur)
+				if Music.GetState then
+					MetaLbl.Text = formatMeta(Music.GetState(), pos, dur)
+				end
 			end
 			if Music.GetState then
 				local st = Music.GetState()
