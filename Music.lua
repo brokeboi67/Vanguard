@@ -1127,6 +1127,23 @@ function Music.Init(S, I18nModule)
 		return nil
 	end
 
+	local function toEnvVarPath(absPath)
+		absPath = normalizeWinPath(absPath)
+		if absPath == "" then
+			return absPath
+		end
+		local localApp = normalizeWinPath(safeGetEnv("LOCALAPPDATA"))
+		if localApp ~= "" then
+			local absLower = absPath:lower()
+			local appLower = localApp:lower()
+			if #appLower > 0 and absLower:sub(1, #appLower) == appLower then
+				local rest = absPath:sub(#localApp + 1):gsub("^\\+", "")
+				return "%localappdata%\\" .. rest
+			end
+		end
+		return absPath
+	end
+
 	local function localDirToWindowsPath()
 		local root = resolveExecutorWorkspace()
 		if not root then
@@ -2265,6 +2282,14 @@ function Music.Init(S, I18nModule)
 		return nil
 	end
 
+	function Music.GetLocalDirEnvPath()
+		local abs = Music.GetLocalDirAbsolute()
+		if abs and abs ~= "" then
+			return toEnvVarPath(abs)
+		end
+		return LOCAL_DIR
+	end
+
 	function Music.EnsureLocalDir()
 		ensureLocalDir()
 	end
@@ -2272,7 +2297,7 @@ function Music.Init(S, I18nModule)
 	function Music.OpenLocalFolder()
 		ensureLocalDir()
 		local abs = localDirToWindowsPath()
-		local clip = abs or LOCAL_DIR
+		local clip = (abs and abs ~= "") and toEnvVarPath(abs) or LOCAL_DIR
 		local opened = abs and tryOpenWindowsFolder(abs) or false
 		if typeof(setclipboard) == "function" then
 			pcall(setclipboard, clip)

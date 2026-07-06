@@ -130,6 +130,7 @@ function UIMusic.build(env)
 	local ProgressFill
 	local TimeCur
 	local TimeDur
+	local playerDuration = 0
 	local PlayIcon
 	local PauseIcon
 	local ResultsHost
@@ -292,6 +293,9 @@ function UIMusic.build(env)
 		end
 		if TimeDur then
 			TimeDur.Text = fmtTime(state.duration)
+		end
+		if state.duration and state.duration > 0 then
+			playerDuration = state.duration
 		end
 		if ProgressFill then
 			if state.duration and state.duration > 0 then
@@ -666,10 +670,10 @@ function UIMusic.build(env)
 
 	local function localPathLabel()
 		local ok, path = pcall(function()
-			if Music and Music.GetLocalDirAbsolute then
-				local abs = Music.GetLocalDirAbsolute()
-				if abs and abs ~= "" then
-					return abs
+			if Music and Music.GetLocalDirEnvPath then
+				local envPath = Music.GetLocalDirEnvPath()
+				if envPath and envPath ~= "" then
+					return envPath
 				end
 			end
 			if Music and Music.GetLocalDir then
@@ -1294,13 +1298,23 @@ function UIMusic.build(env)
 		Parent = PlayerDock,
 	})
 
+	local ProgressHit = C("TextButton", {
+		Size = UDim2.new(1, -24, 0, 10),
+		Position = UDim2.new(0, 12, 0, 5),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 11,
+		Parent = PlayerDock,
+	})
 	local ProgressTrack = C("Frame", {
-		Size = UDim2.new(1, -24, 0, 3),
-		Position = UDim2.new(0, 12, 0, 8),
+		Size = UDim2.new(1, 0, 0, 3),
+		Position = UDim2.new(0, 0, 0.5, -1),
 		BackgroundColor3 = BG3,
 		BorderSizePixel = 0,
 		ZIndex = 9,
-		Parent = PlayerDock,
+		Parent = ProgressHit,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressTrack })
 	ProgressFill = C("Frame", {
@@ -1563,6 +1577,37 @@ function UIMusic.build(env)
 		end
 	end)
 
+	local seekDragging = false
+	local function seekFromInput(x)
+		if playerDuration <= 0 or not Music or not Music.Seek then
+			return
+		end
+		if ProgressTrack.AbsoluteSize.X < 1 then
+			return
+		end
+		local rel = math.clamp((x - ProgressTrack.AbsolutePosition.X) / ProgressTrack.AbsoluteSize.X, 0, 1)
+		if ProgressFill then
+			ProgressFill.Size = UDim2.new(rel, 0, 1, 0)
+		end
+		Music.Seek(rel * playerDuration)
+	end
+	ProgressHit.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			seekDragging = true
+			seekFromInput(input.Position.X)
+		end
+	end)
+	UIS.InputChanged:Connect(function(input)
+		if seekDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			seekFromInput(input.Position.X)
+		end
+	end)
+	UIS.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			seekDragging = false
+		end
+	end)
+
 	local TogRow = C("Frame", {
 		Size = UDim2.new(0, 0, 0, 22),
 		AutomaticSize = Enum.AutomaticSize.X,
@@ -1630,6 +1675,7 @@ function UIMusic.build(env)
 	if Music then
 		Music.onStateChanged = refreshNowPlaying
 		Music.onProgress = function(pos, dur)
+			playerDuration = dur or 0
 			if TimeCur then
 				TimeCur.Text = fmtTime(pos)
 			end
@@ -1673,10 +1719,10 @@ function UIMusic.build(env)
 		end
 		if LocalPathLbl and I18n.registerText then
 			I18n.registerText(LocalPathLbl, "music_local_folder", function()
-				if Music and Music.GetLocalDirAbsolute then
-					local abs = Music.GetLocalDirAbsolute()
-					if abs and abs ~= "" then
-						return abs
+				if Music and Music.GetLocalDirEnvPath then
+					local envPath = Music.GetLocalDirEnvPath()
+					if envPath and envPath ~= "" then
+						return envPath
 					end
 				end
 				if Music and Music.GetLocalDir then
