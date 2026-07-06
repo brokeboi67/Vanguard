@@ -2904,6 +2904,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			MenuRoot.GroupTransparency = 1
 			table.insert(menuTweens, TweenPlay(MenuRoot, showInfo, { GroupTransparency = 0 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, showInfo, { Scale = 1 }))
+
+			if UIMusicModule and UIMusicModule.onMenuOpen then
+				UIMusicModule.onMenuOpen()
+			end
 		else
 			dragging = false
 

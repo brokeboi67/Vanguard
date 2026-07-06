@@ -416,12 +416,12 @@ function UIMusic.build(env)
 			updateBodyLayout()
 		end
 		if src == "local" then
-			if LocalHelpLbl then
-				LocalHelpLbl.Text = L("music_local_help", localPathLabel())
+			updateLocalPanelLabels()
+			if not localAutoRefreshed then
+				task.defer(function()
+					refreshLocalFiles(false)
+				end)
 			end
-			task.defer(function()
-				runSearch(SearchBox and SearchBox.Text or "")
-			end)
 		end
 	end
 
@@ -490,9 +490,10 @@ function UIMusic.build(env)
 
 	local PLAYER_H = 118
 	local HEADER_H = 82
-	local LOCAL_BAR_H = 40
+	local LOCAL_BAR_H = 58
 	local MUSIC_VOL_MAX = 3
-	local LocalHelpLbl
+	local LocalPathLbl
+	local LocalFormatsLbl
 	local Body
 	local HeaderFrame
 	local LocalPanel
@@ -546,6 +547,32 @@ function UIMusic.build(env)
 		end)
 		paint()
 		return Btn
+	end
+
+	local function updateLocalPanelLabels()
+		local path = localPathLabel()
+		if LocalPathLbl then
+			LocalPathLbl.Text = L("music_local_folder", path)
+		end
+		if LocalFormatsLbl then
+			LocalFormatsLbl.Text = L("music_local_formats")
+		end
+	end
+
+	local localAutoRefreshed = false
+
+	local function refreshLocalFiles(manual)
+		updateLocalPanelLabels()
+		if Music and Music.EnsureLocalDir then
+			pcall(Music.EnsureLocalDir)
+		end
+		if not manual then
+			if localAutoRefreshed then
+				return
+			end
+			localAutoRefreshed = true
+		end
+		runSearch(SearchBox and SearchBox.Text or "")
 	end
 
 	updateBodyLayout = function()
@@ -716,11 +743,17 @@ function UIMusic.build(env)
 		Transparency = 0.55,
 		Parent = LocalPanel,
 	})
+	C("UIPadding", {
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
+		PaddingLeft = UDim.new(0, 10),
+		PaddingRight = UDim.new(0, 10),
+		Parent = LocalPanel,
+	})
 
 	C("TextLabel", {
 		Size = UDim2.new(0, 16, 0, 16),
-		Position = UDim2.new(0, 10, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, 10, 0, 10),
 		BackgroundTransparency = 1,
 		Text = "♪",
 		Font = Enum.Font.GothamBold,
@@ -730,26 +763,60 @@ function UIMusic.build(env)
 		Parent = LocalPanel,
 	})
 
-	LocalHelpLbl = C("TextLabel", {
-		Size = UDim2.new(1, -196, 1, -8),
-		Position = UDim2.new(0, 30, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
+	local LocalInfoCol = C("Frame", {
+		Size = UDim2.new(1, -196, 1, 0),
+		Position = UDim2.new(0, 24, 0, 0),
 		BackgroundTransparency = 1,
-		Text = L("music_local_help", localPathLabel()),
-		Font = Enum.Font.GothamMedium,
-		TextSize = 9,
-		TextColor3 = TXT,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		TextWrapped = true,
 		ZIndex = 10,
 		Parent = LocalPanel,
 	})
 
+	LocalPathLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 16),
+		Position = UDim2.new(0, 0, 0, 2),
+		BackgroundTransparency = 1,
+		Text = L("music_local_folder", localPathLabel()),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 10,
+		TextColor3 = TXT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 11,
+		Parent = LocalInfoCol,
+	})
+
+	LocalFormatsLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.new(0, 0, 0, 20),
+		BackgroundTransparency = 1,
+		Text = L("music_local_formats"),
+		Font = Enum.Font.Gotham,
+		TextSize = 9,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 11,
+		Parent = LocalInfoCol,
+	})
+
+	local LocalBtnCol = C("Frame", {
+		Size = UDim2.new(0, 176, 1, 0),
+		Position = UDim2.new(1, -176, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 10,
+		Parent = LocalPanel,
+	})
+	C("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		Padding = UDim.new(0, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Parent = LocalBtnCol,
+	})
+
 	OpenLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 96, 0, 26),
-		Position = UDim2.new(1, -174, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
+		Size = UDim2.new(0, 96, 0, 28),
 		BackgroundColor3 = SPOTIFY,
 		Text = L("music_local_open"),
 		Font = Enum.Font.GothamBold,
@@ -757,8 +824,9 @@ function UIMusic.build(env)
 		TextColor3 = Color3.fromRGB(8, 8, 10),
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
+		LayoutOrder = 1,
 		ZIndex = 10,
-		Parent = LocalPanel,
+		Parent = LocalBtnCol,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = OpenLocalBtn })
 	OpenLocalBtn.MouseButton1Click:Connect(function()
@@ -766,9 +834,7 @@ function UIMusic.build(env)
 	end)
 
 	RefreshLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 72, 0, 26),
-		Position = UDim2.new(1, -72, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
+		Size = UDim2.new(0, 74, 0, 28),
 		BackgroundColor3 = BG3,
 		Text = L("music_local_refresh"),
 		Font = Enum.Font.GothamSemibold,
@@ -776,12 +842,13 @@ function UIMusic.build(env)
 		TextColor3 = TXT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
+		LayoutOrder = 2,
 		ZIndex = 10,
-		Parent = LocalPanel,
+		Parent = LocalBtnCol,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = RefreshLocalBtn })
 	RefreshLocalBtn.MouseButton1Click:Connect(function()
-		runSearch(SearchBox and SearchBox.Text or "")
+		refreshLocalFiles(true)
 	end)
 
 	local BodyFrame = C("Frame", {
@@ -1365,6 +1432,9 @@ function UIMusic.build(env)
 		end
 		I18n.registerText(OpenLocalBtn, "music_local_open")
 		I18n.registerText(RefreshLocalBtn, "music_local_refresh")
+		if LocalFormatsLbl then
+			I18n.registerText(LocalFormatsLbl, "music_local_formats")
+		end
 	end
 
 	langRefs.I18n = I18n
@@ -1372,10 +1442,20 @@ function UIMusic.build(env)
 	langRefs.setSource = setSource
 	langRefs.refreshNowPlaying = refreshNowPlaying
 	langRefs.updateBodyLayout = updateBodyLayout
-	langRefs.LocalHelpLbl = LocalHelpLbl
+	langRefs.LocalPathLbl = LocalPathLbl
+	langRefs.LocalFormatsLbl = LocalFormatsLbl
+	langRefs.updateLocalPanelLabels = updateLocalPanelLabels
 
 	updateBodyLayout()
 	refreshNowPlaying()
+
+	function UIMusic.onMenuOpen()
+		if Music and Music.GetSource and Music.GetSource() == "local" then
+			task.defer(function()
+				refreshLocalFiles(false)
+			end)
+		end
+	end
 end
 
 function UIMusic.refreshLang()
@@ -1392,11 +1472,8 @@ function UIMusic.refreshLang()
 	if r.updateBodyLayout then
 		r.updateBodyLayout()
 	end
-	if r.LocalHelpLbl and r.I18n and r.Music then
-		local path = (r.Music.GetLocalDirAbsolute and r.Music.GetLocalDirAbsolute())
-			or (r.Music.GetLocalDir and r.Music.GetLocalDir())
-			or "VanguardMusic/local"
-		r.LocalHelpLbl.Text = r.I18n.t("music_local_help", path)
+	if r.updateLocalPanelLabels then
+		r.updateLocalPanelLabels()
 	end
 	if UIMusic._refreshWidget and r.Music then
 		UIMusic._refreshWidget(r.Music.GetState and r.Music.GetState() or {})
