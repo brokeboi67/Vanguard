@@ -2282,6 +2282,175 @@ function Music.Init(S, I18nModule)
 		return opened, clip, abs
 	end
 
+	local function cacheDirToWindowsPath()
+		local root = resolveExecutorWorkspace()
+		if not root then
+			return nil
+		end
+		return joinWinPath(root, CACHE_DIR:gsub("/", "\\"))
+	end
+
+	local function cacheEntryBaseName(entry)
+		return tostring(entry or ""):gsub("\\", "/"):match("([^/]+)$") or tostring(entry or "")
+	end
+
+	local function isLocalCacheSubfolder(entry)
+		local base = cacheEntryBaseName(entry):lower()
+		if base == "local" then
+			return typeof(isfolder) == "function" and isfolder(entry)
+		end
+		return false
+	end
+
+	local function isDownloadCacheFile(entry)
+		if not entry or entry == "" then
+			return false
+		end
+		if isLocalCacheSubfolder(entry) then
+			return false
+		end
+		if typeof(isfolder) == "function" and isfolder(entry) then
+			return false
+		end
+		if typeof(isfile) == "function" then
+			return isfile(entry)
+		end
+		local base = cacheEntryBaseName(entry)
+		return base ~= "" and base:lower() ~= "local"
+	end
+
+	local function fileSizeBytes(relPath)
+		if typeof(getfilesize) == "function" then
+			local ok, n = pcall(getfilesize, relPath)
+			if ok and type(n) == "number" and n >= 0 then
+				return n
+			end
+		end
+		local root = resolveExecutorWorkspace()
+		if root then
+			local abs = joinWinPath(root, tostring(relPath):gsub("/", "\\"))
+			if type(io) == "table" and typeof(io.open) == "function" then
+				local ok, sz = pcall(function()
+					local f = io.open(abs, "rb")
+					if not f then
+						return nil
+					end
+					local size = f:seek("end")
+					f:close()
+					return size
+				end)
+				if ok and type(sz) == "number" and sz >= 0 then
+					return sz
+				end
+			end
+		end
+		return nil
+	end
+
+	local function formatCacheBytes(bytes)
+		bytes = tonumber(bytes) or 0
+		if bytes < 1024 then
+			return bytes .. " B"
+		end
+		if bytes < 1024 * 1024 then
+			return string.format("%.1f KB", bytes / 1024)
+		end
+		if bytes < 1024 * 1024 * 1024 then
+			return string.format("%.1f MB", bytes / (1024 * 1024))
+		end
+		return string.format("%.2f GB", bytes / (1024 * 1024 * 1024))
+	end
+
+	local function listDownloadCacheFiles()
+		if typeof(listfiles) ~= "function" or typeof(isfolder) ~= "function" then
+			return nil, "Brak listfiles"
+		end
+		ensureCacheDir()
+		if not isfolder(CACHE_DIR) then
+			return {}, nil
+		end
+		local out = {}
+		for _, entry in ipairs(listfiles(CACHE_DIR)) do
+			if isDownloadCacheFile(entry) then
+				table.insert(out, entry)
+			end
+		end
+		return out, nil
+	end
+
+	function Music.GetCacheDir()
+		return CACHE_DIR
+	end
+
+	function Music.GetCacheDirAbsolute()
+		ensureCacheDir()
+		local ok, path = pcall(cacheDirToWindowsPath)
+		if ok and type(path) == "string" and path ~= "" then
+			return path
+		end
+		return nil
+	end
+
+	function Music.GetCacheStats()
+		local files, err = listDownloadCacheFiles()
+		if not files then
+			return {
+				fileCount = 0,
+				totalBytes = 0,
+				sizeKnown = false,
+				path = Music.GetCacheDirAbsolute() or CACHE_DIR,
+				localPath = Music.GetLocalDirAbsolute() or LOCAL_DIR,
+				error = err,
+			}
+		end
+		local totalBytes = 0
+		local sizeKnown = true
+		for _, path in ipairs(files) do
+			local sz = fileSizeBytes(path)
+			if sz then
+				totalBytes += sz
+			else
+				sizeKnown = false
+			end
+		end
+		return {
+			fileCount = #files,
+			totalBytes = totalBytes,
+			sizeKnown = sizeKnown,
+			path = Music.GetCacheDirAbsolute() or CACHE_DIR,
+			localPath = Music.GetLocalDirAbsolute() or LOCAL_DIR,
+			error = nil,
+		}
+	end
+
+	function Music.ClearDownloadCache()
+		local files, err = listDownloadCacheFiles()
+		if not files then
+			return false, 0, 0, err or "Brak listfiles"
+		end
+		local deleted = 0
+		local bytesFreed = 0
+		for _, path in ipairs(files) do
+			if isDownloadCacheFile(path) then
+				local sz = fileSizeBytes(path) or 0
+				deleteCache(path)
+				if typeof(isfile) == "function" and not isfile(path) then
+					deleted += 1
+					bytesFreed += sz
+				elseif typeof(isfile) ~= "function" then
+					deleted += 1
+					bytesFreed += sz
+				end
+			end
+		end
+		logInfo("Cache wyczyszczony:", deleted, "plików,", formatCacheBytes(bytesFreed))
+		return true, deleted, bytesFreed, nil
+	end
+
+	function Music.FormatCacheBytes(bytes)
+		return formatCacheBytes(bytes)
+	end
+
 	function Music.Search(query, callback)
 		query = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		local source = Music.GetSource()

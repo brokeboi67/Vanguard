@@ -554,14 +554,115 @@ function UIMusic.build(env)
 	local HEADER_H = 82
 	local LOCAL_PANEL_GAP = 6
 	local LOCAL_BAR_H = 66
+	local CACHE_BAR_H = 38
 	local MUSIC_VOL_MAX = 3
 	local LocalPathLbl
 	local LocalFormatsLbl
+	local CacheStatsLbl
+	local CacheHintLbl
+	local ClearCacheBtn
+	local cacheConfirmUntil = 0
 	local Body
 	local HeaderFrame
 	local LocalPanel
 	local OpenLocalBtn
 	local RefreshLocalBtn
+
+	local function cachePathLabel()
+		local ok, path = pcall(function()
+			if Music and Music.GetCacheDirAbsolute then
+				local abs = Music.GetCacheDirAbsolute()
+				if abs and abs ~= "" then
+					return abs
+				end
+			end
+			if Music and Music.GetCacheDir then
+				return Music.GetCacheDir()
+			end
+			return "VanguardMusic"
+		end)
+		if ok and type(path) == "string" and path ~= "" then
+			return path
+		end
+		return "VanguardMusic"
+	end
+
+	local function formatCacheStatsText(stats)
+		stats = stats or {}
+		local path = stats.path or cachePathLabel()
+		local count = stats.fileCount or 0
+		if stats.error then
+			return L("music_cache_unavail")
+		end
+		if count == 0 then
+			return L("music_cache_empty")
+		end
+		if stats.sizeKnown and Music and Music.FormatCacheBytes then
+			return L("music_cache_stats", path, count, Music.FormatCacheBytes(stats.totalBytes or 0))
+		end
+		return L("music_cache_stats_nosize", path, count)
+	end
+
+	local function refreshCachePanelLabels()
+		if not CacheStatsLbl then
+			return
+		end
+		local stats = (Music and Music.GetCacheStats) and Music.GetCacheStats() or {}
+		CacheStatsLbl.Text = formatCacheStatsText(stats)
+		if CacheHintLbl then
+			CacheHintLbl.Text = L("music_cache_hint")
+		end
+		if ClearCacheBtn then
+			local disabled = stats.error ~= nil or (stats.fileCount or 0) == 0
+			ClearCacheBtn.AutoButtonColor = false
+			ClearCacheBtn.Active = not disabled
+			ClearCacheBtn.TextTransparency = disabled and 0.45 or 0
+			if cacheConfirmUntil <= os.clock() then
+				ClearCacheBtn.Text = L("music_cache_clear")
+				ClearCacheBtn.BackgroundColor3 = BG3
+				ClearCacheBtn.TextColor3 = TXT
+			end
+		end
+	end
+
+	local function clearDownloadCache()
+		if not Music or not Music.GetCacheStats or not Music.ClearDownloadCache then
+			showNotify(L("music_cache_unavail"), { type = "warn" })
+			return
+		end
+		local stats = Music.GetCacheStats()
+		if stats.error then
+			showNotify(L("music_cache_unavail"), { type = "warn" })
+			return
+		end
+		if (stats.fileCount or 0) == 0 then
+			showNotify(L("music_cache_empty"), { type = "info" })
+			return
+		end
+		if cacheConfirmUntil <= os.clock() then
+			cacheConfirmUntil = os.clock() + 5
+			if ClearCacheBtn then
+				ClearCacheBtn.Text = L("music_cache_confirm")
+				ClearCacheBtn.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+				ClearCacheBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
+			end
+			return
+		end
+		cacheConfirmUntil = 0
+		local ok, deleted, bytesFreed, err = Music.ClearDownloadCache()
+		if not ok then
+			showNotify(tostring(err or L("music_cache_unavail")), { type = "error" })
+			refreshCachePanelLabels()
+			return
+		end
+		local sizeText = Music.FormatCacheBytes and Music.FormatCacheBytes(bytesFreed or 0) or tostring(bytesFreed or 0)
+		if deleted == 0 then
+			showNotify(L("music_cache_empty"), { type = "info" })
+		else
+			showNotify(L("music_cache_cleared", deleted, sizeText), { type = "success", duration = 6 })
+		end
+		refreshCachePanelLabels()
+	end
 
 	local function localPathLabel()
 		local ok, path = pcall(function()
@@ -695,7 +796,7 @@ function UIMusic.build(env)
 		if HeaderFrame then
 			HeaderFrame.Size = UDim2.new(1, -8, 0, headerH)
 		end
-		Body.Size = UDim2.new(1, -8, 1, -(headerH + PLAYER_H + 8))
+		Body.Size = UDim2.new(1, -8, 1, -(headerH + PLAYER_H + CACHE_BAR_H + 8))
 		Body.Position = UDim2.new(0, 4, 0, headerH + 4)
 	end
 
@@ -936,7 +1037,7 @@ function UIMusic.build(env)
 	end)
 
 	local BodyFrame = C("Frame", {
-		Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + 6)),
+		Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + CACHE_BAR_H + 6)),
 		Position = UDim2.new(0, 4, 0, HEADER_H + 2),
 		BackgroundTransparency = 1,
 		ZIndex = 6,
@@ -1109,6 +1210,72 @@ function UIMusic.build(env)
 			QueueScroll.Visible = count > 0
 		end
 	end
+
+	local CacheBar = C("Frame", {
+		Name = "CacheBar",
+		Size = UDim2.new(1, -8, 0, CACHE_BAR_H),
+		Position = UDim2.new(0, 4, 1, -(PLAYER_H + CACHE_BAR_H + 2)),
+		BackgroundColor3 = ELEV,
+		BorderSizePixel = 0,
+		ZIndex = 8,
+		Parent = Shell,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = CacheBar })
+
+	local CacheInfoCol = C("Frame", {
+		Size = UDim2.new(1, -118, 1, -8),
+		Position = UDim2.new(0, 10, 0, 4),
+		BackgroundTransparency = 1,
+		ZIndex = 9,
+		Parent = CacheBar,
+	})
+
+	CacheStatsLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 16),
+		Position = UDim2.new(0, 0, 0, 2),
+		BackgroundTransparency = 1,
+		Text = formatCacheStatsText(Music and Music.GetCacheStats and Music.GetCacheStats() or {}),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = TXT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 10,
+		Parent = CacheInfoCol,
+	})
+
+	CacheHintLbl = C("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 14),
+		Position = UDim2.new(0, 0, 0, 18),
+		BackgroundTransparency = 1,
+		Text = L("music_cache_hint"),
+		Font = Enum.Font.Gotham,
+		TextSize = 8,
+		TextColor3 = MUT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		ZIndex = 10,
+		Parent = CacheInfoCol,
+	})
+
+	ClearCacheBtn = C("TextButton", {
+		Size = UDim2.new(0, 98, 0, 28),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = BG3,
+		Text = L("music_cache_clear"),
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 9,
+		TextColor3 = TXT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 10,
+		Parent = CacheBar,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ClearCacheBtn })
+	ClearCacheBtn.MouseButton1Click:Connect(function()
+		clearDownloadCache()
+	end)
 
 	local PlayerDock = C("Frame", {
 		Size = UDim2.new(1, 0, 0, PLAYER_H),
@@ -1495,6 +1662,12 @@ function UIMusic.build(env)
 		end
 		I18n.registerText(OpenLocalBtn, "music_local_open")
 		I18n.registerText(RefreshLocalBtn, "music_local_refresh")
+		if ClearCacheBtn then
+			I18n.registerText(ClearCacheBtn, "music_cache_clear")
+		end
+		if CacheHintLbl then
+			I18n.registerText(CacheHintLbl, "music_cache_hint")
+		end
 		if LocalFormatsLbl then
 			I18n.registerText(LocalFormatsLbl, "music_local_formats")
 		end
@@ -1522,11 +1695,16 @@ function UIMusic.build(env)
 	langRefs.LocalPathLbl = LocalPathLbl
 	langRefs.LocalFormatsLbl = LocalFormatsLbl
 	langRefs.updateLocalPanelLabels = updateLocalPanelLabels
+	langRefs.refreshCachePanelLabels = refreshCachePanelLabels
 
 	updateBodyLayout()
 	refreshNowPlaying()
+	refreshCachePanelLabels()
 
 	function UIMusic.onMenuOpen()
+		task.defer(function()
+			refreshCachePanelLabels()
+		end)
 		if Music and Music.GetSource and Music.GetSource() == "local" then
 			task.defer(function()
 				refreshLocalFiles(false)
@@ -1551,6 +1729,9 @@ function UIMusic.refreshLang()
 	end
 	if r.updateLocalPanelLabels then
 		r.updateLocalPanelLabels()
+	end
+	if r.refreshCachePanelLabels then
+		r.refreshCachePanelLabels()
 	end
 	if UIMusic._refreshWidget and r.Music then
 		UIMusic._refreshWidget(r.Music.GetState and r.Music.GetState() or {})
