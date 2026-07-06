@@ -495,7 +495,10 @@ function UIMusic.build(env)
 	local MUSIC_VOL_MAX = 3
 	local LocalHelpLbl
 	local Body
-	local LocalBar
+	local HeaderFrame
+	local LocalPanel
+	local OpenLocalBtn
+	local RefreshLocalBtn
 
 	local function makeCompactTog(parent, label, key, order, opts)
 		opts = opts or {}
@@ -546,18 +549,20 @@ function UIMusic.build(env)
 		return Btn
 	end
 
-	local function updateBodyLayout()
-		if not Body then
+	updateBodyLayout = function()
+		if not Body or not HeaderFrame then
 			return
 		end
 		local isLocal = Music and Music.GetSource and Music.GetSource() == "local"
-		if LocalBar then
-			LocalBar.Visible = isLocal == true
-			LocalBar.ZIndex = isLocal and 8 or 6
+		if LocalPanel then
+			LocalPanel.Visible = isLocal == true
 		end
-		local barExtra = isLocal and (LOCAL_BAR_H + 4) or 0
-		Body.Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + 6 + barExtra))
-		Body.Position = UDim2.new(0, 4, 0, HEADER_H + 2 + barExtra)
+		local headerH = HEADER_H + (isLocal and LOCAL_BAR_H or 0)
+		if HeaderFrame then
+			HeaderFrame.Size = UDim2.new(1, -8, 0, headerH)
+		end
+		Body.Size = UDim2.new(1, -8, 1, -(headerH + PLAYER_H + 6))
+		Body.Position = UDim2.new(0, 4, 0, headerH + 2)
 	end
 
 	openLocalFolder = function()
@@ -591,6 +596,7 @@ function UIMusic.build(env)
 		ZIndex = 6,
 		Parent = Shell,
 	})
+	HeaderFrame = Header
 
 	local SearchShell = C("Frame", {
 		Size = UDim2.new(1, 0, 0, 40),
@@ -678,6 +684,91 @@ function UIMusic.build(env)
 	end)
 	refreshSourceButtons()
 
+	LocalPanel = C("Frame", {
+		Name = "LocalPanel",
+		Size = UDim2.new(1, 0, 0, LOCAL_BAR_H),
+		Position = UDim2.new(0, 0, 0, HEADER_H),
+		BackgroundColor3 = ELEV,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 9,
+		Parent = Header,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = LocalPanel })
+	C("UIStroke", {
+		Color = SPOTIFY,
+		Thickness = 1,
+		Transparency = 0.55,
+		Parent = LocalPanel,
+	})
+
+	C("TextLabel", {
+		Size = UDim2.new(0, 16, 0, 16),
+		Position = UDim2.new(0, 10, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundTransparency = 1,
+		Text = "♪",
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = SPOTIFY,
+		ZIndex = 10,
+		Parent = LocalPanel,
+	})
+
+	LocalHelpLbl = C("TextLabel", {
+		Size = UDim2.new(1, -196, 1, -8),
+		Position = UDim2.new(0, 30, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundTransparency = 1,
+		Text = L("music_local_help", (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 9,
+		TextColor3 = TXT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextWrapped = true,
+		ZIndex = 10,
+		Parent = LocalPanel,
+	})
+
+	OpenLocalBtn = C("TextButton", {
+		Size = UDim2.new(0, 96, 0, 26),
+		Position = UDim2.new(1, -174, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = SPOTIFY,
+		Text = L("music_local_open"),
+		Font = Enum.Font.GothamBold,
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(8, 8, 10),
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 10,
+		Parent = LocalPanel,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = OpenLocalBtn })
+	OpenLocalBtn.MouseButton1Click:Connect(function()
+		openLocalFolder()
+	end)
+
+	RefreshLocalBtn = C("TextButton", {
+		Size = UDim2.new(0, 72, 0, 26),
+		Position = UDim2.new(1, -72, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundColor3 = BG3,
+		Text = L("music_local_refresh"),
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 10,
+		TextColor3 = TXT,
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 10,
+		Parent = LocalPanel,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = RefreshLocalBtn })
+	RefreshLocalBtn.MouseButton1Click:Connect(function()
+		runSearch(SearchBox and SearchBox.Text or "")
+	end)
+
 	local BodyFrame = C("Frame", {
 		Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + 6)),
 		Position = UDim2.new(0, 4, 0, HEADER_H + 2),
@@ -686,102 +777,6 @@ function UIMusic.build(env)
 		Parent = Shell,
 	})
 	Body = BodyFrame
-
-	LocalBar = C("Frame", {
-		Size = UDim2.new(1, -8, 0, LOCAL_BAR_H),
-		Position = UDim2.new(0, 4, 0, HEADER_H + 2),
-		BackgroundColor3 = ELEV,
-		BorderSizePixel = 0,
-		Visible = false,
-		ZIndex = 8,
-		Parent = Shell,
-	})
-	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = LocalBar })
-	C("UIStroke", {
-		Color = Color3.fromRGB(40, 40, 48),
-		Thickness = 1,
-		Transparency = 0.4,
-		Parent = LocalBar,
-	})
-
-	local LocalBarInner = C("Frame", {
-		Size = UDim2.new(1, 0, 1, 0),
-		BackgroundTransparency = 1,
-		ZIndex = 8,
-		Parent = LocalBar,
-	})
-	C("UIPadding", {
-		PaddingTop = UDim.new(0, 8),
-		PaddingBottom = UDim.new(0, 8),
-		PaddingLeft = UDim.new(0, 10),
-		PaddingRight = UDim.new(0, 8),
-		Parent = LocalBarInner,
-	})
-
-	C("TextLabel", {
-		Size = UDim2.new(0, 18, 0, 18),
-		Position = UDim2.new(0, 0, 0, 0),
-		BackgroundTransparency = 1,
-		Text = "♪",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = SPOTIFY,
-		ZIndex = 9,
-		Parent = LocalBarInner,
-	})
-
-	LocalHelpLbl = C("TextLabel", {
-		Size = UDim2.new(1, -188, 1, 0),
-		Position = UDim2.new(0, 22, 0, 0),
-		BackgroundTransparency = 1,
-		Text = L("music_local_help", (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"),
-		Font = Enum.Font.Gotham,
-		TextSize = 9,
-		TextColor3 = TXT,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		TextWrapped = true,
-		ZIndex = 9,
-		Parent = LocalBarInner,
-	})
-
-	local OpenLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 92, 0, 24),
-		Position = UDim2.new(1, -168, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
-		BackgroundColor3 = SPOTIFY,
-		Text = L("music_local_open"),
-		Font = Enum.Font.GothamBold,
-		TextSize = 9,
-		TextColor3 = Color3.fromRGB(8, 8, 10),
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 9,
-		Parent = LocalBarInner,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = OpenLocalBtn })
-	OpenLocalBtn.MouseButton1Click:Connect(function()
-		openLocalFolder()
-	end)
-
-	local RefreshLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 68, 0, 24),
-		Position = UDim2.new(1, -68, 0.5, 0),
-		AnchorPoint = Vector2.new(0, 0.5),
-		BackgroundColor3 = BG3,
-		Text = L("music_local_refresh"),
-		Font = Enum.Font.GothamSemibold,
-		TextSize = 9,
-		TextColor3 = TXT,
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 9,
-		Parent = LocalBarInner,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = RefreshLocalBtn })
-	RefreshLocalBtn.MouseButton1Click:Connect(function()
-		runSearch(SearchBox and SearchBox.Text or "")
-	end)
 
 	local ResultsPane = C("Frame", {
 		Size = UDim2.new(0.63, -8, 1, 0),
