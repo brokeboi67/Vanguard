@@ -1937,6 +1937,49 @@ function Music.Init(S, I18nModule)
 		notifyState()
 	end
 
+	function Music.Seek(seconds)
+		if loading or resuming then
+			return false
+		end
+		seconds = math.max(0, tonumber(seconds) or 0)
+		if currentSound and currentSound.Parent then
+			local dur = currentSound.TimeLength
+			if dur <= 0 then
+				dur = cachedDuration
+			end
+			if dur > 0 then
+				seconds = math.min(seconds, math.max(0, dur - 0.05))
+			end
+			pcall(function()
+				currentSound.TimePosition = seconds
+			end)
+			playPosOffset = seconds
+			playClockStart = os.clock()
+			pausePosSnapshot = seconds
+			if Music.onProgress then
+				pcall(Music.onProgress, seconds, dur > 0 and dur or cachedDuration)
+			end
+			notifyState()
+			return true
+		end
+		if paused then
+			local dur = (pausedSession and pausedSession.duration) or cachedDuration
+			if dur > 0 then
+				seconds = math.min(seconds, dur)
+			end
+			pausePosSnapshot = seconds
+			if pausedSession then
+				pausedSession.position = seconds
+			end
+			if Music.onProgress then
+				pcall(Music.onProgress, seconds, dur)
+			end
+			notifyState()
+			return true
+		end
+		return false
+	end
+
 	function Music.TogglePause()
 		if os.clock() - lastToggleAt < 0.35 then
 			return
