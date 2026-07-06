@@ -1866,9 +1866,9 @@ function UIMusic.buildWidget(env)
 	local PlayBtnScale = C("UIScale", { Scale = 1, Parent = PlayBtn })
 	local widgetPlayColor = Color3.fromRGB(255, 255, 255)
 	local PlayIcon = MusicIcons.holder(PlayBtn, C, "PlayIcon")
-	MusicIcons.play(PlayIcon, C, widgetPlayColor, 15)
+	MusicIcons.play(PlayIcon, C, widgetPlayColor)
 	local PauseIcon = MusicIcons.holder(PlayBtn, C, "PauseIcon")
-	MusicIcons.pause(PauseIcon, C, widgetPlayColor, 14)
+	MusicIcons.pause(PauseIcon, C, widgetPlayColor)
 	PauseIcon.Visible = false
 	local NextBtn, _ = makeTransportBtn(CtrlCol, "forward", 80, 28)
 
