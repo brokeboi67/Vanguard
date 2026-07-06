@@ -1939,9 +1939,13 @@ function UIMusic.buildWidget(env)
 	end
 
 	local function setTransportEnabled(btn, enabled)
-		if btn and btn.SetTransportEnabled then
-			btn:SetTransportEnabled(enabled)
+		local meta = transportBtnMeta[btn]
+		if not meta then
+			return
 		end
+		meta.enabled = enabled == true
+		btn.Active = meta.enabled
+		MusicIcons.setFade(meta.iconGroup, meta.enabled and 0 or 0.55)
 	end
 
 	local function setProgressRatio(ratio)
