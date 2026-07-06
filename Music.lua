@@ -1174,6 +1174,20 @@ function Music.Init(S, I18nModule)
 		return base:gsub("%.[%w]+$", "")
 	end
 
+	local function resolveLocalFilePath(rawName)
+		rawName = tostring(rawName or ""):gsub("\\", "/"):gsub("^%./", "")
+		local rel = LOCAL_DIR
+		if rawName == rel or rawName:sub(1, #rel + 1) == rel .. "/" then
+			return rawName
+		end
+		if typeof(isfile) == "function" and isfile(rawName) then
+			return rawName
+		end
+		local base = rawName:match("([^/]+)$") or rawName
+		local joined = rel .. "/" .. base
+		return joined
+	end
+
 	local function searchLocalFiles(query)
 		ensureLocalDir()
 		if typeof(listfiles) ~= "function" or typeof(isfolder) ~= "function" then
@@ -1185,16 +1199,17 @@ function Music.Init(S, I18nModule)
 		local q = tostring(query or ""):lower()
 		local results = {}
 		for _, name in ipairs(listfiles(LOCAL_DIR)) do
-			local lower = name:lower()
+			local filePath = resolveLocalFilePath(name)
+			local lower = filePath:lower()
 			local ext = lower:match("%.([%w]+)$")
 			if ext and LOCAL_EXTS[ext] then
-				local title = localTitleFromName(name)
+				local title = localTitleFromName(filePath)
 				local hay = (lower .. " " .. title:lower())
 				if q == "" or hay:find(q, 1, true) then
 					table.insert(results, {
 						source = "local",
-						identifier = "local:" .. name,
-						localPath = LOCAL_DIR .. "/" .. name,
+						identifier = "local:" .. filePath,
+						localPath = filePath,
 						title = title,
 						creator = "Local",
 					})
@@ -2189,6 +2204,20 @@ function Music.Init(S, I18nModule)
 		local ok, path = pcall(localDirToWindowsPath)
 		if ok and type(path) == "string" and path ~= "" then
 			return path
+		end
+		local user = safeGetEnv("USERNAME")
+		local execName = ""
+		if typeof(identifyexecutor) == "function" then
+			local idOk, n = pcall(identifyexecutor)
+			if idOk and type(n) == "string" then
+				execName = n:lower()
+			end
+		end
+		if user ~= "" and execName:find("potassium", 1, true) then
+			return joinWinPath(
+				joinWinPath(joinWinPath("C:\\Users", user), "AppData\\Local"),
+				"Potassium\\workspace\\" .. LOCAL_DIR:gsub("/", "\\")
+			)
 		end
 		return nil
 	end
