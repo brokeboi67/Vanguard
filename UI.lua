@@ -1166,24 +1166,54 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = NotifyRoot,
 	})
 
+	-- Lucide icons (lucideblox) — ImageLabel assets render reliably where font glyphs do not.
+	local NOTIFY_ICON_ASSETS = {
+		info = "rbxassetid://7733964719",
+		error = "rbxassetid://7743878496",
+		success = "rbxassetid://7733710700",
+		warn = "rbxassetid://7733658504",
+	}
+
+	local function createNotifyIcon(parent, nType, accent, zIndex)
+		local iconHolder = C("Frame", {
+			Size = UDim2.new(0, 28, 0, 28),
+			Position = UDim2.new(0, 14, 0, 10),
+			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+			BorderSizePixel = 0,
+			ZIndex = zIndex,
+			Parent = parent,
+		})
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = iconHolder })
+		local iconImg = C("ImageLabel", {
+			Size = UDim2.new(1, -10, 1, -10),
+			Position = UDim2.new(0.5, 0, 0.5, 0),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Image = NOTIFY_ICON_ASSETS[nType] or NOTIFY_ICON_ASSETS.info,
+			ImageColor3 = accent,
+			ImageTransparency = 0,
+			ScaleType = Enum.ScaleType.Fit,
+			ZIndex = zIndex + 1,
+			Parent = iconHolder,
+		})
+		return iconHolder, iconImg
+	end
+
 	local function showNotify(msg, opts)
 		opts = opts or {}
 		local style = tostring(S.NotifyStyle or "pro"):lower()
 		local nType = tostring(opts.type or "info"):lower()
 		local accent = ACC
-		local icon = "ℹ"
 		local title = I18n and I18n.t("notify_info") or "Info"
 		if nType == "error" then
 			accent = Color3.fromRGB(255, 82, 96)
-			icon = "✕"
 			title = I18n and I18n.t("notify_error") or "Error"
 		elseif nType == "success" then
 			accent = Color3.fromRGB(29, 185, 84)
-			icon = "✓"
 			title = I18n and I18n.t("notify_success") or "Success"
 		elseif nType == "warn" then
 			accent = Color3.fromRGB(255, 195, 75)
-			icon = "!"
 			title = I18n and I18n.t("notify_warn") or "Warning"
 		end
 		if opts.title then
@@ -1245,18 +1275,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = card,
 		})
 
-		local iconLbl = C("TextLabel", {
-			Size = UDim2.new(0, 28, 0, 28),
-			Position = UDim2.new(0, 14, 0, 10),
-			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
-			Text = icon,
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = accent,
-			ZIndex = 93,
-			Parent = card,
-		})
-		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = iconLbl })
+		local _, iconImg = createNotifyIcon(card, nType, accent, 93)
 
 		local titleLbl = C("TextLabel", {
 			Size = UDim2.new(1, -58, 0, 14),
@@ -1296,7 +1315,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		card.BackgroundTransparency = 1
 		titleLbl.TextTransparency = 1
 		bodyLbl.TextTransparency = 1
-		iconLbl.TextTransparency = 1
+		iconImg.ImageTransparency = 1
 		accentBar.BackgroundTransparency = 1
 		card.Position = UDim2.new(0, 0, 0, -8)
 		TweenPlay(card, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
@@ -1305,7 +1324,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		TweenPlay(titleLbl, TweenInfo.new(0.24), { TextTransparency = 0 })
 		TweenPlay(bodyLbl, TweenInfo.new(0.24), { TextTransparency = 0 })
-		TweenPlay(iconLbl, TweenInfo.new(0.24), { TextTransparency = 0 })
+		TweenPlay(iconImg, TweenInfo.new(0.24), { ImageTransparency = 0 })
 		TweenPlay(accentBar, TweenInfo.new(0.24), { BackgroundTransparency = 0 })
 
 		task.delay(4.2, function()
@@ -1316,7 +1335,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				})
 				TweenPlay(titleLbl, TweenInfo.new(0.22), { TextTransparency = 1 })
 				TweenPlay(bodyLbl, TweenInfo.new(0.22), { TextTransparency = 1 })
-				TweenPlay(iconLbl, TweenInfo.new(0.22), { TextTransparency = 1 })
+				TweenPlay(iconImg, TweenInfo.new(0.22), { ImageTransparency = 1 })
 				TweenPlay(accentBar, TweenInfo.new(0.22), { BackgroundTransparency = 1 })
 				task.delay(0.32, function()
 					pcall(function() card:Destroy() end)
