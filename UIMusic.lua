@@ -1940,14 +1940,8 @@ function UIMusic.buildWidget(env)
 
 	local function refreshWidget(state)
 		state = state or (Music and Music.GetState and Music.GetState()) or {}
-		local trackId = (state.identifier or "") .. "|" .. (state.title or "")
-		if trackId ~= lastTrackId then
-			userDismissed = false
-			lastTrackId = trackId
-		end
 
 		local shouldShow = S.ShowMusicWidget ~= false
-			and not userDismissed
 			and (state.hasTrack or state.loading or state.paused)
 
 		if not shouldShow then
@@ -2015,16 +2009,6 @@ function UIMusic.buildWidget(env)
 		if Music and Music.PlayNext then
 			Music.PlayNext()
 		end
-	end)
-	CloseBtn.MouseButton1Click:Connect(function()
-		userDismissed = true
-		hideWidget()
-	end)
-	CloseBtn.MouseEnter:Connect(function()
-		TweenPlay(CloseBtn, TweenInfo.new(0.1), { TextColor3 = TXT, BackgroundTransparency = 0 })
-	end)
-	CloseBtn.MouseLeave:Connect(function()
-		TweenPlay(CloseBtn, TweenInfo.new(0.1), { TextColor3 = MUT, BackgroundTransparency = 0.25 })
 	end)
 
 	if Music then
