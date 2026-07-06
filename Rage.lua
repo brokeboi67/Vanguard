@@ -460,9 +460,6 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			local ray = Cam:ViewportPointToRay(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y / 2)
 			S.LastShotRayOrigin = ray.Origin
 			S.LastShotRayDir = ray.Direction
-			if S.RequestShotTracer then
-				pcall(S.RequestShotTracer, false, tgt.char, targetPos)
-			end
 
 			if S.RageCompat then
 				pcall(function()

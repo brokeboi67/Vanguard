@@ -1623,6 +1623,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		if S.DamageLog then
 			pcall(addDmgLog, plrName or "Target", dmg, false)
 		end
+		if S.ShotTracers and hum.Health > 0 then
+			pcall(spawnShotTracer, false, hum.Parent, S.LastShotPos)
+		end
 	end
 
 	function S.TestHitFeedback()
@@ -1820,9 +1823,6 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			end
 			if aimPos then
 				S.LastShotPos = aimPos
-			end
-			if S.ShotTracers then
-				pcall(spawnShotTracer, false, hum and hum.Parent or nil, aimPos)
 			end
 		end
 	end)
