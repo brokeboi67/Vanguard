@@ -17,6 +17,16 @@ local MUT = Color3.fromRGB(120, 120, 132)
 
 local MusicIcons = {}
 
+-- Lucide icons (lucideblox) — ImageLabel assets render reliably on executors
+-- where rotated Frame chevrons and font glyphs do not.
+local ICON_ASSETS = {
+	play = "rbxassetid://7743871480",
+	pause = "rbxassetid://7734021897",
+	skipBack = "rbxassetid://7734058404",
+	skipForward = "rbxassetid://7734058495",
+	stop = "rbxassetid://7743872181",
+}
+
 function MusicIcons.holder(parent, C, name)
 	local z = (parent.ZIndex or 1) + 2
 	return C("Frame", {
@@ -28,13 +38,23 @@ function MusicIcons.holder(parent, C, name)
 	})
 end
 
-function MusicIcons._piece(C, holder, props)
-	props.ZIndex = (holder.ZIndex or 1) + 1
-	props.BorderSizePixel = 0
-	if props.BackgroundTransparency == nil then
-		props.BackgroundTransparency = 0
-	end
-	return C("Frame", props)
+function MusicIcons._image(C, holder, assetKey, color, inset)
+	inset = inset or 3
+	local z = (holder.ZIndex or 1) + 1
+	return C("ImageLabel", {
+		Name = assetKey,
+		Size = UDim2.new(1, -(inset * 2), 1, -(inset * 2)),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Image = ICON_ASSETS[assetKey],
+		ImageColor3 = color or TXT,
+		ImageTransparency = 0,
+		ScaleType = Enum.ScaleType.Fit,
+		ZIndex = z,
+		Parent = holder,
+	})
 end
 
 function MusicIcons.setColor(holder, color)
@@ -42,8 +62,8 @@ function MusicIcons.setColor(holder, color)
 		return
 	end
 	for _, ch in ipairs(holder:GetDescendants()) do
-		if ch:IsA("Frame") and ch.BackgroundTransparency < 1 then
-			ch.BackgroundColor3 = color
+		if ch:IsA("ImageLabel") then
+			ch.ImageColor3 = color
 		end
 	end
 end
@@ -53,102 +73,33 @@ function MusicIcons.setFade(holder, alpha)
 		return
 	end
 	for _, ch in ipairs(holder:GetDescendants()) do
-		if ch:IsA("Frame") then
-			ch.BackgroundTransparency = alpha
+		if ch:IsA("ImageLabel") then
+			ch.ImageTransparency = alpha
 		end
 	end
 end
 
-function MusicIcons.chevron(holder, C, color, pointingRight, cx, cy, len, thick, angle)
-	angle = angle or 34
-	len = len or 12
-	thick = thick or 4
-	cx = cx or 0.5
-	cy = cy or 0.5
-	local xOff = pointingRight and 1 or -1
-	if pointingRight then
-		MusicIcons._piece(C, holder, {
-			Size = UDim2.new(0, thick, 0, len),
-			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(cx, xOff, cy, 0),
-			Rotation = angle,
-			BackgroundColor3 = color,
-		})
-		MusicIcons._piece(C, holder, {
-			Size = UDim2.new(0, thick, 0, len),
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(cx, xOff, cy, 0),
-			Rotation = -angle,
-			BackgroundColor3 = color,
-		})
-	else
-		MusicIcons._piece(C, holder, {
-			Size = UDim2.new(0, thick, 0, len),
-			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(cx, xOff, cy, 0),
-			Rotation = -angle,
-			BackgroundColor3 = color,
-		})
-		MusicIcons._piece(C, holder, {
-			Size = UDim2.new(0, thick, 0, len),
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.new(cx, xOff, cy, 0),
-			Rotation = angle,
-			BackgroundColor3 = color,
-		})
-	end
-end
-
 function MusicIcons.play(holder, C, color)
-	MusicIcons.chevron(holder, C, color, true, 0.53, 0.5, 13, 4, 34)
+	MusicIcons._image(C, holder, "play", color, 4)
 end
 
 function MusicIcons.pause(holder, C, color)
-	color = color or TXT
-	local h, barW, gap = 14, 4, 5
-	local total = barW * 2 + gap
-	MusicIcons._piece(C, holder, {
-		Size = UDim2.new(0, barW, 0, h),
-		Position = UDim2.new(0.5, -total / 2, 0.5, -h / 2),
-		BackgroundColor3 = color,
-	})
-	MusicIcons._piece(C, holder, {
-		Size = UDim2.new(0, barW, 0, h),
-		Position = UDim2.new(0.5, -total / 2 + barW + gap, 0.5, -h / 2),
-		BackgroundColor3 = color,
-	})
+	MusicIcons._image(C, holder, "pause", color, 4)
 end
 
 function MusicIcons.skipBack(holder, C, color)
-	color = color or TXT
-	local h, barW = 13, 3
-	MusicIcons._piece(C, holder, {
-		Size = UDim2.new(0, barW, 0, h),
-		Position = UDim2.new(0.5, -9, 0.5, -h / 2),
-		BackgroundColor3 = color,
-	})
-	MusicIcons.chevron(holder, C, color, false, 0.54, 0.5, 10, 3, 34)
+	MusicIcons._image(C, holder, "skipBack", color, 2)
 end
 
 function MusicIcons.skipForward(holder, C, color)
-	color = color or TXT
-	local h, barW = 13, 3
-	MusicIcons.chevron(holder, C, color, true, 0.46, 0.5, 10, 3, 34)
-	MusicIcons._piece(C, holder, {
-		Size = UDim2.new(0, barW, 0, h),
-		Position = UDim2.new(0.5, 6, 0.5, -h / 2),
-		BackgroundColor3 = color,
-	})
+	MusicIcons._image(C, holder, "skipForward", color, 2)
 end
 
 function MusicIcons.stop(holder, C, color, size)
 	color = color or MUT
 	size = size or 10
-	MusicIcons._piece(C, holder, {
-		Size = UDim2.new(0, size, 0, size),
-		Position = UDim2.new(0.5, -size / 2, 0.5, -size / 2),
-		BackgroundColor3 = color,
-	})
+	local inset = math.max(2, math.floor((24 - size) / 2))
+	MusicIcons._image(C, holder, "stop", color, inset)
 end
 
 local function fmtTime(sec)
