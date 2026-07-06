@@ -1683,7 +1683,7 @@ function UIMusic.buildWidget(env)
 		end)
 		Btn.MouseLeave:Connect(function()
 			TweenPlay(Scale, TweenInfo.new(0.12), { Scale = 1 })
-			MusicIcons.setColor(iconGroup, meta.enabled and color or color:Lerp(TXT, 0.45))
+			MusicIcons.setColor(iconGroup, meta.enabled and color or Color3.fromRGB(120, 120, 132))
 		end)
 		return Btn, Scale
 	end
