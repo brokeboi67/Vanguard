@@ -1353,6 +1353,21 @@ function Music.Init(S, I18nModule)
 		return joined
 	end
 
+	local function normalizePlayItem(item)
+		if not item or not item.identifier then
+			return item
+		end
+		local id = tostring(item.identifier)
+		if id:sub(1, 6) ~= "local:" then
+			return item
+		end
+		item.source = "local"
+		if not item.localPath or item.localPath == "" then
+			item.localPath = resolveLocalFilePath(id:sub(7))
+		end
+		return item
+	end
+
 	local function searchLocalFiles(query)
 		ensureLocalDir()
 		if typeof(listfiles) ~= "function" or typeof(isfolder) ~= "function" then
@@ -1541,6 +1556,7 @@ function Music.Init(S, I18nModule)
 		for _, it in ipairs(queue) do
 			local copy = cloneQueueItem(it)
 			if copy and copy.identifier then
+				normalizePlayItem(copy)
 				table.insert(qOut, copy)
 			end
 		end
@@ -1556,6 +1572,9 @@ function Music.Init(S, I18nModule)
 					break
 				end
 			end
+		end
+		if currentItem then
+			normalizePlayItem(currentItem)
 		end
 		if #qOut == 0 and not currentItem then
 			return nil
@@ -2236,6 +2255,7 @@ function Music.Init(S, I18nModule)
 			soundId = soundId,
 			cachePath = cachePath,
 			source = item.source,
+			localPath = item.localPath,
 			queueSlot = idx > 0 and idx or nil,
 		}
 		loading = false
@@ -2828,11 +2848,13 @@ function Music.Init(S, I18nModule)
 		opts = opts or {}
 		activePlaySeek = tonumber(opts.startPosition) or 0
 		pendingPauseAfterPlay = opts.resumePaused == true
+		item = cloneQueueItem(item)
 		if not item or not item.identifier then
 			activePlaySeek = 0
 			pendingPauseAfterPlay = false
 			return false, "Brak utworu"
 		end
+		normalizePlayItem(item)
 		if opts.queueIndex then
 			queueIndex = math.clamp(math.floor(opts.queueIndex), 1, math.max(1, #queue))
 		else
@@ -2901,7 +2923,7 @@ function Music.Init(S, I18nModule)
 				return
 			end
 
-			if item.source == "local" and item.localPath then
+			if item.source == "local" and item.localPath and item.localPath ~= "" then
 				local getAsset = select(1, resolveCustomAssetFn())
 				if not getAsset then
 					loading = false
@@ -3083,6 +3105,7 @@ function Music.Init(S, I18nModule)
 		for _, it in ipairs(data.queue or {}) do
 			local copy = cloneQueueItem(it)
 			if copy and copy.identifier then
+				normalizePlayItem(copy)
 				table.insert(queue, copy)
 			end
 		end
@@ -3093,6 +3116,7 @@ function Music.Init(S, I18nModule)
 
 		if cur and typeof(cur.item) == "table" and cur.item.identifier then
 			local item = cloneQueueItem(cur.item)
+			normalizePlayItem(item)
 			local idx = findQueueIndexForItem(item)
 			if idx > 0 then
 				queueIndex = idx
