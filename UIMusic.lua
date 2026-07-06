@@ -558,6 +558,8 @@ function UIMusic.build(env)
 	local HEADER_H = 82
 	local LOCAL_PANEL_GAP = 4
 	local LOCAL_BAR_H = 36
+	local POTASSIUM_CACHE_ENV = "%localappdata%\\Potassium\\workspace\\VanguardMusic"
+	local POTASSIUM_LOCAL_ENV = "%localappdata%\\Potassium\\workspace\\VanguardMusic\\local"
 	local MUSIC_VOL_MAX = 3
 	local LocalPathLbl
 	local LocalTipLbl
@@ -581,12 +583,12 @@ function UIMusic.build(env)
 			if Music and Music.GetCacheDir then
 				return Music.GetCacheDir()
 			end
-			return "VanguardMusic"
+			return POTASSIUM_CACHE_ENV
 		end)
 		if ok and type(path) == "string" and path ~= "" then
 			return path
 		end
-		return "VanguardMusic"
+		return POTASSIUM_CACHE_ENV
 	end
 
 	local function formatCacheCompactText(stats)
@@ -689,12 +691,12 @@ function UIMusic.build(env)
 			if Music and Music.GetLocalDir then
 				return Music.GetLocalDir()
 			end
-			return "VanguardMusic/local"
+			return POTASSIUM_LOCAL_ENV
 		end)
 		if ok and type(path) == "string" and path ~= "" then
 			return path
 		end
-		return "VanguardMusic/local"
+		return POTASSIUM_LOCAL_ENV
 	end
 
 	local function makeCompactTog(parent, label, key, order, opts)
@@ -834,7 +836,7 @@ function UIMusic.build(env)
 			end
 			return
 		end
-		showNotify(L("music_local_path", "VanguardMusic\\local"), { type = "warn" })
+		showNotify(L("music_local_path", POTASSIUM_LOCAL_ENV), { type = "warn" })
 	end
 
 	local Shell = C("Frame", {

@@ -1215,6 +1215,29 @@ function Music.Init(S, I18nModule)
 		return nil
 	end
 
+	local POTASSIUM_CACHE_ENV = "%localappdata%\\Potassium\\workspace\\VanguardMusic"
+	local POTASSIUM_LOCAL_ENV = "%localappdata%\\Potassium\\workspace\\VanguardMusic\\local"
+
+	local function isPotassiumExecutor()
+		if typeof(identifyexecutor) == "function" then
+			local ok, name = pcall(identifyexecutor)
+			if ok and type(name) == "string" and name:lower():find("potassium", 1, true) then
+				return true
+			end
+		end
+		if typeof(getexecutorpath) == "function" then
+			local ok, base = pcall(getexecutorpath)
+			if ok and type(base) == "string" and base:lower():find("potassium", 1, true) then
+				return true
+			end
+		end
+		local root = resolveExecutorWorkspace()
+		if type(root) == "string" and root:lower():find("potassium", 1, true) then
+			return true
+		end
+		return false
+	end
+
 	local function toEnvVarPath(absPath)
 		absPath = normalizeWinPath(absPath)
 		if absPath == "" then
@@ -2408,6 +2431,9 @@ function Music.Init(S, I18nModule)
 	end
 
 	function Music.GetLocalDirEnvPath()
+		if isPotassiumExecutor() then
+			return POTASSIUM_LOCAL_ENV
+		end
 		local abs = Music.GetLocalDirAbsolute()
 		if abs and abs ~= "" then
 			local env = toEnvVarPath(abs)
@@ -2415,7 +2441,11 @@ function Music.Init(S, I18nModule)
 				return env
 			end
 		end
-		return relPathToEnvPath(LOCAL_DIR)
+		local envFallback = relPathToEnvPath(LOCAL_DIR)
+		if envFallback:lower():find("%%localappdata%%", 1, true) then
+			return envFallback
+		end
+		return POTASSIUM_LOCAL_ENV
 	end
 
 	function Music.EnsureLocalDir()
@@ -2545,6 +2575,9 @@ function Music.Init(S, I18nModule)
 	end
 
 	function Music.GetCacheDirEnvPath()
+		if isPotassiumExecutor() then
+			return POTASSIUM_CACHE_ENV
+		end
 		local abs = Music.GetCacheDirAbsolute()
 		if abs and abs ~= "" then
 			local env = toEnvVarPath(abs)
@@ -2552,7 +2585,11 @@ function Music.Init(S, I18nModule)
 				return env
 			end
 		end
-		return relPathToEnvPath(CACHE_DIR)
+		local envFallback = relPathToEnvPath(CACHE_DIR)
+		if envFallback:lower():find("%%localappdata%%", 1, true) then
+			return envFallback
+		end
+		return POTASSIUM_CACHE_ENV
 	end
 
 	function Music.GetCacheStats()
