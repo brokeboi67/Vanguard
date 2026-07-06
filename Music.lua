@@ -2381,15 +2381,23 @@ function Music.Init(S, I18nModule)
 		end
 	end)
 
-	game:BindToClose(function()
-		if S.TransferScript then
-			Music.SaveTransferState()
-		end
+	local TeleportService = game:GetService("TeleportService")
+	pcall(function()
+		TeleportService.LocalPlayerLeaving:Connect(function()
+			if S.TransferScript then
+				Music.SaveTransferState()
+			end
+		end)
 	end)
 
 	playFromQueue = Music.Play
 
 	if _G.VANGUARD then
+		_G.VANGUARD.registerCleanup(function()
+			if S.TransferScript then
+				pcall(Music.SaveTransferState)
+			end
+		end)
 		_G.VANGUARD.registerCleanup(function()
 			Music.Stop()
 		end)
