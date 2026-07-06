@@ -2760,8 +2760,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(SHud, "Kill Feed", "KillFeed", 18, { flat = true })
 	MakeHint(SHud, "hint_shud2", 19)
 
-	local refreshConfigList
-	local refreshConfigMenusLang
 	local SettingsAutoloadLbl
 	local SAuto = MakeCard(T2, "AUTOLOAD", "card_sauto_desc", 3)
 
@@ -2769,7 +2767,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Size = UDim2.new(1, -8, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
-		Text = "Autoload: brak",
+		Text = L("cfg_autoload_settings_none"),
 		Font = Enum.Font.Gotham,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(100, 100, 110),
@@ -2791,7 +2789,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			setFooterStatus("Autoload · " .. tostring(msg))
 			refreshConfigList()
 			if SettingsAutoloadLbl then
-				SettingsAutoloadLbl.Text = "Autoload: " .. tostring(msg)
+				SettingsAutoloadLbl.Text = L("cfg_autoload_fmt", tostring(msg))
 			end
 		else
 			showNotify(L("notify_autoload_fail"))
