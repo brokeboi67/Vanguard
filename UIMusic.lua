@@ -80,19 +80,19 @@ function MusicIcons.setFade(holder, alpha)
 end
 
 function MusicIcons.play(holder, C, color)
-	MusicIcons._image(C, holder, "play", color, 4)
+	MusicIcons._image(C, holder, "play", color, 8)
 end
 
 function MusicIcons.pause(holder, C, color)
-	MusicIcons._image(C, holder, "pause", color, 4)
+	MusicIcons._image(C, holder, "pause", color, 7)
 end
 
 function MusicIcons.skipBack(holder, C, color)
-	MusicIcons._image(C, holder, "skipBack", color, 2)
+	MusicIcons._image(C, holder, "skipBack", color, 5)
 end
 
 function MusicIcons.skipForward(holder, C, color)
-	MusicIcons._image(C, holder, "skipForward", color, 2)
+	MusicIcons._image(C, holder, "skipForward", color, 5)
 end
 
 function MusicIcons.stop(holder, C, color, size)
@@ -1284,7 +1284,7 @@ function UIMusic.build(env)
 		ZIndex = 11,
 		Parent = PlayerRow,
 	})
-	MusicIcons.stop(MusicIcons.holder(StopBtn, C), C, MUT, 9)
+	MusicIcons.stop(MusicIcons.holder(StopBtn, C), C, MUT, 7)
 
 	local SettingsRow = C("Frame", {
 		Size = UDim2.new(1, -16, 0, 24),
