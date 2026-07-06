@@ -74,6 +74,7 @@ function Music.Init(S, I18nModule)
 			title = item.title,
 			creator = item.creator,
 			source = item.source,
+			localPath = item.localPath,
 			streamUrl = item.streamUrl,
 			audiusId = item.audiusId,
 			videoId = item.videoId,
@@ -1010,6 +1011,66 @@ function Music.Init(S, I18nModule)
 			return
 		end
 		pcall(makefolder, CACHE_DIR)
+	end
+
+	local LOCAL_DIR = CACHE_DIR .. "/local"
+	local LOCAL_EXTS = { mp3 = true, ogg = true, wav = true, flac = true, m4a = true }
+
+	local function ensureLocalDir()
+		ensureCacheDir()
+		if typeof(makefolder) ~= "function" then
+			return
+		end
+		if typeof(isfolder) == "function" and isfolder(LOCAL_DIR) then
+			return
+		end
+		pcall(makefolder, LOCAL_DIR)
+	end
+
+	local function localTitleFromName(name)
+		local base = tostring(name or ""):match("([^/\\]+)$") or tostring(name or "")
+		return base:gsub("%.[%w]+$", "")
+	end
+
+	local function searchLocalFiles(query)
+		ensureLocalDir()
+		if typeof(listfiles) ~= "function" or typeof(isfolder) ~= "function" then
+			return {}, "Brak listfiles — wrzuć pliki do folderu VanguardMusic/local"
+		end
+		if not isfolder(LOCAL_DIR) then
+			return {}, "Folder VanguardMusic/local nie istnieje"
+		end
+		local q = tostring(query or ""):lower()
+		local results = {}
+		for _, name in ipairs(listfiles(LOCAL_DIR)) do
+			local lower = name:lower()
+			local ext = lower:match("%.([%w]+)$")
+			if ext and LOCAL_EXTS[ext] then
+				local title = localTitleFromName(name)
+				local hay = (lower .. " " .. title:lower())
+				if q == "" or hay:find(q, 1, true) then
+					table.insert(results, {
+						source = "local",
+						identifier = "local:" .. name,
+						localPath = LOCAL_DIR .. "/" .. name,
+						title = title,
+						creator = "Local",
+					})
+				end
+			end
+		end
+		table.sort(results, function(a, b)
+			return (a.title or ""):lower() < (b.title or ""):lower()
+		end)
+		local err = nil
+		if #results == 0 then
+			if q == "" then
+				err = "Brak plików w VanguardMusic/local — dodaj .mp3 / .ogg / .wav"
+			else
+				err = "Brak lokalnych plików dla: " .. query
+			end
+		end
+		return results, err
 	end
 
 	local function toSoundId(assetRef)
@@ -1955,12 +2016,15 @@ function Music.Init(S, I18nModule)
 		if src == "youtube" then
 			return "youtube"
 		end
+		if src == "local" then
+			return "local"
+		end
 		return "auto"
 	end
 
 	function Music.SetSource(src)
 		src = tostring(src or ""):lower()
-		if src == "archive" or src == "audius" or src == "youtube" then
+		if src == "archive" or src == "audius" or src == "youtube" or src == "local" then
 			S.MusicSource = src
 		else
 			S.MusicSource = "auto"
@@ -1970,7 +2034,8 @@ function Music.Init(S, I18nModule)
 
 	function Music.Search(query, callback)
 		query = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
-		if query == "" then
+		local source = Music.GetSource()
+		if query == "" and source ~= "local" then
 			if callback then
 				callback({}, "Puste zapytanie")
 			end
@@ -2076,6 +2141,12 @@ function Music.Init(S, I18nModule)
 					rankSearchResults(query, results)
 					results = filterSearchResults(query, results)
 					finish(results, #results == 0 and "Brak wyników na YouTube" or nil)
+					return
+				end
+
+				if source == "local" then
+					local results, locErr = searchLocalFiles(query)
+					finish(results, locErr)
 					return
 				end
 
@@ -2202,6 +2273,65 @@ function Music.Init(S, I18nModule)
 				end
 				loading = false
 				lastError = L("music_audius_fail")
+				if Music.onPlayError then
+					pcall(Music.onPlayError, lastError)
+				end
+				notifyState()
+				return
+			end
+
+			if item.source == "local" and item.localPath then
+				local getAsset = select(1, resolveCustomAssetFn())
+				if not getAsset then
+					loading = false
+					lastError = "Brak getcustomasset — włącz filesystem w executorze"
+					if Music.onPlayError then
+						pcall(Music.onPlayError, lastError)
+					end
+					notifyState()
+					return
+				end
+				if typeof(isfile) == "function" and not isfile(item.localPath) then
+					loading = false
+					lastError = "Plik nie istnieje: " .. item.localPath
+					if Music.onPlayError then
+						pcall(Music.onPlayError, lastError)
+					end
+					notifyState()
+					return
+				end
+				local okAsset, assetRef = pcall(getAsset, item.localPath)
+				if stale() then
+					return
+				end
+				if okAsset and assetRef then
+					local soundId = toSoundId(assetRef)
+					if soundId then
+						local sound = Instance.new("Sound")
+						sound.Name = "VanguardMusic"
+						sound.SoundId = soundId
+						sound.Volume = S.MusicVolume or 0.65
+						sound.Looped = S.MusicLoop == true
+						sound.Parent = SoundService
+						if waitForSoundLoad(sound, 12, myGen) and not stale() then
+							if startPlayback(sound) and not stale() then
+								applySuccessfulPlay(
+									sound,
+									soundId,
+									item.localPath,
+									item,
+									item.title or item.localPath,
+									myGen,
+									activePlaySeek
+								)
+								return
+							end
+						end
+						killSound(sound)
+					end
+				end
+				loading = false
+				lastError = "Nie odtworzono pliku lokalnego"
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
 				end
