@@ -21,16 +21,19 @@ function MusicIcons.holder(parent, C, name)
 	local z = (parent.ZIndex or 1) + 2
 	return C("Frame", {
 		Name = name or "Icon",
-		Size = UDim2.fromScale(1, 1),
+		Size = UDim2.new(1, 0, 1, 0),
 		BackgroundTransparency = 1,
 		ZIndex = z,
 		Parent = parent,
 	})
 end
 
-function MusicIcons._bar(C, holder, props)
+function MusicIcons._piece(C, holder, props)
 	props.ZIndex = (holder.ZIndex or 1) + 1
 	props.BorderSizePixel = 0
+	if props.BackgroundTransparency == nil then
+		props.BackgroundTransparency = 0
+	end
 	return C("Frame", props)
 end
 
@@ -50,103 +53,98 @@ function MusicIcons.setFade(holder, alpha)
 		return
 	end
 	for _, ch in ipairs(holder:GetDescendants()) do
-		if ch:IsA("Frame") and ch.Name ~= "Icon" then
+		if ch:IsA("Frame") then
 			ch.BackgroundTransparency = alpha
 		end
 	end
 end
 
-function MusicIcons.triangleRight(holder, C, color, maxH)
-	color = color or TXT
-	maxH = maxH or 14
-	local cols, step, half = 5, 3, 8
-	for i = 0, cols - 1 do
-		local h = math.max(3, maxH - i * 2)
-		MusicIcons._bar(C, holder, {
-			Size = UDim2.new(0, step, 0, h),
-			Position = UDim2.new(0.5, -half + i * step, 0.5, -h / 2),
+function MusicIcons.chevron(holder, C, color, pointingRight, cx, cy, len, thick, angle)
+	angle = angle or 34
+	len = len or 12
+	thick = thick or 4
+	cx = cx or 0.5
+	cy = cy or 0.5
+	local xOff = pointingRight and 1 or -1
+	if pointingRight then
+		MusicIcons._piece(C, holder, {
+			Size = UDim2.new(0, thick, 0, len),
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(cx, xOff, cy, 0),
+			Rotation = angle,
+			BackgroundColor3 = color,
+		})
+		MusicIcons._piece(C, holder, {
+			Size = UDim2.new(0, thick, 0, len),
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(cx, xOff, cy, 0),
+			Rotation = -angle,
+			BackgroundColor3 = color,
+		})
+	else
+		MusicIcons._piece(C, holder, {
+			Size = UDim2.new(0, thick, 0, len),
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(cx, xOff, cy, 0),
+			Rotation = -angle,
+			BackgroundColor3 = color,
+		})
+		MusicIcons._piece(C, holder, {
+			Size = UDim2.new(0, thick, 0, len),
+			AnchorPoint = Vector2.new(0.5, 0),
+			Position = UDim2.new(cx, xOff, cy, 0),
+			Rotation = angle,
 			BackgroundColor3 = color,
 		})
 	end
 end
 
-function MusicIcons.triangleLeft(holder, C, color, maxH)
-	color = color or TXT
-	maxH = maxH or 14
-	local cols, step, half = 5, 3, 8
-	for i = 0, cols - 1 do
-		local h = math.max(3, 2 + i * 2)
-		MusicIcons._bar(C, holder, {
-			Size = UDim2.new(0, step, 0, h),
-			Position = UDim2.new(0.5, half - step - i * step, 0.5, -h / 2),
-			BackgroundColor3 = color,
-		})
-	end
+function MusicIcons.play(holder, C, color)
+	MusicIcons.chevron(holder, C, color, true, 0.53, 0.5, 13, 4, 34)
 end
 
-function MusicIcons.play(holder, C, color, maxH)
-	MusicIcons.triangleRight(holder, C, color, maxH)
-end
-
-function MusicIcons.pause(holder, C, color, maxH)
+function MusicIcons.pause(holder, C, color)
 	color = color or TXT
-	maxH = maxH or 14
-	local barW, gap = 4, 5
+	local h, barW, gap = 14, 4, 5
 	local total = barW * 2 + gap
-	MusicIcons._bar(C, holder, {
-		Size = UDim2.new(0, barW, 0, maxH),
-		Position = UDim2.new(0.5, -total / 2, 0.5, -maxH / 2),
+	MusicIcons._piece(C, holder, {
+		Size = UDim2.new(0, barW, 0, h),
+		Position = UDim2.new(0.5, -total / 2, 0.5, -h / 2),
 		BackgroundColor3 = color,
 	})
-	MusicIcons._bar(C, holder, {
-		Size = UDim2.new(0, barW, 0, maxH),
-		Position = UDim2.new(0.5, -total / 2 + barW + gap, 0.5, -maxH / 2),
+	MusicIcons._piece(C, holder, {
+		Size = UDim2.new(0, barW, 0, h),
+		Position = UDim2.new(0.5, -total / 2 + barW + gap, 0.5, -h / 2),
 		BackgroundColor3 = color,
 	})
 end
 
-function MusicIcons.skipBack(holder, C, color, maxH)
+function MusicIcons.skipBack(holder, C, color)
 	color = color or TXT
-	maxH = maxH or 13
-	local barW = 3
-	MusicIcons._bar(C, holder, {
-		Size = UDim2.new(0, barW, 0, maxH),
-		Position = UDim2.new(0.5, -11, 0.5, -maxH / 2),
+	local h, barW = 13, 3
+	MusicIcons._piece(C, holder, {
+		Size = UDim2.new(0, barW, 0, h),
+		Position = UDim2.new(0.5, -9, 0.5, -h / 2),
 		BackgroundColor3 = color,
 	})
-	local tri = C("Frame", {
-		Size = UDim2.new(0, 12, 0, maxH),
-		Position = UDim2.new(0.5, -7, 0.5, -maxH / 2),
-		BackgroundTransparency = 1,
-		ZIndex = holder.ZIndex,
-		Parent = holder,
-	})
-	MusicIcons.triangleLeft(tri, C, color, maxH)
+	MusicIcons.chevron(holder, C, color, false, 0.54, 0.5, 10, 3, 34)
 end
 
-function MusicIcons.skipForward(holder, C, color, maxH)
+function MusicIcons.skipForward(holder, C, color)
 	color = color or TXT
-	maxH = maxH or 13
-	local barW = 3
-	local tri = C("Frame", {
-		Size = UDim2.new(0, 12, 0, maxH),
-		Position = UDim2.new(0.5, -9, 0.5, -maxH / 2),
-		BackgroundTransparency = 1,
-		ZIndex = holder.ZIndex,
-		Parent = holder,
-	})
-	MusicIcons.triangleRight(tri, C, color, maxH)
-	MusicIcons._bar(C, holder, {
-		Size = UDim2.new(0, barW, 0, maxH),
-		Position = UDim2.new(0.5, 4, 0.5, -maxH / 2),
+	local h, barW = 13, 3
+	MusicIcons.chevron(holder, C, color, true, 0.46, 0.5, 10, 3, 34)
+	MusicIcons._piece(C, holder, {
+		Size = UDim2.new(0, barW, 0, h),
+		Position = UDim2.new(0.5, 6, 0.5, -h / 2),
 		BackgroundColor3 = color,
 	})
 end
 
 function MusicIcons.stop(holder, C, color, size)
 	color = color or MUT
-	size = size or 11
-	MusicIcons._bar(C, holder, {
+	size = size or 10
+	MusicIcons._piece(C, holder, {
 		Size = UDim2.new(0, size, 0, size),
 		Position = UDim2.new(0.5, -size / 2, 0.5, -size / 2),
 		BackgroundColor3 = color,
@@ -1297,11 +1295,11 @@ function UIMusic.build(env)
 		ZIndex = 11,
 		Parent = CtrlCol,
 	})
-	MusicIcons.skipBack(MusicIcons.holder(PrevBtn, C), C, TXT)
+	MusicIcons.skipBack(MusicIcons.holder(PrevBtn, C), C, Color3.fromRGB(220, 220, 228))
 	local PlayPauseBtn = C("TextButton", {
 		Size = UDim2.new(0, 38, 0, 38),
 		Position = UDim2.new(0.5, -19, 0.5, -19),
-		BackgroundColor3 = TXT,
+		BackgroundColor3 = SPOTIFY,
 		Text = "",
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
@@ -1309,11 +1307,11 @@ function UIMusic.build(env)
 		Parent = CtrlCol,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PlayPauseBtn })
-	local playColor = Color3.fromRGB(14, 14, 18)
+	local playColor = Color3.fromRGB(255, 255, 255)
 	PlayIcon = MusicIcons.holder(PlayPauseBtn, C, "PlayIcon")
-	MusicIcons.play(PlayIcon, C, playColor, 15)
+	MusicIcons.play(PlayIcon, C, playColor)
 	PauseIcon = MusicIcons.holder(PlayPauseBtn, C, "PauseIcon")
-	MusicIcons.pause(PauseIcon, C, playColor, 14)
+	MusicIcons.pause(PauseIcon, C, playColor)
 	PauseIcon.Visible = false
 	local NextBtn = C("TextButton", {
 		Size = UDim2.new(0, 28, 0, 28),
@@ -1324,7 +1322,7 @@ function UIMusic.build(env)
 		ZIndex = 11,
 		Parent = CtrlCol,
 	})
-	MusicIcons.skipForward(MusicIcons.holder(NextBtn, C), C, TXT)
+	MusicIcons.skipForward(MusicIcons.holder(NextBtn, C), C, Color3.fromRGB(220, 220, 228))
 
 	local StopBtn = C("TextButton", {
 		Size = UDim2.new(0, 24, 0, 24),
@@ -1654,7 +1652,7 @@ function UIMusic.buildWidget(env)
 	local transportBtnMeta = {}
 
 	local function makeTransportBtn(parent, iconKind, x, w, color)
-		color = color or TXT
+		color = color or Color3.fromRGB(220, 220, 228)
 		local Btn = C("TextButton", {
 			Size = UDim2.new(0, w, 0, w),
 			Position = UDim2.new(0, x, 0.5, -math.floor(w / 2)),
