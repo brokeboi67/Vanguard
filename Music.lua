@@ -2032,6 +2032,14 @@ function Music.Init(S, I18nModule)
 		notifyState()
 	end
 
+	function Music.GetLocalDir()
+		return LOCAL_DIR
+	end
+
+	function Music.EnsureLocalDir()
+		ensureLocalDir()
+	end
+
 	function Music.Search(query, callback)
 		query = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		local source = Music.GetSource()
