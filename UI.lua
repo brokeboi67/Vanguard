@@ -366,6 +366,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ZIndex = 4,
 		Parent = Top,
 	})
+	if I18n and I18n.registerText then
+		I18n.registerText(StudioSubtitle, "subtitle_studio")
+	end
 
 	local VersionLbl = C("TextLabel", {
 		Size = UDim2.new(0, 48, 0, 18),
@@ -1018,8 +1021,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		return P
 	end
 
-	local function MakeCard(page, title, subtitleKey, order)
+	local function MakeCard(page, title, subtitleKey, order, cardOpts)
+		cardOpts = cardOpts or {}
+		local titleKey = cardOpts.titleKey
 		local subtitle = subtitleKey and L(subtitleKey) or nil
+		local displayTitle = titleKey and L(titleKey) or (title or "")
 		local tabCol = pageThemes[page] or ACC
 		local Card = C("Frame", {
 			Size = UDim2.new(1, -2, 0, 0),
@@ -1046,10 +1052,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		C("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Card })
 
-		C("TextLabel", {
+		local titleLbl = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 12),
 			BackgroundTransparency = 1,
-			Text = title,
+			Text = displayTitle,
 			Font = Enum.Font.GothamBold,
 			TextSize = 10,
 			TextColor3 = tabCol,
@@ -1058,6 +1064,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			ZIndex = 6,
 			Parent = Card,
 		})
+		if titleKey and I18n and I18n.registerText then
+			I18n.registerText(titleLbl, titleKey)
+		end
 
 		if subtitle then
 			local subLbl = C("TextLabel", {
@@ -1614,11 +1623,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = Row })
 		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = Row })
 
-		C("TextLabel", {
+		local rowLabelKey = choiceOpts.labelKey
+		local rowText = rowLabelKey and L(rowLabelKey) or (label or "")
+		local rowLbl = C("TextLabel", {
 			Size = UDim2.new(1, -16, 0, 14),
 			Position = UDim2.new(0, 12, 0, 8),
 			BackgroundTransparency = 1,
-			Text = label,
+			Text = rowText,
 			Font = Enum.Font.GothamMedium,
 			TextSize = 11,
 			TextColor3 = Color3.fromRGB(200, 200, 208),
@@ -1626,6 +1637,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			ZIndex = 6,
 			Parent = Row,
 		})
+		if rowLabelKey and I18n and I18n.registerText then
+			I18n.registerText(rowLbl, rowLabelKey)
+		end
 
 		local BtnWrap = C("Frame", {
 			Size = UDim2.new(1, -24, 0, 24),
@@ -1645,10 +1659,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local btnScale = 1 / #options
 		for i, opt in ipairs(options) do
 			local active = S[key] == opt.value
+			local btnText = opt.labelKey and L(opt.labelKey) or opt.label
 			local B = C("TextButton", {
 				Size = UDim2.new(btnScale, -3, 1, 0),
 				BackgroundColor3 = active and ACC_SOFT or Color3.fromRGB(24, 24, 30),
-				Text = opt.label,
+				Text = btnText,
 				Font = Enum.Font.GothamSemibold,
 				TextSize = #options >= 3 and 9 or 10,
 				TextColor3 = active and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120),
@@ -1661,6 +1676,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
 			if active then
 				C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.5, Parent = B })
+			end
+			if opt.labelKey and I18n and I18n.registerText then
+				I18n.registerText(B, opt.labelKey)
 			end
 			btns[opt.value] = B
 			B.MouseButton1Click:Connect(function()
@@ -1684,6 +1702,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 		choiceRegistry[key] = { btns = btns }
 	end
+
+	local refreshConfigList
+	local refreshConfigMenusLang
 
 	local bindListening = false
 
@@ -2522,12 +2543,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end)
 	MakeHint(MFX, "hint_mfx", 8)
 
-	local SInterface = MakeCard(T2, I18n and I18n.t("set_interface") or "INTERFACE", nil, 1)
-	MakeChoice(SInterface, I18n and I18n.t("set_menu_lang") or "Menu language", "MenuLang", {
-		{ label = I18n and I18n.t("lang_pl") or "Polski", value = "pl" },
-		{ label = I18n and I18n.t("lang_en") or "English", value = "en" },
+	local SInterface = MakeCard(T2, nil, nil, 1, { titleKey = "set_interface" })
+	MakeChoice(SInterface, nil, "MenuLang", {
+		{ labelKey = "lang_pl", value = "pl" },
+		{ labelKey = "lang_en", value = "en" },
 	}, 1, {
+		labelKey = "set_menu_lang",
 		onChange = function(val)
+			S.MenuLang = val
 			if I18n then
 				I18n.setLang(val)
 				I18n.refreshAll()
@@ -2535,16 +2558,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			if UIMusicModule and UIMusicModule.refreshLang then
 				UIMusicModule.refreshLang()
 			end
+			if refreshConfigMenusLang then
+				refreshConfigMenusLang()
+			end
+			refreshFriendList()
 			if StudioSubtitle then
 				StudioSubtitle.Text = I18n and I18n.t("subtitle_studio") or "ESP STUDIO"
 			end
 			showNotify(I18n and I18n.t("lang_changed") or "Language updated.", { type = "info" })
 		end,
 	})
-	MakeChoice(SInterface, I18n and I18n.t("set_notify_style") or "Notification style", "NotifyStyle", {
-		{ label = I18n and I18n.t("notify_pro") or "Pro", value = "pro" },
-		{ label = I18n and I18n.t("notify_compact") or "Compact", value = "compact" },
+	MakeChoice(SInterface, nil, "NotifyStyle", {
+		{ labelKey = "notify_pro", value = "pro" },
+		{ labelKey = "notify_compact", value = "compact" },
 	}, 2, {
+		labelKey = "set_notify_style",
 		onChange = function()
 			showNotify(I18n and I18n.t("notify_style_changed") or "Notification style updated.", { type = "success" })
 		end,
@@ -2733,6 +2761,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(SHud, "hint_shud2", 19)
 
 	local refreshConfigList
+	local refreshConfigMenusLang
 	local SettingsAutoloadLbl
 	local SAuto = MakeCard(T2, "AUTOLOAD", "card_sauto_desc", 3)
 
@@ -2833,6 +2862,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ParentGUI = ParentGUI,
 		ConfigModule = ConfigModule,
 		MenusModule = MenusModule,
+		I18n = I18n,
+		L = L,
 		MakeSection = MakeSection,
 		MakeButton = MakeButton,
 		MakeHint = MakeHint,
@@ -2843,6 +2874,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		SettingsAutoloadLbl = SettingsAutoloadLbl,
 		TweenPlay = TweenPlay,
 	}).refreshConfigList
+	refreshConfigMenusLang = UIConfigMenus.refreshLang
 
 	ApplyLayout(true, false)
 

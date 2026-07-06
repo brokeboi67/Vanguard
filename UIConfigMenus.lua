@@ -2,6 +2,14 @@
 
 local UIConfigMenus = {}
 
+local menuRefs = {}
+
+function UIConfigMenus.refreshLang()
+	if menuRefs.refreshConfigList then
+		menuRefs.refreshConfigList()
+	end
+end
+
 function UIConfigMenus.build(env)
 	local T4 = env.T4
 	local TMenu = env.TMenu
@@ -11,6 +19,13 @@ function UIConfigMenus.build(env)
 	local ParentGUI = env.ParentGUI
 	local ConfigModule = env.ConfigModule
 	local MenusModule = env.MenusModule
+	local I18n = env.I18n
+	local L = env.L or function(key, ...)
+		if I18n and I18n.t then
+			return I18n.t(key, ...)
+		end
+		return tostring(key)
+	end
 	local MakeSection = env.MakeSection
 	local MakeButton = env.MakeButton
 	local MakeHint = env.MakeHint
@@ -24,6 +39,9 @@ function UIConfigMenus.build(env)
 	local ConfigNameBox
 	local ConfigListHost
 	local AutoloadLbl
+	local PreloadCancelBtn
+	local PreloadStatus
+	local PreloadWidgetTitle
 
 	local function getConfigName()
 		if ConfigNameBox then
@@ -37,30 +55,30 @@ function UIConfigMenus.build(env)
 			return
 		end
 		for _, ch in ipairs(ConfigListHost:GetChildren()) do
-			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") then
 				ch:Destroy()
 			end
 		end
 		local list, autoload = ConfigModule.List()
 		if AutoloadLbl then
 			if autoload ~= "" then
-				AutoloadLbl.Text = "Autoload: " .. autoload
+				AutoloadLbl.Text = L("cfg_autoload_fmt", autoload)
 			else
-				AutoloadLbl.Text = "Autoload: brak"
+				AutoloadLbl.Text = L("cfg_autoload_none")
 			end
 		end
 		if SettingsAutoloadLbl then
 			if autoload ~= "" then
-				SettingsAutoloadLbl.Text = "Autoload: " .. autoload .. " (ładuje się przy starcie skryptu)"
+				SettingsAutoloadLbl.Text = L("cfg_autoload_active", autoload)
 			else
-				SettingsAutoloadLbl.Text = "Autoload: brak — ustaw w zakładce Config"
+				SettingsAutoloadLbl.Text = L("cfg_autoload_settings_none")
 			end
 		end
 		if #list == 0 then
 			C("TextLabel", {
 				Size = UDim2.new(1, 0, 0, 16),
 				BackgroundTransparency = 1,
-				Text = "Brak zapisanych configów",
+				Text = L("cfg_no_configs"),
 				Font = Enum.Font.Gotham,
 				TextSize = 10,
 				TextColor3 = Color3.fromRGB(90, 90, 100),
@@ -111,7 +129,7 @@ function UIConfigMenus.build(env)
 
 	MakeSection(T4, "CONFIG", 1)
 	if ConfigModule and not ConfigModule.CanPersist() then
-		MakeHint(T4, "Twój executor nie wspiera writefile — zapis configów niedostępny.", 2)
+		MakeHint(T4, "cfg_no_writefile", 2)
 	end
 
 	local NameRow = C("Frame", {
@@ -124,11 +142,11 @@ function UIConfigMenus.build(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = NameRow })
 	C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = NameRow })
-	C("TextLabel", {
+	local NameLbl = C("TextLabel", {
 		Size = UDim2.new(0, 80, 1, 0),
 		Position = UDim2.new(0, 12, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "Nazwa",
+		Text = L("cfg_name"),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
 		TextColor3 = Color3.fromRGB(200, 200, 208),
@@ -136,12 +154,15 @@ function UIConfigMenus.build(env)
 		ZIndex = 6,
 		Parent = NameRow,
 	})
+	if I18n and I18n.registerText then
+		I18n.registerText(NameLbl, "cfg_name")
+	end
 	ConfigNameBox = C("TextBox", {
 		Size = UDim2.new(1, -104, 0, 24),
 		Position = UDim2.new(0, 92, 0.5, -12),
 		BackgroundColor3 = Color3.fromRGB(24, 24, 30),
 		Text = "default",
-		PlaceholderText = "np. legit, rage, hvh",
+		PlaceholderText = L("cfg_name_ph"),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 11,
 		TextColor3 = Color3.fromRGB(230, 230, 235),
@@ -150,77 +171,80 @@ function UIConfigMenus.build(env)
 		ZIndex = 6,
 		Parent = NameRow,
 	})
+	if I18n and I18n.registerText then
+		I18n.registerText(ConfigNameBox, "cfg_name_ph", nil, "PlaceholderText")
+	end
 	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = ConfigNameBox })
 	C("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = ConfigNameBox })
 
-	MakeButton(T4, "Zapisz config", 4, function()
+	MakeButton(T4, nil, 4, function()
 		if not ConfigModule then
 			return
 		end
 		local ok, msg = ConfigModule.Save(getConfigName(), S)
 		if ok then
-			showNotify("Zapisano: " .. msg)
+			showNotify("Saved: " .. msg)
 			setFooterStatus("Config · " .. msg)
 			refreshConfigList()
 		else
-			showNotify(msg or "Błąd zapisu")
+			showNotify(msg or "Save error")
 		end
-	end)
-	MakeButton(T4, "Wczytaj config", 5, function()
+	end, "cfg_save")
+	MakeButton(T4, nil, 5, function()
 		if not ConfigModule then
 			return
 		end
 		local ok, msg = ConfigModule.Load(getConfigName(), S)
 		if ok then
 			refreshAllControls()
-			showNotify("Wczytano: " .. msg)
+			showNotify("Loaded: " .. msg)
 			setFooterStatus("Loaded · " .. msg)
 		else
-			showNotify(msg or "Błąd wczytywania")
+			showNotify(msg or "Load error")
 		end
-	end)
-	MakeButton(T4, "Usuń config", 6, function()
+	end, "cfg_load")
+	MakeButton(T4, nil, 6, function()
 		if not ConfigModule then
 			return
 		end
 		local ok, msg = ConfigModule.Delete(getConfigName())
 		if ok then
-			showNotify("Usunięto: " .. msg)
+			showNotify("Deleted: " .. msg)
 			refreshConfigList()
 		else
-			showNotify(msg or "Błąd usuwania")
+			showNotify(msg or "Delete error")
 		end
-	end)
-	MakeButton(T4, "Ustaw autoload", 7, function()
+	end, "cfg_delete")
+	MakeButton(T4, nil, 7, function()
 		if not ConfigModule then
 			return
 		end
 		local ok, msg = ConfigModule.SetAutoload(getConfigName())
 		if ok then
-			showNotify("Autoload: " .. getConfigName())
+			showNotify(L("cfg_autoload_fmt", getConfigName()))
 			refreshConfigList()
 		else
-			showNotify(msg or "Błąd autoload")
+			showNotify(msg or "Autoload error")
 		end
-	end)
-	MakeButton(T4, "Wyłącz autoload", 8, function()
+	end, "cfg_set_autoload")
+	MakeButton(T4, nil, 8, function()
 		if not ConfigModule then
 			return
 		end
 		local ok, msg = ConfigModule.ClearAutoload()
 		if ok then
-			showNotify("Autoload wyłączony")
+			showNotify(L("cfg_clear_autoload"))
 			refreshConfigList()
 		else
-			showNotify(msg or "Błąd")
+			showNotify(msg or "Error")
 		end
-	end)
+	end, "cfg_clear_autoload")
 
 	MakeSection(T4, "ZAPISANE", 9)
 	AutoloadLbl = C("TextLabel", {
 		Size = UDim2.new(1, -8, 0, 14),
 		BackgroundTransparency = 1,
-		Text = "Autoload: brak",
+		Text = L("cfg_autoload_none"),
 		Font = Enum.Font.Gotham,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(100, 100, 110),
@@ -251,24 +275,24 @@ function UIConfigMenus.build(env)
 		PaddingRight = UDim.new(0, 10),
 		Parent = ConfigListHost,
 	})
-	MakeHint(T4, "Pliki w folderze Vanguard/configs. Autoload ładuje się przy każdym uruchomieniu skryptu (reinject w nowej grze).", 12)
+	MakeHint(T4, "cfg_files_hint", 12)
 	refreshConfigList()
 
-	local MLoad = MakeCard(TMenu, "ADMIN MENUS", "Zewnętrzne skrypty — Vanguard zostaje włączony.", 1)
+	local MLoad = MakeCard(TMenu, "ADMIN MENUS", "card_menu_admin_desc", 1)
 
 	local function loadMenuScript(key, label)
 		if not MenusModule or not MenusModule.loadScript then
-			showNotify("Moduł Menus niedostępny")
+			showNotify(L("menu_menus_unavail"))
 			return
 		end
-		showNotify("Ładowanie " .. label .. "...")
+		showNotify(L("menu_loading", label))
 		task.spawn(function()
 			local ok, msg = MenusModule.loadScript(key)
 			if ok then
-				showNotify(msg .. " załadowany")
+				showNotify(L("menu_loaded", msg))
 				setFooterStatus("Menus · " .. msg)
 			else
-				showNotify("Błąd " .. label .. ": " .. tostring(msg))
+				showNotify(L("menu_load_err", label, tostring(msg)))
 			end
 		end)
 	end
@@ -276,20 +300,20 @@ function UIConfigMenus.build(env)
 	local menuOrder = 1
 	if MenusModule and MenusModule.getScriptList then
 		for _, entry in ipairs(MenusModule.getScriptList()) do
-			MakeButton(MLoad, "Load " .. entry.label, menuOrder, function()
+			MakeButton(MLoad, L("menu_load_btn", entry.label), menuOrder, function()
 				loadMenuScript(entry.key, entry.label)
 			end)
 			menuOrder += 1
 		end
 	else
-		MakeButton(MLoad, "Load Infinite Yield", menuOrder, function()
+		MakeButton(MLoad, L("menu_load_btn", "Infinite Yield"), menuOrder, function()
 			loadMenuScript("InfiniteYield", "Infinite Yield")
 		end)
 		menuOrder += 1
 	end
-	MakeHint(MLoad, "Każde menu to osobny skrypt. Nie wyładowuje Vanguarda.", menuOrder)
+	MakeHint(MLoad, "hint_menu_admin", menuOrder)
 
-	local MTools = MakeCard(TMenu, "TOOLS", "Pomoc przy wolniejszym internecie.", 2)
+	local MTools = MakeCard(TMenu, "TOOLS", "card_menu_tools_desc", 2)
 
 	local PreloadWidget = C("Frame", {
 		Name = "AssetPreloader",
@@ -311,11 +335,11 @@ function UIConfigMenus.build(env)
 		Parent = PreloadWidget,
 	})
 
-	C("TextLabel", {
+	PreloadWidgetTitle = C("TextLabel", {
 		Size = UDim2.new(1, -52, 0, 18),
 		Position = UDim2.new(0, 12, 0, 8),
 		BackgroundTransparency = 1,
-		Text = "ASSET PRELOAD",
+		Text = L("menu_preload_widget"),
 		Font = Enum.Font.GothamBold,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(230, 230, 235),
@@ -323,6 +347,9 @@ function UIConfigMenus.build(env)
 		ZIndex = 51,
 		Parent = PreloadWidget,
 	})
+	if I18n and I18n.registerText then
+		I18n.registerText(PreloadWidgetTitle, "menu_preload_widget")
+	end
 
 	local PreloadCloseBtn = C("TextButton", {
 		Size = UDim2.new(0, 22, 0, 22),
@@ -338,11 +365,11 @@ function UIConfigMenus.build(env)
 		Parent = PreloadWidget,
 	})
 
-	local PreloadStatus = C("TextLabel", {
+	PreloadStatus = C("TextLabel", {
 		Size = UDim2.new(1, -24, 0, 28),
 		Position = UDim2.new(0, 12, 0, 26),
 		BackgroundTransparency = 1,
-		Text = "Skanowanie...",
+		Text = L("menu_preload_scanning"),
 		Font = Enum.Font.Gotham,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(120, 120, 130),
@@ -386,12 +413,12 @@ function UIConfigMenus.build(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PreloadFill })
 
-	local PreloadCancelBtn = C("TextButton", {
+	PreloadCancelBtn = C("TextButton", {
 		Size = UDim2.new(0, 72, 0, 22),
 		Position = UDim2.new(1, -84, 1, -30),
 		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
 		BorderSizePixel = 0,
-		Text = "Anuluj",
+		Text = L("menu_preload_cancel"),
 		Font = Enum.Font.GothamBold,
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(210, 210, 215),
@@ -401,6 +428,9 @@ function UIConfigMenus.build(env)
 		Parent = PreloadWidget,
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = PreloadCancelBtn })
+	if I18n and I18n.registerText then
+		I18n.registerText(PreloadCancelBtn, "menu_preload_cancel")
+	end
 
 	local preloadCancel = false
 	local preloadRunning = false
@@ -431,26 +461,24 @@ function UIConfigMenus.build(env)
 		local total = tonumber(state.total) or 0
 		local processed = tonumber(state.processed) or tonumber(state.loaded) or 0
 		if state.phase == "scan" then
-			PreloadStatus.Text = state.label or "Skanowanie gry..."
+			PreloadStatus.Text = state.label or L("menu_preload_scanning")
 			setPreloadBar(0, 0, "scan")
 			return
 		elseif state.phase == "start" then
-			PreloadStatus.Text = state.label or ("Do załadowania: " .. total)
+			PreloadStatus.Text = state.label or ("Total: " .. total)
 		elseif state.phase == "item" then
-			PreloadStatus.Text = state.label or "Ładowanie..."
+			PreloadStatus.Text = state.label or L("menu_preload_scan")
 		elseif state.phase == "progress" then
 			PreloadStatus.Text = state.label or (processed .. " / " .. total)
 		elseif state.phase == "error" then
-			PreloadStatus.Text = "Błąd: " .. tostring(state.label or "?")
+			PreloadStatus.Text = "Error: " .. tostring(state.label or "?")
 		elseif state.phase == "done" then
-			local failed = tonumber(state.failed) or 0
-			PreloadStatus.Text = state.label
-				or (failed > 0 and ("Gotowe · " .. failed .. " błędów") or ("Gotowe · " .. processed .. " assetów"))
-			PreloadCancelBtn.Text = "OK"
+			PreloadStatus.Text = state.label or ("Done · " .. processed)
+			PreloadCancelBtn.Text = L("menu_preload_ok")
 			preloadRunning = false
 			setPreloadBar(processed, total > 0 and total or processed, "done")
 			task.delay(8, function()
-				if PreloadWidget.Visible and not preloadRunning and PreloadCancelBtn.Text == "OK" then
+				if PreloadWidget.Visible and not preloadRunning and PreloadCancelBtn.Text == L("menu_preload_ok") then
 					closePreloader()
 				end
 			end)
@@ -462,7 +490,7 @@ function UIConfigMenus.build(env)
 	PreloadCloseBtn.MouseButton1Click:Connect(function()
 		if preloadRunning then
 			preloadCancel = true
-			PreloadStatus.Text = "Anulowanie..."
+			PreloadStatus.Text = L("menu_preload_cancelled")
 		else
 			closePreloader()
 		end
@@ -471,26 +499,26 @@ function UIConfigMenus.build(env)
 	PreloadCancelBtn.MouseButton1Click:Connect(function()
 		if preloadRunning then
 			preloadCancel = true
-			PreloadStatus.Text = "Anulowanie..."
+			PreloadStatus.Text = L("menu_preload_cancelled")
 		else
 			closePreloader()
 		end
 	end)
 
-	MakeButton(MTools, "Preload Game Assets", 1, function()
+	MakeButton(MTools, nil, 1, function()
 		if preloadRunning then
 			PreloadWidget.Visible = true
-			showNotify("Preload trwa — panel w prawym dolnym rogu")
+			showNotify(L("menu_preload_running"))
 			return
 		end
 		if not MenusModule or not MenusModule.preloadAssets then
-			showNotify("Moduł preload niedostępny")
+			showNotify(L("menu_preload_unavail"))
 			return
 		end
 		preloadCancel = false
 		preloadRunning = true
-		PreloadCancelBtn.Text = "Anuluj"
-		PreloadStatus.Text = "Skanowanie assetów..."
+		PreloadCancelBtn.Text = L("menu_preload_cancel")
+		PreloadStatus.Text = L("menu_preload_scan")
 		PreloadPct.Text = "0%"
 		PreloadFill.Size = UDim2.new(0, 0, 1, 0)
 		PreloadWidget.Visible = true
@@ -507,14 +535,16 @@ function UIConfigMenus.build(env)
 			end)
 			if preloadCancel then
 				task.defer(function()
-					PreloadStatus.Text = "Anulowano"
-					PreloadCancelBtn.Text = "OK"
+					PreloadStatus.Text = L("menu_preload_cancelled")
+					PreloadCancelBtn.Text = L("menu_preload_ok")
 					preloadRunning = false
 				end)
 			end
 		end)
-	end)
-	MakeHint(MTools, "Mały panel w prawym dolnym rogu — nie blokuje ruchu ani myszki. Możesz grać normalnie.", 2)
+	end, "menu_preload")
+	MakeHint(MTools, "hint_menu_tools", 2)
+
+	menuRefs.refreshConfigList = refreshConfigList
 
 	return {
 		refreshConfigList = refreshConfigList,

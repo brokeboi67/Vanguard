@@ -1432,6 +1432,20 @@ function UIMusic.build(env)
 		if LocalFormatsLbl then
 			I18n.registerText(LocalFormatsLbl, "music_local_formats")
 		end
+		if LocalPathLbl and I18n.registerText then
+			I18n.registerText(LocalPathLbl, "music_local_folder", function()
+				if Music and Music.GetLocalDirAbsolute then
+					local abs = Music.GetLocalDirAbsolute()
+					if abs and abs ~= "" then
+						return abs
+					end
+				end
+				if Music and Music.GetLocalDir then
+					return Music.GetLocalDir()
+				end
+				return "VanguardMusic/local"
+			end)
+		end
 	end
 
 	langRefs.I18n = I18n
