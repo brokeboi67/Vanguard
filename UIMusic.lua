@@ -15,6 +15,146 @@ local DIVIDER = Color3.fromRGB(34, 34, 42)
 local TXT = Color3.fromRGB(245, 245, 248)
 local MUT = Color3.fromRGB(120, 120, 132)
 
+local MusicIcons = {}
+
+function MusicIcons.holder(parent, C, name)
+	return C("CanvasGroup", {
+		Name = name or "Icon",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Parent = parent,
+	})
+end
+
+function MusicIcons.setColor(holder, color)
+	if not holder then
+		return
+	end
+	for _, ch in ipairs(holder:GetDescendants()) do
+		if ch:IsA("Frame") and ch.BackgroundTransparency < 1 then
+			ch.BackgroundColor3 = color
+		end
+	end
+end
+
+function MusicIcons.setFade(holder, alpha)
+	if not holder then
+		return
+	end
+	if holder:IsA("CanvasGroup") then
+		holder.GroupTransparency = alpha
+	end
+end
+
+function MusicIcons.triangleRight(holder, C, color, maxH)
+	color = color or TXT
+	maxH = maxH or 12
+	local cols, step = 6, 2
+	for i = 0, cols - 1 do
+		local h = math.max(2, maxH - i * 2)
+		C("Frame", {
+			Size = UDim2.new(0, step - 1, 0, h),
+			Position = UDim2.new(0.5, -cols + i * step, 0.5, -h / 2),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			Parent = holder,
+		})
+	end
+end
+
+function MusicIcons.triangleLeft(holder, C, color, maxH)
+	color = color or TXT
+	maxH = maxH or 12
+	local cols, step = 6, 2
+	for i = 0, cols - 1 do
+		local h = math.max(2, 2 + i * 2)
+		C("Frame", {
+			Size = UDim2.new(0, step - 1, 0, h),
+			Position = UDim2.new(0.5, cols - 2 - i * step, 0.5, -h / 2),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			Parent = holder,
+		})
+	end
+end
+
+function MusicIcons.play(holder, C, color, maxH)
+	MusicIcons.triangleRight(holder, C, color, maxH)
+end
+
+function MusicIcons.pause(holder, C, color, maxH)
+	color = color or TXT
+	maxH = maxH or 12
+	local barW, gap = 3, 4
+	local total = barW * 2 + gap
+	C("Frame", {
+		Size = UDim2.new(0, barW, 0, maxH),
+		Position = UDim2.new(0.5, -total / 2, 0.5, -maxH / 2),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Parent = holder,
+	})
+	C("Frame", {
+		Size = UDim2.new(0, barW, 0, maxH),
+		Position = UDim2.new(0.5, -total / 2 + barW + gap, 0.5, -maxH / 2),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Parent = holder,
+	})
+end
+
+function MusicIcons.skipBack(holder, C, color, maxH)
+	color = color or TXT
+	maxH = maxH or 11
+	local barW = 2
+	C("Frame", {
+		Size = UDim2.new(0, barW, 0, maxH),
+		Position = UDim2.new(0.5, -9, 0.5, -maxH / 2),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Parent = holder,
+	})
+	local tri = C("Frame", {
+		Size = UDim2.new(0, 10, 0, maxH),
+		Position = UDim2.new(0.5, -6, 0.5, -maxH / 2),
+		BackgroundTransparency = 1,
+		Parent = holder,
+	})
+	MusicIcons.triangleLeft(tri, C, color, maxH)
+end
+
+function MusicIcons.skipForward(holder, C, color, maxH)
+	color = color or TXT
+	maxH = maxH or 11
+	local barW = 2
+	local tri = C("Frame", {
+		Size = UDim2.new(0, 10, 0, maxH),
+		Position = UDim2.new(0.5, -8, 0.5, -maxH / 2),
+		BackgroundTransparency = 1,
+		Parent = holder,
+	})
+	MusicIcons.triangleRight(tri, C, color, maxH)
+	C("Frame", {
+		Size = UDim2.new(0, barW, 0, maxH),
+		Position = UDim2.new(0.5, 3, 0.5, -maxH / 2),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Parent = holder,
+	})
+end
+
+function MusicIcons.stop(holder, C, color, size)
+	color = color or MUT
+	size = size or 10
+	C("Frame", {
+		Size = UDim2.new(0, size, 0, size),
+		Position = UDim2.new(0.5, -size / 2, 0.5, -size / 2),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Parent = holder,
+	})
+end
+
 local function fmtTime(sec)
 	sec = math.max(0, math.floor(sec or 0))
 	local m = math.floor(sec / 60)
@@ -1154,14 +1294,12 @@ function UIMusic.build(env)
 		Size = UDim2.new(0, 28, 0, 28),
 		Position = UDim2.new(0, 0, 0.5, -14),
 		BackgroundTransparency = 1,
-		Text = "⏮",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = TXT,
+		Text = "",
 		AutoButtonColor = false,
 		ZIndex = 11,
 		Parent = CtrlCol,
 	})
+	MusicIcons.skipBack(MusicIcons.holder(PrevBtn, C), C, TXT)
 	local PlayPauseBtn = C("TextButton", {
 		Size = UDim2.new(0, 38, 0, 38),
 		Position = UDim2.new(0.5, -19, 0.5, -19),
@@ -1173,52 +1311,33 @@ function UIMusic.build(env)
 		Parent = CtrlCol,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PlayPauseBtn })
-	PlayIcon = C("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "▶",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = Color3.fromRGB(8, 8, 10),
-		ZIndex = 12,
-		Parent = PlayPauseBtn,
-	})
-	PauseIcon = C("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "❚❚",
-		Font = Enum.Font.GothamBold,
-		TextSize = 11,
-		TextColor3 = Color3.fromRGB(8, 8, 10),
-		Visible = false,
-		ZIndex = 12,
-		Parent = PlayPauseBtn,
-	})
+	local playColor = Color3.fromRGB(8, 8, 10)
+	PlayIcon = MusicIcons.holder(PlayPauseBtn, C, "PlayIcon")
+	MusicIcons.play(PlayIcon, C, playColor, 13)
+	PauseIcon = MusicIcons.holder(PlayPauseBtn, C, "PauseIcon")
+	MusicIcons.pause(PauseIcon, C, playColor, 12)
+	PauseIcon.Visible = false
 	local NextBtn = C("TextButton", {
 		Size = UDim2.new(0, 28, 0, 28),
 		Position = UDim2.new(1, -28, 0.5, -14),
 		BackgroundTransparency = 1,
-		Text = "⏭",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = TXT,
+		Text = "",
 		AutoButtonColor = false,
 		ZIndex = 11,
 		Parent = CtrlCol,
 	})
+	MusicIcons.skipForward(MusicIcons.holder(NextBtn, C), C, TXT)
 
 	local StopBtn = C("TextButton", {
 		Size = UDim2.new(0, 24, 0, 24),
 		Position = UDim2.new(1, -28, 0.5, -12),
 		BackgroundTransparency = 1,
-		Text = "■",
-		Font = Enum.Font.GothamBold,
-		TextSize = 11,
-		TextColor3 = MUT,
+		Text = "",
 		AutoButtonColor = false,
 		ZIndex = 11,
 		Parent = PlayerRow,
 	})
+	MusicIcons.stop(MusicIcons.holder(StopBtn, C), C, MUT, 9)
 
 	local SettingsRow = C("Frame", {
 		Size = UDim2.new(1, -16, 0, 24),
@@ -1534,29 +1653,45 @@ function UIMusic.buildWidget(env)
 		return ART_PALETTE[(h % #ART_PALETTE) + 1]
 	end
 
-	local function makeTransportBtn(parent, label, x, w)
+	local function makeTransportBtn(parent, iconKind, x, w, color)
+		color = color or TXT
 		local Btn = C("TextButton", {
 			Size = UDim2.new(0, w, 0, w),
 			Position = UDim2.new(0, x, 0.5, -math.floor(w / 2)),
 			BackgroundTransparency = 1,
-			Text = label,
-			Font = Enum.Font.GothamBold,
-			TextSize = w >= 36 and 14 or 12,
-			TextColor3 = TXT,
+			Text = "",
 			AutoButtonColor = false,
 			BorderSizePixel = 0,
 			ZIndex = 86,
 			Parent = parent,
 		})
+		local iconGroup = MusicIcons.holder(Btn, C)
+		if iconKind == "back" then
+			MusicIcons.skipBack(iconGroup, C, color)
+		else
+			MusicIcons.skipForward(iconGroup, C, color)
+		end
 		local Scale = C("UIScale", { Scale = 1, Parent = Btn })
+		local enabled = true
 		Btn.MouseEnter:Connect(function()
+			if not enabled then
+				return
+			end
 			TweenPlay(Scale, TweenInfo.new(0.12), { Scale = 1.08 })
-			TweenPlay(Btn, TweenInfo.new(0.12), { TextColor3 = SPOTIFY })
+			MusicIcons.setColor(iconGroup, SPOTIFY)
 		end)
 		Btn.MouseLeave:Connect(function()
 			TweenPlay(Scale, TweenInfo.new(0.12), { Scale = 1 })
-			TweenPlay(Btn, TweenInfo.new(0.12), { TextColor3 = Btn.TextTransparency < 0.5 and TXT or MUT })
+			MusicIcons.setColor(iconGroup, enabled and color or color:Lerp(TXT, 0.45))
 		end)
+		Btn.GetTransportEnabled = function()
+			return enabled
+		end
+		Btn.SetTransportEnabled = function(_, on)
+			enabled = on == true
+			Btn.Active = enabled
+			MusicIcons.setFade(iconGroup, enabled and 0 or 0.55)
+		end
 		return Btn, Scale
 	end
 
@@ -1725,7 +1860,7 @@ function UIMusic.buildWidget(env)
 		ZIndex = 85,
 		Parent = MainRow,
 	})
-	local PrevBtn, _ = makeTransportBtn(CtrlCol, "⏮", 0, 28)
+	local PrevBtn, _ = makeTransportBtn(CtrlCol, "back", 0, 28)
 	local PlayBtn = C("TextButton", {
 		Size = UDim2.new(0, 36, 0, 36),
 		Position = UDim2.new(0, 34, 0.5, -18),
@@ -1738,28 +1873,13 @@ function UIMusic.buildWidget(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = PlayBtn })
 	local PlayBtnScale = C("UIScale", { Scale = 1, Parent = PlayBtn })
-	local PlayIcon = C("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "▶",
-		Font = Enum.Font.GothamBold,
-		TextSize = 14,
-		TextColor3 = Color3.fromRGB(8, 8, 10),
-		ZIndex = 87,
-		Parent = PlayBtn,
-	})
-	local PauseIcon = C("TextLabel", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-		Text = "❚❚",
-		Font = Enum.Font.GothamBold,
-		TextSize = 11,
-		TextColor3 = Color3.fromRGB(8, 8, 10),
-		Visible = false,
-		ZIndex = 87,
-		Parent = PlayBtn,
-	})
-	local NextBtn, _ = makeTransportBtn(CtrlCol, "⏭", 80, 28)
+	local widgetPlayColor = Color3.fromRGB(8, 8, 10)
+	local PlayIcon = MusicIcons.holder(PlayBtn, C, "PlayIcon")
+	MusicIcons.play(PlayIcon, C, widgetPlayColor, 13)
+	local PauseIcon = MusicIcons.holder(PlayBtn, C, "PauseIcon")
+	MusicIcons.pause(PauseIcon, C, widgetPlayColor, 12)
+	PauseIcon.Visible = false
+	local NextBtn, _ = makeTransportBtn(CtrlCol, "forward", 80, 28)
 
 	local ProgressHit = C("TextButton", {
 		Size = UDim2.new(1, -16, 0, 10),
@@ -1824,8 +1944,9 @@ function UIMusic.buildWidget(env)
 	end
 
 	local function setTransportEnabled(btn, enabled)
-		btn.TextTransparency = enabled and 0 or 0.55
-		btn.Active = enabled
+		if btn and btn.SetTransportEnabled then
+			btn:SetTransportEnabled(enabled)
+		end
 	end
 
 	local function setProgressRatio(ratio)
