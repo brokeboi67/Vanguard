@@ -578,14 +578,20 @@ function UIMusic.build(env)
 	end
 
 	local function localPathLabel()
-		if Music and Music.GetLocalDirAbsolute then
-			local abs = Music.GetLocalDirAbsolute()
-			if abs and abs ~= "" then
-				return abs
+		local ok, path = pcall(function()
+			if Music and Music.GetLocalDirAbsolute then
+				local abs = Music.GetLocalDirAbsolute()
+				if abs and abs ~= "" then
+					return abs
+				end
 			end
-		end
-		if Music and Music.GetLocalDir then
-			return Music.GetLocalDir()
+			if Music and Music.GetLocalDir then
+				return Music.GetLocalDir()
+			end
+			return "VanguardMusic/local"
+		end)
+		if ok and type(path) == "string" and path ~= "" then
+			return path
 		end
 		return "VanguardMusic/local"
 	end

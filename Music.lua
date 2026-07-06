@@ -1043,68 +1043,86 @@ function Music.Init(S, I18nModule)
 		return a .. "\\" .. b
 	end
 
+	local function safeGetEnv(key)
+		if type(os) == "table" and typeof(os.getenv) == "function" then
+			local ok, val = pcall(os.getenv, key)
+			if ok and type(val) == "string" and val ~= "" then
+				return val
+			end
+		end
+		return ""
+	end
+
 	local function resolveExecutorWorkspace()
-		if typeof(getsynapsepath) == "function" then
-			local ok, base = pcall(getsynapsepath)
-			if ok and type(base) == "string" and base ~= "" then
-				return joinWinPath(normalizeWinPath(base), "workspace")
-			end
-		end
-		if typeof(getexecutorpath) == "function" then
-			local ok, base = pcall(getexecutorpath)
-			if ok and type(base) == "string" and base ~= "" then
-				local p = normalizeWinPath(base)
-				if not p:lower():find("workspace", 1, true) then
-					p = joinWinPath(p, "workspace")
+		local ok, result = pcall(function()
+			if typeof(getsynapsepath) == "function" then
+				local synOk, base = pcall(getsynapsepath)
+				if synOk and type(base) == "string" and base ~= "" then
+					return joinWinPath(normalizeWinPath(base), "workspace")
 				end
-				return p
 			end
-		end
-		local g = (getgenv and getgenv()) or _G
-		if type(g.WORKSPACE_PATH) == "string" and g.WORKSPACE_PATH ~= "" then
-			return normalizeWinPath(g.WORKSPACE_PATH)
-		end
-		local execName = ""
-		if typeof(identifyexecutor) == "function" then
-			local ok, name = pcall(identifyexecutor)
-			if ok and type(name) == "string" then
-				execName = name:lower()
+			if typeof(getexecutorpath) == "function" then
+				local exOk, base = pcall(getexecutorpath)
+				if exOk and type(base) == "string" and base ~= "" then
+					local p = normalizeWinPath(base)
+					if not p:lower():find("workspace", 1, true) then
+						p = joinWinPath(p, "workspace")
+					end
+					return p
+				end
 			end
-		end
-		local localApp = os.getenv("LOCALAPPDATA") or ""
-		local appData = os.getenv("APPDATA") or ""
-		local candidates = {
-			{ "synapse x", joinWinPath(localApp, "Synapse\\workspace") },
-			{ "synapse", joinWinPath(localApp, "Synapse\\workspace") },
-			{ "script-ware", joinWinPath(localApp, "Script-Ware\\workspace") },
-			{ "scriptware", joinWinPath(localApp, "Script-Ware\\workspace") },
-			{ "krnl", joinWinPath(localApp, "Krnl\\workspace") },
-			{ "fluxus", joinWinPath(localApp, "Fluxus\\workspace") },
-			{ "valyse", joinWinPath(localApp, "Valyse\\workspace") },
-			{ "celery", joinWinPath(localApp, "Celery\\workspace") },
-			{ "solara", joinWinPath(localApp, "Solara\\workspace") },
-			{ "wave", joinWinPath(localApp, "Wave\\workspace") },
-			{ "codex", joinWinPath(localApp, "Codex\\workspace") },
-			{ "potassium", joinWinPath(localApp, "Potassium\\workspace") },
-			{ "jjsploit", joinWinPath(localApp, "JJSploit\\workspace") },
-			{ "electron", joinWinPath(localApp, "Electron\\workspace") },
-			{ "ronix", joinWinPath(localApp, "Ronix\\workspace") },
-			{ "matcha", joinWinPath(localApp, "matcha\\workspace") },
-			{ "opiumware", joinWinPath(localApp, "Opiumware\\workspace") },
-			{ "hydrogen", joinWinPath(localApp, "Hydrogen\\workspace") },
-			{ "xeno", joinWinPath(localApp, "Xeno\\workspace") },
-			{ "vega", joinWinPath(localApp, "Vega X\\workspace") },
-			{ "swift", joinWinPath(appData, "Swift\\workspace") },
-			{ "comet", joinWinPath(localApp, "Comet\\workspace") },
-			{ "arceus", joinWinPath(localApp, "Arceus X\\workspace") },
-		}
-		for _, entry in ipairs(candidates) do
-			if execName:find(entry[1], 1, true) then
-				return entry[2]
+			if typeof(getgenv) == "function" then
+				local gOk, g = pcall(getgenv)
+				if gOk and type(g) == "table" and type(g.WORKSPACE_PATH) == "string" and g.WORKSPACE_PATH ~= "" then
+					return normalizeWinPath(g.WORKSPACE_PATH)
+				end
 			end
-		end
-		if localApp ~= "" then
-			return joinWinPath(localApp, "workspace")
+			local execName = ""
+			if typeof(identifyexecutor) == "function" then
+				local idOk, name = pcall(identifyexecutor)
+				if idOk and type(name) == "string" then
+					execName = name:lower()
+				end
+			end
+			local localApp = safeGetEnv("LOCALAPPDATA")
+			local appData = safeGetEnv("APPDATA")
+			local candidates = {
+				{ "synapse x", joinWinPath(localApp, "Synapse\\workspace") },
+				{ "synapse", joinWinPath(localApp, "Synapse\\workspace") },
+				{ "script-ware", joinWinPath(localApp, "Script-Ware\\workspace") },
+				{ "scriptware", joinWinPath(localApp, "Script-Ware\\workspace") },
+				{ "krnl", joinWinPath(localApp, "Krnl\\workspace") },
+				{ "fluxus", joinWinPath(localApp, "Fluxus\\workspace") },
+				{ "valyse", joinWinPath(localApp, "Valyse\\workspace") },
+				{ "celery", joinWinPath(localApp, "Celery\\workspace") },
+				{ "solara", joinWinPath(localApp, "Solara\\workspace") },
+				{ "wave", joinWinPath(localApp, "Wave\\workspace") },
+				{ "codex", joinWinPath(localApp, "Codex\\workspace") },
+				{ "potassium", joinWinPath(localApp, "Potassium\\workspace") },
+				{ "jjsploit", joinWinPath(localApp, "JJSploit\\workspace") },
+				{ "electron", joinWinPath(localApp, "Electron\\workspace") },
+				{ "ronix", joinWinPath(localApp, "Ronix\\workspace") },
+				{ "matcha", joinWinPath(localApp, "matcha\\workspace") },
+				{ "opiumware", joinWinPath(localApp, "Opiumware\\workspace") },
+				{ "hydrogen", joinWinPath(localApp, "Hydrogen\\workspace") },
+				{ "xeno", joinWinPath(localApp, "Xeno\\workspace") },
+				{ "vega", joinWinPath(localApp, "Vega X\\workspace") },
+				{ "swift", joinWinPath(appData, "Swift\\workspace") },
+				{ "comet", joinWinPath(localApp, "Comet\\workspace") },
+				{ "arceus", joinWinPath(localApp, "Arceus X\\workspace") },
+			}
+			for _, entry in ipairs(candidates) do
+				if execName:find(entry[1], 1, true) then
+					return entry[2]
+				end
+			end
+			if localApp ~= "" then
+				return joinWinPath(localApp, "workspace")
+			end
+			return nil
+		end)
+		if ok then
+			return result
 		end
 		return nil
 	end
@@ -2168,7 +2186,11 @@ function Music.Init(S, I18nModule)
 
 	function Music.GetLocalDirAbsolute()
 		ensureLocalDir()
-		return localDirToWindowsPath()
+		local ok, path = pcall(localDirToWindowsPath)
+		if ok and type(path) == "string" and path ~= "" then
+			return path
+		end
+		return nil
 	end
 
 	function Music.EnsureLocalDir()
