@@ -1653,6 +1653,8 @@ function UIMusic.buildWidget(env)
 		return ART_PALETTE[(h % #ART_PALETTE) + 1]
 	end
 
+	local transportBtnMeta = {}
+
 	local function makeTransportBtn(parent, iconKind, x, w, color)
 		color = color or TXT
 		local Btn = C("TextButton", {
@@ -1672,9 +1674,10 @@ function UIMusic.buildWidget(env)
 			MusicIcons.skipForward(iconGroup, C, color)
 		end
 		local Scale = C("UIScale", { Scale = 1, Parent = Btn })
-		local enabled = true
+		local meta = { enabled = true, iconGroup = iconGroup, color = color }
+		transportBtnMeta[Btn] = meta
 		Btn.MouseEnter:Connect(function()
-			if not enabled then
+			if not meta.enabled then
 				return
 			end
 			TweenPlay(Scale, TweenInfo.new(0.12), { Scale = 1.08 })
@@ -1682,16 +1685,8 @@ function UIMusic.buildWidget(env)
 		end)
 		Btn.MouseLeave:Connect(function()
 			TweenPlay(Scale, TweenInfo.new(0.12), { Scale = 1 })
-			MusicIcons.setColor(iconGroup, enabled and color or color:Lerp(TXT, 0.45))
+			MusicIcons.setColor(iconGroup, meta.enabled and color or color:Lerp(TXT, 0.45))
 		end)
-		Btn.GetTransportEnabled = function()
-			return enabled
-		end
-		Btn.SetTransportEnabled = function(_, on)
-			enabled = on == true
-			Btn.Active = enabled
-			MusicIcons.setFade(iconGroup, enabled and 0 or 0.55)
-		end
 		return Btn, Scale
 	end
 
