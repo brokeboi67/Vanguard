@@ -117,6 +117,14 @@ Effects.Init(Settings, Util)
 Animations.Init(Settings)
 World.Init(Settings)
 Music.Init(Settings, I18n)
+if isTransferLoad and Music.RestoreFromTransfer then
+	task.defer(function()
+		task.wait(0.65)
+		if Settings.TransferScript then
+			pcall(Music.RestoreFromTransfer)
+		end
+	end)
+end
 UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n)
 
 Settings.Unload = function()

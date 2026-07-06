@@ -49,6 +49,21 @@ function Music.Init(S, I18nModule)
 	local queue = {}
 	local queueIndex = 0
 	local trackEnding = false
+	local activePlaySeek = 0
+	local pendingPauseAfterPlay = false
+	local TRANSFER_MUSIC_PATH = "Vanguard/transfer_music.json"
+
+	local function canPersistTransfer()
+		return typeof(writefile) == "function"
+			and typeof(readfile) == "function"
+			and typeof(isfile) == "function"
+	end
+
+	local function ensureVanguardFolder()
+		if typeof(makefolder) == "function" then
+			pcall(makefolder, "Vanguard")
+		end
+	end
 
 	local function cloneQueueItem(item)
 		if not item then
@@ -1135,6 +1150,47 @@ function Music.Init(S, I18nModule)
 		return pos, dur
 	end
 
+	local function captureTransferSnapshot()
+		if not S.TransferScript then
+			return nil
+		end
+		local qOut = {}
+		for _, it in ipairs(queue) do
+			local copy = cloneQueueItem(it)
+			if copy and copy.identifier then
+				table.insert(qOut, copy)
+			end
+		end
+		local pos, _dur = getPlaybackPosition()
+		local currentItem = nil
+		if queueIndex > 0 and queue[queueIndex] then
+			currentItem = cloneQueueItem(queue[queueIndex])
+		elseif nowPlaying and nowPlaying.identifier then
+			currentItem = cloneQueueItem(nowPlaying)
+			for _, it in ipairs(queue) do
+				if it.identifier == currentItem.identifier then
+					currentItem = cloneQueueItem(it)
+					break
+				end
+			end
+		end
+		if #qOut == 0 and not currentItem then
+			return nil
+		end
+		return {
+			v = 1,
+			gameId = game.GameId,
+			ts = os.time(),
+			queue = qOut,
+			queueIndex = queueIndex,
+			current = currentItem and {
+				item = currentItem,
+				position = pos,
+				paused = paused,
+			} or nil,
+		}
+	end
+
 	local function startPlayback(sound)
 		local ok = pcall(function()
 			sound:Play()
@@ -1733,7 +1789,7 @@ function Music.Init(S, I18nModule)
 		notifyState()
 	end
 
-	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen)
+	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen, seekPos)
 		currentSound = sound
 		lastError = nil
 		local idx = findQueueIndexForItem(item)
@@ -1754,17 +1810,39 @@ function Music.Init(S, I18nModule)
 		paused = false
 		softPaused = false
 		pausedSession = nil
-		playPosOffset = 0
 		pausePosSnapshot = 0
-		playClockStart = os.clock()
 		cachedDuration = sound.TimeLength
-		logInfo("Play OK:", nowPlaying.title, "→", fileLabel)
+		local startAt = tonumber(seekPos) or 0
+		if startAt > 0.05 then
+			pcall(function()
+				local dur = sound.TimeLength
+				if dur > 0 then
+					startAt = math.clamp(startAt, 0, math.max(0, dur - 0.05))
+				end
+				sound.TimePosition = startAt
+			end)
+			playPosOffset = sound.TimePosition
+		else
+			playPosOffset = 0
+		end
+		playClockStart = os.clock()
+		logInfo("Play OK:", nowPlaying.title, "→", fileLabel, startAt > 0.05 and ("@" .. string.format("%.1fs", startAt)) or "")
 		attachProgress(sound)
 		notifyState()
 		task.defer(notifyState)
+		if pendingPauseAfterPlay then
+			pendingPauseAfterPlay = false
+			activePlaySeek = 0
+			task.defer(function()
+				task.wait(0.08)
+				Music.TogglePause()
+			end)
+		else
+			activePlaySeek = 0
+		end
 	end
 
-	local function tryPlayAsset(assetRef, cachePath, item, fileLabel, myGen, stale)
+	local function tryPlayAsset(assetRef, cachePath, item, fileLabel, myGen, stale, seekPos)
 		local soundId = toSoundId(assetRef)
 		if not soundId then
 			return false, "Nieprawidłowy asset ID"
@@ -1777,7 +1855,7 @@ function Music.Init(S, I18nModule)
 		sound.Parent = SoundService
 		if waitForSoundLoad(sound, 12, myGen) and not stale() then
 			if startPlayback(sound) and not stale() then
-				applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen)
+				applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen, seekPos)
 				return true
 			end
 		end
@@ -1849,7 +1927,8 @@ function Music.Init(S, I18nModule)
 					winner.cand,
 					winner.cacheKey,
 					myGen,
-					stale
+					stale,
+					activePlaySeek
 				)
 				if okPlay then
 					return true
@@ -2055,7 +2134,11 @@ function Music.Init(S, I18nModule)
 
 	function Music.Play(item, opts)
 		opts = opts or {}
+		activePlaySeek = tonumber(opts.startPosition) or 0
+		pendingPauseAfterPlay = opts.resumePaused == true
 		if not item or not item.identifier then
+			activePlaySeek = 0
+			pendingPauseAfterPlay = false
 			return false, "Brak utworu"
 		end
 		if opts.queueIndex then
@@ -2166,7 +2249,7 @@ function Music.Init(S, I18nModule)
 						if waitForSoundLoad(sound, 12, myGen) and not stale() then
 							local playOk = startPlayback(sound)
 							if playOk and not stale() then
-								applySuccessfulPlay(sound, soundId, cachePath, item, cand.name, myGen)
+								applySuccessfulPlay(sound, soundId, cachePath, item, cand.name, myGen, activePlaySeek)
 								return
 							end
 						end
@@ -2191,6 +2274,8 @@ function Music.Init(S, I18nModule)
 				return
 			end
 			loading = false
+			activePlaySeek = 0
+			pendingPauseAfterPlay = false
 			lastError = lastFail
 				or "Ten upload nie ma OGG — Roblox odrzuca większość VBR MP3 z Archive"
 			logErr("Play failed po wszystkich formatach:", lastError)
@@ -2202,6 +2287,106 @@ function Music.Init(S, I18nModule)
 
 		return true
 	end
+
+	function Music.SaveTransferState()
+		if not S.TransferScript or not canPersistTransfer() then
+			return false
+		end
+		local snap = captureTransferSnapshot()
+		if not snap then
+			return false
+		end
+		ensureVanguardFolder()
+		local ok = pcall(function()
+			writefile(TRANSFER_MUSIC_PATH, HttpService:JSONEncode(snap))
+		end)
+		return ok
+	end
+
+	function Music.ClearTransferState()
+		if canPersistTransfer() and isfile(TRANSFER_MUSIC_PATH) then
+			pcall(delfile, TRANSFER_MUSIC_PATH)
+		end
+	end
+
+	function Music.RestoreFromTransfer()
+		if not canPersistTransfer() or not isfile(TRANSFER_MUSIC_PATH) then
+			return false
+		end
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(readfile(TRANSFER_MUSIC_PATH))
+		end)
+		if not ok or typeof(data) ~= "table" then
+			Music.ClearTransferState()
+			return false
+		end
+		if data.gameId ~= game.GameId then
+			return false
+		end
+		if os.time() - (tonumber(data.ts) or 0) > 900 then
+			Music.ClearTransferState()
+			return false
+		end
+
+		queue = {}
+		for _, it in ipairs(data.queue or {}) do
+			local copy = cloneQueueItem(it)
+			if copy and copy.identifier then
+				table.insert(queue, copy)
+			end
+		end
+		queueIndex = math.clamp(math.floor(tonumber(data.queueIndex) or 0), 0, #queue)
+
+		local cur = data.current
+		Music.ClearTransferState()
+
+		if cur and typeof(cur.item) == "table" and cur.item.identifier then
+			local item = cloneQueueItem(cur.item)
+			local idx = findQueueIndexForItem(item)
+			if idx > 0 then
+				queueIndex = idx
+			end
+			local pos = tonumber(cur.position) or 0
+			local wasPaused = cur.paused == true
+			logInfo("Transfer restore:", item.title or item.identifier, string.format("@ %.1fs", pos), wasPaused and "(paused)" or "")
+			task.defer(function()
+				Music.Play(item, {
+					keepQueue = true,
+					queueIndex = queueIndex > 0 and queueIndex or nil,
+					startPosition = pos,
+					resumePaused = wasPaused,
+				})
+			end)
+			return true
+		end
+
+		if #queue > 0 then
+			notifyState()
+			return true
+		end
+		return false
+	end
+
+	local transferHeartbeatAt = 0
+	RS.Heartbeat:Connect(function()
+		if not S.TransferScript then
+			return
+		end
+		if os.clock() - transferHeartbeatAt < 3 then
+			return
+		end
+		transferHeartbeatAt = os.clock()
+		if #queue > 0 or nowPlaying or pausedSession or (paused and currentSound) then
+			Music.SaveTransferState()
+		end
+	end)
+
+	game:BindToClose(function()
+		if S.TransferScript then
+			Music.SaveTransferState()
+		end
+	end)
+
 	playFromQueue = Music.Play
 
 	if _G.VANGUARD then

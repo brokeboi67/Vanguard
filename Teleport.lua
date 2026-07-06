@@ -5,6 +5,16 @@ local Teleport = {}
 
 local LOADER_URL = "https://raw.githubusercontent.com/ihatelgbt2-art/Test/main/Main.lua"
 local SKIP_PATH = "Vanguard/skip_transfer"
+local MUSIC_TRANSFER_PATH = "Vanguard/transfer_music.json"
+
+local function clearMusicTransferState()
+	if not canPersist() then
+		return
+	end
+	if typeof(isfile) == "function" and isfile(MUSIC_TRANSFER_PATH) then
+		pcall(delfile, MUSIC_TRANSFER_PATH)
+	end
+end
 
 local function canPersist()
 	return typeof(writefile) == "function" and typeof(isfile) == "function"
@@ -101,6 +111,7 @@ end
 
 function Teleport.markManualLeave()
 	Teleport.clearQueue()
+	clearMusicTransferState()
 	if not canPersist() then
 		return
 	end
@@ -134,6 +145,7 @@ function Teleport.apply(S)
 	end
 
 	Teleport.clearQueue()
+	clearMusicTransferState()
 	return true
 end
 
