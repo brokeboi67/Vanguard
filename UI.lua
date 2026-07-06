@@ -45,7 +45,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local Cam = workspace.CurrentCamera
 	local W_FULL, W_COMPACT, H = 800, 600, 540
+	local W_MUSIC, H_MUSIC = 860, 620
 	local SIDE_W = 136
+	local tabLayoutProfiles = {}
 	local RS = game:GetService("RunService")
 
 	ParentGUI.DisplayOrder = 999999
@@ -56,6 +58,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		W_FULL = math.clamp(math.floor(vp.X * 0.58), 660, 900)
 		W_COMPACT = math.clamp(math.floor(vp.X * 0.48), 540, 660)
 		H = math.clamp(math.floor(vp.Y * 0.68), 500, 640)
+		W_MUSIC = math.clamp(math.floor(vp.X * 0.54), 760, 940)
+		H_MUSIC = math.clamp(math.floor(vp.Y * 0.74), 580, 700)
 	end
 	refreshLayout()
 
@@ -71,8 +75,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		return tw
 	end
 
-	local function centerPos(w)
-		return UDim2.new(0.5, -w / 2, 0.5, -H / 2)
+	local function centerPos(w, h)
+		h = h or H
+		return UDim2.new(0.5, -w / 2, 0.5, -h / 2)
 	end
 
 	-- // Loading overlay — minimalist top bar
@@ -784,19 +789,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		table.clear(list)
 	end
 
-	local function ApplyLayout(showPreview, animate, keepPosition)
+	local function ApplyLayout(showPreview, animate, keepPosition, layoutProfile)
+		layoutProfile = layoutProfile or "default"
 		refreshLayout()
-		local targetW = showPreview and W_FULL or W_COMPACT
-		local previewW = showPreview and 212 or 0
+		local targetW, targetH, previewW
+		if layoutProfile == "music" then
+			targetW = W_MUSIC
+			targetH = H_MUSIC
+			previewW = 0
+			showPreview = false
+		else
+			targetW = showPreview and W_FULL or W_COMPACT
+			targetH = H
+			previewW = showPreview and 212 or 0
+		end
 		local targetContentW = targetW - SIDE_W - previewW - 28
 
 		CancelTweens(layoutTweens)
 
 		local info = TweenInfo.new(animate and 0.22 or 0, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
-		local menuProps = { Size = UDim2.new(0, targetW, 0, H) }
+		local menuProps = { Size = UDim2.new(0, targetW, 0, targetH) }
 		if not keepPosition then
-			menuProps.Position = centerPos(targetW)
+			menuProps.Position = centerPos(targetW, targetH)
 		end
 
 		table.insert(layoutTweens, TweenPlay(MenuRoot, info, menuProps))
@@ -855,8 +870,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 		StyleTab(btn, true)
 
-		if showPreview ~= previewVisible then
-			ApplyLayout(showPreview, true, true)
+		local profile = tabLayoutProfiles[btn] or "default"
+		local usePreview = profile ~= "music" and showPreview
+		if usePreview ~= previewVisible or profile == "music" or (oldBtn and tabLayoutProfiles[oldBtn] == "music") then
+			ApplyLayout(usePreview, true, true, profile)
 		end
 
 		if oldWrap and oldWrap ~= pageWrap then
@@ -892,7 +909,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end)
 	end
 
-	local function MakeTab(nameKey, default, showPreview, layoutOrder)
+	local function MakeTab(nameKey, default, showPreview, layoutOrder, tabOpts)
+		tabOpts = tabOpts or {}
 		local tabAccent = TAB_THEMES[nameKey] or ACC
 		local tabSoftCol = tabSoft(tabAccent)
 		local tabLabel = I18n and I18n.t("tab_" .. nameKey) or nameKey
@@ -911,6 +929,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = SidePad,
 		})
 		tabBtnThemes[B] = tabAccent
+		if tabOpts.layout then
+			tabLayoutProfiles[B] = tabOpts.layout
+		end
 		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = B })
 		C("Frame", {
 			Name = "Indicator",
@@ -933,19 +954,37 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		C("UIScale", { Name = "PageScale", Scale = 1, Parent = Wrap })
 
-		local P = C("ScrollingFrame", {
-			Size = UDim2.new(1, 0, 1, 0),
-			BackgroundTransparency = 1,
-			ScrollBarThickness = 2,
-			ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y,
-			CanvasSize = UDim2.new(0, 0, 0, 0),
-			BorderSizePixel = 0,
-			ZIndex = 4,
-			Parent = Wrap,
-		})
-		C("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = P })
-		C("UIPadding", { PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 2), PaddingRight = UDim.new(0, 2), Parent = P })
+		local P
+		if tabOpts.fixed then
+			P = C("Frame", {
+				Size = UDim2.new(1, 0, 1, 0),
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				ClipsDescendants = true,
+				ZIndex = 4,
+				Parent = Wrap,
+			})
+		else
+			P = C("ScrollingFrame", {
+				Size = UDim2.new(1, 0, 1, 0),
+				BackgroundTransparency = 1,
+				ScrollBarThickness = 2,
+				ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70),
+				AutomaticCanvasSize = Enum.AutomaticSize.Y,
+				CanvasSize = UDim2.new(0, 0, 0, 0),
+				BorderSizePixel = 0,
+				ZIndex = 4,
+				Parent = Wrap,
+			})
+			C("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = P })
+			C("UIPadding", {
+				PaddingTop = UDim.new(0, 4),
+				PaddingBottom = UDim.new(0, 10),
+				PaddingLeft = UDim.new(0, 2),
+				PaddingRight = UDim.new(0, 2),
+				Parent = P,
+			})
+		end
 		pageThemes[P] = tabAccent
 
 		B.MouseEnter:Connect(function()
@@ -1917,7 +1956,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local TM = MakeTab("misc", false, false, 7)
 	local TMenu = MakeTab("menus", false, false, 8)
 	local T4 = MakeTab("config", false, false, 9)
-	local TMusic = MakeTab("music", false, false, 10)
+	local TMusic = MakeTab("music", false, false, 10, { fixed = true, layout = "music" })
 
 	if UIMusicModule and MusicModule then
 		UIMusicModule.build({
