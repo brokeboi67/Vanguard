@@ -1642,12 +1642,18 @@ function Music.Init(S, I18nModule)
 		}
 	end
 
+	local MUSIC_VOL_MAX = 3
+
 	function Music.SetVolume(v)
-		S.MusicVolume = math.clamp(v, 0, 1)
-		if currentSound and not paused then
+		S.MusicVolume = math.clamp(v, 0, MUSIC_VOL_MAX)
+		if currentSound then
 			currentSound.Volume = S.MusicVolume
 		end
 		notifyState()
+	end
+
+	function Music.GetVolumeMax()
+		return MUSIC_VOL_MAX
 	end
 
 	function Music.Stop()

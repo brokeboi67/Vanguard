@@ -396,6 +396,8 @@ function UIMusic.build(env)
 	end
 
 	local searchPending = false
+	local updateBodyLayout
+	local openLocalFolder
 
 	local function setSource(src)
 		if Music and Music.SetSource then
@@ -410,7 +412,9 @@ function UIMusic.build(env)
 			["local"] = L("music_src_local"),
 		}
 		setSearchStatus(L("music_status_source", labels[src] or labels.auto))
-		updateBodyLayout()
+		if updateBodyLayout then
+			updateBodyLayout()
+		end
 		if src == "local" then
 			if LocalHelpLbl then
 				local path = (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"
@@ -487,7 +491,8 @@ function UIMusic.build(env)
 
 	local PLAYER_H = 118
 	local HEADER_H = 82
-	local LOCAL_BAR_H = 36
+	local LOCAL_BAR_H = 40
+	local MUSIC_VOL_MAX = 3
 	local LocalHelpLbl
 	local Body
 	local LocalBar
@@ -548,13 +553,14 @@ function UIMusic.build(env)
 		local isLocal = Music and Music.GetSource and Music.GetSource() == "local"
 		if LocalBar then
 			LocalBar.Visible = isLocal == true
+			LocalBar.ZIndex = isLocal and 8 or 6
 		end
 		local barExtra = isLocal and (LOCAL_BAR_H + 4) or 0
 		Body.Size = UDim2.new(1, -8, 1, -(HEADER_H + PLAYER_H + 6 + barExtra))
 		Body.Position = UDim2.new(0, 4, 0, HEADER_H + 2 + barExtra)
 	end
 
-	local function openLocalFolder()
+	openLocalFolder = function()
 		if Music and Music.EnsureLocalDir then
 			Music.EnsureLocalDir()
 		end
@@ -687,47 +693,62 @@ function UIMusic.build(env)
 		BackgroundColor3 = ELEV,
 		BorderSizePixel = 0,
 		Visible = false,
-		ZIndex = 6,
+		ZIndex = 8,
 		Parent = Shell,
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = LocalBar })
+	C("UIStroke", {
+		Color = Color3.fromRGB(40, 40, 48),
+		Thickness = 1,
+		Transparency = 0.4,
+		Parent = LocalBar,
+	})
+
+	local LocalBarInner = C("Frame", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 8,
+		Parent = LocalBar,
+	})
 	C("UIPadding", {
-		PaddingTop = UDim.new(0, 6),
-		PaddingBottom = UDim.new(0, 6),
+		PaddingTop = UDim.new(0, 8),
+		PaddingBottom = UDim.new(0, 8),
 		PaddingLeft = UDim.new(0, 10),
 		PaddingRight = UDim.new(0, 8),
-		Parent = LocalBar,
+		Parent = LocalBarInner,
 	})
 
 	C("TextLabel", {
 		Size = UDim2.new(0, 18, 0, 18),
+		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
 		Text = "♪",
 		Font = Enum.Font.GothamBold,
 		TextSize = 14,
 		TextColor3 = SPOTIFY,
-		ZIndex = 7,
-		Parent = LocalBar,
+		ZIndex = 9,
+		Parent = LocalBarInner,
 	})
 
 	LocalHelpLbl = C("TextLabel", {
-		Size = UDim2.new(1, -196, 1, 0),
+		Size = UDim2.new(1, -188, 1, 0),
 		Position = UDim2.new(0, 22, 0, 0),
 		BackgroundTransparency = 1,
 		Text = L("music_local_help", (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"),
 		Font = Enum.Font.Gotham,
 		TextSize = 9,
-		TextColor3 = MUT,
+		TextColor3 = TXT,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Center,
 		TextWrapped = true,
-		ZIndex = 7,
-		Parent = LocalBar,
+		ZIndex = 9,
+		Parent = LocalBarInner,
 	})
 
 	local OpenLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 88, 0, 24),
-		Position = UDim2.new(1, -176, 0.5, -12),
+		Size = UDim2.new(0, 92, 0, 24),
+		Position = UDim2.new(1, -168, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
 		BackgroundColor3 = SPOTIFY,
 		Text = L("music_local_open"),
 		Font = Enum.Font.GothamBold,
@@ -735,15 +756,18 @@ function UIMusic.build(env)
 		TextColor3 = Color3.fromRGB(8, 8, 10),
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
-		ZIndex = 8,
-		Parent = LocalBar,
+		ZIndex = 9,
+		Parent = LocalBarInner,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = OpenLocalBtn })
-	OpenLocalBtn.MouseButton1Click:Connect(openLocalFolder)
+	OpenLocalBtn.MouseButton1Click:Connect(function()
+		openLocalFolder()
+	end)
 
 	local RefreshLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 72, 0, 24),
-		Position = UDim2.new(1, -80, 0.5, -12),
+		Size = UDim2.new(0, 68, 0, 24),
+		Position = UDim2.new(1, -68, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
 		BackgroundColor3 = BG3,
 		Text = L("music_local_refresh"),
 		Font = Enum.Font.GothamSemibold,
@@ -751,8 +775,8 @@ function UIMusic.build(env)
 		TextColor3 = TXT,
 		AutoButtonColor = false,
 		BorderSizePixel = 0,
-		ZIndex = 8,
-		Parent = LocalBar,
+		ZIndex = 9,
+		Parent = LocalBarInner,
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = RefreshLocalBtn })
 	RefreshLocalBtn.MouseButton1Click:Connect(function()
@@ -1145,12 +1169,22 @@ function UIMusic.build(env)
 		Parent = SettingsRow,
 	})
 
+	local function musicVolPct(v)
+		return math.floor((v or S.MusicVolume or 0.65) * 100) .. "%"
+	end
+
+	local function musicVolRel(v)
+		return math.clamp((v or S.MusicVolume or 0.65) / MUSIC_VOL_MAX, 0, 1)
+	end
+
+	local initVolRel = musicVolRel()
+
 	local VolPctLbl = C("TextLabel", {
-		Size = UDim2.new(0, 32, 0, 14),
+		Size = UDim2.new(0, 36, 0, 14),
 		Position = UDim2.new(0, 196, 0.5, 0),
 		AnchorPoint = Vector2.new(0, 0.5),
 		BackgroundTransparency = 1,
-		Text = math.floor((S.MusicVolume or 0.65) * 100) .. "%",
+		Text = musicVolPct(),
 		Font = Enum.Font.GothamBold,
 		TextSize = 9,
 		TextColor3 = SPOTIFY,
@@ -1172,7 +1206,7 @@ function UIMusic.build(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = VolTrack })
 	local VolFill = C("Frame", {
-		Size = UDim2.new(S.MusicVolume or 0.65, 0, 1, 0),
+		Size = UDim2.new(initVolRel, 0, 1, 0),
 		BackgroundColor3 = SPOTIFY,
 		BorderSizePixel = 0,
 		ZIndex = 11,
@@ -1182,7 +1216,7 @@ function UIMusic.build(env)
 	local VolKnob = C("Frame", {
 		Size = UDim2.new(0, 10, 0, 10),
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.new(S.MusicVolume or 0.65, 0, 0.5, 0),
+		Position = UDim2.new(initVolRel, 0, 0.5, 0),
 		BackgroundColor3 = TXT,
 		BorderSizePixel = 0,
 		ZIndex = 12,
@@ -1195,12 +1229,13 @@ function UIMusic.build(env)
 
 	local function setVolumeFromX(x)
 		local rel = math.clamp((x - VolTrack.AbsolutePosition.X) / math.max(VolTrack.AbsoluteSize.X, 1), 0, 1)
-		S.MusicVolume = rel
+		local val = rel * MUSIC_VOL_MAX
+		S.MusicVolume = val
 		VolFill.Size = UDim2.new(rel, 0, 1, 0)
 		VolKnob.Position = UDim2.new(rel, 0, 0.5, 0)
-		VolPctLbl.Text = math.floor(rel * 100) .. "%"
+		VolPctLbl.Text = musicVolPct(val)
 		if Music and Music.SetVolume then
-			Music.SetVolume(rel)
+			Music.SetVolume(val)
 		end
 	end
 
