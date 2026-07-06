@@ -1550,8 +1550,6 @@ function UIMusic.buildWidget(env)
 	end
 
 	local widgetVisible = false
-	local userDismissed = false
-	local lastTrackId = ""
 	local pulseConn = nil
 	local activeTweens = {}
 	local widgetDuration = 0
@@ -1629,23 +1627,6 @@ function UIMusic.buildWidget(env)
 		Parent = MainRow,
 	})
 
-	local CloseBtn = C("TextButton", {
-		Size = UDim2.new(0, 20, 0, 20),
-		Position = UDim2.new(1, -2, 0, 0),
-		AnchorPoint = Vector2.new(1, 0),
-		BackgroundColor3 = Color3.fromRGB(28, 28, 34),
-		BackgroundTransparency = 0.25,
-		Text = "×",
-		Font = Enum.Font.GothamBold,
-		TextSize = 13,
-		TextColor3 = MUT,
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 88,
-		Parent = DragZone,
-	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = CloseBtn })
-
 	local ArtWrap = C("Frame", {
 		Size = UDim2.new(0, 42, 0, 42),
 		Position = UDim2.new(0, 2, 0.5, -21),
@@ -1700,7 +1681,7 @@ function UIMusic.buildWidget(env)
 		Parent = DragZone,
 	})
 	local TitleLbl = C("TextLabel", {
-		Size = UDim2.new(1, -24, 0, 18),
+		Size = UDim2.new(1, 0, 0, 18),
 		Position = UDim2.new(0, 0, 0, 8),
 		BackgroundTransparency = 1,
 		Text = "—",
