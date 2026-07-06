@@ -417,8 +417,7 @@ function UIMusic.build(env)
 		end
 		if src == "local" then
 			if LocalHelpLbl then
-				local path = (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"
-				LocalHelpLbl.Text = L("music_local_help", path)
+				LocalHelpLbl.Text = L("music_local_help", localPathLabel())
 			end
 			task.defer(function()
 				runSearch(SearchBox and SearchBox.Text or "")
@@ -566,19 +565,29 @@ function UIMusic.build(env)
 	end
 
 	openLocalFolder = function()
-		if Music and Music.EnsureLocalDir then
-			Music.EnsureLocalDir()
+		if Music and Music.OpenLocalFolder then
+			local opened, clip = Music.OpenLocalFolder()
+			if opened then
+				showNotify(L("music_local_opened", clip), { type = "success", duration = 7 })
+			else
+				showNotify(L("music_local_copied", clip), { type = "info", duration = 8 })
+			end
+			return
 		end
-		local path = (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"
-		if typeof(setclipboard) == "function" then
-			pcall(setclipboard, path)
-			showNotify(L("music_local_copied", path), { type = "info", duration = 6 })
-		elseif typeof(toclipboard) == "function" then
-			pcall(toclipboard, path)
-			showNotify(L("music_local_copied", path), { type = "info", duration = 6 })
-		else
-			showNotify(L("music_local_path", path), { type = "info", duration = 8 })
+		showNotify(L("music_local_path", "VanguardMusic\\local"), { type = "warn" })
+	end
+
+	local function localPathLabel()
+		if Music and Music.GetLocalDirAbsolute then
+			local abs = Music.GetLocalDirAbsolute()
+			if abs and abs ~= "" then
+				return abs
+			end
 		end
+		if Music and Music.GetLocalDir then
+			return Music.GetLocalDir()
+		end
+		return "VanguardMusic/local"
 	end
 
 	local Shell = C("Frame", {
@@ -720,7 +729,7 @@ function UIMusic.build(env)
 		Position = UDim2.new(0, 30, 0.5, 0),
 		AnchorPoint = Vector2.new(0, 0.5),
 		BackgroundTransparency = 1,
-		Text = L("music_local_help", (Music and Music.GetLocalDir and Music.GetLocalDir()) or "VanguardMusic/local"),
+		Text = L("music_local_help", localPathLabel()),
 		Font = Enum.Font.GothamMedium,
 		TextSize = 9,
 		TextColor3 = TXT,
@@ -1378,7 +1387,9 @@ function UIMusic.refreshLang()
 		r.updateBodyLayout()
 	end
 	if r.LocalHelpLbl and r.I18n and r.Music then
-		local path = (r.Music.GetLocalDir and r.Music.GetLocalDir()) or "VanguardMusic/local"
+		local path = (r.Music.GetLocalDirAbsolute and r.Music.GetLocalDirAbsolute())
+			or (r.Music.GetLocalDir and r.Music.GetLocalDir())
+			or "VanguardMusic/local"
 		r.LocalHelpLbl.Text = r.I18n.t("music_local_help", path)
 	end
 	if UIMusic._refreshWidget and r.Music then

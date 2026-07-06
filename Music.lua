@@ -1027,6 +1027,130 @@ function Music.Init(S, I18nModule)
 		pcall(makefolder, LOCAL_DIR)
 	end
 
+	local function normalizeWinPath(path)
+		return tostring(path or ""):gsub("/", "\\")
+	end
+
+	local function joinWinPath(a, b)
+		a = normalizeWinPath(a):gsub("\\+$", "")
+		b = normalizeWinPath(b):gsub("^\\+", "")
+		if a == "" then
+			return b
+		end
+		if b == "" then
+			return a
+		end
+		return a .. "\\" .. b
+	end
+
+	local function resolveExecutorWorkspace()
+		if typeof(getsynapsepath) == "function" then
+			local ok, base = pcall(getsynapsepath)
+			if ok and type(base) == "string" and base ~= "" then
+				return joinWinPath(normalizeWinPath(base), "workspace")
+			end
+		end
+		if typeof(getexecutorpath) == "function" then
+			local ok, base = pcall(getexecutorpath)
+			if ok and type(base) == "string" and base ~= "" then
+				local p = normalizeWinPath(base)
+				if not p:lower():find("workspace", 1, true) then
+					p = joinWinPath(p, "workspace")
+				end
+				return p
+			end
+		end
+		local g = (getgenv and getgenv()) or _G
+		if type(g.WORKSPACE_PATH) == "string" and g.WORKSPACE_PATH ~= "" then
+			return normalizeWinPath(g.WORKSPACE_PATH)
+		end
+		local execName = ""
+		if typeof(identifyexecutor) == "function" then
+			local ok, name = pcall(identifyexecutor)
+			if ok and type(name) == "string" then
+				execName = name:lower()
+			end
+		end
+		local localApp = os.getenv("LOCALAPPDATA") or ""
+		local appData = os.getenv("APPDATA") or ""
+		local candidates = {
+			{ "synapse x", joinWinPath(localApp, "Synapse\\workspace") },
+			{ "synapse", joinWinPath(localApp, "Synapse\\workspace") },
+			{ "script-ware", joinWinPath(localApp, "Script-Ware\\workspace") },
+			{ "scriptware", joinWinPath(localApp, "Script-Ware\\workspace") },
+			{ "krnl", joinWinPath(localApp, "Krnl\\workspace") },
+			{ "fluxus", joinWinPath(localApp, "Fluxus\\workspace") },
+			{ "valyse", joinWinPath(localApp, "Valyse\\workspace") },
+			{ "celery", joinWinPath(localApp, "Celery\\workspace") },
+			{ "solara", joinWinPath(localApp, "Solara\\workspace") },
+			{ "wave", joinWinPath(localApp, "Wave\\workspace") },
+			{ "codex", joinWinPath(localApp, "Codex\\workspace") },
+			{ "potassium", joinWinPath(localApp, "Potassium\\workspace") },
+			{ "jjsploit", joinWinPath(localApp, "JJSploit\\workspace") },
+			{ "electron", joinWinPath(localApp, "Electron\\workspace") },
+			{ "ronix", joinWinPath(localApp, "Ronix\\workspace") },
+			{ "matcha", joinWinPath(localApp, "matcha\\workspace") },
+			{ "opiumware", joinWinPath(localApp, "Opiumware\\workspace") },
+			{ "hydrogen", joinWinPath(localApp, "Hydrogen\\workspace") },
+			{ "xeno", joinWinPath(localApp, "Xeno\\workspace") },
+			{ "vega", joinWinPath(localApp, "Vega X\\workspace") },
+			{ "swift", joinWinPath(appData, "Swift\\workspace") },
+			{ "comet", joinWinPath(localApp, "Comet\\workspace") },
+			{ "arceus", joinWinPath(localApp, "Arceus X\\workspace") },
+		}
+		for _, entry in ipairs(candidates) do
+			if execName:find(entry[1], 1, true) then
+				return entry[2]
+			end
+		end
+		if localApp ~= "" then
+			return joinWinPath(localApp, "workspace")
+		end
+		return nil
+	end
+
+	local function localDirToWindowsPath()
+		local root = resolveExecutorWorkspace()
+		if not root then
+			return nil
+		end
+		return joinWinPath(root, LOCAL_DIR:gsub("/", "\\"))
+	end
+
+	local function tryOpenWindowsFolder(absPath)
+		absPath = normalizeWinPath(absPath)
+		if absPath == "" then
+			return false
+		end
+		local cmd = 'explorer "' .. absPath .. '"'
+		if typeof(execute) == "function" then
+			local ok = pcall(execute, cmd)
+			if ok then
+				return true
+			end
+		end
+		if typeof(exec) == "function" then
+			local ok = pcall(exec, cmd)
+			if ok then
+				return true
+			end
+		end
+		if typeof(os.execute) == "function" then
+			local ok = pcall(os.execute, cmd)
+			if ok then
+				return true
+			end
+		end
+		local syn = (syn or (getgenv and getgenv().syn)) or nil
+		if syn and typeof(syn.open_file) == "function" then
+			local ok = pcall(syn.open_file, absPath)
+			if ok then
+				return true
+			end
+		end
+		return false
+	end
+
 	local function localTitleFromName(name)
 		local base = tostring(name or ""):match("([^/\\]+)$") or tostring(name or "")
 		return base:gsub("%.[%w]+$", "")
@@ -2042,8 +2166,26 @@ function Music.Init(S, I18nModule)
 		return LOCAL_DIR
 	end
 
+	function Music.GetLocalDirAbsolute()
+		ensureLocalDir()
+		return localDirToWindowsPath()
+	end
+
 	function Music.EnsureLocalDir()
 		ensureLocalDir()
+	end
+
+	function Music.OpenLocalFolder()
+		ensureLocalDir()
+		local abs = localDirToWindowsPath()
+		local clip = abs or LOCAL_DIR
+		local opened = abs and tryOpenWindowsFolder(abs) or false
+		if typeof(setclipboard) == "function" then
+			pcall(setclipboard, clip)
+		elseif typeof(toclipboard) == "function" then
+			pcall(toclipboard, clip)
+		end
+		return opened, clip, abs
 	end
 
 	function Music.Search(query, callback)
