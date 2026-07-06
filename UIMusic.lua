@@ -1679,8 +1679,23 @@ function UIMusic.build(env)
 		end
 	end)
 
+	local function syncVolumeUI(state)
+		state = state or {}
+		local v = state.volume
+		if v == nil then
+			return
+		end
+		local rel = musicVolRel(v)
+		VolFill.Size = UDim2.new(rel, 0, 1, 0)
+		VolKnob.Position = UDim2.new(rel, 0, 0.5, 0)
+		VolPctLbl.Text = musicVolPct(v)
+	end
+
 	if Music then
-		Music.onStateChanged = refreshNowPlaying
+		Music.onStateChanged = function(state)
+			refreshNowPlaying(state)
+			syncVolumeUI(state)
+		end
 		Music.onProgress = function(pos, dur)
 			playerDuration = dur or 0
 			if TimeCur then

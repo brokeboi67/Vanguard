@@ -388,6 +388,9 @@ Effects.Init(Settings, Util)
 Animations.Init(Settings)
 World.Init(Settings)
 Music.Init(Settings, I18n)
+if isTransferLoad and Music.ApplyTransferVolume then
+	pcall(Music.ApplyTransferVolume)
+end
 if isTransferLoad and Music.RestoreFromTransfer then
 	task.defer(function()
 		task.wait(0.65)

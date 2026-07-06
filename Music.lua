@@ -1583,6 +1583,7 @@ function Music.Init(S, I18nModule)
 			v = 1,
 			gameId = game.GameId,
 			ts = os.time(),
+			volume = S.MusicVolume or 0.65,
 			queue = qOut,
 			queueIndex = queueIndex,
 			current = currentItem and {
@@ -3082,23 +3083,50 @@ function Music.Init(S, I18nModule)
 		end
 	end
 
-	function Music.RestoreFromTransfer()
+	local function readTransferData()
 		if not canPersistTransfer() or not isfile(TRANSFER_MUSIC_PATH) then
-			return false
+			return nil
 		end
 		local ok, data = pcall(function()
 			return HttpService:JSONDecode(readfile(TRANSFER_MUSIC_PATH))
 		end)
 		if not ok or typeof(data) ~= "table" then
-			Music.ClearTransferState()
-			return false
+			return nil, "corrupt"
 		end
 		if data.gameId ~= game.GameId then
-			return false
+			return nil, "game"
 		end
 		if os.time() - (tonumber(data.ts) or 0) > 900 then
-			Music.ClearTransferState()
+			return nil, "expired"
+		end
+		return data
+	end
+
+	function Music.ApplyTransferVolume()
+		local data = readTransferData()
+		if not data then
 			return false
+		end
+		local vol = tonumber(data.volume)
+		if vol then
+			Music.SetVolume(vol)
+			return true
+		end
+		return false
+	end
+
+	function Music.RestoreFromTransfer()
+		local data, reason = readTransferData()
+		if not data then
+			if reason == "corrupt" or reason == "expired" then
+				Music.ClearTransferState()
+			end
+			return false
+		end
+
+		local vol = tonumber(data.volume)
+		if vol then
+			Music.SetVolume(vol)
 		end
 
 		queue = {}
