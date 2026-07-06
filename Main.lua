@@ -119,21 +119,48 @@ do
 		TS:Create(countLbl, TweenInfo.new(0.22), { TextTransparency = 0 }):Play()
 
 		local lastPct = 0
+		local activeCreep = nil
+		local function setFillPct(pct, animate)
+			pct = math.clamp(pct or 0, 0, 1)
+			if animate then
+				TS:Create(fill, TweenInfo.new(0.14, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+					Size = UDim2.new(pct, 0, 1, 0),
+				}):Play()
+			else
+				fill.Size = UDim2.new(pct, 0, 1, 0)
+			end
+			lastPct = pct
+		end
 		_G.VG_BOOT = {
 			gui = gui,
-			update = function(label, pct, countText)
+			update = function(label, pct, countText, animate)
 				pct = math.clamp(pct or 0, 0, 1)
+				activeCreep = nil
 				modLbl.Text = tostring(label or "...")
 				pctLbl.Text = math.floor(pct * 100) .. "%"
 				if countText then
 					countLbl.Text = countText
 				end
-				if pct >= lastPct then
-					lastPct = pct
-					TS:Create(fill, TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-						Size = UDim2.new(pct, 0, 1, 0),
-					}):Play()
+				if pct >= lastPct - 0.001 then
+					setFillPct(pct, animate == true)
 				end
+			end,
+			startDownloadCreep = function(fromPct, toPct)
+				activeCreep = {}
+				local token = activeCreep
+				task.spawn(function()
+					setFillPct(fromPct, false)
+					while activeCreep == token and fill.Parent do
+						local p = fill.Size.X.Scale
+						if p >= toPct then
+							break
+						end
+						local nextP = math.min(p + 0.006, toPct)
+						fill.Size = UDim2.new(nextP, 0, 1, 0)
+						pctLbl.Text = math.floor(nextP * 100) .. "%"
+						task.wait(0.05)
+					end
+				end)
 			end,
 			destroy = function()
 				if not gui.Parent then
@@ -164,9 +191,9 @@ _G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
 local LOAD_TOTAL = 26
 local loadStep = 0
 
-local function bootProgress(label, pct, countText)
+local function bootProgress(label, pct, countText, animate)
 	if _G.VG_BOOT and _G.VG_BOOT.update then
-		_G.VG_BOOT.update(label, pct, countText)
+		_G.VG_BOOT.update(label, pct, countText, animate)
 	end
 end
 
@@ -203,11 +230,21 @@ end
 local function Get(file)
 	if _G.VG_MODULE_CACHE[file] then
 		loadStep += 1
-		bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów")
+		bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów", true)
 		return _G.VG_MODULE_CACHE[file]
 	end
 
-	bootProgress("Pobieranie · " .. file:gsub("%.lua$", ""), (loadStep + 0.35) / LOAD_TOTAL * 0.68, (loadStep + 1) .. " / " .. LOAD_TOTAL .. " modułów")
+	local fromPct = (loadStep + 0.08) / LOAD_TOTAL * 0.68
+	local toPct = (loadStep + 0.92) / LOAD_TOTAL * 0.68
+	bootProgress(
+		"Pobieranie · " .. file:gsub("%.lua$", ""),
+		fromPct,
+		(loadStep + 1) .. " / " .. LOAD_TOTAL .. " modułów",
+		false
+	)
+	if _G.VG_BOOT and _G.VG_BOOT.startDownloadCreep then
+		_G.VG_BOOT.startDownloadCreep(fromPct, toPct)
+	end
 
 	local url = repo .. file
 	local src
@@ -244,7 +281,7 @@ local function Get(file)
 	end
 	_G.VG_MODULE_CACHE[file] = res
 	loadStep += 1
-	bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów")
+	bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów", true)
 	return res
 end
 

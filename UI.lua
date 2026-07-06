@@ -2995,40 +2995,40 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		LoaderGame.BackgroundTransparency = 1
 		LoaderGame.Position = UDim2.new(0.5, 0, 0.58, 0)
 
-		TweenPlay(LoaderTop, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Position = UDim2.new(0, 0, 0, 0),
 		})
-		TweenPlay(LoaderGame, TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		TweenPlay(LoaderGame, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			BackgroundTransparency = 0.15,
 			Position = UDim2.new(0.5, 0, 0.54, 0),
 		})
 
-		task.wait(0.35)
+		task.wait(0.28)
 		refreshLoaderGameInfo()
 
 		LoaderStatus.Text = "Game info"
-		TweenPlay(Fill, TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Size = UDim2.new(0.78, 0, 1, 0),
 		})
 		LoaderPct.Text = "78%"
-		task.wait(1.65)
+		task.wait(1.05)
 
 		local steps = {
-			{ text = "Initializing ESP", pct = 0.88, wait = 0.62 },
-			{ text = "Preparing interface", pct = 0.96, wait = 0.62 },
-			{ text = "Ready", pct = 1, wait = 0.85 },
+			{ text = "Initializing ESP", pct = 0.88, wait = 0.42 },
+			{ text = "Preparing interface", pct = 0.96, wait = 0.42 },
+			{ text = "Ready", pct = 1, wait = 0.5 },
 		}
 
 		for _, step in ipairs(steps) do
 			LoaderStatus.Text = step.text
 			LoaderPct.Text = math.floor(step.pct * 100) .. "%"
-			TweenPlay(Fill, TweenInfo.new(0.38, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				Size = UDim2.new(step.pct, 0, 1, 0),
 			})
 			task.wait(step.wait)
 		end
 
-		task.wait(0.2)
+		task.wait(0.12)
 		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 			Position = UDim2.new(0, 0, 0, -56),
 		})
