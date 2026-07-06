@@ -1,10 +1,60 @@
 local repo = "https://raw.githubusercontent.com/ihatelgbt2-art/Test/main/"
 
-local function Get(file)
-	local src = game:HttpGet(repo .. file, true)
-	if not src or src == "" then
-		error("[Vanguard] HttpGet failed: " .. file, 2)
+_G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
+
+local function fetchUrl(url)
+	local req = request or (syn and syn.request) or (http and http.request)
+	if req then
+		local ok, res = pcall(function()
+			return req({
+				Url = url,
+				Method = "GET",
+			})
+		end)
+		if ok and typeof(res) == "table" and res.Body and res.Body ~= "" then
+			if not res.StatusCode or res.StatusCode >= 200 and res.StatusCode < 300 then
+				return res.Body
+			end
+		end
 	end
+	if typeof(game.HttpGetAsync) == "function" then
+		local ok, body = pcall(game.HttpGetAsync, game, url)
+		if ok and body and body ~= "" then
+			return body
+		end
+	end
+	if typeof(game.HttpGet) == "function" then
+		local ok, body = pcall(game.HttpGet, game, url, true)
+		if ok and body and body ~= "" then
+			return body
+		end
+	end
+	return nil
+end
+
+local function Get(file)
+	if _G.VG_MODULE_CACHE[file] then
+		return _G.VG_MODULE_CACHE[file]
+	end
+
+	local url = repo .. file
+	local src
+	local lastErr = "empty response"
+	for attempt = 1, 4 do
+		local ok, body = pcall(fetchUrl, url)
+		if ok and body and body ~= "" then
+			src = body
+			break
+		end
+		lastErr = ok and "empty response" or tostring(body)
+		if attempt < 4 then
+			task.wait(0.25 * attempt)
+		end
+	end
+	if not src or src == "" then
+		error("[Vanguard] HttpGet failed: " .. file .. " (" .. tostring(lastErr) .. ")", 2)
+	end
+
 	local compile = loadstring or load
 	if not compile then
 		error("[Vanguard] Executor missing loadstring/load", 2)
@@ -20,6 +70,7 @@ local function Get(file)
 	if res == nil then
 		error("[Vanguard] Module returned nil: " .. file, 2)
 	end
+	_G.VG_MODULE_CACHE[file] = res
 	return res
 end
 
