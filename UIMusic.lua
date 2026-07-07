@@ -1453,8 +1453,7 @@ function UIMusic.build(env)
 	})
 
 	local function musicVolPct(v)
-		local volMax = (Music and Music.GetVolumeMax and Music.GetVolumeMax()) or MUSIC_VOL_MAX
-		return math.floor((v or S.MusicVolume or 0.65) / volMax * 100) .. "%"
+		return math.floor((v or S.MusicVolume or 0.65) * 100) .. "%"
 	end
 
 	local function musicVolRel(v)
@@ -2112,11 +2111,12 @@ function UIMusic.buildWidget(env)
 
 	local LoopBadge = C("Frame", {
 		Size = UDim2.new(0, 12, 0, 12),
-		Position = UDim2.new(0, 8, 1, -13),
+		Position = UDim2.new(1, 2, 1, 2),
+		AnchorPoint = Vector2.new(1, 1),
 		BackgroundTransparency = 1,
 		Visible = false,
-		ZIndex = 94,
-		Parent = Shell,
+		ZIndex = 86,
+		Parent = ArtWrap,
 	})
 	MusicIcons.setLoopIcon(LoopBadge, C, true, SPOTIFY)
 
@@ -2128,7 +2128,7 @@ function UIMusic.buildWidget(env)
 		if state.loading then
 			return L("music_downloading")
 		end
-		local volPct = math.floor((state.volume or 0.65) * 100 / (Music.GetVolumeMax and Music.GetVolumeMax() or 1))
+		local volPct = math.floor((state.volume or 0.65) * 100)
 		local timePart = (dur and dur > 0) and (fmtTime(pos or 0) .. " / " .. fmtTime(dur)) or "0:00"
 		return artist .. " · " .. timePart .. " · " .. volPct .. "%"
 	end
