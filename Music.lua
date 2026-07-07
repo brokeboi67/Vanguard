@@ -2355,7 +2355,7 @@ function Music.Init(S, I18nModule)
 		end
 	end
 
-	local function tryPlayAsset(assetRef, cachePath, item, fileLabel, myGen, stale, seekPos)
+	local function tryPlayAsset(assetRef, cachePath, item, fileLabel, myGen, stale, seekPos, loadTimeout)
 		local soundId = toSoundId(assetRef)
 		if not soundId then
 			return false, "Nieprawidłowy asset ID"
@@ -2366,7 +2366,7 @@ function Music.Init(S, I18nModule)
 		sound.Volume = S.MusicVolume or 0.65
 		sound.Looped = S.MusicLoop == true
 		sound.Parent = SoundService
-		if waitForSoundLoad(sound, 12, myGen) and not stale() then
+		if waitForSoundLoad(sound, loadTimeout or 12, myGen) and not stale() then
 			if startPlayback(sound) and not stale() then
 				applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen, seekPos)
 				return true
@@ -2374,6 +2374,81 @@ function Music.Init(S, I18nModule)
 		end
 		killSound(sound)
 		return false, "Roblox odrzucił format: " .. fileLabel
+	end
+
+	local function readLocalFileBody(filePath)
+		if typeof(readfile) ~= "function" then
+			return nil, "Brak readfile w executorze"
+		end
+		local ok, body = pcall(readfile, filePath)
+		if not ok or type(body) ~= "string" or #body < 100 then
+			return nil, "Nie można odczytać pliku (ścieżka lub uprawnienia)"
+		end
+		return body
+	end
+
+	local function resolveLocalAssetRef(filePath)
+		filePath = tostring(filePath or "")
+		if filePath == "" then
+			return nil, nil, "Brak ścieżki pliku"
+		end
+		if typeof(isfile) == "function" and not isfile(filePath) then
+			local alt = resolveLocalFilePath(filePath)
+			if alt ~= filePath and isfile(alt) then
+				filePath = alt
+			else
+				return nil, nil, "Plik nie istnieje: " .. filePath
+			end
+		end
+
+		local getAsset, via = resolveCustomAssetFn()
+		if getAsset then
+			local ok, assetRef = pcall(getAsset, filePath)
+			if ok and assetRef and assetRef ~= "" then
+				logInfo("Local asset OK via", via, "→", filePath)
+				return assetRef, filePath, nil
+			end
+			logErr("getcustomasset fail dla:", filePath, tostring(assetRef))
+		end
+
+		local body, readErr = readLocalFileBody(filePath)
+		if not body then
+			return nil, nil, readErr
+		end
+		local valid, validErr = validateAudioBody(body, filePath)
+		if not valid then
+			return nil, nil, validErr or "Nieprawidłowy plik audio"
+		end
+
+		local ext = filePath:lower():match("%.([%w]+)$") or "mp3"
+		local safeBase = safeFileName(localTitleFromName(filePath) .. "." .. ext)
+
+		if typeof(writecustomasset) == "function" then
+			local ok, assetRef = pcall(writecustomasset, safeBase, body)
+			if ok and assetRef and assetRef ~= "" then
+				logInfo("Local via writecustomasset:", safeBase)
+				return assetRef, filePath, nil
+			end
+			logErr("writecustomasset fail:", safeBase, tostring(assetRef))
+		end
+
+		if getAsset and typeof(writefile) == "function" then
+			ensureCacheDir()
+			local cacheRel = CACHE_DIR .. "/local_" .. safeBase
+			local writeOk, writeErr = pcall(writefile, cacheRel, body)
+			if writeOk then
+				local ok, assetRef = pcall(getAsset, cacheRel)
+				if ok and assetRef and assetRef ~= "" then
+					logInfo("Local via cache copy:", cacheRel)
+					return assetRef, cacheRel, nil
+				end
+				logErr("Cache copy asset fail:", cacheRel, tostring(assetRef))
+			else
+				logErr("Cache copy write fail:", writeErr)
+			end
+		end
+
+		return nil, nil, "Executor nie zarejestrował pliku — spróbuj OGG zamiast MP3"
 	end
 
 	local function downloadAudiusCandidate(cand, timeoutSec, skipCache)
@@ -2991,7 +3066,7 @@ function Music.Init(S, I18nModule)
 
 			if item.source == "local" and item.localPath and item.localPath ~= "" then
 				local getAsset = select(1, resolveCustomAssetFn())
-				if not getAsset then
+				if not getAsset and typeof(writecustomasset) ~= "function" then
 					loading = false
 					lastError = "Brak getcustomasset — włącz filesystem w executorze"
 					if Music.onPlayError then
@@ -3000,47 +3075,30 @@ function Music.Init(S, I18nModule)
 					notifyState()
 					return
 				end
-				if typeof(isfile) == "function" and not isfile(item.localPath) then
-					loading = false
-					lastError = "Plik nie istnieje: " .. item.localPath
-					if Music.onPlayError then
-						pcall(Music.onPlayError, lastError)
-					end
-					notifyState()
-					return
-				end
-				local okAsset, assetRef = pcall(getAsset, item.localPath)
+				local assetRef, cachePath, aerr = resolveLocalAssetRef(item.localPath)
 				if stale() then
 					return
 				end
-				if okAsset and assetRef then
-					local soundId = toSoundId(assetRef)
-					if soundId then
-						local sound = Instance.new("Sound")
-						sound.Name = "VanguardMusic"
-						sound.SoundId = soundId
-						sound.Volume = S.MusicVolume or 0.65
-						sound.Looped = S.MusicLoop == true
-						sound.Parent = SoundService
-						if waitForSoundLoad(sound, 12, myGen) and not stale() then
-							if startPlayback(sound) and not stale() then
-								applySuccessfulPlay(
-									sound,
-									soundId,
-									item.localPath,
-									item,
-									item.title or item.localPath,
-									myGen,
-									activePlaySeek
-								)
-								return
-							end
-						end
-						killSound(sound)
+				if assetRef then
+					local okPlay, playErr = tryPlayAsset(
+						assetRef,
+						cachePath or item.localPath,
+						item,
+						item.title or item.localPath,
+						myGen,
+						stale,
+						activePlaySeek,
+						20
+					)
+					if okPlay then
+						return
 					end
+					lastError = playErr
+						or "Roblox odrzucił ten plik (często VBR MP3) — przekonwertuj na OGG"
+				else
+					lastError = aerr or "Nie odtworzono pliku lokalnego"
 				end
 				loading = false
-				lastError = "Nie odtworzono pliku lokalnego"
 				if Music.onPlayError then
 					pcall(Music.onPlayError, lastError)
 				end
