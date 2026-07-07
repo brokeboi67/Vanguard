@@ -47,6 +47,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local W_FULL, W_COMPACT, H = 800, 600, 540
 	local W_MUSIC, H_MUSIC = 860, 620
 	local SIDE_W = 136
+	local FOOTER_PAD = 12
+	local FOOTER_RIGHT_W = 196
 	local tabLayoutProfiles = {}
 	local RS = game:GetService("RunService")
 
@@ -723,8 +725,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	local FooterStatus = C("TextLabel", {
 		Name = "FooterStatus",
-		Size = UDim2.new(1, -230, 1, 0),
-		Position = UDim2.new(0, 16, 0, 0),
+		Size = UDim2.new(1, -(SIDE_W + FOOTER_PAD + FOOTER_RIGHT_W), 1, 0),
+		Position = UDim2.new(0, SIDE_W + FOOTER_PAD, 0, 0),
 		BackgroundTransparency = 1,
 		Text = "v" .. (S.Version or "?") .. "  ·  Ready",
 		Font = Enum.Font.GothamMedium,
@@ -853,15 +855,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		activeLayoutProfile = layoutProfile
 
 		if FooterStatus then
+			local left = SIDE_W + FOOTER_PAD
+			FooterStatus.Position = UDim2.new(0, left, 0, 0)
 			if layoutProfile == "music" then
-				FooterStatus.Size = UDim2.new(1, -420, 1, 0)
+				FooterStatus.Size = UDim2.new(1, -(left + FOOTER_PAD), 1, 0)
 			else
-				FooterStatus.Size = UDim2.new(1, -230, 1, 0)
+				FooterStatus.Size = UDim2.new(1, -(left + FOOTER_RIGHT_W), 1, 0)
 			end
 		end
 		if FooterRightLbl then
 			FooterRightLbl.Visible = layoutProfile ~= "music"
 		end
+		setFooterStatus(nil)
 	end
 
 	local function StyleTab(btn, active)
@@ -2001,6 +2006,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
+	local lastFooterText = "Ready"
+
 	local function truncateFooterPart(text, maxLen)
 		text = tostring(text or "")
 		if #text <= maxLen then
@@ -2009,12 +2016,43 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		return string.sub(text, 1, maxLen - 2) .. "…"
 	end
 
+	local function musicFooterFromState()
+		if not MusicModule or not MusicModule.GetState then
+			return nil
+		end
+		local st = MusicModule.GetState()
+		if not st or not st.title or st.title == "" then
+			return nil
+		end
+		if not st.playing and not st.paused and not st.hasTrack then
+			return nil
+		end
+		local title = tostring(st.title)
+		if #title > 36 then
+			title = string.sub(title, 1, 34) .. "…"
+		end
+		return "♪ " .. title
+	end
+
 	local function setFooterStatus(text)
+		if text ~= nil then
+			lastFooterText = tostring(text)
+		end
 		if FooterStatus then
+			local display
 			if activeLayoutProfile == "music" then
-				text = truncateFooterPart(text, 34)
+				local trackText = musicFooterFromState()
+				if trackText then
+					display = trackText
+				elseif lastFooterText:sub(1, 2) == "♪ " then
+					display = truncateFooterPart(lastFooterText, 48)
+				else
+					display = "v" .. (S.Version or "?")
+				end
+			else
+				display = "v" .. (S.Version or "?") .. "  ·  " .. lastFooterText
 			end
-			FooterStatus.Text = "v" .. (S.Version or "?") .. "  ·  " .. text
+			FooterStatus.Text = display
 		end
 	end
 
