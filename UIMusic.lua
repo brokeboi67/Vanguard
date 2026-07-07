@@ -1078,7 +1078,7 @@ function UIMusic.build(env)
 		ZIndex = 10,
 		Parent = LocalBtnCol,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = RefreshLocalBtn })
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = RefreshLocalBtn })
 	RefreshLocalBtn.MouseButton1Click:Connect(function()
 		refreshLocalFiles(true)
 	end)

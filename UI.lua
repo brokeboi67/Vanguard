@@ -385,7 +385,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 
 	local Side = C("Frame", {
-		Size = UDim2.new(0, SIDE_W, 1, -48),
+		Size = UDim2.new(0, SIDE_W, 1, -80),
 		Position = UDim2.new(0, 0, 0, 48),
 		BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 		BorderSizePixel = 0,
@@ -713,7 +713,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
-		ZIndex = 3,
+		ZIndex = 5,
 		Parent = Menu,
 	})
 	C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Footer })
