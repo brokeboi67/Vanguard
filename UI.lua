@@ -796,6 +796,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local updateEspColorControls
+	local setFooterStatus
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -2034,7 +2035,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		return "♪ " .. title
 	end
 
-	local function setFooterStatus(text)
+	function setFooterStatus(text)
 		if text ~= nil then
 			lastFooterText = tostring(text)
 		end
