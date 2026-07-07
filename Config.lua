@@ -312,6 +312,18 @@ function Config.EnforceRules(S)
 	if S.MusicAutoQueue == nil then
 		S.MusicAutoQueue = true
 	end
+	if S.MusicWidgetPosXScale == nil then
+		S.MusicWidgetPosXScale = 0
+	end
+	if S.MusicWidgetPosXOffset == nil then
+		S.MusicWidgetPosXOffset = 18
+	end
+	if S.MusicWidgetPosYScale == nil then
+		S.MusicWidgetPosYScale = 1
+	end
+	if S.MusicWidgetPosYOffset == nil then
+		S.MusicWidgetPosYOffset = -90
+	end
 	if S.MenuLang == nil then
 		S.MenuLang = "pl"
 	end

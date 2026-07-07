@@ -1906,16 +1906,72 @@ function UIMusic.buildWidget(env)
 		return tw
 	end
 
+	local WIDGET_W = 440
+	local WIDGET_H = 74
+
+	local function posFromSettings()
+		return UDim2.new(
+			tonumber(S.MusicWidgetPosXScale) or 0,
+			tonumber(S.MusicWidgetPosXOffset) or 18,
+			tonumber(S.MusicWidgetPosYScale) or 1,
+			tonumber(S.MusicWidgetPosYOffset) or -90
+		)
+	end
+
+	local function savePosToSettings(pos)
+		S.MusicWidgetPosXScale = pos.X.Scale
+		S.MusicWidgetPosXOffset = pos.X.Offset
+		S.MusicWidgetPosYScale = pos.Y.Scale
+		S.MusicWidgetPosYOffset = pos.Y.Offset
+	end
+
+	local function viewportSize()
+		local vpW = ParentGUI and ParentGUI.AbsoluteSize.X or 0
+		local vpH = ParentGUI and ParentGUI.AbsoluteSize.Y or 0
+		if vpW < 1 or vpH < 1 then
+			local cam = workspace.CurrentCamera
+			if cam then
+				vpW = cam.ViewportSize.X
+				vpH = cam.ViewportSize.Y
+			else
+				vpW, vpH = 1920, 1080
+			end
+		end
+		return vpW, vpH
+	end
+
+	local function clampWidgetPos(pos)
+		local vpW, vpH = viewportSize()
+		local absX = vpW * pos.X.Scale + pos.X.Offset
+		local absY = vpH * pos.Y.Scale + pos.Y.Offset
+		absX = math.clamp(absX, 0, math.max(0, vpW - WIDGET_W))
+		absY = math.clamp(absY, WIDGET_H, vpH)
+		return UDim2.new(
+			pos.X.Scale,
+			absX - vpW * pos.X.Scale,
+			pos.Y.Scale,
+			absY - vpH * pos.Y.Scale
+		)
+	end
+
+	local function applyWidgetPosition(pos)
+		local clamped = clampWidgetPos(pos)
+		Root.Position = clamped
+		savePosToSettings(clamped)
+		return clamped
+	end
+
 	local Root = C("Frame", {
 		Name = "VanguardMusicWidget",
-		Size = UDim2.new(0, 440, 0, 74),
-		Position = UDim2.new(0, 18, 1, -90),
+		Size = UDim2.new(0, WIDGET_W, 0, WIDGET_H),
+		Position = clampWidgetPos(posFromSettings()),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 80,
 		Parent = ParentGUI,
 	})
+	savePosToSettings(Root.Position)
 
 	local Shell = C("Frame", {
 		Name = "Shell",
@@ -2203,6 +2259,9 @@ function UIMusic.buildWidget(env)
 	end)
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if draggingWidget then
+				applyWidgetPosition(Root.Position)
+			end
 			draggingWidget = false
 		end
 	end)
@@ -2310,6 +2369,7 @@ function UIMusic.buildWidget(env)
 	end
 
 	UIMusic._refreshWidget = refreshWidget
+	UIMusic._applyWidgetPosition = applyWidgetPosition
 
 	PlayBtn.MouseEnter:Connect(function()
 		tween(PlayBtnScale, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Scale = 1.08 })

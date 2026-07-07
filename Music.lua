@@ -1587,6 +1587,12 @@ function Music.Init(S, I18nModule)
 			loop = S.MusicLoop == true,
 			autoQueue = S.MusicAutoQueue ~= false,
 			showWidget = S.ShowMusicWidget ~= false,
+			widgetPos = {
+				xScale = tonumber(S.MusicWidgetPosXScale) or 0,
+				xOffset = tonumber(S.MusicWidgetPosXOffset) or 18,
+				yScale = tonumber(S.MusicWidgetPosYScale) or 1,
+				yOffset = tonumber(S.MusicWidgetPosYOffset) or -90,
+			},
 			queue = qOut,
 			queueIndex = queueIndex,
 			current = currentItem and {
@@ -3128,6 +3134,14 @@ function Music.Init(S, I18nModule)
 		end
 		if data.showWidget ~= nil then
 			S.ShowMusicWidget = data.showWidget ~= false
+			applied = true
+		end
+		if typeof(data.widgetPos) == "table" then
+			local wp = data.widgetPos
+			S.MusicWidgetPosXScale = tonumber(wp.xScale) or 0
+			S.MusicWidgetPosXOffset = tonumber(wp.xOffset) or 18
+			S.MusicWidgetPosYScale = tonumber(wp.yScale) or 1
+			S.MusicWidgetPosYOffset = tonumber(wp.yOffset) or -90
 			applied = true
 		end
 		return applied
