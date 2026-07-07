@@ -710,6 +710,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Position = UDim2.new(0, 0, 1, -32),
 		BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 		BorderSizePixel = 0,
+		ClipsDescendants = true,
 		ZIndex = 3,
 		Parent = Menu,
 	})
@@ -720,7 +721,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ZIndex = 4,
 		Parent = Footer,
 	})
-	C("TextLabel", {
+	local FooterStatus = C("TextLabel", {
 		Name = "FooterStatus",
 		Size = UDim2.new(1, -230, 1, 0),
 		Position = UDim2.new(0, 16, 0, 0),
@@ -731,10 +732,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		TextColor3 = Color3.fromRGB(100, 100, 110),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = false,
+		ClipsDescendants = true,
 		ZIndex = 4,
 		Parent = Footer,
 	})
-	C("TextLabel", {
+	local FooterRightLbl = C("TextLabel", {
 		Size = UDim2.new(0, 180, 1, 0),
 		Position = UDim2.new(1, -196, 0, 0),
 		BackgroundTransparency = 1,
@@ -751,6 +754,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local ActiveTabBtn = nil
 	local ActivePageWrap = nil
 	local previewVisible = true
+	local activeLayoutProfile = "default"
 	local menuOpen = false
 	local menuTweens = {}
 	local layoutTweens = {}
@@ -846,6 +850,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 
 		previewVisible = showPreview
+		activeLayoutProfile = layoutProfile
+
+		if FooterStatus then
+			if layoutProfile == "music" then
+				FooterStatus.Size = UDim2.new(1, -420, 1, 0)
+			else
+				FooterStatus.Size = UDim2.new(1, -230, 1, 0)
+			end
+		end
+		if FooterRightLbl then
+			FooterRightLbl.Visible = layoutProfile ~= "music"
+		end
 	end
 
 	local function StyleTab(btn, active)
@@ -1985,10 +2001,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
-	local FooterStatus = Footer:FindFirstChild("FooterStatus")
+	local function truncateFooterPart(text, maxLen)
+		text = tostring(text or "")
+		if #text <= maxLen then
+			return text
+		end
+		return string.sub(text, 1, maxLen - 2) .. "…"
+	end
 
 	local function setFooterStatus(text)
 		if FooterStatus then
+			if activeLayoutProfile == "music" then
+				text = truncateFooterPart(text, 34)
+			end
 			FooterStatus.Text = "v" .. (S.Version or "?") .. "  ·  " .. text
 		end
 	end

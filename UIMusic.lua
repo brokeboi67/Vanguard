@@ -139,6 +139,14 @@ function UIMusic.build(env)
 	local setFooterStatus = env.setFooterStatus
 	local TweenPlay = env.TweenPlay
 
+	local function footerTrackLabel(title)
+		title = tostring(title or "?")
+		if #title > 24 then
+			title = string.sub(title, 1, 22) .. "…"
+		end
+		return "♪ " .. title
+	end
+
 	local NowTitle
 	local NowArtist
 	local ProgressFill
@@ -248,7 +256,7 @@ function UIMusic.build(env)
 			PlayHit.MouseButton1Click:Connect(function()
 				if Music and Music.Play then
 					Music.Play(items[i], { keepQueue = true })
-					setFooterStatus("♪ " .. (item.title or "?"))
+					setFooterStatus(footerTrackLabel(item.title))
 				end
 			end)
 			local RemoveBtn = C("TextButton", {
@@ -473,7 +481,7 @@ function UIMusic.build(env)
 				return
 			end
 			Music.Play(item)
-			setFooterStatus("♪ " .. (item.title or "?"))
+			setFooterStatus(footerTrackLabel(item.title))
 		end)
 	end
 
@@ -1822,6 +1830,13 @@ function UIMusic.buildWidget(env)
 	local UIS = game:GetService("UserInputService")
 	local RS = game:GetService("RunService")
 
+	if ParentGUI then
+		local oldWidget = ParentGUI:FindFirstChild("VanguardMusicWidget")
+		if oldWidget then
+			oldWidget:Destroy()
+		end
+	end
+
 	local SPOTIFY = Color3.fromRGB(29, 185, 84)
 	local BG = Color3.fromRGB(14, 14, 18)
 	local BG2 = Color3.fromRGB(22, 22, 28)
@@ -1908,6 +1923,11 @@ function UIMusic.buildWidget(env)
 
 	local WIDGET_W = 440
 	local WIDGET_H = 74
+	local Root = nil
+
+	local function widgetReady()
+		return Root and Root.Parent
+	end
 
 	local function posFromSettings()
 		return UDim2.new(
@@ -1941,6 +1961,9 @@ function UIMusic.buildWidget(env)
 	end
 
 	local function clampWidgetPos(pos)
+		if typeof(pos) ~= "UDim2" then
+			return UDim2.new(0, 18, 1, -90)
+		end
 		local vpW, vpH = viewportSize()
 		local absX = vpW * pos.X.Scale + pos.X.Offset
 		local absY = vpH * pos.Y.Scale + pos.Y.Offset
@@ -1955,13 +1978,16 @@ function UIMusic.buildWidget(env)
 	end
 
 	local function applyWidgetPosition(pos)
+		if not widgetReady() or typeof(pos) ~= "UDim2" then
+			return nil
+		end
 		local clamped = clampWidgetPos(pos)
 		Root.Position = clamped
 		savePosToSettings(clamped)
 		return clamped
 	end
 
-	local Root = C("Frame", {
+	Root = C("Frame", {
 		Name = "VanguardMusicWidget",
 		Size = UDim2.new(0, WIDGET_W, 0, WIDGET_H),
 		Position = clampWidgetPos(posFromSettings()),
@@ -2240,14 +2266,14 @@ function UIMusic.buildWidget(env)
 	local dragStartMouse
 	local dragStartPos
 	DragZone.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and widgetReady() then
 			draggingWidget = true
 			dragStartMouse = input.Position
 			dragStartPos = Root.Position
 		end
 	end)
 	UIS.InputChanged:Connect(function(input)
-		if draggingWidget and input.UserInputType == Enum.UserInputType.MouseMovement then
+		if draggingWidget and input.UserInputType == Enum.UserInputType.MouseMovement and widgetReady() and dragStartMouse and dragStartPos then
 			local delta = input.Position - dragStartMouse
 			Root.Position = UDim2.new(
 				dragStartPos.X.Scale,
@@ -2259,12 +2285,22 @@ function UIMusic.buildWidget(env)
 	end)
 	UIS.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			if draggingWidget then
+			if draggingWidget and widgetReady() then
 				applyWidgetPosition(Root.Position)
 			end
 			draggingWidget = false
+			dragStartMouse = nil
+			dragStartPos = nil
 		end
 	end)
+
+	if ParentGUI then
+		ParentGUI:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			if widgetReady() then
+				applyWidgetPosition(Root.Position)
+			end
+		end)
+	end
 
 	local function setPulse(on, accent)
 		if pulseConn then
