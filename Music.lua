@@ -51,6 +51,8 @@ function Music.Init(S, I18nModule)
 	local trackEnding = false
 	local activePlaySeek = 0
 	local pendingPauseAfterPlay = false
+	local transferRestorePending = false
+	local lastSoundTimePos = 0
 	local TRANSFER_MUSIC_PATH = "Vanguard/transfer_music.json"
 
 	local function canPersistTransfer()
@@ -1576,10 +1578,13 @@ function Music.Init(S, I18nModule)
 			end
 		end
 		local pos, _dur = getPlaybackPosition()
+		if paused and pausePosSnapshot > 0 then
+			pos = pausePosSnapshot
+		elseif paused and pausedSession and pausedSession.position then
+			pos = pausedSession.position
+		end
 		local currentItem = nil
-		if queueIndex > 0 and queue[queueIndex] then
-			currentItem = cloneQueueItem(queue[queueIndex])
-		elseif nowPlaying and nowPlaying.identifier then
+		if nowPlaying and nowPlaying.identifier then
 			currentItem = cloneQueueItem(nowPlaying)
 			for _, it in ipairs(queue) do
 				if it.identifier == currentItem.identifier then
@@ -1587,6 +1592,15 @@ function Music.Init(S, I18nModule)
 					break
 				end
 			end
+		elseif pausedSession and pausedSession.identifier then
+			currentItem = {
+				identifier = pausedSession.identifier,
+				title = nowPlaying and nowPlaying.title or pausedSession.identifier,
+				creator = nowPlaying and nowPlaying.creator or "",
+				cachePath = pausedSession.cachePath,
+			}
+		elseif queueIndex > 0 and queue[queueIndex] then
+			currentItem = cloneQueueItem(queue[queueIndex])
 		end
 		if currentItem then
 			normalizePlayItem(currentItem)
@@ -1702,8 +1716,6 @@ function Music.Init(S, I18nModule)
 		if S.MusicAutoQueue ~= false and #queue > 0 then
 			if curIdx > 0 and curIdx < #queue then
 				nextIdx = curIdx + 1
-			elseif curIdx <= 0 then
-				nextIdx = 1
 			end
 		end
 
@@ -1742,6 +1754,7 @@ function Music.Init(S, I18nModule)
 
 	local function attachProgress(sound)
 		disconnectProgress()
+		lastSoundTimePos = sound.TimePosition
 		endedConn = sound.Ended:Connect(function()
 			if currentSound ~= sound or paused or resuming or S.MusicLoop == true then
 				return
@@ -1760,6 +1773,17 @@ function Music.Init(S, I18nModule)
 				return
 			end
 			local tp = sound.TimePosition
+			if tp + 2 < lastSoundTimePos and lastSoundTimePos > 3 and playPosOffset > 3 then
+				local restorePos = math.max(playPosOffset, pausePosSnapshot)
+				pcall(function()
+					sound.TimePosition = restorePos
+				end)
+				playPosOffset = restorePos
+				playClockStart = os.clock()
+				lastSoundTimePos = restorePos
+				return
+			end
+			lastSoundTimePos = tp
 			if tp > 0.5 and tp >= dur - 0.35 then
 				handleTrackEnded()
 				return
@@ -2263,6 +2287,9 @@ function Music.Init(S, I18nModule)
 			logInfo("Pause soft @", string.format("%.1fs", pos))
 		end
 		notifyState()
+		if S.TransferScript then
+			task.defer(Music.SaveTransferState)
+		end
 	end
 
 	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen, seekPos)
@@ -2311,11 +2338,20 @@ function Music.Init(S, I18nModule)
 			pendingPauseAfterPlay = false
 			activePlaySeek = 0
 			task.defer(function()
-				task.wait(0.08)
-				Music.TogglePause()
+				for _ = 1, 30 do
+					if currentSound and currentSound.Parent and not loading and not resuming then
+						Music.TogglePause()
+						break
+					end
+					task.wait(0.05)
+				end
 			end)
 		else
 			activePlaySeek = 0
+		end
+		if transferRestorePending then
+			transferRestorePending = false
+			Music.ClearTransferState()
 		end
 	end
 
@@ -3079,6 +3115,7 @@ function Music.Init(S, I18nModule)
 			loading = false
 			activePlaySeek = 0
 			pendingPauseAfterPlay = false
+			transferRestorePending = false
 			lastError = lastFail
 				or "Ten upload nie ma OGG — Roblox odrzuca większość VBR MP3 z Archive"
 			logErr("Play failed po wszystkich formatach:", lastError)
@@ -3206,7 +3243,7 @@ function Music.Init(S, I18nModule)
 		queueIndex = math.clamp(math.floor(tonumber(data.queueIndex) or 0), 0, #queue)
 
 		local cur = data.current
-		Music.ClearTransferState()
+		transferRestorePending = true
 
 		if cur and typeof(cur.item) == "table" and cur.item.identifier then
 			local item = cloneQueueItem(cur.item)
@@ -3230,9 +3267,13 @@ function Music.Init(S, I18nModule)
 		end
 
 		if #queue > 0 then
+			transferRestorePending = false
+			Music.ClearTransferState()
 			notifyState()
 			return true
 		end
+		transferRestorePending = false
+		Music.ClearTransferState()
 		return false
 	end
 
@@ -3260,6 +3301,51 @@ function Music.Init(S, I18nModule)
 	end)
 
 	playFromQueue = Music.Play
+
+	local Players = game:GetService("Players")
+	local LP = Players.LocalPlayer
+	if LP then
+		LP.CharacterAdded:Connect(function()
+			task.defer(function()
+				task.wait(0.35)
+				if not nowPlaying or loading or resuming then
+					return
+				end
+				if paused and pausedSession then
+					return
+				end
+				local targetPos = playPosOffset
+				if targetPos < 1 then
+					return
+				end
+				if currentSound and currentSound.Parent then
+					local tp = currentSound.TimePosition
+					if tp + 2 < targetPos then
+						pcall(function()
+							local dur = currentSound.TimeLength
+							if dur > 0 then
+								targetPos = math.clamp(targetPos, 0, math.max(0, dur - 0.05))
+							end
+							currentSound.TimePosition = targetPos
+						end)
+						playPosOffset = targetPos
+						playClockStart = os.clock()
+						lastSoundTimePos = targetPos
+						logInfo("Respawn seek restore @", string.format("%.1fs", targetPos))
+					end
+					return
+				end
+				if nowPlaying.identifier then
+					logInfo("Respawn — odtwarzacz zniknął, wznawiam @", string.format("%.1fs", targetPos))
+					Music.Play(nowPlaying, {
+						keepQueue = true,
+						queueIndex = queueIndex > 0 and queueIndex or nil,
+						startPosition = targetPos,
+					})
+				end
+			end)
+		end)
+	end
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerCleanup(function()
