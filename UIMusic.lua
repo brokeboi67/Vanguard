@@ -1439,7 +1439,8 @@ function UIMusic.build(env)
 	})
 
 	local function musicVolPct(v)
-		return math.floor((v or S.MusicVolume or 0.65) * 100) .. "%"
+		local volMax = (Music and Music.GetVolumeMax and Music.GetVolumeMax()) or MUSIC_VOL_MAX
+		return math.floor((v or S.MusicVolume or 0.65) / volMax * 100) .. "%"
 	end
 
 	local function musicVolRel(v)
