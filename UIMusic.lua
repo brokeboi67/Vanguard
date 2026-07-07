@@ -771,11 +771,16 @@ function UIMusic.build(env)
 	end
 
 	local function copyLocalPath()
-		local path = localPathLabel()
-		if typeof(setclipboard) == "function" then
-			pcall(setclipboard, path)
-		elseif typeof(toclipboard) == "function" then
-			pcall(toclipboard, path)
+		local path
+		if Music and Music.CopyLocalDirPath then
+			path = Music.CopyLocalDirPath()
+		else
+			path = localPathLabel()
+			if typeof(setclipboard) == "function" then
+				pcall(setclipboard, path)
+			elseif typeof(toclipboard) == "function" then
+				pcall(toclipboard, path)
+			end
 		end
 		showNotify(L("music_local_copied", path), { type = "info", duration = 8 })
 	end
@@ -854,7 +859,7 @@ function UIMusic.build(env)
 			if opened then
 				showNotify(L("music_local_opened", clip), { type = "success", duration = 7 })
 			else
-				showNotify(L("music_local_copied", clip), { type = "info", duration = 8 })
+				showNotify(L("music_local_open_failed", clip), { type = "warn", duration = 8 })
 			end
 			return
 		end
@@ -865,9 +870,11 @@ function UIMusic.build(env)
 		Size = UDim2.new(1, 0, 1, 0),
 		BackgroundColor3 = BG,
 		BorderSizePixel = 0,
+		ClipsDescendants = true,
 		ZIndex = 5,
 		Parent = page,
 	})
+	C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Shell })
 
 	local Header = C("Frame", {
 		Size = UDim2.new(1, -8, 0, HEADER_H),
@@ -966,8 +973,8 @@ function UIMusic.build(env)
 
 	LocalPanel = C("Frame", {
 		Name = "LocalPanel",
-		Size = UDim2.new(1, 0, 0, LOCAL_BAR_H),
-		Position = UDim2.new(0, 0, 0, HEADER_H + LOCAL_PANEL_GAP),
+		Size = UDim2.new(1, -8, 0, LOCAL_BAR_H),
+		Position = UDim2.new(0, 4, 0, HEADER_H + LOCAL_PANEL_GAP),
 		BackgroundColor3 = BG3,
 		BackgroundTransparency = 0.35,
 		BorderSizePixel = 0,
@@ -975,7 +982,7 @@ function UIMusic.build(env)
 		ZIndex = 9,
 		Parent = Header,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = LocalPanel })
+	C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = LocalPanel })
 
 	LocalTipLbl = C("TextLabel", {
 		Size = UDim2.new(0, 150, 1, 0),
@@ -992,7 +999,7 @@ function UIMusic.build(env)
 	})
 
 	LocalPathLbl = C("TextLabel", {
-		Size = UDim2.new(1, -268, 1, 0),
+		Size = UDim2.new(1, -296, 1, 0),
 		Position = UDim2.new(0, 162, 0, 0),
 		BackgroundTransparency = 1,
 		Text = localPathLabel(),
@@ -1006,7 +1013,7 @@ function UIMusic.build(env)
 	})
 
 	local LocalBtnCol = C("Frame", {
-		Size = UDim2.new(0, 196, 1, 0),
+		Size = UDim2.new(0, 224, 1, 0),
 		Position = UDim2.new(1, -6, 0, 0),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundTransparency = 1,
@@ -1035,13 +1042,13 @@ function UIMusic.build(env)
 		ZIndex = 10,
 		Parent = LocalBtnCol,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = CopyPathBtn })
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = CopyPathBtn })
 	CopyPathBtn.MouseButton1Click:Connect(function()
 		copyLocalPath()
 	end)
 
 	OpenLocalBtn = C("TextButton", {
-		Size = UDim2.new(0, 58, 0, 24),
+		Size = UDim2.new(0, 86, 0, 24),
 		BackgroundColor3 = SPOTIFY,
 		Text = L("music_local_open"),
 		Font = Enum.Font.GothamBold,
@@ -1053,7 +1060,7 @@ function UIMusic.build(env)
 		ZIndex = 10,
 		Parent = LocalBtnCol,
 	})
-	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = OpenLocalBtn })
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = OpenLocalBtn })
 	OpenLocalBtn.MouseButton1Click:Connect(function()
 		openLocalFolder()
 	end)
@@ -1252,19 +1259,20 @@ function UIMusic.build(env)
 	end
 
 	local PlayerDock = C("Frame", {
-		Size = UDim2.new(1, 0, 0, PLAYER_H),
-		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, -8, 0, PLAYER_H),
+		Position = UDim2.new(0, 4, 1, -4),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundColor3 = Color3.fromRGB(16, 16, 20),
 		BorderSizePixel = 0,
 		ZIndex = 8,
 		Parent = Shell,
 	})
+	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = PlayerDock })
 	C("Frame", {
 		Size = UDim2.new(1, 0, 0, 1),
 		BackgroundColor3 = DIVIDER,
 		BorderSizePixel = 0,
-		ZIndex = 9,
+		ZIndex = 10,
 		Parent = PlayerDock,
 	})
 

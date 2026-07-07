@@ -1300,27 +1300,42 @@ function Music.Init(S, I18nModule)
 		return joinWinPath(root, LOCAL_DIR:gsub("/", "\\"))
 	end
 
+	local function tryShellCommand(cmd)
+		if typeof(execute) == "function" then
+			local ok, result = pcall(execute, cmd)
+			if ok and result ~= false then
+				return true
+			end
+		end
+		if typeof(exec) == "function" then
+			local ok, result = pcall(exec, cmd)
+			if ok and result ~= false then
+				return true
+			end
+		end
+		if typeof(os) == "table" and typeof(os.execute) == "function" then
+			local ok, result = pcall(os.execute, cmd)
+			if ok and result ~= false then
+				return true
+			end
+		end
+		return false
+	end
+
 	local function tryOpenWindowsFolder(absPath)
 		absPath = resolveAbsoluteWindowsPath(absPath)
 		if absPath == "" then
 			return false
 		end
-		local cmd = 'explorer "' .. absPath .. '"'
-		if typeof(execute) == "function" then
-			local ok = pcall(execute, cmd)
-			if ok then
-				return true
-			end
-		end
-		if typeof(exec) == "function" then
-			local ok = pcall(exec, cmd)
-			if ok then
-				return true
-			end
-		end
-		if typeof(os.execute) == "function" then
-			local ok = pcall(os.execute, cmd)
-			if ok then
+		absPath = absPath:gsub("\\+$", "")
+		local quoted = '"' .. absPath:gsub('"', "") .. '"'
+		local commands = {
+			"explorer " .. quoted,
+			"cmd /c start \"\" /D " .. quoted .. " explorer " .. quoted,
+			"cmd /c start explorer " .. quoted,
+		}
+		for _, cmd in ipairs(commands) do
+			if tryShellCommand(cmd) then
 				return true
 			end
 		end
@@ -2487,12 +2502,17 @@ function Music.Init(S, I18nModule)
 		local abs = Music.GetLocalDirAbsolute()
 		local clip = Music.GetLocalDirEnvPath()
 		local opened = abs and tryOpenWindowsFolder(abs) or false
+		return opened, clip, abs
+	end
+
+	function Music.CopyLocalDirPath()
+		local clip = Music.GetLocalDirEnvPath()
 		if typeof(setclipboard) == "function" then
 			pcall(setclipboard, clip)
 		elseif typeof(toclipboard) == "function" then
 			pcall(toclipboard, clip)
 		end
-		return opened, clip, abs
+		return clip
 	end
 
 	local function cacheDirToWindowsPath()

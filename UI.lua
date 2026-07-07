@@ -716,6 +716,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ZIndex = 3,
 		Parent = Menu,
 	})
+	C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Footer })
+	C("Frame", {
+		Size = UDim2.new(1, 0, 0, 12),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundColor3 = Color3.fromRGB(15, 15, 19),
+		BorderSizePixel = 0,
+		ZIndex = 4,
+		Parent = Footer,
+	})
 	C("Frame", {
 		Size = UDim2.new(1, 0, 0, 1),
 		BackgroundColor3 = Color3.fromRGB(32, 32, 40),
