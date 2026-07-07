@@ -722,7 +722,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	C("TextLabel", {
 		Name = "FooterStatus",
-		Size = UDim2.new(0, 200, 1, 0),
+		Size = UDim2.new(1, -230, 1, 0),
 		Position = UDim2.new(0, 16, 0, 0),
 		BackgroundTransparency = 1,
 		Text = "v" .. (S.Version or "?") .. "  ·  Ready",
@@ -730,6 +730,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		TextSize = 10,
 		TextColor3 = Color3.fromRGB(100, 100, 110),
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		ZIndex = 4,
 		Parent = Footer,
 	})
