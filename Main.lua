@@ -388,7 +388,9 @@ Effects.Init(Settings, Util)
 Animations.Init(Settings)
 World.Init(Settings)
 Music.Init(Settings, I18n)
-if isTransferLoad and Music.ApplyTransferVolume then
+if isTransferLoad and Music.ApplyTransferSettings then
+	pcall(Music.ApplyTransferSettings)
+elseif isTransferLoad and Music.ApplyTransferVolume then
 	pcall(Music.ApplyTransferVolume)
 end
 if isTransferLoad and Music.RestoreFromTransfer then

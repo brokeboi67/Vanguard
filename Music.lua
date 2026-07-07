@@ -1584,6 +1584,9 @@ function Music.Init(S, I18nModule)
 			gameId = game.GameId,
 			ts = os.time(),
 			volume = S.MusicVolume or 0.65,
+			loop = S.MusicLoop == true,
+			autoQueue = S.MusicAutoQueue ~= false,
+			showWidget = S.ShowMusicWidget ~= false,
 			queue = qOut,
 			queueIndex = queueIndex,
 			current = currentItem and {
@@ -3102,6 +3105,34 @@ function Music.Init(S, I18nModule)
 		return data
 	end
 
+	local function applyTransferPrefs(data)
+		if not data then
+			return false
+		end
+		local applied = false
+		local vol = tonumber(data.volume)
+		if vol then
+			Music.SetVolume(vol)
+			applied = true
+		end
+		if data.loop ~= nil then
+			S.MusicLoop = data.loop == true
+			if currentSound then
+				currentSound.Looped = S.MusicLoop
+			end
+			applied = true
+		end
+		if data.autoQueue ~= nil then
+			S.MusicAutoQueue = data.autoQueue ~= false
+			applied = true
+		end
+		if data.showWidget ~= nil then
+			S.ShowMusicWidget = data.showWidget ~= false
+			applied = true
+		end
+		return applied
+	end
+
 	function Music.ApplyTransferVolume()
 		local data = readTransferData()
 		if not data then
@@ -3115,6 +3146,10 @@ function Music.Init(S, I18nModule)
 		return false
 	end
 
+	function Music.ApplyTransferSettings()
+		return applyTransferPrefs(readTransferData())
+	end
+
 	function Music.RestoreFromTransfer()
 		local data, reason = readTransferData()
 		if not data then
@@ -3124,10 +3159,7 @@ function Music.Init(S, I18nModule)
 			return false
 		end
 
-		local vol = tonumber(data.volume)
-		if vol then
-			Music.SetVolume(vol)
-		end
+		applyTransferPrefs(data)
 
 		queue = {}
 		for _, it in ipairs(data.queue or {}) do

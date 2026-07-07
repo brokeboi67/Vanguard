@@ -25,6 +25,8 @@ local ICON_ASSETS = {
 	skipBack = "rbxassetid://7734058404",
 	skipForward = "rbxassetid://7734058495",
 	stop = "rbxassetid://7743872181",
+	repeat1 = "rbxassetid://7734051342",
+	repeatAll = "rbxassetid://7734051454",
 }
 
 function MusicIcons.holder(parent, C, name)
@@ -100,6 +102,18 @@ function MusicIcons.stop(holder, C, color, size)
 	size = size or 10
 	local inset = math.max(2, math.floor((24 - size) / 2))
 	MusicIcons._image(C, holder, "stop", color, inset)
+end
+
+function MusicIcons.setLoopIcon(holder, C, loopOne, color)
+	if not holder then
+		return
+	end
+	for _, ch in ipairs(holder:GetChildren()) do
+		if ch:IsA("ImageLabel") then
+			ch:Destroy()
+		end
+	end
+	MusicIcons._image(C, holder, loopOne and "repeat1" or "repeatAll", color or SPOTIFY, 0)
 end
 
 local function fmtTime(sec)
@@ -2096,17 +2110,15 @@ function UIMusic.buildWidget(env)
 	})
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ProgressKnob })
 
-	local LoopBadge = C("TextLabel", {
-		Size = UDim2.new(0, 16, 0, 12),
-		Position = UDim2.new(0, 10, 1, -11),
+	local LoopBadge = C("Frame", {
+		Size = UDim2.new(0, 12, 0, 12),
+		Position = UDim2.new(0, 8, 1, -13),
 		BackgroundTransparency = 1,
-		Text = "🔁",
-		Font = Enum.Font.Gotham,
-		TextSize = 9,
 		Visible = false,
 		ZIndex = 94,
 		Parent = Shell,
 	})
+	MusicIcons.setLoopIcon(LoopBadge, C, true, SPOTIFY)
 
 	local function formatMeta(state, pos, dur)
 		local artist = state.artist ~= "" and state.artist or "Audius"
