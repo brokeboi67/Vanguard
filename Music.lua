@@ -2317,10 +2317,6 @@ function Music.Init(S, I18nModule)
 	local function applySuccessfulPlay(sound, soundId, cachePath, item, fileLabel, myGen, seekPos)
 		currentSound = sound
 		lastError = nil
-		local idx = findQueueIndexForItem(item)
-		if idx > 0 then
-			queueIndex = idx
-		end
 		nowPlaying = {
 			identifier = item.identifier,
 			title = item.title or item.identifier,
@@ -2330,7 +2326,7 @@ function Music.Init(S, I18nModule)
 			cachePath = cachePath,
 			source = item.source,
 			localPath = item.localPath,
-			queueSlot = idx > 0 and idx or nil,
+			queueSlot = queueIndex > 0 and queueIndex or nil,
 		}
 		loading = false
 		paused = false
@@ -3357,8 +3353,9 @@ function Music.Init(S, I18nModule)
 		return false
 	end
 
+	local transferHeartbeatConn = nil
 	local transferHeartbeatAt = 0
-	RS.Heartbeat:Connect(function()
+	transferHeartbeatConn = RS.Heartbeat:Connect(function()
 		if not S.TransferScript then
 			return
 		end
@@ -3372,8 +3369,9 @@ function Music.Init(S, I18nModule)
 	end)
 
 	local TeleportService = game:GetService("TeleportService")
+	local tpConn = nil
 	pcall(function()
-		TeleportService.LocalPlayerLeaving:Connect(function()
+		tpConn = TeleportService.LocalPlayerLeaving:Connect(function()
 			if S.TransferScript then
 				Music.SaveTransferState()
 			end
@@ -3384,8 +3382,9 @@ function Music.Init(S, I18nModule)
 
 	local Players = game:GetService("Players")
 	local LP = Players.LocalPlayer
+	local charConn = nil
 	if LP then
-		LP.CharacterAdded:Connect(function()
+		charConn = LP.CharacterAdded:Connect(function()
 			task.defer(function()
 				task.wait(1.0)
 				if not nowPlaying or loading or resuming then
@@ -3480,6 +3479,18 @@ function Music.Init(S, I18nModule)
 		_G.VANGUARD.registerCleanup(function()
 			if S.TransferScript then
 				pcall(Music.SaveTransferState)
+			end
+			if transferHeartbeatConn then
+				transferHeartbeatConn:Disconnect()
+				transferHeartbeatConn = nil
+			end
+			if tpConn then
+				tpConn:Disconnect()
+				tpConn = nil
+			end
+			if charConn then
+				charConn:Disconnect()
+				charConn = nil
 			end
 		end)
 		_G.VANGUARD.registerCleanup(function()
