@@ -1,4 +1,5 @@
-local repo = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/Main.lua"
+-- Baza modułów (folder main/) — NIE dodawaj Main.lua na końcu
+local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
 do
 	local TS = game:GetService("TweenService")
@@ -246,7 +247,7 @@ local function Get(file)
 		_G.VG_BOOT.startDownloadCreep(fromPct, toPct)
 	end
 
-	local url = repo .. file
+	local url = REPO_BASE .. file
 	local src
 	local lastErr = "empty response"
 	for attempt = 1, 4 do
