@@ -23,6 +23,10 @@ function AntiBypass.getGuiRoot()
 			return hui
 		end
 	end
+	local okCore, coreGui = pcall(function() return game:GetService("CoreGui") end)
+	if okCore and coreGui then
+		return coreGui
+	end
 	local LP = game:GetService("Players").LocalPlayer
 	return LP:FindFirstChildOfClass("PlayerGui") or LP:WaitForChild("PlayerGui")
 end
@@ -58,6 +62,13 @@ function AntiBypass.protectInstance(gui)
 			local hui = gethui()
 			if hui and gui.Parent ~= hui then
 				gui.Parent = hui
+			end
+		end)
+	else
+		pcall(function()
+			local coreGui = game:GetService("CoreGui")
+			if coreGui and gui.Parent ~= coreGui then
+				gui.Parent = coreGui
 			end
 		end)
 	end
