@@ -1785,6 +1785,8 @@ function Music.Init(S, I18nModule)
 				pcall(function()
 					sound.TimePosition = restorePos
 				end)
+				-- If it fails to restore (e.g. engine broke the sound buffer), tp will remain low on next heartbeat
+				-- However, if it's completely stuck at 0, we can detect it here if we want, but CharacterAdded handles the recreation.
 				playPosOffset = restorePos
 				playClockStart = os.clock()
 				lastSoundTimePos = restorePos
@@ -3409,6 +3411,17 @@ function Music.Init(S, I18nModule)
 							end
 							currentSound.TimePosition = targetPos
 						end)
+						task.wait(0.15)
+						if currentSound and currentSound.TimePosition < targetPos - 2 then
+							logInfo("Respawn — sound broken (TimePosition locked), recreating @", string.format("%.1fs", targetPos))
+							Music.Play(nowPlaying, {
+								keepQueue = true,
+								queueIndex = queueIndex > 0 and queueIndex or nil,
+								startPosition = targetPos,
+								resumePaused = paused
+							})
+							return
+						end
 						playPosOffset = targetPos
 						playClockStart = os.clock()
 						lastSoundTimePos = targetPos
@@ -3431,6 +3444,17 @@ function Music.Init(S, I18nModule)
 								end
 								currentSound.TimePosition = targetPos
 							end)
+							task.wait(0.15)
+							if currentSound and currentSound.TimePosition < targetPos - 2 then
+								logInfo("Respawn delayed — sound broken, recreating @", string.format("%.1fs", targetPos))
+								Music.Play(nowPlaying, {
+									keepQueue = true,
+									queueIndex = queueIndex > 0 and queueIndex or nil,
+									startPosition = targetPos,
+									resumePaused = paused
+								})
+								return
+							end
 							playPosOffset = targetPos
 							playClockStart = os.clock()
 							lastSoundTimePos = targetPos
@@ -3445,6 +3469,7 @@ function Music.Init(S, I18nModule)
 						keepQueue = true,
 						queueIndex = queueIndex > 0 and queueIndex or nil,
 						startPosition = targetPos,
+						resumePaused = paused
 					})
 				end
 			end)
