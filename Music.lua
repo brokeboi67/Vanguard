@@ -1547,7 +1547,14 @@ function Music.Init(S, I18nModule)
 			cachedDuration = dur
 		end
 		if dur <= 0 then
-			return 0, cachedDuration
+			if paused then
+				return pausePosSnapshot, cachedDuration
+			end
+			if cachedDuration > 0 and playClockStart > 0 then
+				local estimatedPos = math.min(playPosOffset + (os.clock() - playClockStart), cachedDuration)
+				return estimatedPos, cachedDuration
+			end
+			return playPosOffset > 0 and playPosOffset or 0, cachedDuration
 		end
 		local pos = currentSound.TimePosition
 		if paused then
@@ -2171,8 +2178,16 @@ function Music.Init(S, I18nModule)
 	end
 
 	function Music.Seek(seconds)
-		if loading or resuming then
+		if resuming then
 			return false
+		end
+		if loading then
+			activePlaySeek = seconds
+			if Music.onProgress and cachedDuration > 0 then
+				pcall(Music.onProgress, seconds, cachedDuration)
+			end
+			notifyState()
+			return true
 		end
 		seconds = math.max(0, tonumber(seconds) or 0)
 		if currentSound and currentSound.Parent then
@@ -2219,7 +2234,12 @@ function Music.Init(S, I18nModule)
 		end
 		lastToggleAt = os.clock()
 
-		if loading or resuming then
+		if resuming then
+			return
+		end
+		if loading then
+			pendingPauseAfterPlay = not pendingPauseAfterPlay
+			notifyState()
 			return
 		end
 
@@ -3365,7 +3385,7 @@ function Music.Init(S, I18nModule)
 	if LP then
 		LP.CharacterAdded:Connect(function()
 			task.defer(function()
-				task.wait(0.35)
+				task.wait(1.0)
 				if not nowPlaying or loading or resuming then
 					return
 				end
@@ -3373,6 +3393,9 @@ function Music.Init(S, I18nModule)
 					return
 				end
 				local targetPos = playPosOffset
+				if playClockStart > 0 and not paused and cachedDuration > 0 then
+					targetPos = math.min(playPosOffset + (os.clock() - playClockStart), cachedDuration)
+				end
 				if targetPos < 1 then
 					return
 				end
@@ -3393,8 +3416,31 @@ function Music.Init(S, I18nModule)
 					end
 					return
 				end
-				if nowPlaying.identifier then
-					logInfo("Respawn — odtwarzacz zniknął, wznawiam @", string.format("%.1fs", targetPos))
+				for _retryAttempt = 1, 6 do
+					task.wait(0.3)
+					if loading or resuming then
+						return
+					end
+					if currentSound and currentSound.Parent then
+						local tp = currentSound.TimePosition
+						if tp + 2 < targetPos then
+							pcall(function()
+								local dur = currentSound.TimeLength
+								if dur > 0 then
+									targetPos = math.clamp(targetPos, 0, math.max(0, dur - 0.05))
+								end
+								currentSound.TimePosition = targetPos
+							end)
+							playPosOffset = targetPos
+							playClockStart = os.clock()
+							lastSoundTimePos = targetPos
+							logInfo("Respawn delayed restore @", string.format("%.1fs", targetPos))
+						end
+						return
+					end
+				end
+				if nowPlaying and nowPlaying.identifier and not loading and not resuming then
+					logInfo("Respawn — sound lost, restarting @", string.format("%.1fs", targetPos))
 					Music.Play(nowPlaying, {
 						keepQueue = true,
 						queueIndex = queueIndex > 0 and queueIndex or nil,
