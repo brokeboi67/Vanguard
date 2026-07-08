@@ -5,6 +5,14 @@ local AntiBypass = {}
 local concealed = setmetatable({}, { __mode = "k" })
 local protected = setmetatable({}, { __mode = "k" })
 
+local function cr(inst)
+	if typeof(cloneref) == "function" then
+		local ok, ref = pcall(cloneref, inst)
+		if ok and ref then return ref end
+	end
+	return inst
+end
+
 local GUI_ORDER = 999999
 
 function AntiBypass.setStealth(_mod)
@@ -13,21 +21,21 @@ end
 function AntiBypass.getGuiRoot()
 	if typeof(gethui) == "function" then
 		local ok, hui = pcall(gethui)
-		if ok and hui then
-			return hui
-		end
+		if ok and hui then return cr(hui) end
 	end
 	if typeof(get_hidden_gui) == "function" then
 		local ok, hui = pcall(get_hidden_gui)
-		if ok and hui then
-			return hui
-		end
+		if ok and hui then return cr(hui) end
 	end
-	local okCore, coreGui = pcall(function() return game:GetService("CoreGui") end)
+	local okCore, coreGui = pcall(function() return cr(game:GetService("CoreGui")) end)
 	if okCore and coreGui then
+		local robloxGui = coreGui:FindFirstChild("RobloxGui")
+		if robloxGui then
+			return cr(robloxGui)
+		end
 		return coreGui
 	end
-	local LP = game:GetService("Players").LocalPlayer
+	local LP = cr(game:GetService("Players").LocalPlayer)
 	return LP:FindFirstChildOfClass("PlayerGui") or LP:WaitForChild("PlayerGui")
 end
 
@@ -57,21 +65,12 @@ function AntiBypass.protectInstance(gui)
 	if typeof(protectgui) == "function" then
 		pcall(protectgui, gui)
 	end
-	if typeof(gethui) == "function" then
-		pcall(function()
-			local hui = gethui()
-			if hui and gui.Parent ~= hui then
-				gui.Parent = hui
-			end
-		end)
-	else
-		pcall(function()
-			local coreGui = game:GetService("CoreGui")
-			if coreGui and gui.Parent ~= coreGui then
-				gui.Parent = coreGui
-			end
-		end)
-	end
+	pcall(function()
+		local root = AntiBypass.getGuiRoot()
+		if root and gui.Parent ~= root then
+			gui.Parent = root
+		end
+	end)
 	if typeof(cloneref) == "function" then
 		pcall(cloneref, gui)
 	end
