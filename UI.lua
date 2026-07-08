@@ -2067,7 +2067,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
-	local T1 = MakeTab("visuals", true, true, 1)
+	local function buildTabPages()
+		local T1 = MakeTab("visuals", true, true, 1)
 	local T3 = MakeTab("legit", false, false, 2)
 	local TR = MakeTab("rage", false, false, 3)
 	local TAnim = MakeTab("anim", false, false, 4)
@@ -2967,9 +2968,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		TweenPlay = TweenPlay,
 	}).refreshConfigList
 	refreshConfigMenusLang = UIConfigMenus.refreshLang
+	end
+	buildTabPages()
 
 	ApplyLayout(true, false)
 
+	local function setupMenuInput()
 	-- // Menu show / hide
 	local function SetMenuOpen(open)
 		if open == menuOpen then
@@ -3189,6 +3193,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MenuScale.Scale = 0.985
 		SetMenuOpen(true)
 	end)
+
+	end
+	setupMenuInput()
 
 	Cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
 		refreshLayout()
