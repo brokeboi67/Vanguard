@@ -1,42 +1,254 @@
 -- Baza modułów (folder main/) — NIE dodawaj Main.lua na końcu
 local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
+pcall(function()
+	if typeof(hookfunction) ~= "function" then
+		return
+	end
+	local Content = game:GetService("ContentProvider")
+	local CoreGui = game:GetService("CoreGui")
+	local function isCoreScan(assets)
+		if typeof(assets) ~= "table" then
+			return false
+		end
+		for _, item in ipairs(assets) do
+			if item == CoreGui or item == game.CoreGui then
+				return true
+			end
+			if typeof(item) == "Instance" and item:IsDescendantOf(CoreGui) then
+				return true
+			end
+		end
+		return false
+	end
+	local oldPreload
+	local preloadWrap
+	if typeof(newcclosure) == "function" then
+		preloadWrap = newcclosure(function(self, assets, ...)
+			if self == Content and isCoreScan(assets) then
+				return
+			end
+			return oldPreload(self, assets, ...)
+		end)
+	else
+		preloadWrap = function(self, assets, ...)
+			if self == Content and isCoreScan(assets) then
+				return
+			end
+			return oldPreload(self, assets, ...)
+		end
+	end
+	oldPreload = hookfunction(Content.PreloadAsync, preloadWrap)
+
+	local Players = game:GetService("Players")
+	local LP = Players.LocalPlayer
+	if LP then
+		local oldKick
+		local kickWrap
+		if typeof(newcclosure) == "function" then
+			kickWrap = newcclosure(function(self, ...)
+				if self == LP then
+					return
+				end
+				return oldKick(self, ...)
+			end)
+		else
+			kickWrap = function(self, ...)
+				if self == LP then
+					return
+				end
+				return oldKick(self, ...)
+			end
+		end
+		oldKick = hookfunction(LP.Kick, kickWrap)
+	end
+end)
+
+local function earlyAdonisShield()
+	if typeof(getgc) ~= "function" then
+		return
+	end
+
+	local function makeC(fn)
+		if typeof(newcclosure) == "function" then
+			local ok, w = pcall(newcclosure, fn)
+			if ok and w then
+				return w
+			end
+		end
+		return fn
+	end
+
+	local hookedD, hookedK, hookedP = {}, {}, {}
+	local detStub = makeC(function(_a, _b, _c)
+		return true
+	end)
+	local killStub = makeC(function(_info) end)
+	local procStub = makeC(function(...)
+		return true
+	end)
+
+	local function replace(tbl, key, val)
+		pcall(function()
+			rawset(tbl, key, val)
+		end)
+	end
+
+	local function hookTable(v, depth)
+		if typeof(v) ~= "table" or depth > 3 then
+			return
+		end
+		local hasVars = rawget(v, "Variables") ~= nil or rawget(v, "Logs") ~= nil
+		local hasRemote = typeof(rawget(v, "Remote")) == "Instance"
+
+		for _, key in ipairs({ "Detected", "Detect", "detect" }) do
+			local det = rawget(v, key)
+			if typeof(det) == "function" and not hookedD[det] then
+				hookedD[det] = true
+				if typeof(hookfunction) == "function" then
+					pcall(hookfunction, det, detStub)
+				end
+				replace(v, key, detStub)
+			end
+		end
+
+		for _, key in ipairs({ "checkClient", "CheckClient", "Check" }) do
+			local chk = rawget(v, key)
+			if typeof(chk) == "function" and not hookedD[chk] then
+				hookedD[chk] = true
+				if typeof(hookfunction) == "function" then
+					pcall(hookfunction, chk, detStub)
+				end
+				replace(v, key, detStub)
+			end
+		end
+
+		local kill = rawget(v, "Kill")
+		if typeof(kill) == "function" and (hasVars or hasRemote) and not hookedK[kill] then
+			hookedK[kill] = true
+			if typeof(hookfunction) == "function" then
+				pcall(hookfunction, kill, killStub)
+			end
+			replace(v, "Kill", killStub)
+		end
+
+		local proc = rawget(v, "Process")
+		if typeof(proc) == "function" and not hookedP[proc] then
+			local det = rawget(v, "Detected") or rawget(v, "Detect")
+			if typeof(det) == "function" then
+				hookedP[proc] = true
+				if typeof(hookfunction) == "function" then
+					pcall(hookfunction, proc, procStub)
+				end
+				replace(v, "Process", procStub)
+			end
+		end
+
+		for _, key in ipairs({ "Anti", "Client", "AC", "Module", "Main", "Core" }) do
+			local sub = rawget(v, key)
+			if typeof(sub) == "table" then
+				hookTable(sub, depth + 1)
+			end
+		end
+	end
+
+	local function run()
+		for _, v in getgc(true) do
+			hookTable(v, 0)
+		end
+		local ok, loose = pcall(getgc, false)
+		if ok and typeof(loose) == "table" then
+			for _, v in loose do
+				hookTable(v, 0)
+			end
+		end
+	end
+
+	local function scan()
+		if typeof(setthreadidentity) == "function" then
+			pcall(function()
+				setthreadidentity(2)
+				run()
+				setthreadidentity(7)
+			end)
+		else
+			run()
+		end
+	end
+
+	scan()
+	task.spawn(function()
+		for _ = 1, 120 do
+			scan()
+			task.wait(1)
+		end
+	end)
+end
+earlyAdonisShield()
+
+local function resolveBootstrapRoot(cr)
+	if typeof(gethui) == "function" then
+		local ok, h = pcall(gethui)
+		if ok and h then
+			return cr(h), true
+		end
+	end
+	if typeof(get_hidden_gui) == "function" then
+		local ok, h = pcall(get_hidden_gui)
+		if ok and h then
+			return cr(h), true
+		end
+	end
+	if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+		local ok, cg = pcall(function()
+			return cr(game:GetService("CoreGui"))
+		end)
+		if ok and cg then
+			return cg, false
+		end
+	end
+	return nil, false
+end
+
+local function randomBootstrapName()
+	local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	local n = math.random(12, 18)
+	local out = {}
+	for i = 1, n do
+		local idx = math.random(1, #chars)
+		out[i] = chars:sub(idx, idx)
+	end
+	return table.concat(out)
+end
+
 do
 	local TS = game:GetService("TweenService")
 	local Players = game:GetService("Players")
 	local LP = Players.LocalPlayer or Players.PlayerAdded:Wait()
-	local pg = LP:WaitForChild("PlayerGui", 30)
 	local cr = typeof(cloneref) == "function" and cloneref or function(i) return i end
-	local rootGui = pg
-	pcall(function()
-		if typeof(gethui) == "function" then
-			local h = gethui()
-			if h then rootGui = cr(h); return end
-		end
-		if typeof(get_hidden_gui) == "function" then
-			local h = get_hidden_gui()
-			if h then rootGui = cr(h); return end
-		end
-		local cg = cr(game:GetService("CoreGui"))
-		local rg = cg:FindFirstChild("RobloxGui")
-		if rg then rootGui = cr(rg); return end
-		rootGui = cg
-	end)
+	local rootGui, hasHidden = resolveBootstrapRoot(cr)
+	if not rootGui then
+		rootGui = cr(LP:WaitForChild("PlayerGui", 30))
+	end
 
-	if rootGui and not rootGui:FindFirstChild("VG_Bootstrap") then
+	local bootName = randomBootstrapName()
+	if rootGui and not rootGui:FindFirstChild(bootName) then
 		local ACC = Color3.fromRGB(29, 185, 84)
 		local gui = Instance.new("ScreenGui")
-		gui.Name = "VG_Bootstrap"
+		gui.Name = bootName
 		gui.IgnoreGuiInset = true
 		gui.ResetOnSpawn = false
 		gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 		gui.DisplayOrder = 8
-		gui.Parent = rootGui
 		if typeof(protectgui) == "function" then
 			pcall(protectgui, gui)
 		end
 		if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
 			pcall(syn.protect_gui, gui)
+		end
+		gui.Parent = rootGui
+		if typeof(cloneref) == "function" then
+			pcall(cloneref, gui)
 		end
 
 		local card = Instance.new("Frame")
@@ -157,6 +369,7 @@ do
 		end
 		_G.VG_BOOT = {
 			gui = gui,
+			bootName = bootName,
 			update = function(label, pct, countText, animate)
 				pct = math.clamp(pct or 0, 0, 1)
 				activeCreep = nil
@@ -331,6 +544,9 @@ bootProgress("Inicjalizacja", 0.70)
 
 local Stealth = Get("Stealth.lua")
 local AntiBypass = Get("AntiBypass.lua")
+pcall(function()
+	AntiBypass.installShield({ AntiBypass = true })
+end)
 Stealth.Init(AntiBypass)
 
 local Settings = Get("Settings.lua")
@@ -380,7 +596,16 @@ local GameSupport = Get("GameSupport.lua")
 
 bootProgress("Moduły gry", 0.74)
 
+AntiBypass.installShield(Settings)
+bootProgress("Anti-Cheat", 0.755)
+if Settings.AntiBypass ~= false then
+	AntiBypass.waitForAdonis(14)
+end
+
 local CG = AntiBypass.getGuiRoot()
+if not CG then
+	error("[Vanguard] Brak gethui/protect_gui — włącz hidden UI w executorze (Potassium)", 0)
+end
 pcall(function()
 	for _, name in ipairs({ "VanguardESP", "VanguardHUD", "VanguardFriendPopup" }) do
 		local old = CG:FindFirstChild(name)
@@ -428,15 +653,19 @@ if isTransferLoad and Music.RestoreFromTransfer then
 	end)
 end
 bootProgress("Interfejs", 0.86)
-UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
+task.spawn(function()
+	AntiBypass.scanAdonis()
+	task.wait(0.35)
+	UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
 
-Settings.Unload = function()
-	Settings.Unloaded = true
-	Core.unload()
-end
+	Settings.Unload = function()
+		Settings.Unloaded = true
+		Core.unload()
+	end
 
-if Settings.TransferScript and Settings.ApplyTransferScript then
-	pcall(Settings.ApplyTransferScript)
-end
+	if Settings.TransferScript and Settings.ApplyTransferScript then
+		pcall(Settings.ApplyTransferScript)
+	end
 
-Stealth.silentPrint(isTransferLoad and "VANGUARD: Loaded (transfer)" or "VANGUARD: Loaded")
+	Stealth.silentPrint(isTransferLoad and "VANGUARD: Loaded (transfer)" or "VANGUARD: Loaded")
+end)
