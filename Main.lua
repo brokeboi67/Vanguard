@@ -1,4 +1,4 @@
-local repo = "https://raw.githubusercontent.com/brokeboi67/Vanguard/refs/heads/main/Main.lua"
+local repo = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/Main.lua"
 
 do
 	local TS = game:GetService("TweenService")

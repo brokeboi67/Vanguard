@@ -3,7 +3,7 @@
 
 local Teleport = {}
 
-local LOADER_URL = "https://raw.githubusercontent.com/brokeboi67/Vanguard/refs/heads/main/Main.lua"
+local LOADER_URL = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/Main.lua"
 local SKIP_PATH = "Vanguard/skip_transfer"
 local MUSIC_TRANSFER_PATH = "Vanguard/transfer_music.json"
 
