@@ -247,7 +247,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		Name = "HitSound",
 		SoundId = "rbxassetid://" .. HIT_SOUND_IDS[1],
 		Volume = 0.45,
-		Parent = game:GetService("SoundService"),
+		Parent = CG,
 	})
 	task.spawn(function()
 		for i, id in ipairs(HIT_SOUND_IDS) do

@@ -103,12 +103,9 @@ function Core.begin()
 		registerGui = Core.registerGui,
 		registerCleanup = Core.registerCleanup,
 	}
-
-	local marker = Instance.new("BoolValue")
-	marker.Name = MARKER_NAME
-	marker.Value = true
-	marker.Parent = game:GetService("Players").LocalPlayer
-	_G.VANGUARD.Marker = marker
+	if typeof(getgenv) == "function" then
+		getgenv().VANGUARD = _G.VANGUARD
+	end
 end
 
 function Core.registerGui(gui)

@@ -6,7 +6,24 @@ do
 	local Players = game:GetService("Players")
 	local LP = Players.LocalPlayer or Players.PlayerAdded:Wait()
 	local pg = LP:WaitForChild("PlayerGui", 30)
-	if pg and not pg:FindFirstChild("VG_Bootstrap") then
+	local cr = typeof(cloneref) == "function" and cloneref or function(i) return i end
+	local rootGui = pg
+	pcall(function()
+		if typeof(gethui) == "function" then
+			local h = gethui()
+			if h then rootGui = cr(h); return end
+		end
+		if typeof(get_hidden_gui) == "function" then
+			local h = get_hidden_gui()
+			if h then rootGui = cr(h); return end
+		end
+		local cg = cr(game:GetService("CoreGui"))
+		local rg = cg:FindFirstChild("RobloxGui")
+		if rg then rootGui = cr(rg); return end
+		rootGui = cg
+	end)
+
+	if rootGui and not rootGui:FindFirstChild("VG_Bootstrap") then
 		local ACC = Color3.fromRGB(29, 185, 84)
 		local gui = Instance.new("ScreenGui")
 		gui.Name = "VG_Bootstrap"
@@ -14,7 +31,7 @@ do
 		gui.ResetOnSpawn = false
 		gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 		gui.DisplayOrder = 9999999
-		gui.Parent = pg
+		gui.Parent = rootGui
 
 		local card = Instance.new("Frame")
 		card.Name = "Card"
