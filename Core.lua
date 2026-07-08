@@ -2,8 +2,6 @@
 
 local Core = {}
 
-local MARKER_NAME = "VanguardActiveMarker"
-
 function Core.isActive()
 	return _G.VANGUARD ~= nil and _G.VANGUARD.Active == true
 end
@@ -17,6 +15,12 @@ function Core.showDuplicateWarning()
 	end
 
 	local root = LP:WaitForChild("PlayerGui")
+	if typeof(gethui) == "function" then
+		local ok, hui = pcall(gethui)
+		if ok and hui then
+			root = hui
+		end
+	end
 	if root:FindFirstChild("VG_DuplicateWarn") then
 		return
 	end
@@ -25,8 +29,8 @@ function Core.showDuplicateWarning()
 	sg.Name = "VG_DuplicateWarn"
 	sg.IgnoreGuiInset = true
 	sg.ResetOnSpawn = false
-	sg.ZIndexBehavior = Enum.ZIndexBehavior.Global
-	sg.DisplayOrder = 999999
+	sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	sg.DisplayOrder = 8
 	sg.Parent = root
 
 	local dim = Instance.new("Frame")
@@ -140,12 +144,6 @@ function Core.unload()
 			end
 		end)
 	end
-
-	pcall(function()
-		if _G.VANGUARD.Marker then
-			_G.VANGUARD.Marker:Destroy()
-		end
-	end)
 
 	local Lighting = game:GetService("Lighting")
 	for _, inst in ipairs(Lighting:GetChildren()) do

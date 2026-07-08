@@ -4,6 +4,7 @@ local AntiBypass = {}
 
 local concealed = setmetatable({}, { __mode = "k" })
 local protected = setmetatable({}, { __mode = "k" })
+local cachedGuiRoot = nil
 
 local function cr(inst)
 	if typeof(cloneref) == "function" then
@@ -13,30 +14,54 @@ local function cr(inst)
 	return inst
 end
 
-local GUI_ORDER = 999999
+local function tryHiddenGui(fn)
+	if typeof(fn) ~= "function" then
+		return nil
+	end
+	local ok, hui = pcall(fn)
+	if ok and hui and typeof(hui) == "Instance" then
+		return cr(hui)
+	end
+	return nil
+end
+
+local GUI_ORDER = 8
 
 function AntiBypass.setStealth(_mod)
 end
 
 function AntiBypass.getGuiRoot()
-	if typeof(gethui) == "function" then
-		local ok, hui = pcall(gethui)
-		if ok and hui then return cr(hui) end
+	if cachedGuiRoot and cachedGuiRoot.Parent then
+		return cachedGuiRoot
 	end
-	if typeof(get_hidden_gui) == "function" then
-		local ok, hui = pcall(get_hidden_gui)
-		if ok and hui then return cr(hui) end
-	end
-	local okCore, coreGui = pcall(function() return cr(game:GetService("CoreGui")) end)
-	if okCore and coreGui then
-		local robloxGui = coreGui:FindFirstChild("RobloxGui")
-		if robloxGui then
-			return cr(robloxGui)
+
+	local root = tryHiddenGui(gethui)
+		or tryHiddenGui(get_hidden_gui)
+		or tryHiddenGui(gethiddengui)
+
+	if not root and typeof(getgenv) == "function" then
+		local g = getgenv()
+		if g and typeof(g.gethui) == "function" then
+			root = tryHiddenGui(g.gethui)
 		end
-		return coreGui
 	end
-	local LP = cr(game:GetService("Players").LocalPlayer)
-	return LP:FindFirstChildOfClass("PlayerGui") or LP:WaitForChild("PlayerGui")
+
+	if not root then
+		local okCore, coreGui = pcall(function() return cr(game:GetService("CoreGui")) end)
+		if okCore and coreGui then
+			root = coreGui
+		end
+	end
+
+	if not root then
+		local LP = cr(game:GetService("Players").LocalPlayer)
+		root = LP and (LP:FindFirstChildOfClass("PlayerGui") or LP:WaitForChild("PlayerGui"))
+	end
+
+	if root then
+		cachedGuiRoot = root
+	end
+	return root
 end
 
 function AntiBypass.bringToFront(gui)
@@ -46,7 +71,7 @@ function AntiBypass.bringToFront(gui)
 	pcall(function()
 		if gui:IsA("ScreenGui") then
 			gui.DisplayOrder = GUI_ORDER
-			gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 			gui.ResetOnSpawn = false
 			gui.IgnoreGuiInset = true
 		end
@@ -65,14 +90,14 @@ function AntiBypass.protectInstance(gui)
 	if typeof(protectgui) == "function" then
 		pcall(protectgui, gui)
 	end
-	pcall(function()
-		local root = AntiBypass.getGuiRoot()
-		if root and gui.Parent ~= root then
-			gui.Parent = root
-		end
-	end)
 	if typeof(cloneref) == "function" then
 		pcall(cloneref, gui)
+	end
+	local root = AntiBypass.getGuiRoot()
+	if root and gui.Parent ~= root then
+		pcall(function()
+			gui.Parent = root
+		end)
 	end
 end
 

@@ -29,9 +29,15 @@ do
 		gui.Name = "VG_Bootstrap"
 		gui.IgnoreGuiInset = true
 		gui.ResetOnSpawn = false
-		gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-		gui.DisplayOrder = 9999999
+		gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+		gui.DisplayOrder = 8
 		gui.Parent = rootGui
+		if typeof(protectgui) == "function" then
+			pcall(protectgui, gui)
+		end
+		if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+			pcall(syn.protect_gui, gui)
+		end
 
 		local card = Instance.new("Frame")
 		card.Name = "Card"
@@ -387,12 +393,14 @@ end)
 local GUI = Stealth.create("ScreenGui", {
 	IgnoreGuiInset = true,
 	ResetOnSpawn = false,
-	ZIndexBehavior = Enum.ZIndexBehavior.Global,
-	DisplayOrder = 999999,
+	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	DisplayOrder = 8,
 	Parent = CG,
 })
 
+AntiBypass.concealGui(GUI)
 Core.registerGui(GUI)
+AntiBypass.Init(Settings)
 
 bootProgress("ESP & HUD", 0.78)
 
@@ -420,15 +428,12 @@ if isTransferLoad and Music.RestoreFromTransfer then
 	end)
 end
 bootProgress("Interfejs", 0.86)
-UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n)
+UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
 
 Settings.Unload = function()
 	Settings.Unloaded = true
 	Core.unload()
 end
-
-AntiBypass.concealGui(GUI)
-AntiBypass.Init(Settings)
 
 if Settings.TransferScript and Settings.ApplyTransferScript then
 	pcall(Settings.ApplyTransferScript)

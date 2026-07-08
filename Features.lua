@@ -28,9 +28,12 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	HudGui.IgnoreGuiInset = true
 	HudGui.ResetOnSpawn = false
 	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	HudGui.DisplayOrder = 999998
-	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+	HudGui.DisplayOrder = 7
 	HudGui.Parent = CG
+
+	if AntiBypassModule then
+		AntiBypassModule.concealGui(HudGui)
+	end
 
 	local Z = {
 		cross = 10,
@@ -2024,10 +2027,6 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		scanHumanoids()
 		updSpectators()
 	end)
-
-	if AntiBypassModule then
-		AntiBypassModule.concealGui(HudGui)
-	end
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerGui(HudGui)

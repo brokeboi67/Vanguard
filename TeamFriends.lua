@@ -116,7 +116,7 @@ local function getPlayerFromInstance(inst)
 	return Players:GetPlayerFromCharacter(model)
 end
 
-function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
+function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged, AntiBypassModule)
 	if initDone then
 		return
 	end
@@ -125,9 +125,14 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 	local LP = Players.LocalPlayer
 	local ACC = accent or Color3.fromRGB(0, 255, 150)
 
-	local CG = pcall(function() return game:GetService("CoreGui").Name end)
-		and game:GetService("CoreGui")
-		or LP:WaitForChild("PlayerGui")
+	local CG
+	if AntiBypassModule and AntiBypassModule.getGuiRoot then
+		CG = AntiBypassModule.getGuiRoot()
+	elseif ParentGUI and ParentGUI.Parent then
+		CG = ParentGUI.Parent
+	else
+		CG = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+	end
 	pcall(function() CG.VanguardFriendPopup:Destroy() end)
 
 	local function C(class, props)
@@ -142,10 +147,14 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged)
 		Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8),
 		IgnoreGuiInset = true,
 		ResetOnSpawn = false,
-		DisplayOrder = 999997,
+		DisplayOrder = 6,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = CG,
 	})
+
+	if AntiBypassModule then
+		AntiBypassModule.concealGui(PopGui)
+	end
 
 	local PopupRoot = C("Frame", {
 		Name = "FriendPopupRoot",

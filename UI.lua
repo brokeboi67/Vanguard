@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule)
+function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule, AntiBypassModule)
 	local I18n = I18nModule
 	local function L(key, ...)
 		if I18n and I18n.t then
@@ -52,8 +52,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local tabLayoutProfiles = {}
 	local RS = game:GetService("RunService")
 
-	ParentGUI.DisplayOrder = 999999
-	ParentGUI.ZIndexBehavior = Enum.ZIndexBehavior.Global
+	ParentGUI.DisplayOrder = 8
+	ParentGUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 	local function refreshLayout()
 		local vp = Cam.ViewportSize
@@ -82,7 +82,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		return UDim2.new(0.5, -w / 2, 0.5, -h / 2)
 	end
 
-	-- // Loading overlay — minimalist top bar
+	-- // Loading overlay — minimalist top bar (hidden until protected)
 	local Loader = C("Frame", {
 		Name = "Loader",
 		Size = UDim2.new(1, 0, 1, 0),
@@ -90,6 +90,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		BackgroundTransparency = 0.08,
 		BorderSizePixel = 0,
 		ZIndex = 100,
+		Visible = false,
 		Parent = ParentGUI,
 	})
 
@@ -2806,7 +2807,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end, "btn_clear_list")
 	refreshFriendList()
 	if TF then
-		TF.Init(S, ParentGUI, ACC, refreshFriendList)
+		TF.Init(S, ParentGUI, ACC, refreshFriendList, AntiBypassModule)
 	end
 
 	local SHud = MakeCard(T2, "HUD", nil, 2)
@@ -3114,6 +3115,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	-- // Loading
 	task.spawn(function()
+		task.wait()
+		if AntiBypassModule then
+			AntiBypassModule.concealGui(ParentGUI)
+		end
+		Loader.Visible = true
+
 		Fill.Size = UDim2.new(0.72, 0, 1, 0)
 		LoaderPct.Text = "72%"
 		LoaderStatus.Text = "Modules loaded"
