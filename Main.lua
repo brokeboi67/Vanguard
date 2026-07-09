@@ -1,6 +1,8 @@
 -- Baza modułów (folder main/) — NIE dodawaj Main.lua na końcu
 local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
+_G.__VG_LOADING = true
+
 do
 	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
 		local earlyStatus = { detected = 0, kill = 0, debugInfo = false }
@@ -112,20 +114,6 @@ do
 			return hooked
 		end
 
-		local function withIdentity(fn)
-			if typeof(setthreadidentity) == "function" then
-				local ok = pcall(function()
-					setthreadidentity(2)
-					fn()
-					setthreadidentity(7)
-				end)
-				if ok then
-					return
-				end
-			end
-			fn()
-		end
-
 		local function lightScan()
 			local ok, list = pcall(getgc, false)
 			if ok and typeof(list) == "table" then
@@ -135,39 +123,18 @@ do
 			end
 		end
 
-		local function deepScan(yieldPeriodic)
-			withIdentity(function()
-				local ok, list = pcall(getgc, true)
-				if not ok or typeof(list) ~= "table" then
-					return
-				end
-				local scanned = 0
-				for _, v in list do
-					scanned += 1
-					if typeof(v) == "table" and typeof(rawget(v, "Detected")) == "function" then
-						tryHookTable(v)
-					end
-					if yieldPeriodic and scanned % 250 == 0 then
-						task.wait()
-					end
-				end
-			end)
-		end
-
-		withIdentity(lightScan)
+		lightScan()
 
 		task.spawn(function()
-			local deepIters = { [1] = true, [3] = true, [6] = true }
-			for i = 1, 20 do
-				if deepIters[i] then
-					deepScan(true)
-				else
-					lightScan()
+			for i = 1, 12 do
+				if _G.__VG_LOADING ~= true then
+					break
 				end
+				lightScan()
 				if earlyStatus.detected > 0 and earlyStatus.debugInfo then
 					break
 				end
-				task.wait(0.35 + (i % 3) * 0.05)
+				task.wait(0.4 + (i % 3) * 0.05)
 			end
 		end)
 	end
@@ -560,6 +527,7 @@ local function Get(file)
 	if _G.VG_MODULE_CACHE[file] then
 		loadStep += 1
 		bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów", true)
+		task.wait()
 		return _G.VG_MODULE_CACHE[file]
 	end
 
@@ -611,6 +579,7 @@ local function Get(file)
 	_G.VG_MODULE_CACHE[file] = res
 	loadStep += 1
 	bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów", true)
+	task.wait()
 	return res
 end
 
@@ -686,6 +655,11 @@ local UI = Get("UI.lua")
 local Menus = Get("Menus.lua")
 local GameSupport = Get("GameSupport.lua")
 
+_G.__VG_LOADING = false
+if AntiBypass.onLoadComplete then
+	pcall(AntiBypass.onLoadComplete)
+end
+
 bootProgress("Moduły gry", 0.74)
 
 AntiBypass.installShield(Settings)
@@ -747,7 +721,7 @@ end
 bootProgress("Interfejs", 0.86)
 task.spawn(function()
 	if Settings.AntiBypass ~= false then
-		AntiBypass.waitForAdonis(5)
+		AntiBypass.waitForAdonis(2)
 		AntiBypass.logAdonisDiagnostics("pre-UI", Settings)
 	end
 	AntiBypass.setUiBuilding(true)

@@ -28,6 +28,10 @@ local ADONIS_KILL_GRACE_SEC = 2.5
 local PLAYER_KICK_MAX_BLOCK = 5
 local PLAYER_KICK_GRACE_SEC = 3.0
 
+local function isLoadPhase()
+	return _G.__VG_LOADING == true
+end
+
 local function makeCclosure(fn)
 	if typeof(newcclosure) == "function" then
 		local ok, wrapped = pcall(newcclosure, fn)
@@ -468,6 +472,9 @@ local function runDeepScanBatched()
 	if typeof(getgc) ~= "function" then
 		return false
 	end
+	if isLoadPhase() then
+		return false
+	end
 	if uiBuilding then
 		return false
 	end
@@ -501,7 +508,7 @@ end
 
 local function scheduleDeepScan(delaySec)
 	task.delay(delaySec or 2, function()
-		if adonisWatcherStop then
+		if adonisWatcherStop or isLoadPhase() then
 			return
 		end
 		if adonisHookCount > 0 and debugInfoHooked then
@@ -521,7 +528,8 @@ function AntiBypass.scanAdonis(opts)
 	end
 	opts = opts or {}
 	local hooked = runLightScan()
-	if not hooked and opts.deep == true and not uiBuilding then
+	local allowDeep = opts.deep == true and not isLoadPhase() and not uiBuilding
+	if not hooked and allowDeep then
 		hooked = runDeepScanBatched()
 	end
 	ensureDebugInfoHook()
@@ -553,14 +561,17 @@ function AntiBypass.startAdonisWatcher()
 			if adonisWatcherStop then
 				return
 			end
-			AntiBypass.scanAdonis({ deep = i <= 2 and not uiBuilding })
+			local allowDeep = not isLoadPhase() and i <= 2 and not uiBuilding
+			AntiBypass.scanAdonis({ deep = allowDeep })
 			ensureDebugInfoHook()
 			if adonisHookCount > 0 and debugInfoHooked then
 				return
 			end
 			task.wait(i <= 3 and 1.5 or 5)
 		end
-		scheduleDeepScan(1)
+		if not isLoadPhase() then
+			scheduleDeepScan(1)
+		end
 		while not adonisWatcherStop do
 			if adonisHookCount > 0 and debugInfoHooked then
 				task.wait(30)
@@ -573,17 +584,37 @@ function AntiBypass.startAdonisWatcher()
 	end)
 end
 
+function AntiBypass.onLoadComplete()
+	if isLoadPhase() then
+		return
+	end
+	task.defer(function()
+		task.wait(0.3)
+		if isLoadPhase() or adonisWatcherStop then
+			return
+		end
+		AntiBypass.scanAdonis({ deep = true })
+		ensureDebugInfoHook()
+		if adonisHookCount <= 0 or not debugInfoHooked then
+			scheduleDeepScan(1.5)
+		end
+	end)
+end
+
 function AntiBypass.waitForAdonis(timeoutSec)
-	timeoutSec = math.min(timeoutSec or 4, 6)
+	timeoutSec = math.min(timeoutSec or 2, 2)
 	local deadline = os.clock() + timeoutSec
 	repeat
-		AntiBypass.scanAdonis({ deep = adonisHookCount <= 0 and not uiBuilding })
+		AntiBypass.scanAdonis({ deep = false })
 		ensureDebugInfoHook()
 		if adonisHookCount > 0 and debugInfoHooked then
 			return true
 		end
 		task.wait(0.35)
 	until os.clock() >= deadline
+	if not isLoadPhase() and (adonisHookCount <= 0 or not debugInfoHooked) then
+		scheduleDeepScan(0.5)
+	end
 	return adonisHookCount > 0
 end
 
@@ -598,13 +629,14 @@ function AntiBypass.logAdonisDiagnostics(tag, S)
 	local st = AntiBypass.getAdonisStatus()
 	local early = _G.__VG_EARLY_ADONIS
 	local msg = string.format(
-		"[VG:%s] hooked=%s count=%d debugInfo=%s hidden=%s uiBuilding=%s",
+		"[VG:%s] hooked=%s count=%d debugInfo=%s hidden=%s uiBuilding=%s loading=%s",
 		tostring(tag or "?"),
 		tostring(st.hooked),
 		st.count,
 		tostring(st.debugInfoHooked),
 		tostring(st.hasHiddenGui),
-		tostring(uiBuilding)
+		tostring(uiBuilding),
+		tostring(isLoadPhase())
 	)
 	if early then
 		msg ..= string.format(
