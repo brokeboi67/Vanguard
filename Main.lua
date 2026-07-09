@@ -1,6 +1,144 @@
 -- Baza modułów (folder main/) — NIE dodawaj Main.lua na końcu
 local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
+do
+	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
+		local earlyStatus = { detected = 0, kill = 0, debugInfo = false }
+		_G.__VG_EARLY_ADONIS = earlyStatus
+
+		local function makeCC(fn)
+			if typeof(newcclosure) == "function" then
+				local ok, wrapped = pcall(newcclosure, fn)
+				if ok and wrapped then
+					return wrapped
+				end
+			end
+			return fn
+		end
+
+		local blankDetected = makeCC(function(_action, _info, _noCrash)
+			return true
+		end)
+		local blankKill = makeCC(function(_info) end)
+		local detectedRef = nil
+		local debugInfoHooked = false
+
+		local function hookDebugInfo()
+			if debugInfoHooked or not detectedRef then
+				return
+			end
+			local renv = typeof(getrenv) == "function" and getrenv() or nil
+			if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
+				return
+			end
+			local oldInfo = renv.debug.info
+			local wrap = makeCC(function(levelOrFunc, ...)
+				if levelOrFunc == detectedRef then
+					return coroutine.yield(coroutine.running())
+				end
+				return oldInfo(levelOrFunc, ...)
+			end)
+			local ok = pcall(hookfunction, renv.debug.info, wrap)
+			if ok then
+				debugInfoHooked = true
+				earlyStatus.debugInfo = true
+			end
+		end
+
+		local function tryHookTable(v)
+			if typeof(v) ~= "table" then
+				return false
+			end
+			local hooked = false
+			local hasVars = rawget(v, "Variables") ~= nil
+			local hasProcess = typeof(rawget(v, "Process")) == "function"
+
+			for _, key in ipairs({ "Detected", "Detect", "detect" }) do
+				local det = rawget(v, key)
+				if typeof(det) == "function" then
+					if not detectedRef then
+						detectedRef = det
+					end
+					pcall(hookfunction, det, blankDetected)
+					pcall(rawset, v, key, blankDetected)
+					earlyStatus.detected += 1
+					hooked = true
+					hookDebugInfo()
+				end
+			end
+
+			local kill = rawget(v, "Kill")
+			if typeof(kill) == "function" and hasVars and hasProcess then
+				pcall(hookfunction, kill, blankKill)
+				pcall(rawset, v, "Kill", blankKill)
+				earlyStatus.kill += 1
+				hooked = true
+			end
+
+			return hooked
+		end
+
+		local function withIdentity(fn)
+			if typeof(setthreadidentity) == "function" then
+				local ok = pcall(function()
+					setthreadidentity(2)
+					fn()
+					setthreadidentity(7)
+				end)
+				if ok then
+					return
+				end
+			end
+			fn()
+		end
+
+		local function lightScan()
+			local ok, list = pcall(getgc, false)
+			if ok and typeof(list) == "table" then
+				for _, v in list do
+					tryHookTable(v)
+				end
+			end
+		end
+
+		local function deepScan(yieldPeriodic)
+			withIdentity(function()
+				local ok, list = pcall(getgc, true)
+				if not ok or typeof(list) ~= "table" then
+					return
+				end
+				local scanned = 0
+				for _, v in list do
+					scanned += 1
+					if typeof(v) == "table" and typeof(rawget(v, "Detected")) == "function" then
+						tryHookTable(v)
+					end
+					if yieldPeriodic and scanned % 250 == 0 then
+						task.wait()
+					end
+				end
+			end)
+		end
+
+		withIdentity(lightScan)
+
+		task.spawn(function()
+			local deepIters = { [1] = true, [3] = true, [6] = true }
+			for i = 1, 20 do
+				if deepIters[i] then
+					deepScan(true)
+				else
+					lightScan()
+				end
+				if earlyStatus.detected > 0 and earlyStatus.debugInfo then
+					break
+				end
+				task.wait(0.35 + (i % 3) * 0.05)
+			end
+		end)
+	end
+end
+
 pcall(function()
 	if typeof(hookfunction) ~= "function" then
 		return

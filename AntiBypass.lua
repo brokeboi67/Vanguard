@@ -13,8 +13,10 @@ local hookedDetectedFns = {}
 local hookedKillFns = {}
 local hookedProcessFns = {}
 local adonisHookCount = 0
-local adonisDeepScanDone = false
+local adonisLastDeepScanAt = 0
+local ADONIS_DEEP_SCAN_COOLDOWN = 4
 local adonisWatcherStop = false
+local debugInfoHooked = false
 
 local function makeCclosure(fn)
 	if typeof(newcclosure) == "function" then
@@ -31,6 +33,8 @@ local blankDetected = makeCclosure(function(_action, _info, _noCrash)
 end)
 
 local blankKill = makeCclosure(function(_info) end)
+
+local blankDisconnect = makeCclosure(function(_info) end)
 
 local blankProcess = makeCclosure(function(...)
 	return true
@@ -234,7 +238,40 @@ local function withScanIdentity(fn)
 	fn()
 end
 
-local function hookDetectedFn(fn)
+local function ensureDebugInfoHook()
+	if debugInfoHooked or not adonisDetectedRef or typeof(hookfunction) ~= "function" then
+		return false
+	end
+	local renv = typeof(getrenv) == "function" and getrenv() or nil
+	if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
+		return false
+	end
+	local oldInfo = renv.debug.info
+	local wrap = makeCclosure(function(levelOrFunc, ...)
+		if levelOrFunc == adonisDetectedRef then
+			return coroutine.yield(coroutine.running())
+		end
+		return oldInfo(levelOrFunc, ...)
+	end)
+	local ok = pcall(function()
+		hookfunction(renv.debug.info, wrap)
+	end)
+	if ok then
+		debugInfoHooked = true
+	end
+	return ok
+end
+
+local function replaceTableFn(tbl, key, replacement)
+	if typeof(tbl) ~= "table" or typeof(key) ~= "string" then
+		return
+	end
+	pcall(function()
+		rawset(tbl, key, replacement)
+	end)
+end
+
+local function hookDetectedFn(fn, tbl, key)
 	if typeof(fn) ~= "function" or hookedDetectedFns[fn] then
 		return false
 	end
@@ -245,7 +282,11 @@ local function hookDetectedFn(fn)
 	if typeof(hookfunction) == "function" then
 		pcall(hookfunction, fn, blankDetected)
 	end
+	if tbl and key then
+		replaceTableFn(tbl, key, blankDetected)
+	end
 	adonisHookCount += 1
+	ensureDebugInfoHook()
 	return true
 end
 
@@ -273,39 +314,28 @@ local function hookProcessFn(fn)
 	return true
 end
 
-local function replaceTableFn(tbl, key, replacement)
-	if typeof(tbl) ~= "table" or typeof(key) ~= "string" then
-		return
-	end
-	pcall(function()
-		rawset(tbl, key, replacement)
-	end)
-end
-
-local function isAdonisCandidate(v)
+local function isAdonisClientTable(v)
 	if typeof(v) ~= "table" then
 		return false
 	end
 	if typeof(rawget(v, "Detected")) == "function" then
 		return true
 	end
-	if typeof(rawget(v, "Detect")) == "function" then
-		return true
-	end
-	if typeof(rawget(v, "Kill")) == "function" and (rawget(v, "Variables") or rawget(v, "Logs")) then
+	if typeof(rawget(v, "Kill")) == "function" and rawget(v, "Variables") and rawget(v, "Process") then
 		return true
 	end
 	if typeof(rawget(v, "Anti")) == "table" then
 		return true
 	end
-	if typeof(rawget(v, "Remote")) == "Instance" and typeof(rawget(v, "Kill")) == "function" then
-		return true
-	end
 	return false
 end
 
+local function isAdonisCandidate(v)
+	return isAdonisClientTable(v)
+end
+
 local function tryHookAdonisTable(v, depth)
-	if typeof(v) ~= "table" or depth > 2 then
+	if typeof(v) ~= "table" or depth > 3 then
 		return false
 	end
 	if depth == 0 and not isAdonisCandidate(v) then
@@ -313,14 +343,13 @@ local function tryHookAdonisTable(v, depth)
 	end
 
 	local hooked = false
-	local hasVars = rawget(v, "Variables") ~= nil or rawget(v, "Logs") ~= nil
-	local hasRemote = typeof(rawget(v, "Remote")) == "Instance"
+	local hasVars = rawget(v, "Variables") ~= nil
+	local hasProcess = typeof(rawget(v, "Process")) == "function"
 
 	for _, key in ipairs({ "Detected", "Detect", "detect" }) do
 		local det = rawget(v, key)
 		if typeof(det) == "function" then
-			if hookDetectedFn(det) then
-				replaceTableFn(v, key, blankDetected)
+			if hookDetectedFn(det, v, key) then
 				hooked = true
 			end
 		end
@@ -329,15 +358,14 @@ local function tryHookAdonisTable(v, depth)
 	for _, key in ipairs({ "checkClient", "CheckClient", "Check" }) do
 		local chk = rawget(v, key)
 		if typeof(chk) == "function" then
-			if hookDetectedFn(chk) then
-				replaceTableFn(v, key, blankDetected)
+			if hookDetectedFn(chk, v, key) then
 				hooked = true
 			end
 		end
 	end
 
 	local kill = rawget(v, "Kill")
-	if typeof(kill) == "function" and (hasVars or hasRemote) then
+	if typeof(kill) == "function" and hasVars and hasProcess then
 		if hookKillFn(kill) then
 			replaceTableFn(v, "Kill", blankKill)
 			hooked = true
@@ -345,17 +373,40 @@ local function tryHookAdonisTable(v, depth)
 	end
 
 	local proc = rawget(v, "Process")
-	if typeof(proc) == "function" then
-		local det = rawget(v, "Detected") or rawget(v, "Detect")
-		if typeof(det) == "function" then
-			if hookProcessFn(proc) then
-				replaceTableFn(v, "Process", blankProcess)
-				hooked = true
-			end
+	if typeof(proc) == "function" and hasVars then
+		if hookProcessFn(proc) then
+			replaceTableFn(v, "Process", blankProcess)
+			hooked = true
 		end
 	end
 
-	for _, key in ipairs({ "Anti", "Client", "AC" }) do
+	local disc = rawget(v, "Disconnect")
+	if typeof(disc) == "function" and hasVars then
+		if typeof(hookfunction) == "function" then
+			pcall(hookfunction, disc, blankDisconnect)
+		end
+		replaceTableFn(v, "Disconnect", blankDisconnect)
+		hooked = true
+	end
+
+	local send = rawget(v, "Send")
+	if typeof(send) == "function" and hasVars then
+		if typeof(hookfunction) == "function" then
+			pcall(function()
+				local oldSend
+				local sendWrap = makeCclosure(function(evt, ...)
+					if evt == "Detected" or tostring(evt):find("Detected", 1, true) then
+						return nil
+					end
+					return oldSend(evt, ...)
+				end)
+				oldSend = hookfunction(send, sendWrap)
+			end)
+		end
+		hooked = true
+	end
+
+	for _, key in ipairs({ "Anti", "Client", "Core", "Remote" }) do
 		local sub = rawget(v, key)
 		if typeof(sub) == "table" and tryHookAdonisTable(sub, depth + 1) then
 			hooked = true
@@ -363,29 +414,6 @@ local function tryHookAdonisTable(v, depth)
 	end
 
 	return hooked
-end
-
-local function hookDebugInfoSanity()
-	if not adonisDetectedRef or typeof(hookfunction) ~= "function" then
-		return
-	end
-	local renv = typeof(getrenv) == "function" and getrenv() or nil
-	if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
-		return
-	end
-	local oldInfo = renv.debug.info
-	local wrap = function(levelOrFunc, ...)
-		if levelOrFunc == adonisDetectedRef then
-			return coroutine.yield(coroutine.running())
-		end
-		return oldInfo(levelOrFunc, ...)
-	end
-	if typeof(newcclosure) == "function" then
-		wrap = newcclosure(wrap)
-	end
-	pcall(function()
-		hookfunction(renv.debug.info, wrap)
-	end)
 end
 
 local function scanAdonisList(list)
@@ -408,40 +436,49 @@ local function runLightScan()
 end
 
 local function runDeepScanBatched()
-	if adonisDeepScanDone or typeof(getgc) ~= "function" then
+	if typeof(getgc) ~= "function" then
 		return false
 	end
-	adonisDeepScanDone = true
+	if adonisHookCount > 0 and debugInfoHooked then
+		return false
+	end
+	local now = os.clock()
+	if now - adonisLastDeepScanAt < ADONIS_DEEP_SCAN_COOLDOWN then
+		return false
+	end
+	adonisLastDeepScanAt = now
 	local hooked = false
 	local scanned = 0
 	withScanIdentity(function()
 		for _, v in getgc(true) do
 			scanned += 1
-			if isAdonisCandidate(v) and tryHookAdonisTable(v, 0) then
+			if isAdonisClientTable(v) and tryHookAdonisTable(v, 0) then
 				hooked = true
 			end
 			if scanned % 250 == 0 then
 				task.wait()
 			end
-			if adonisHookCount > 0 then
+			if adonisHookCount > 0 and debugInfoHooked then
 				break
 			end
 		end
 	end)
+	ensureDebugInfoHook()
 	return hooked
 end
 
 local function scheduleDeepScan(delaySec)
-	if adonisDeepScanDone or adonisHookCount > 0 then
-		return
-	end
-	task.delay(delaySec or 25, function()
-		if adonisWatcherStop or adonisHookCount > 0 then
+	task.delay(delaySec or 2, function()
+		if adonisWatcherStop then
 			return
 		end
-		local ok = AntiBypass.scanAdonis({ deep = true })
-		if ok and adonisDetectedRef then
-			hookDebugInfoSanity()
+		if adonisHookCount > 0 and debugInfoHooked then
+			return
+		end
+		AntiBypass.scanAdonis({ deep = true })
+		ensureDebugInfoHook()
+		if adonisHookCount <= 0 or not debugInfoHooked then
+			scheduleDeepScan(ADONIS_DEEP_SCAN_COOLDOWN)
 		end
 	end)
 end
@@ -452,12 +489,10 @@ function AntiBypass.scanAdonis(opts)
 	end
 	opts = opts or {}
 	local hooked = runLightScan()
-	if not hooked and opts.deep == true and not adonisHookCount then
+	if not hooked and opts.deep == true then
 		hooked = runDeepScanBatched()
 	end
-	if hooked and adonisDetectedRef and opts.debugInfo == true then
-		hookDebugInfoSanity()
-	end
+	ensureDebugInfoHook()
 	return hooked or adonisHookCount > 0
 end
 
@@ -472,6 +507,7 @@ function AntiBypass.getAdonisStatus()
 		hasGetgc = typeof(getgc) == "function",
 		hasHookfunction = typeof(hookfunction) == "function",
 		hasHiddenGui = usingHiddenGui,
+		debugInfoHooked = debugInfoHooked,
 	}
 end
 
@@ -480,32 +516,42 @@ function AntiBypass.startAdonisWatcher()
 		return
 	end
 	adonisScanTask = task.spawn(function()
-		task.wait(1.5)
-		for _ = 1, 4 do
-			if adonisWatcherStop or adonisHookCount > 0 then
+		task.wait(0.5)
+		for i = 1, 8 do
+			if adonisWatcherStop then
 				return
 			end
-			AntiBypass.scanAdonis({ deep = false })
-			if adonisHookCount > 0 then
+			AntiBypass.scanAdonis({ deep = i <= 2 })
+			ensureDebugInfoHook()
+			if adonisHookCount > 0 and debugInfoHooked then
 				return
 			end
-			task.wait(4)
+			task.wait(i <= 3 and 1.5 or 5)
 		end
-		if not adonisWatcherStop and adonisHookCount <= 0 then
-			scheduleDeepScan(8)
-		end
+		scheduleDeepScan(1)
 		while not adonisWatcherStop do
-			if adonisHookCount > 0 then
-				return
+			if adonisHookCount > 0 and debugInfoHooked then
+				task.wait(30)
+			else
+				AntiBypass.scanAdonis({ deep = false })
+				ensureDebugInfoHook()
+				task.wait(12)
 			end
-			AntiBypass.scanAdonis({ deep = false })
-			task.wait(30)
 		end
 	end)
 end
 
-function AntiBypass.waitForAdonis(_timeoutSec)
-	AntiBypass.scanAdonis({ deep = false })
+function AntiBypass.waitForAdonis(timeoutSec)
+	timeoutSec = math.min(timeoutSec or 4, 6)
+	local deadline = os.clock() + timeoutSec
+	repeat
+		AntiBypass.scanAdonis({ deep = adonisHookCount <= 0 })
+		ensureDebugInfoHook()
+		if adonisHookCount > 0 and debugInfoHooked then
+			return true
+		end
+		task.wait(0.35)
+	until os.clock() >= deadline
 	return adonisHookCount > 0
 end
 
@@ -554,6 +600,7 @@ function AntiBypass.installShield(S)
 	end
 
 	AntiBypass.scanAdonis({ deep = false })
+	ensureDebugInfoHook()
 	AntiBypass.startAdonisWatcher()
 	return true
 end
