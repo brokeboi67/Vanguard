@@ -2993,6 +2993,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	refreshConfigMenusLang = UIConfigMenus.refreshLang
 	end
 	buildTabPages()
+	end
+	buildControlsAndTabs()
 
 	if AntiBypassModule and AntiBypassModule.concealGui then
 		AntiBypassModule.concealGui(ParentGUI)
