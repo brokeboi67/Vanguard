@@ -17,6 +17,16 @@ local adonisLastDeepScanAt = 0
 local ADONIS_DEEP_SCAN_COOLDOWN = 4
 local adonisWatcherStop = false
 local debugInfoHooked = false
+local uiBuilding = false
+local adonisKillAttempts = 0
+local adonisKillGraceEnd = 0
+local playerKickAttempts = 0
+local playerKickGraceEnd = 0
+
+local ADONIS_KILL_MAX_BLOCK = 4
+local ADONIS_KILL_GRACE_SEC = 2.5
+local PLAYER_KICK_MAX_BLOCK = 5
+local PLAYER_KICK_GRACE_SEC = 3.0
 
 local function makeCclosure(fn)
 	if typeof(newcclosure) == "function" then
@@ -32,9 +42,29 @@ local blankDetected = makeCclosure(function(_action, _info, _noCrash)
 	return true
 end)
 
-local blankKill = makeCclosure(function(_info) end)
+local function shouldAllowAdonisKill()
+	adonisKillAttempts += 1
+	if adonisKillAttempts > ADONIS_KILL_MAX_BLOCK then
+		return true
+	end
+	if adonisKillGraceEnd <= 0 then
+		adonisKillGraceEnd = os.clock() + ADONIS_KILL_GRACE_SEC
+	end
+	return os.clock() >= adonisKillGraceEnd
+end
 
-local blankDisconnect = makeCclosure(function(_info) end)
+local function makeSoftKill(oldKill)
+	return makeCclosure(function(info)
+		if shouldAllowAdonisKill() then
+			if typeof(oldKill) == "function" then
+				pcall(oldKill, info)
+			end
+			return
+		end
+	end)
+end
+
+local blankKill = makeCclosure(function(_info) end)
 
 local blankProcess = makeCclosure(function(...)
 	return true
@@ -247,11 +277,17 @@ local function ensureDebugInfoHook()
 		return false
 	end
 	local oldInfo = renv.debug.info
-	local wrap = makeCclosure(function(levelOrFunc, ...)
+	local wrap = makeCclosure(function(levelOrFunc, what, ...)
 		if levelOrFunc == adonisDetectedRef then
-			return coroutine.yield(coroutine.running())
+			if what == "n" then
+				return "Adonis"
+			end
+			if what == "s" or what == "l" then
+				return "=[C]"
+			end
+			return nil
 		end
-		return oldInfo(levelOrFunc, ...)
+		return oldInfo(levelOrFunc, what, ...)
 	end)
 	local ok = pcall(function()
 		hookfunction(renv.debug.info, wrap)
@@ -295,8 +331,10 @@ local function hookKillFn(fn)
 		return false
 	end
 	hookedKillFns[fn] = true
+	local softKill = makeSoftKill(fn)
+	blankKill = softKill
 	if typeof(hookfunction) == "function" then
-		pcall(hookfunction, fn, blankKill)
+		pcall(hookfunction, fn, softKill)
 	end
 	adonisHookCount += 1
 	return true
@@ -380,15 +418,6 @@ local function tryHookAdonisTable(v, depth)
 		end
 	end
 
-	local disc = rawget(v, "Disconnect")
-	if typeof(disc) == "function" and hasVars then
-		if typeof(hookfunction) == "function" then
-			pcall(hookfunction, disc, blankDisconnect)
-		end
-		replaceTableFn(v, "Disconnect", blankDisconnect)
-		hooked = true
-	end
-
 	local send = rawget(v, "Send")
 	if typeof(send) == "function" and hasVars then
 		if typeof(hookfunction) == "function" then
@@ -437,6 +466,9 @@ end
 
 local function runDeepScanBatched()
 	if typeof(getgc) ~= "function" then
+		return false
+	end
+	if uiBuilding then
 		return false
 	end
 	if adonisHookCount > 0 and debugInfoHooked then
@@ -489,7 +521,7 @@ function AntiBypass.scanAdonis(opts)
 	end
 	opts = opts or {}
 	local hooked = runLightScan()
-	if not hooked and opts.deep == true then
+	if not hooked and opts.deep == true and not uiBuilding then
 		hooked = runDeepScanBatched()
 	end
 	ensureDebugInfoHook()
@@ -521,7 +553,7 @@ function AntiBypass.startAdonisWatcher()
 			if adonisWatcherStop then
 				return
 			end
-			AntiBypass.scanAdonis({ deep = i <= 2 })
+			AntiBypass.scanAdonis({ deep = i <= 2 and not uiBuilding })
 			ensureDebugInfoHook()
 			if adonisHookCount > 0 and debugInfoHooked then
 				return
@@ -545,7 +577,7 @@ function AntiBypass.waitForAdonis(timeoutSec)
 	timeoutSec = math.min(timeoutSec or 4, 6)
 	local deadline = os.clock() + timeoutSec
 	repeat
-		AntiBypass.scanAdonis({ deep = adonisHookCount <= 0 })
+		AntiBypass.scanAdonis({ deep = adonisHookCount <= 0 and not uiBuilding })
 		ensureDebugInfoHook()
 		if adonisHookCount > 0 and debugInfoHooked then
 			return true
@@ -553,6 +585,47 @@ function AntiBypass.waitForAdonis(timeoutSec)
 		task.wait(0.35)
 	until os.clock() >= deadline
 	return adonisHookCount > 0
+end
+
+function AntiBypass.setUiBuilding(active)
+	uiBuilding = active == true
+end
+
+function AntiBypass.logAdonisDiagnostics(tag, S)
+	if not (_G.VG_DEBUG_ADONIS or (S and S.DebugAdonis)) then
+		return
+	end
+	local st = AntiBypass.getAdonisStatus()
+	local early = _G.__VG_EARLY_ADONIS
+	local msg = string.format(
+		"[VG:%s] hooked=%s count=%d debugInfo=%s hidden=%s uiBuilding=%s",
+		tostring(tag or "?"),
+		tostring(st.hooked),
+		st.count,
+		tostring(st.debugInfoHooked),
+		tostring(st.hasHiddenGui),
+		tostring(uiBuilding)
+	)
+	if early then
+		msg ..= string.format(
+			" early={det=%d,kill=%d,dbg=%s}",
+			early.detected or 0,
+			early.kill or 0,
+			tostring(early.debugInfo)
+		)
+	end
+	print(msg)
+end
+
+local function shouldAllowPlayerKick()
+	playerKickAttempts += 1
+	if playerKickAttempts > PLAYER_KICK_MAX_BLOCK then
+		return true
+	end
+	if playerKickGraceEnd <= 0 then
+		playerKickGraceEnd = os.clock() + PLAYER_KICK_GRACE_SEC
+	end
+	return os.clock() >= playerKickGraceEnd
 end
 
 function AntiBypass.installShield(S)
@@ -582,6 +655,9 @@ function AntiBypass.installShield(S)
 					local oldKick
 					local kickWrap = makeCclosure(function(self, ...)
 						if self == player then
+							if shouldAllowPlayerKick() then
+								return oldKick(self, ...)
+							end
 							return
 						end
 						return oldKick(self, ...)

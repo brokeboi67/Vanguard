@@ -16,23 +16,25 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	local CG
 	if AntiBypassModule and AntiBypassModule.getGuiRoot then
 		CG = AntiBypassModule.getGuiRoot()
-	else
-		CG = pcall(function() return game:GetService("CoreGui").Name end)
-			and game:GetService("CoreGui")
-			or LP:WaitForChild("PlayerGui")
+	end
+	if not CG then
+		CG = LP:WaitForChild("PlayerGui")
 	end
 	pcall(function() CG.VanguardHUD:Destroy() end)
 
+	local hudName = (AntiBypassModule and AntiBypassModule.randomName and AntiBypassModule.randomName())
+		or ("Ui" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 10))
 	local HudGui = Instance.new("ScreenGui")
-	HudGui.Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8)
+	HudGui.Name = hudName
 	HudGui.IgnoreGuiInset = true
 	HudGui.ResetOnSpawn = false
 	HudGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	HudGui.DisplayOrder = 7
-	HudGui.Parent = CG
-
 	if AntiBypassModule then
 		AntiBypassModule.concealGui(HudGui)
+	end
+	if not HudGui.Parent then
+		HudGui.Parent = CG
 	end
 
 	local Z = {

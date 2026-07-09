@@ -3,6 +3,16 @@
 local UI = {}
 
 function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule, AntiBypassModule)
+	if AntiBypassModule then
+		if AntiBypassModule.setUiBuilding then
+			AntiBypassModule.setUiBuilding(true)
+		end
+		if AntiBypassModule.concealGui then
+			AntiBypassModule.concealGui(ParentGUI)
+		end
+	end
+	task.wait()
+
 	local I18n = I18nModule
 	local function L(key, ...)
 		if I18n and I18n.t then
@@ -280,6 +290,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	refreshLoaderGameInfo()
+
+	task.wait()
 
 	-- // Main menu
 	local MenuRoot = C("CanvasGroup", {
@@ -788,6 +800,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		colorRegistry = colorRegistry,
 	})
 
+	local ApplyLayout
+	local refreshConfigList
+	local refreshConfigMenusLang
+	local refreshAllControls
+	local setFooterStatus
+
+	local function buildControlsAndTabs()
+		task.wait()
+
 	local function formatBindName(name)
 		if name == "MouseButton1" then
 			return "M1"
@@ -806,7 +827,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local updateEspColorControls
-	local setFooterStatus
 
 	local function CancelTweens(list)
 		for _, tw in ipairs(list) do
@@ -2068,15 +2088,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local function buildTabPages()
+		task.wait()
 		local T1 = MakeTab("visuals", true, true, 1)
 	local T3 = MakeTab("legit", false, false, 2)
 	local TR = MakeTab("rage", false, false, 3)
+	task.wait()
 	local TAnim = MakeTab("anim", false, false, 4)
 	local TWorld = MakeTab("world", false, false, 5)
 	local T2 = MakeTab("settings", false, false, 6)
 	local TM = MakeTab("misc", false, false, 7)
 	local TMenu = MakeTab("menus", false, false, 8)
 	local T4 = MakeTab("config", false, false, 9)
+	task.wait()
 	local TMusic = MakeTab("music", false, false, 10, { fixed = true, layout = "music" })
 
 	if UIMusicModule and MusicModule then
@@ -2970,6 +2993,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	refreshConfigMenusLang = UIConfigMenus.refreshLang
 	end
 	buildTabPages()
+
+	if AntiBypassModule and AntiBypassModule.concealGui then
+		AntiBypassModule.concealGui(ParentGUI)
+	end
+	if AntiBypassModule and AntiBypassModule.setUiBuilding then
+		AntiBypassModule.setUiBuilding(false)
+	end
 
 	ApplyLayout(true, false)
 

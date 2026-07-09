@@ -143,17 +143,21 @@ function TeamFriends.Init(S, ParentGUI, accent, onFriendChanged, AntiBypassModul
 		return i
 	end
 
+	local popName = (AntiBypassModule and AntiBypassModule.randomName and AntiBypassModule.randomName())
+		or ("Ui" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 10))
 	local PopGui = C("ScreenGui", {
-		Name = "VG_" .. string.sub(game:GetService("HttpService"):GenerateGUID(false), 1, 8),
+		Name = popName,
 		IgnoreGuiInset = true,
 		ResetOnSpawn = false,
 		DisplayOrder = 6,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		Parent = CG,
 	})
 
 	if AntiBypassModule then
 		AntiBypassModule.concealGui(PopGui)
+	end
+	if not PopGui.Parent then
+		PopGui.Parent = CG
 	end
 
 	local PopupRoot = C("Frame", {
