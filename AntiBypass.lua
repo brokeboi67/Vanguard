@@ -259,10 +259,17 @@ local function isBlockedRemoteArg(arg)
 		return false
 	end
 	local lower = string.lower(arg)
-	return lower == "detected"
-		or lower:find("detect", 1, true) ~= nil
-		or lower == "kick"
-		or lower:find("clientcheck", 1, true) ~= nil
+	return lower == "detected" or lower:find("clientcheck", 1, true) ~= nil
+end
+
+local function shouldCheckRemote(self)
+	if typeof(self) ~= "userdata" and typeof(self) ~= "Instance" then
+		return false
+	end
+	local ok, isRemote = pcall(function()
+		return self:IsA("RemoteEvent") or self:IsA("RemoteFunction")
+	end)
+	return ok and isRemote
 end
 
 local function installNamecallShield()
@@ -272,13 +279,15 @@ local function installNamecallShield()
 	local oldNC
 	local wrap = makeCclosure(function(self, ...)
 		local method = getnamecallmethod()
-		if method == "FireServer" or method == "fireServer" or method == "InvokeServer" or method == "invokeServer" then
-			for i = 1, select("#", ...) do
-				if isBlockedRemoteArg(select(i, ...)) then
-					if _G.__VG_LOG_FILE then
-						_G.__VG_LOG_FILE("BLOCK", "ab namecall " .. method .. " " .. tostring(select(i, ...)))
+		if method == "FireServer" or method == "InvokeServer" then
+			if shouldCheckRemote(self) then
+				for i = 1, select("#", ...) do
+					if isBlockedRemoteArg(select(i, ...)) then
+						if _G.__VG_LOG_FILE then
+							_G.__VG_LOG_FILE("BLOCK", "ab namecall " .. method .. " " .. tostring(select(i, ...)))
+						end
+						return nil
 					end
-					return nil
 				end
 			end
 		end
@@ -322,9 +331,14 @@ local function installAdonisLogTrigger()
 				or message:find("Start ClientCheck", 1, true)
 				or message:find("Loading Core Module", 1, true) then
 				task.defer(function()
-					AntiBypass.scanAdonis({ deep = not isLoadPhase() and not uiBuilding })
+					AntiBypass.scanAdonis({ deep = false })
 					ensureDebugInfoHook()
-					installIndexKickBypass()
+					if not isLoadPhase() and not uiBuilding then
+						task.delay(1.5, function()
+							AntiBypass.scanAdonis({ deep = true })
+							ensureDebugInfoHook()
+						end)
+					end
 				end)
 			end
 		end)
@@ -652,7 +666,7 @@ function AntiBypass.startAdonisWatcher()
 			if adonisWatcherStop then
 				return
 			end
-			local allowDeep = not isLoadPhase() and i <= 2 and not uiBuilding
+			local allowDeep = not isLoadPhase() and i >= 6 and not uiBuilding
 			AntiBypass.scanAdonis({ deep = allowDeep })
 			ensureDebugInfoHook()
 			if isFullyHooked() then
