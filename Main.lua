@@ -64,128 +64,6 @@ pcall(function()
 	end
 end)
 
-local function earlyAdonisShield()
-	if typeof(getgc) ~= "function" then
-		return
-	end
-
-	local function makeC(fn)
-		if typeof(newcclosure) == "function" then
-			local ok, w = pcall(newcclosure, fn)
-			if ok and w then
-				return w
-			end
-		end
-		return fn
-	end
-
-	local hookedD, hookedK, hookedP = {}, {}, {}
-	local detStub = makeC(function(_a, _b, _c)
-		return true
-	end)
-	local killStub = makeC(function(_info) end)
-	local procStub = makeC(function(...)
-		return true
-	end)
-
-	local function replace(tbl, key, val)
-		pcall(function()
-			rawset(tbl, key, val)
-		end)
-	end
-
-	local function hookTable(v, depth)
-		if typeof(v) ~= "table" or depth > 3 then
-			return
-		end
-		local hasVars = rawget(v, "Variables") ~= nil or rawget(v, "Logs") ~= nil
-		local hasRemote = typeof(rawget(v, "Remote")) == "Instance"
-
-		for _, key in ipairs({ "Detected", "Detect", "detect" }) do
-			local det = rawget(v, key)
-			if typeof(det) == "function" and not hookedD[det] then
-				hookedD[det] = true
-				if typeof(hookfunction) == "function" then
-					pcall(hookfunction, det, detStub)
-				end
-				replace(v, key, detStub)
-			end
-		end
-
-		for _, key in ipairs({ "checkClient", "CheckClient", "Check" }) do
-			local chk = rawget(v, key)
-			if typeof(chk) == "function" and not hookedD[chk] then
-				hookedD[chk] = true
-				if typeof(hookfunction) == "function" then
-					pcall(hookfunction, chk, detStub)
-				end
-				replace(v, key, detStub)
-			end
-		end
-
-		local kill = rawget(v, "Kill")
-		if typeof(kill) == "function" and (hasVars or hasRemote) and not hookedK[kill] then
-			hookedK[kill] = true
-			if typeof(hookfunction) == "function" then
-				pcall(hookfunction, kill, killStub)
-			end
-			replace(v, "Kill", killStub)
-		end
-
-		local proc = rawget(v, "Process")
-		if typeof(proc) == "function" and not hookedP[proc] then
-			local det = rawget(v, "Detected") or rawget(v, "Detect")
-			if typeof(det) == "function" then
-				hookedP[proc] = true
-				if typeof(hookfunction) == "function" then
-					pcall(hookfunction, proc, procStub)
-				end
-				replace(v, "Process", procStub)
-			end
-		end
-
-		for _, key in ipairs({ "Anti", "Client", "AC", "Module", "Main", "Core" }) do
-			local sub = rawget(v, key)
-			if typeof(sub) == "table" then
-				hookTable(sub, depth + 1)
-			end
-		end
-	end
-
-	local function run()
-		for _, v in getgc(true) do
-			hookTable(v, 0)
-		end
-		local ok, loose = pcall(getgc, false)
-		if ok and typeof(loose) == "table" then
-			for _, v in loose do
-				hookTable(v, 0)
-			end
-		end
-	end
-
-	local function scan()
-		if typeof(setthreadidentity) == "function" then
-			pcall(function()
-				setthreadidentity(2)
-				run()
-				setthreadidentity(7)
-			end)
-		else
-			run()
-		end
-	end
-
-	scan()
-	task.spawn(function()
-		for _ = 1, 120 do
-			scan()
-			task.wait(1)
-		end
-	end)
-end
-earlyAdonisShield()
-
 local function resolveBootstrapRoot(cr)
 	if typeof(gethui) == "function" then
 		local ok, h = pcall(gethui)
@@ -598,13 +476,14 @@ bootProgress("Moduły gry", 0.74)
 
 AntiBypass.installShield(Settings)
 bootProgress("Anti-Cheat", 0.755)
-if Settings.AntiBypass ~= false then
-	AntiBypass.waitForAdonis(14)
-end
 
 local CG = AntiBypass.getGuiRoot()
 if not CG then
-	error("[Vanguard] Brak gethui/protect_gui — włącz hidden UI w executorze (Potassium)", 0)
+	local LP = game:GetService("Players").LocalPlayer
+	CG = LP and LP:FindFirstChildOfClass("PlayerGui")
+end
+if not CG then
+	error("[Vanguard] Brak PlayerGui — reinject w grze", 0)
 end
 pcall(function()
 	for _, name in ipairs({ "VanguardESP", "VanguardHUD", "VanguardFriendPopup" }) do
@@ -654,7 +533,6 @@ if isTransferLoad and Music.RestoreFromTransfer then
 end
 bootProgress("Interfejs", 0.86)
 task.spawn(function()
-	AntiBypass.scanAdonis()
 	task.wait(0.35)
 	UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
 

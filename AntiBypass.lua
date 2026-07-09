@@ -13,6 +13,8 @@ local hookedDetectedFns = {}
 local hookedKillFns = {}
 local hookedProcessFns = {}
 local adonisHookCount = 0
+local adonisDeepScanDone = false
+local adonisWatcherStop = false
 
 local function makeCclosure(fn)
 	if typeof(newcclosure) == "function" then
@@ -127,6 +129,15 @@ function AntiBypass.getGuiRoot()
 		end)
 		if okCore and coreGui then
 			root = coreGui
+		end
+	end
+
+	if not root then
+		local okLP, lp = pcall(function()
+			return cr(game:GetService("Players").LocalPlayer)
+		end)
+		if okLP and lp then
+			root = lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 5)
 		end
 	end
 
@@ -267,8 +278,33 @@ local function replaceTableFn(tbl, key, replacement)
 	end)
 end
 
+local function isAdonisCandidate(v)
+	if typeof(v) ~= "table" then
+		return false
+	end
+	if typeof(rawget(v, "Detected")) == "function" then
+		return true
+	end
+	if typeof(rawget(v, "Detect")) == "function" then
+		return true
+	end
+	if typeof(rawget(v, "Kill")) == "function" and (rawget(v, "Variables") or rawget(v, "Logs")) then
+		return true
+	end
+	if typeof(rawget(v, "Anti")) == "table" then
+		return true
+	end
+	if typeof(rawget(v, "Remote")) == "Instance" and typeof(rawget(v, "Kill")) == "function" then
+		return true
+	end
+	return false
+end
+
 local function tryHookAdonisTable(v, depth)
-	if typeof(v) ~= "table" or depth > 3 then
+	if typeof(v) ~= "table" or depth > 2 then
+		return false
+	end
+	if depth == 0 and not isAdonisCandidate(v) then
 		return false
 	end
 
@@ -315,7 +351,7 @@ local function tryHookAdonisTable(v, depth)
 		end
 	end
 
-	for _, key in ipairs({ "Anti", "Client", "AC", "Module", "Main", "Core" }) do
+	for _, key in ipairs({ "Anti", "Client", "AC" }) do
 		local sub = rawget(v, key)
 		if typeof(sub) == "table" and tryHookAdonisTable(sub, depth + 1) then
 			hooked = true
@@ -348,29 +384,50 @@ local function hookDebugInfoSanity()
 	end)
 end
 
-function AntiBypass.scanAdonis()
-	if typeof(getgc) ~= "function" then
+local function scanAdonisList(list)
+	local hooked = false
+	for _, v in list do
+		if tryHookAdonisTable(v, 0) then
+			hooked = true
+		end
+	end
+	return hooked
+end
+
+local function runLightScan()
+	local hooked = false
+	local ok, loose = pcall(getgc, false)
+	if ok and typeof(loose) == "table" then
+		hooked = scanAdonisList(loose) or hooked
+	end
+	return hooked
+end
+
+local function runDeepScanOnce()
+	if adonisDeepScanDone or typeof(getgc) ~= "function" then
 		return false
 	end
-
+	adonisDeepScanDone = true
 	local hooked = false
-
 	withScanIdentity(function()
 		for _, v in getgc(true) do
-			if tryHookAdonisTable(v, 0) then
+			if isAdonisCandidate(v) and tryHookAdonisTable(v, 0) then
 				hooked = true
 			end
 		end
-		local ok, loose = pcall(getgc, false)
-		if ok and typeof(loose) == "table" then
-			for _, v in loose do
-				if tryHookAdonisTable(v, 0) then
-					hooked = true
-				end
-			end
-		end
 	end)
+	return hooked
+end
 
+function AntiBypass.scanAdonis(opts)
+	if typeof(getgc) ~= "function" then
+		return adonisHookCount > 0
+	end
+	opts = opts or {}
+	local hooked = runLightScan()
+	if not hooked and opts.deep == true and not adonisHookCount then
+		hooked = runDeepScanOnce()
+	end
 	if hooked and adonisDetectedRef then
 		hookDebugInfoSanity()
 	end
@@ -396,29 +453,34 @@ function AntiBypass.startAdonisWatcher()
 		return
 	end
 	adonisScanTask = task.spawn(function()
-		for _ = 1, 45 do
-			if AntiBypass.scanAdonis() then
-				break
+		task.wait(2)
+		for i = 1, 6 do
+			if adonisWatcherStop or adonisHookCount > 0 then
+				return
 			end
-			task.wait(1)
-		end
-		while true do
-			AntiBypass.scanAdonis()
+			AntiBypass.scanAdonis({ deep = i == 1 })
+			if adonisHookCount > 0 then
+				return
+			end
 			task.wait(3)
+		end
+		while not adonisWatcherStop and adonisHookCount <= 0 do
+			AntiBypass.scanAdonis({ deep = false })
+			task.wait(25)
 		end
 	end)
 end
 
 function AntiBypass.waitForAdonis(timeoutSec)
-	timeoutSec = timeoutSec or 12
+	timeoutSec = math.min(timeoutSec or 3, 4)
 	local deadline = os.clock() + timeoutSec
 	repeat
-		if AntiBypass.scanAdonis() then
+		if AntiBypass.scanAdonis({ deep = adonisHookCount <= 0 }) then
 			return true
 		end
-		task.wait(0.5)
+		task.wait(0.75)
 	until os.clock() >= deadline
-	return AntiBypass.scanAdonis()
+	return adonisHookCount > 0
 end
 
 function AntiBypass.installShield(S)
@@ -455,31 +517,12 @@ function AntiBypass.installShield(S)
 			end
 		end
 
-		if typeof(hookmetamethod) == "function" then
-			pcall(function()
-				local LP = game:GetService("Players").LocalPlayer
-				local oldNC
-				local namecallWrap = makeCclosure(function(self, ...)
-					local method = getnamecallmethod and getnamecallmethod() or ""
-					if self == ContentProvider and method == "PreloadAsync" then
-						local args = { ... }
-						if isCoreGuiScan(args[1]) then
-							return
-						end
-					end
-					if method == "Kick" and LP and self == LP then
-						return
-					end
-					return oldNC(self, ...)
-				end)
-				oldNC = hookmetamethod(game, "__namecall", namecallWrap)
-			end)
-		end
-
 		shieldInstalled = true
 	end
 
-	AntiBypass.scanAdonis()
+	task.defer(function()
+		AntiBypass.scanAdonis({ deep = true })
+	end)
 	AntiBypass.startAdonisWatcher()
 	return true
 end
@@ -493,12 +536,12 @@ function AntiBypass.Init(S)
 
 	local root = AntiBypass.getGuiRoot()
 	if not root then
-		warn("[Vanguard] Brak gethui/protect_gui — wysokie ryzyko kicka 267")
+		warn("[Vanguard] Brak gethui — GUI w PlayerGui (wyższe ryzyko kicka 267)")
 		return
 	end
 
 	if not usingHiddenGui then
-		warn("[Vanguard] gethui niedostępne — używam protect_gui + CoreGui (gorsza ochrona)")
+		warn("[Vanguard] Brak gethui/protect_gui — w Potassium włącz Hidden UI / filesystem")
 	end
 
 	local function sweep(parent)
@@ -526,8 +569,9 @@ function AntiBypass.Init(S)
 			if root.Parent then
 				sweep(root)
 			end
-			task.wait(2)
+			task.wait(8)
 		end
+		adonisWatcherStop = true
 	end)
 end
 
