@@ -3,11 +3,14 @@
 local Logger = {}
 
 local HttpService = game:GetService("HttpService")
+local LogService = game:GetService("LogService")
+local ScriptContext = game:GetService("ScriptContext")
 
 local ROOT = "Vanguard/logs"
 local LOG_PATH = ROOT .. "/vanguard.log"
 local MAX_BYTES = 512000
 local enabled = true
+local logServiceActive = false
 
 local function canWrite()
 	return enabled
@@ -58,17 +61,8 @@ local function trimIfNeeded(content)
 	return "--- log trimmed ---\n" .. cut
 end
 
-local function emitConsole(level, text)
-	local out = _G.__VG_OLD_PRINT or print
-	if level == "WARN" or level == "ERROR" then
-		out = _G.__VG_OLD_WARN or warn
-	end
-	pcall(out, text)
-end
-
-local function appendLine(level, text)
+local function writeToFile(level, text)
 	if not canWrite() then
-		emitConsole(level, text)
 		return false
 	end
 	ensureLogFile()
@@ -86,8 +80,63 @@ local function appendLine(level, text)
 		end
 		ok = pcall(writefile, LOG_PATH, trimIfNeeded(prev .. line))
 	end
-	emitConsole(level, text)
 	return ok
+end
+
+local function emitConsole(level, text)
+	local out = _G.__VG_OLD_PRINT or print
+	if level == "WARN" or level == "ERROR" then
+		out = _G.__VG_OLD_WARN or warn
+	end
+	pcall(out, text)
+end
+
+local function appendFileOnly(level, text)
+	writeToFile(level, text)
+end
+
+local function appendLine(level, text)
+	writeToFile(level, text)
+	emitConsole(level, text)
+end
+
+local function messageTypeToLevel(messageType)
+	if messageType == Enum.MessageType.MessageWarning then
+		return "WARN"
+	end
+	if messageType == Enum.MessageType.MessageError then
+		return "ERROR"
+	end
+	if messageType == Enum.MessageType.MessageInfo then
+		return "INFO"
+	end
+	return "OUT"
+end
+
+function Logger.installLogServiceTap()
+	if _G.__VG_LOG_SERVICE or not enabled then
+		return
+	end
+	_G.__VG_LOG_SERVICE = true
+	logServiceActive = true
+
+	pcall(function()
+		LogService.MessageOut:Connect(function(message, messageType)
+			if not enabled then
+				return
+			end
+			appendFileOnly(messageTypeToLevel(messageType), tostring(message))
+		end)
+	end)
+
+	pcall(function()
+		ScriptContext.Error:Connect(function(message, stack)
+			if not enabled then
+				return
+			end
+			appendFileOnly("ERROR", tostring(message) .. "\n" .. tostring(stack))
+		end)
+	end)
 end
 
 function Logger.getPath()
@@ -108,6 +157,10 @@ end
 
 function Logger.write(level, ...)
 	appendLine(level or "INFO", formatArgs(...))
+end
+
+function Logger.writeFile(level, ...)
+	appendFileOnly(level or "INFO", formatArgs(...))
 end
 
 function Logger.info(...)
@@ -140,32 +193,45 @@ function Logger.installHooks()
 	end
 	local oldPrint = _G.__VG_OLD_PRINT
 	local oldWarn = _G.__VG_OLD_WARN
+
 	print = function(...)
-		appendLine("INFO", formatArgs(...))
+		local text = formatArgs(...)
+		if logServiceActive then
+			pcall(oldPrint, ...)
+		else
+			appendLine("INFO", text)
+		end
 	end
 	warn = function(...)
-		appendLine("WARN", formatArgs(...))
+		local text = formatArgs(...)
+		if logServiceActive then
+			pcall(oldWarn, ...)
+		else
+			appendLine("WARN", text)
+		end
 	end
 	_G.__VG_LOG_HOOKED = true
 end
 
 function Logger.Init(S)
 	enabled = not S or S.LogToFile ~= false
+	Logger.installLogServiceTap()
 	Logger.installHooks()
 	_G.__VG_LOG_PATH = LOG_PATH
 	_G.__VG_LOG = function(level, ...)
 		appendLine(level or "INFO", formatArgs(...))
 	end
+	_G.__VG_LOG_FILE = function(level, ...)
+		appendFileOnly(level or "INFO", formatArgs(...))
+	end
 	_G.__VG_LOGGER = Logger
 	if enabled then
-		appendLine("INFO", "Logger ready · v" .. tostring(S and S.Version or "?"))
-		appendLine(
+		appendFileOnly("INFO", "Logger ready · v" .. tostring(S and S.Version or "?"))
+		appendFileOnly(
 			"INFO",
-			"Session",
-			"place=" .. tostring(game.PlaceId),
-			"game=" .. tostring(game.GameId),
-			"job=" .. tostring(game.JobId)
+			"Session place=" .. tostring(game.PlaceId) .. " game=" .. tostring(game.GameId) .. " job=" .. tostring(game.JobId)
 		)
+		emitConsole("INFO", "[Vanguard] Log file: " .. LOG_PATH)
 	end
 end
 

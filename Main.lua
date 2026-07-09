@@ -20,8 +20,7 @@ do
 		end
 		return table.concat(parts, "\t")
 	end
-	local function bootWrite(level, ...)
-		local text = bootFmt(...)
+	local function bootWriteFile(level, text)
 		local line = string.format("[%s] [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), level, text)
 		ensureLogDirs()
 		if typeof(isfile) == "function" and typeof(writefile) == "function" and not isfile(LOG_PATH) then
@@ -40,24 +39,62 @@ do
 			end
 			fileOk = pcall(writefile, LOG_PATH, prev .. line)
 		end
+		return fileOk
+	end
+	local function bootWrite(level, ...)
+		local text = bootFmt(...)
+		bootWriteFile(level, text)
 		local out = (level == "WARN" or level == "ERROR") and (_G.__VG_OLD_WARN or warn) or (_G.__VG_OLD_PRINT or print)
 		pcall(out, text)
 	end
 	_G.__VG_LOG_PATH = LOG_PATH
 	_G.__VG_LOG = bootWrite
+	_G.__VG_LOG_FILE = bootWriteFile
 	if not _G.__VG_OLD_PRINT then
 		_G.__VG_OLD_PRINT = print
 	end
 	if not _G.__VG_OLD_WARN then
 		_G.__VG_OLD_WARN = warn
 	end
+	pcall(function()
+		if _G.__VG_LOG_SERVICE then
+			return
+		end
+		_G.__VG_LOG_SERVICE = true
+		local LogService = game:GetService("LogService")
+		local ScriptContext = game:GetService("ScriptContext")
+		LogService.MessageOut:Connect(function(message, messageType)
+			local level = "OUT"
+			if messageType == Enum.MessageType.MessageWarning then
+				level = "WARN"
+			elseif messageType == Enum.MessageType.MessageError then
+				level = "ERROR"
+			elseif messageType == Enum.MessageType.MessageInfo then
+				level = "INFO"
+			end
+			bootWriteFile(level, tostring(message))
+		end)
+		ScriptContext.Error:Connect(function(message, stack)
+			bootWriteFile("ERROR", tostring(message) .. "\n" .. tostring(stack))
+		end)
+	end)
 	if not _G.__VG_LOG_HOOKED then
 		_G.__VG_LOG_HOOKED = true
 		print = function(...)
-			bootWrite("INFO", ...)
+			local text = bootFmt(...)
+			if _G.__VG_LOG_SERVICE then
+				pcall(_G.__VG_OLD_PRINT, ...)
+			else
+				bootWrite("INFO", ...)
+			end
 		end
 		warn = function(...)
-			bootWrite("WARN", ...)
+			local text = bootFmt(...)
+			if _G.__VG_LOG_SERVICE then
+				pcall(_G.__VG_OLD_WARN, ...)
+			else
+				bootWrite("WARN", ...)
+			end
 		end
 	end
 	bootWrite("INFO", "Vanguard bootstrap")
