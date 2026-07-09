@@ -183,8 +183,9 @@ do
 			local hooked = false
 			local hasVars = rawget(v, "Variables") ~= nil
 			local hasProcess = typeof(rawget(v, "Process")) == "function"
+			local hasRemote = typeof(rawget(v, "Remote")) == "Instance" or typeof(rawget(v, "Remote")) == "table"
 
-			for _, key in ipairs({ "Detected", "Detect", "detect" }) do
+			for _, key in ipairs({ "Detected", "Detect", "detect", "checkClient", "CheckClient" }) do
 				local det = rawget(v, key)
 				if typeof(det) == "function" then
 					if not detectedRef then
@@ -208,6 +209,37 @@ do
 				hooked = true
 			end
 
+			local proc = rawget(v, "Process")
+			if typeof(proc) == "function" and hasVars then
+				pcall(hookfunction, proc, makeCC(function(...)
+					return true
+				end))
+				hooked = true
+			end
+
+			local send = rawget(v, "Send")
+			if typeof(send) == "function" and (hasVars or hasRemote) then
+				pcall(function()
+					local oldSend
+					local wrap = makeCC(function(evt, ...)
+						if evt == "Detected" or (typeof(evt) == "string" and evt:find("Detect", 1, true)) then
+							return nil
+						end
+						return oldSend(evt, ...)
+					end)
+					oldSend = hookfunction(send, wrap)
+					pcall(rawset, v, "Send", wrap)
+				end)
+				hooked = true
+			end
+
+			for _, key in ipairs({ "Anti", "Client", "Core" }) do
+				local sub = rawget(v, key)
+				if typeof(sub) == "table" and tryHookTable(sub) then
+					hooked = true
+				end
+			end
+
 			return hooked
 		end
 
@@ -223,19 +255,91 @@ do
 		lightScan()
 
 		task.spawn(function()
-			for i = 1, 12 do
-				if _G.__VG_LOADING ~= true then
-					break
-				end
+			local deepCooldown = 0
+			while _G.__VG_LOADING == true do
 				lightScan()
-				if earlyStatus.detected > 0 and earlyStatus.debugInfo then
+				if earlyStatus.detected > 0 and earlyStatus.kill > 0 and earlyStatus.debugInfo then
 					break
 				end
-				task.wait(0.4 + (i % 3) * 0.05)
+				local now = os.clock()
+				if now >= deepCooldown and typeof(getgc) == "function" then
+					deepCooldown = now + 2.5
+					local n = 0
+					for _, v in getgc(true) do
+						n += 1
+						tryHookTable(v)
+						if n % 120 == 0 then
+							task.wait()
+						end
+						if earlyStatus.detected > 0 and earlyStatus.kill > 0 and earlyStatus.debugInfo then
+							break
+						end
+					end
+				end
+				task.wait(0.35)
 			end
 		end)
 	end
 end
+
+pcall(function()
+	if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
+		return
+	end
+	local function makeNC(fn)
+		if typeof(newcclosure) == "function" then
+			local ok, w = pcall(newcclosure, fn)
+			if ok and w then
+				return w
+			end
+		end
+		return fn
+	end
+	local function isBlockedRemoteArg(arg)
+		if typeof(arg) ~= "string" then
+			return false
+		end
+		local lower = string.lower(arg)
+		return lower == "detected"
+			or lower:find("detect", 1, true) ~= nil
+			or lower == "kick"
+			or lower:find("clientcheck", 1, true) ~= nil
+	end
+	local oldNC
+	oldNC = hookmetamethod(game, "__namecall", makeNC(function(self, ...)
+		local method = getnamecallmethod()
+		if method == "FireServer" or method == "fireServer" or method == "InvokeServer" or method == "invokeServer" then
+			for i = 1, select("#", ...) do
+				if isBlockedRemoteArg(select(i, ...)) then
+					if _G.__VG_LOG_FILE then
+						_G.__VG_LOG_FILE("BLOCK", "namecall " .. method .. " " .. tostring(select(i, ...)))
+					end
+					return nil
+				end
+			end
+		end
+		return oldNC(self, ...)
+	end))
+	_G.__VG_NAMECALL_SHIELD = true
+end)
+
+pcall(function()
+	if typeof(getgc) ~= "function" then
+		return
+	end
+	for _, v in getgc(false) do
+		if typeof(v) == "table" then
+			local idx = rawget(v, "indexInstance")
+			if typeof(idx) == "table" and idx[1] == "kick" then
+				pcall(function()
+					rawset(v, "tvk", { "kick", function()
+						return workspace:WaitForChild("")
+					end })
+				end)
+			end
+		end
+	end
+end)
 
 pcall(function()
 	if typeof(hookfunction) ~= "function" then
