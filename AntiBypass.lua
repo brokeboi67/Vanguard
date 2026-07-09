@@ -120,6 +120,9 @@ function AntiBypass.getGuiRoot()
 			root = tryHiddenGui(g.gethui)
 				or tryHiddenGui(g.get_hidden_gui)
 				or tryHiddenGui(g.gethiddengui)
+			if typeof(g.HiddenUI) == "Instance" then
+				root = root or cr(g.HiddenUI)
+			end
 		end
 	end
 
@@ -145,6 +148,7 @@ function AntiBypass.getGuiRoot()
 		usingHiddenGui = tryHiddenGui(gethui) ~= nil
 			or tryHiddenGui(get_hidden_gui) ~= nil
 			or tryHiddenGui(gethiddengui) ~= nil
+			or tryHiddenGui(get_hidden_ui) ~= nil
 		cachedGuiRoot = root
 	end
 	return root
@@ -403,20 +407,43 @@ local function runLightScan()
 	return hooked
 end
 
-local function runDeepScanOnce()
+local function runDeepScanBatched()
 	if adonisDeepScanDone or typeof(getgc) ~= "function" then
 		return false
 	end
 	adonisDeepScanDone = true
 	local hooked = false
+	local scanned = 0
 	withScanIdentity(function()
 		for _, v in getgc(true) do
+			scanned += 1
 			if isAdonisCandidate(v) and tryHookAdonisTable(v, 0) then
 				hooked = true
+			end
+			if scanned % 250 == 0 then
+				task.wait()
+			end
+			if adonisHookCount > 0 then
+				break
 			end
 		end
 	end)
 	return hooked
+end
+
+local function scheduleDeepScan(delaySec)
+	if adonisDeepScanDone or adonisHookCount > 0 then
+		return
+	end
+	task.delay(delaySec or 25, function()
+		if adonisWatcherStop or adonisHookCount > 0 then
+			return
+		end
+		local ok = AntiBypass.scanAdonis({ deep = true })
+		if ok and adonisDetectedRef then
+			hookDebugInfoSanity()
+		end
+	end)
 end
 
 function AntiBypass.scanAdonis(opts)
@@ -426,9 +453,9 @@ function AntiBypass.scanAdonis(opts)
 	opts = opts or {}
 	local hooked = runLightScan()
 	if not hooked and opts.deep == true and not adonisHookCount then
-		hooked = runDeepScanOnce()
+		hooked = runDeepScanBatched()
 	end
-	if hooked and adonisDetectedRef then
+	if hooked and adonisDetectedRef and opts.debugInfo == true then
 		hookDebugInfoSanity()
 	end
 	return hooked or adonisHookCount > 0
@@ -453,33 +480,32 @@ function AntiBypass.startAdonisWatcher()
 		return
 	end
 	adonisScanTask = task.spawn(function()
-		task.wait(2)
-		for i = 1, 6 do
+		task.wait(1.5)
+		for _ = 1, 4 do
 			if adonisWatcherStop or adonisHookCount > 0 then
 				return
 			end
-			AntiBypass.scanAdonis({ deep = i == 1 })
+			AntiBypass.scanAdonis({ deep = false })
 			if adonisHookCount > 0 then
 				return
 			end
-			task.wait(3)
+			task.wait(4)
 		end
-		while not adonisWatcherStop and adonisHookCount <= 0 do
+		if not adonisWatcherStop and adonisHookCount <= 0 then
+			scheduleDeepScan(8)
+		end
+		while not adonisWatcherStop do
+			if adonisHookCount > 0 then
+				return
+			end
 			AntiBypass.scanAdonis({ deep = false })
-			task.wait(25)
+			task.wait(30)
 		end
 	end)
 end
 
-function AntiBypass.waitForAdonis(timeoutSec)
-	timeoutSec = math.min(timeoutSec or 3, 4)
-	local deadline = os.clock() + timeoutSec
-	repeat
-		if AntiBypass.scanAdonis({ deep = adonisHookCount <= 0 }) then
-			return true
-		end
-		task.wait(0.75)
-	until os.clock() >= deadline
+function AntiBypass.waitForAdonis(_timeoutSec)
+	AntiBypass.scanAdonis({ deep = false })
 	return adonisHookCount > 0
 end
 
@@ -502,27 +528,32 @@ function AntiBypass.installShield(S)
 			end)
 
 			local Players = game:GetService("Players")
-			local LP = Players.LocalPlayer
-			if LP then
+			local function hookPlayerKick(player)
+				if not player or typeof(player.Kick) ~= "function" then
+					return
+				end
 				pcall(function()
 					local oldKick
 					local kickWrap = makeCclosure(function(self, ...)
-						if self == LP then
+						if self == player then
 							return
 						end
 						return oldKick(self, ...)
 					end)
-					oldKick = hookfunction(LP.Kick, kickWrap)
+					oldKick = hookfunction(player.Kick, kickWrap)
 				end)
 			end
+			local LP = Players.LocalPlayer
+			if LP then
+				hookPlayerKick(LP)
+			end
+			Players.PlayerAdded:Connect(hookPlayerKick)
 		end
 
 		shieldInstalled = true
 	end
 
-	task.defer(function()
-		AntiBypass.scanAdonis({ deep = true })
-	end)
+	AntiBypass.scanAdonis({ deep = false })
 	AntiBypass.startAdonisWatcher()
 	return true
 end
@@ -532,7 +563,9 @@ function AntiBypass.Init(S)
 		return
 	end
 
-	AntiBypass.installShield(S)
+	if not shieldInstalled then
+		AntiBypass.installShield(S)
+	end
 
 	local root = AntiBypass.getGuiRoot()
 	if not root then

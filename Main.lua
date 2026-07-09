@@ -65,16 +65,38 @@ pcall(function()
 end)
 
 local function resolveBootstrapRoot(cr)
-	if typeof(gethui) == "function" then
-		local ok, h = pcall(gethui)
+	local function try(fn)
+		if typeof(fn) ~= "function" then
+			return nil
+		end
+		local ok, h = pcall(fn)
 		if ok and h then
 			return cr(h), true
 		end
+		return nil
 	end
-	if typeof(get_hidden_gui) == "function" then
-		local ok, h = pcall(get_hidden_gui)
-		if ok and h then
-			return cr(h), true
+	local root, hidden = try(gethui)
+	if root then
+		return root, hidden
+	end
+	root, hidden = try(get_hidden_gui)
+	if root then
+		return root, hidden
+	end
+	root, hidden = try(gethiddengui)
+	if root then
+		return root, hidden
+	end
+	if typeof(getgenv) == "function" then
+		local g = getgenv()
+		if g then
+			root, hidden = try(g.gethui)
+			if root then
+				return root, hidden
+			end
+			if typeof(g.HiddenUI) == "Instance" then
+				return cr(g.HiddenUI), true
+			end
 		end
 	end
 	if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
@@ -475,7 +497,6 @@ local GameSupport = Get("GameSupport.lua")
 bootProgress("Moduły gry", 0.74)
 
 AntiBypass.installShield(Settings)
-bootProgress("Anti-Cheat", 0.755)
 
 local CG = AntiBypass.getGuiRoot()
 if not CG then
