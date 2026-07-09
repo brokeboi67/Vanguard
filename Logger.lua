@@ -21,6 +21,16 @@ local function ensureDirs()
 	end
 end
 
+local function ensureLogFile()
+	ensureDirs()
+	if typeof(isfile) ~= "function" or typeof(writefile) ~= "function" then
+		return
+	end
+	if not isfile(LOG_PATH) then
+		pcall(writefile, LOG_PATH, "")
+	end
+end
+
 local function formatArgs(...)
 	local n = select("#", ...)
 	local parts = {}
@@ -48,27 +58,36 @@ local function trimIfNeeded(content)
 	return "--- log trimmed ---\n" .. cut
 end
 
+local function emitConsole(level, text)
+	local out = _G.__VG_OLD_PRINT or print
+	if level == "WARN" or level == "ERROR" then
+		out = _G.__VG_OLD_WARN or warn
+	end
+	pcall(out, text)
+end
+
 local function appendLine(level, text)
 	if not canWrite() then
+		emitConsole(level, text)
 		return false
 	end
-	ensureDirs()
+	ensureLogFile()
 	local line = string.format("[%s] [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), level, text)
+	local ok = false
 	if typeof(appendfile) == "function" then
-		local ok = pcall(appendfile, LOG_PATH, line)
-		return ok
+		ok = pcall(appendfile, LOG_PATH, line)
 	end
-	if typeof(writefile) == "function" then
+	if not ok and typeof(writefile) == "function" then
 		local prev = ""
 		if typeof(isfile) == "function" and isfile(LOG_PATH) and typeof(readfile) == "function" then
 			pcall(function()
 				prev = readfile(LOG_PATH)
 			end)
 		end
-		local ok = pcall(writefile, LOG_PATH, trimIfNeeded(prev .. line))
-		return ok
+		ok = pcall(writefile, LOG_PATH, trimIfNeeded(prev .. line))
 	end
-	return false
+	emitConsole(level, text)
+	return ok
 end
 
 function Logger.getPath()
@@ -88,7 +107,7 @@ function Logger.canWrite()
 end
 
 function Logger.write(level, ...)
-	appendLine(level, formatArgs(...))
+	appendLine(level or "INFO", formatArgs(...))
 end
 
 function Logger.info(...)
@@ -113,20 +132,21 @@ function Logger.clear()
 end
 
 function Logger.installHooks()
-	if _G.__VG_LOG_HOOKED then
-		return
+	if not _G.__VG_OLD_PRINT then
+		_G.__VG_OLD_PRINT = print
 	end
-	_G.__VG_LOG_HOOKED = true
-	local oldPrint = print
-	local oldWarn = warn
+	if not _G.__VG_OLD_WARN then
+		_G.__VG_OLD_WARN = warn
+	end
+	local oldPrint = _G.__VG_OLD_PRINT
+	local oldWarn = _G.__VG_OLD_WARN
 	print = function(...)
-		oldPrint(...)
 		appendLine("INFO", formatArgs(...))
 	end
 	warn = function(...)
-		oldWarn(...)
 		appendLine("WARN", formatArgs(...))
 	end
+	_G.__VG_LOG_HOOKED = true
 end
 
 function Logger.Init(S)

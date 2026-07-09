@@ -21,32 +21,42 @@ do
 		return table.concat(parts, "\t")
 	end
 	local function bootWrite(level, ...)
-		local line = string.format("[%s] [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), level, bootFmt(...))
+		local text = bootFmt(...)
+		local line = string.format("[%s] [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), level, text)
 		ensureLogDirs()
+		if typeof(isfile) == "function" and typeof(writefile) == "function" and not isfile(LOG_PATH) then
+			pcall(writefile, LOG_PATH, "")
+		end
+		local fileOk = false
 		if typeof(appendfile) == "function" then
-			pcall(appendfile, LOG_PATH, line)
-		elseif typeof(writefile) == "function" then
+			fileOk = pcall(appendfile, LOG_PATH, line)
+		end
+		if not fileOk and typeof(writefile) == "function" then
 			local prev = ""
 			if typeof(isfile) == "function" and isfile(LOG_PATH) and typeof(readfile) == "function" then
 				pcall(function()
 					prev = readfile(LOG_PATH)
 				end)
 			end
-			pcall(writefile, LOG_PATH, prev .. line)
+			fileOk = pcall(writefile, LOG_PATH, prev .. line)
 		end
+		local out = (level == "WARN" or level == "ERROR") and (_G.__VG_OLD_WARN or warn) or (_G.__VG_OLD_PRINT or print)
+		pcall(out, text)
 	end
 	_G.__VG_LOG_PATH = LOG_PATH
 	_G.__VG_LOG = bootWrite
+	if not _G.__VG_OLD_PRINT then
+		_G.__VG_OLD_PRINT = print
+	end
+	if not _G.__VG_OLD_WARN then
+		_G.__VG_OLD_WARN = warn
+	end
 	if not _G.__VG_LOG_HOOKED then
 		_G.__VG_LOG_HOOKED = true
-		local oldPrint = print
-		local oldWarn = warn
 		print = function(...)
-			oldPrint(...)
 			bootWrite("INFO", ...)
 		end
 		warn = function(...)
-			oldWarn(...)
 			bootWrite("WARN", ...)
 		end
 	end
