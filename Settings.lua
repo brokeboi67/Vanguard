@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.41.8",
+	Version = "2.41.9",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -169,6 +169,7 @@ local Settings = {
 	MiscBots = true,
 	AntiBypass = true,
 	DebugAdonis = false,
+	LogToFile = true,
 	TransferScript = false,
 
 	-- EFFECTS (local only)

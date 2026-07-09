@@ -4,6 +4,56 @@ local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 _G.__VG_LOADING = true
 
 do
+	local LOG_ROOT = "Vanguard/logs"
+	local LOG_PATH = LOG_ROOT .. "/vanguard.log"
+	local function ensureLogDirs()
+		if typeof(makefolder) == "function" then
+			pcall(makefolder, "Vanguard")
+			pcall(makefolder, LOG_ROOT)
+		end
+	end
+	local function bootFmt(...)
+		local n = select("#", ...)
+		local parts = {}
+		for i = 1, n do
+			parts[i] = tostring(select(i, ...))
+		end
+		return table.concat(parts, "\t")
+	end
+	local function bootWrite(level, ...)
+		local line = string.format("[%s] [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), level, bootFmt(...))
+		ensureLogDirs()
+		if typeof(appendfile) == "function" then
+			pcall(appendfile, LOG_PATH, line)
+		elseif typeof(writefile) == "function" then
+			local prev = ""
+			if typeof(isfile) == "function" and isfile(LOG_PATH) and typeof(readfile) == "function" then
+				pcall(function()
+					prev = readfile(LOG_PATH)
+				end)
+			end
+			pcall(writefile, LOG_PATH, prev .. line)
+		end
+	end
+	_G.__VG_LOG_PATH = LOG_PATH
+	_G.__VG_LOG = bootWrite
+	if not _G.__VG_LOG_HOOKED then
+		_G.__VG_LOG_HOOKED = true
+		local oldPrint = print
+		local oldWarn = warn
+		print = function(...)
+			oldPrint(...)
+			bootWrite("INFO", ...)
+		end
+		warn = function(...)
+			oldWarn(...)
+			bootWrite("WARN", ...)
+		end
+	end
+	bootWrite("INFO", "Vanguard bootstrap")
+end
+
+do
 	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
 		local earlyStatus = { detected = 0, kill = 0, debugInfo = false }
 		_G.__VG_EARLY_ADONIS = earlyStatus
@@ -484,7 +534,7 @@ end
 
 _G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
 
-local LOAD_TOTAL = 26
+local LOAD_TOTAL = 27
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -558,6 +608,9 @@ local function Get(file)
 		end
 	end
 	if not src or src == "" then
+		if _G.__VG_LOG then
+			_G.__VG_LOG("ERROR", "HttpGet failed", file, tostring(lastErr))
+		end
 		error("[Vanguard] HttpGet failed: " .. file .. " (" .. tostring(lastErr) .. ")", 2)
 	end
 
@@ -567,13 +620,22 @@ local function Get(file)
 	end
 	local fn, err = compile(src)
 	if not fn then
+		if _G.__VG_LOG then
+			_G.__VG_LOG("ERROR", "Compile", file, tostring(err))
+		end
 		error("[Vanguard] Compile " .. file .. ": " .. tostring(err), 2)
 	end
 	local ok, res = pcall(fn)
 	if not ok then
+		if _G.__VG_LOG then
+			_G.__VG_LOG("ERROR", "Run", file, tostring(res))
+		end
 		error("[Vanguard] Run " .. file .. ": " .. tostring(res), 2)
 	end
 	if res == nil then
+		if _G.__VG_LOG then
+			_G.__VG_LOG("ERROR", "Module nil", file)
+		end
 		error("[Vanguard] Module returned nil: " .. file, 2)
 	end
 	_G.VG_MODULE_CACHE[file] = res
@@ -611,6 +673,11 @@ end)
 Stealth.Init(AntiBypass)
 
 local Settings = Get("Settings.lua")
+local Logger = Get("Logger.lua")
+pcall(function()
+	Logger.Init(Settings)
+end)
+
 local Config = Get("Config.lua")
 pcall(function()
 	Config.Autoload(Settings)

@@ -2945,6 +2945,32 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end,
 	})
 	MakeHint(SSession, "hint_ssession1", 3)
+	MakeTog(SSession, "log_to_file", "LogToFile", 7, {
+		flat = true,
+		onChange = function(on)
+			local logMod = _G.__VG_LOGGER
+			if logMod and logMod.setEnabled then
+				logMod.setEnabled(on)
+			end
+		end,
+	})
+	MakeHint(SSession, "log_file_hint", 8)
+	MakeButton(SSession, "log_clear", 9, function()
+		local logMod = _G.__VG_LOGGER
+		if logMod and logMod.clear then
+			local ok = logMod.clear()
+			if ok then
+				showNotify(L("log_cleared"))
+				if logMod.info then
+					logMod.info("Log cleared by user")
+				end
+			else
+				showNotify(L("log_clear_fail"))
+			end
+		else
+			showNotify(L("log_clear_fail"))
+		end
+	end)
 	MakeButton(SSession, "Rejoin Game", 4, function()
 		showNotify(L("notify_rejoin"))
 		if S.RejoinGame then

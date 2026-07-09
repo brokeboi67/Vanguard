@@ -623,7 +623,7 @@ function AntiBypass.setUiBuilding(active)
 end
 
 function AntiBypass.logAdonisDiagnostics(tag, S)
-	if not (_G.VG_DEBUG_ADONIS or (S and S.DebugAdonis)) then
+	if not (_G.VG_DEBUG_ADONIS or (S and S.DebugAdonis) or (S and S.LogToFile ~= false)) then
 		return
 	end
 	local st = AntiBypass.getAdonisStatus()
