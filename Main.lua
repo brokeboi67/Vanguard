@@ -85,100 +85,127 @@ end
 -- CORRECT approach: hook debug.info with coroutine.yield → suspends entire anti-cheat routine.
 -- Sources: github.com/Epix-Incorporated/Adonis Anti.luau + scripthub bypass script
 do
-	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then
-		-- skip bypass entirely if executor doesn't support needed functions
-	else
-		-- After a TeleportService transfer the new place may still be loading.
-		-- Wait until the DataModel is ready before scanning GC, otherwise getgc(true)
-		-- runs while Roblox is mid-load and can cause a freeze/crash.
-		if not game:IsLoaded() then
-			pcall(function() game.Loaded:Wait() end)
+	local function makeCC(f)
+		if typeof(newcclosure) == "function" then
+			local ok, w = pcall(newcclosure, f); if ok and w then return w end
 		end
+		return f
+	end
 
-		pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
+	-- Shared state used by both the initial pass and the retry watcher.
+	local _bypassDetected = nil
+	local _bypassOldDbgInfo = nil
 
-		local function makeCC(f)
-			if typeof(newcclosure) == "function" then
-				local ok, w = pcall(newcclosure, f); if ok and w then return w end
+	local function installDebugInfoHook(Detected)
+		if _G.__VG_DBG_HOOKED then return true end
+		local renv = typeof(getrenv) == "function" and getrenv() or nil
+		if not renv or typeof(renv.debug) ~= "table" then return false end
+		local oldInfo = renv.debug.info
+		if typeof(oldInfo) ~= "function" then return false end
+		_bypassOldDbgInfo = _bypassOldDbgInfo or oldInfo
+		local detRef = Detected
+		local wrap = makeCC(function(fn, ...)
+			if fn == detRef then
+				-- Yield Adonis's tamper-check coroutine forever.
+				-- This suspends the entire anti-cheat routine — no detectors run.
+				return coroutine.yield(coroutine.running())
 			end
-			return f
+			return _bypassOldDbgInfo(fn, ...)
+		end)
+		-- Direct assignment preferred — hookfunction on debug.info fails in Potassium.
+		local ok = pcall(function() renv.debug.info = wrap end)
+		if not ok then
+			ok = pcall(hookfunction, oldInfo, wrap)
 		end
+		if ok then
+			_G.__VG_DBG_HOOKED = true
+		end
+		return ok
+	end
 
+	local function scanForAdonis(deep)
+		if typeof(getgc) ~= "function" then return nil, nil end
 		local Detected, Kill
-
-		-- Fast synchronous scan — break as soon as both found (usually < 1000 items)
-		for _, v in getgc(true) do
+		for _, v in getgc(deep) do
 			if typeof(v) == "table" then
-				local det = rawget(v, "Detected")
-				if typeof(det) == "function" and not Detected then
-					Detected = det
+				if not Detected then
+					local det = rawget(v, "Detected")
+					if typeof(det) == "function" then Detected = det end
 				end
-				local kill = rawget(v, "Kill")
-				if typeof(kill) == "function" and rawget(v, "Variables") and rawget(v, "Process") and not Kill then
-					Kill = kill
+				if not Kill then
+					local kill = rawget(v, "Kill")
+					if typeof(kill) == "function" and rawget(v, "Variables") and rawget(v, "Process") then
+						Kill = kill
+					end
 				end
 			end
 			if Detected and Kill then break end
 		end
+		return Detected, Kill
+	end
 
-		-- Hook debug.info IMMEDIATELY using direct assignment (hookfunction fails in Potassium).
-		-- When Adonis calls debug.info(Detected, "slanf") in its tamper-check loop,
-		-- we yield that coroutine permanently → "while true do end" NEVER executes.
-		-- This SUSPENDS the entire anti-cheat routine (all detectors stop running too).
-		local dbgHooked = false
-		if Detected then
-			local renv = typeof(getrenv) == "function" and getrenv() or nil
-			if renv and typeof(renv.debug) == "table" then
-				local oldDbgInfo = renv.debug.info
-				if typeof(oldDbgInfo) == "function" then
-					local dbgWrap = makeCC(function(fn, ...)
-						if fn == Detected then
-							-- Suspend Adonis's anti-cheat coroutine forever
-							return coroutine.yield(coroutine.running())
-						end
-						return oldDbgInfo(fn, ...)
-					end)
-				-- Direct assignment — avoids hookfunction which fails for debug.info
-				local ok1 = pcall(function() renv.debug.info = dbgWrap end)
-				if ok1 then
-					dbgHooked = true
-					_G.__VG_DBG_HOOKED = true
-				else
-					-- Fallback: try hookfunction
-					local ok2 = pcall(hookfunction, oldDbgInfo, dbgWrap)
-					if ok2 then
-						dbgHooked = true
-						_G.__VG_DBG_HOOKED = true
-					end
-				end
-				end
-			end
-
-			-- Also hook Detected to return true (required: Adonis calls Detected("_","_",true)
-			-- as a sanity check — it must return truthy to pass. Only do this AFTER debug.info
-			-- is hooked so our hookfunction doesn't change closure identity before the check runs).
-			-- NOTE: hookfunction(Detected) DOES change closure seen by debug.info in Potassium.
-			-- If dbgHooked=true, the tamper-check never runs, so identity change is safe.
-			if dbgHooked then
-				pcall(hookfunction, Detected, makeCC(function(Action, Info, NoCrash)
-					return true
-				end))
-			end
+	local function applyBypass(Detected, Kill)
+		if not Detected then return false end
+		_bypassDetected = Detected
+		local dbgHooked = installDebugInfoHook(Detected)
+		-- Hook Detected to return true for the sanity check Detected("_","_",true).
+		-- Safe to do AFTER debug.info is hooked (tamper-check coroutine is now suspended).
+		if dbgHooked then
+			pcall(hookfunction, Detected, makeCC(function() return true end))
 		end
-
-		-- Hook Kill as fallback (if called outside the suspended routine)
 		if Kill then
 			pcall(hookfunction, Kill, makeCC(function() end))
 		end
-
-		pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
-
 		if typeof(_G.__VG_LOG_FILE) == "function" then
 			_G.__VG_LOG_FILE("INFO", string.format(
-				"[VG:bypass] Det=%s Kill=%s dbgInfo=%s",
-				tostring(Detected ~= nil), tostring(Kill ~= nil), tostring(dbgHooked)
+				"[VG:bypass] Det=true Kill=%s dbgInfo=%s",
+				tostring(Kill ~= nil), tostring(dbgHooked)
 			))
 		end
+		return dbgHooked
+	end
+
+	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
+		-- Run in task.spawn to avoid blocking the scheduler (no freeze).
+		-- Adonis tamper-check fires every 5 s — we have plenty of time to hook.
+		task.spawn(function()
+			if not game:IsLoaded() then pcall(function() game.Loaded:Wait() end) end
+			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
+
+			-- Fast light scan first (getgc false) — works if Adonis is already loaded.
+			local Detected, Kill = scanForAdonis(false)
+
+			-- Deep scan fallback if light scan missed it (Adonis tables may not be in light GC).
+			if not Detected then
+				Detected, Kill = scanForAdonis(true)
+			end
+
+			local installed = applyBypass(Detected, Kill)
+
+			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
+
+			-- RETRY WATCHER: for games where Adonis loads AFTER our script (e.g. Criminality).
+			-- Polls every 2 s for up to 60 s until bypass is confirmed installed.
+			if not installed then
+				if typeof(_G.__VG_LOG_FILE) == "function" then
+					_G.__VG_LOG_FILE("WARN", "[VG:bypass] Det not found — starting retry watcher (Adonis may load late)")
+				end
+				task.spawn(function()
+					for _ = 1, 30 do
+						task.wait(2)
+						if _G.__VG_DBG_HOOKED then break end
+						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
+						local d, k = scanForAdonis(false)
+						if not d then d, k = scanForAdonis(true) end
+						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
+						if d then
+							applyBypass(d, k)
+							break
+						end
+					end
+				end)
+			end
+		end)
 	end
 end
 
