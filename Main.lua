@@ -695,6 +695,7 @@ local UIMusic = Get("UIMusic.lua")
 local UI = Get("UI.lua")
 local Menus = Get("Menus.lua")
 local GameSupport = Get("GameSupport.lua")
+local Criminality = Get("Criminality.lua")
 
 _G.__VG_LOADING = false
 if AntiBypass.onLoadComplete then
@@ -776,6 +777,9 @@ phase("ESP.Init",        ESP.Init,        Settings, GUI, TeamFriends, Util)
 phase("Aim.Init",        Aim.Init,        Settings, GUI, TeamFriends, Util)
 phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
 phase("Movement.Init",   Movement.Init,   Settings)
+if game.PlaceId == 4588604953 then
+	phase("Criminality.Init", Criminality.Init, Settings)
+end
 phase("Misc.Init",       Misc.Init,       Settings, TeamFriends, Util)
 phase("Features.Init",   Features.Init,   Settings, GUI, AntiBypass)
 phase("Effects.Init",    Effects.Init,    Settings, Util)

@@ -43,6 +43,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		config = Color3.fromRGB(155, 135, 255),
 		menus = Color3.fromRGB(255, 120, 180),
 		music = Color3.fromRGB(29, 185, 84),
+		criminality = Color3.fromRGB(255, 100, 60),
 	}
 
 	local function tabSoft(col)
@@ -2102,6 +2103,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	task.wait()
 	local TMusic = MakeTab("music", false, false, 10, { fixed = true, layout = "music" })
 
+	-- Criminality tab — only visible when running inside Criminality (PlaceId 4588604953)
+	local TCrim = nil
+	if game.PlaceId == 4588604953 then
+		TCrim = MakeTab("criminality", false, false, 11)
+	end
+
 	if UIMusicModule and MusicModule then
 		UIMusicModule.build({
 			TMusic = TMusic,
@@ -2126,6 +2133,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			I18n = I18n,
 			TweenPlay = TweenPlay,
 		})
+	end
+
+	-- ── Criminality tab content ────────────────────────────────────────────────
+	if TCrim then
+		local CCombat = MakeCard(TCrim, "COMBAT", nil, 1)
+		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1, { flat = true })
+		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 4, 40, 2, {
+			suffix = " st",
+			step = 1,
+			fmt = function(v) return string.format("%d st", v) end,
+		})
+
+		local CSurv = MakeCard(TCrim, "SURVIVAL", nil, 2)
+		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 1, { flat = true })
+		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 2, { flat = true })
+		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 3, { flat = true })
+
+		local CWeapon = MakeCard(TCrim, "WEAPONS", nil, 3)
+		MakeTog(CWeapon, "Instant Reload", "CrimInstReload", 1, { flat = true })
+
+		local CESP = MakeCard(TCrim, "OBJECT ESP", nil, 4)
+		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 1, { flat = true })
+		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 2, { flat = true })
 	end
 
 	local function refreshWorld()

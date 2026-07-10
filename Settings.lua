@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.7",
+	Version = "2.43.8",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -169,6 +169,18 @@ local Settings = {
 	-- FRIENDS
 	FriendClick = true,
 	FriendIds = {},
+
+	-- CRIMINALITY (only active when game.PlaceId == 4588604953)
+	CrimInfStamina = false,
+	CrimNoFall = false,
+	CrimNoSpike = false,
+	CrimInstReload = false,
+	CrimMeleeAura = false,
+	CrimMeleeRange = 12,
+	CrimSafeESP = false,
+	CrimSafeColor = Color3.fromRGB(255, 220, 50),
+	CrimDealerESP = false,
+	CrimDealerColor = Color3.fromRGB(100, 200, 255),
 
 	-- MISC
 	HeadSize = false,
