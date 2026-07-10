@@ -537,27 +537,12 @@ local function tryHookAdonisTable(v, depth)
 		end
 	end
 
-	for _, key in ipairs({ "checkClient", "CheckClient", "Check" }) do
-		local chk = rawget(v, key)
-		if typeof(chk) == "function" then
-			if hookDetectedFn(chk, v, key) then
-				hooked = true
-			end
-		end
-	end
+	-- Do NOT hook checkClient/Process — these handle Adonis↔server keepalive pings.
+	-- Hooking them breaks ClientCheck and causes "Communication following disconnect".
 
 	local kill = rawget(v, "Kill")
 	if typeof(kill) == "function" and hasVars and hasProcess then
 		if hookKillFn(kill) then
-			replaceTableFn(v, "Kill", blankKill)
-			hooked = true
-		end
-	end
-
-	local proc = rawget(v, "Process")
-	if typeof(proc) == "function" and hasVars then
-		if hookProcessFn(proc) then
-			replaceTableFn(v, "Process", blankProcess)
 			hooked = true
 		end
 	end

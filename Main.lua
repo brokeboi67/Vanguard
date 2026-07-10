@@ -79,6 +79,45 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
+-- Early light scan: hook Adonis Detected/Kill while modules download (non-blocking)
+task.spawn(function()
+	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then return end
+	local function makeCC(f)
+		if typeof(newcclosure) == "function" then
+			local ok, w = pcall(newcclosure, f); if ok and w then return w end
+		end
+		return f
+	end
+	local blankDet = makeCC(function() return true end)
+	local hookedFns = {}
+	local hookedKills = {}
+	for attempt = 1, 30 do
+		if _G.__VG_LOADING ~= true then break end
+		local ok, list = pcall(getgc, false)
+		if ok and typeof(list) == "table" then
+			for _, v in list do
+				if typeof(v) ~= "table" then continue end
+				-- Hook Detected
+				local det = rawget(v, "Detected")
+				if typeof(det) == "function" and not hookedFns[det] then
+					hookedFns[det] = true
+					pcall(hookfunction, det, blankDet)
+					pcall(rawset, v, "Detected", blankDet)
+				end
+				-- Hook Kill (soft: just swallow, don't call original during load)
+				local kill = rawget(v, "Kill")
+				if typeof(kill) == "function" and rawget(v, "Variables") and not hookedKills[kill] then
+					hookedKills[kill] = true
+					local softKill = makeCC(function() end)
+					pcall(hookfunction, kill, softKill)
+					pcall(rawset, v, "Kill", softKill)
+				end
+			end
+		end
+		task.wait(0.4)
+	end
+end)
+
 -- Block Adonis CoreGui scan via PreloadAsync
 pcall(function()
 	if typeof(hookfunction) ~= "function" then return end
@@ -630,11 +669,17 @@ if isTransferLoad and Music.RestoreFromTransfer then
 	end)
 end
 bootProgress("Interfejs", 0.86)
+
+-- Run bypass scans in background — do NOT block UI.Init
+if Settings.AntiBypass ~= false then
+	task.spawn(function()
+		task.wait(0.3)
+		AntiBypass.waitForAdonis(2)
+		AntiBypass.logAdonisDiagnostics("bypass", Settings)
+	end)
+end
+
 task.spawn(function()
-	if Settings.AntiBypass ~= false then
-		AntiBypass.waitForAdonis(3)
-		AntiBypass.logAdonisDiagnostics("pre-UI", Settings)
-	end
 	AntiBypass.setUiBuilding(true)
 	task.wait()
 	UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
