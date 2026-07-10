@@ -747,11 +747,11 @@ function AntiBypass.onLoadComplete()
 end
 
 function AntiBypass.waitForAdonis(timeoutSec)
-	timeoutSec = math.min(timeoutSec or 2, 2)
+	timeoutSec = math.min(timeoutSec or 3, 4)
 	local deadline = os.clock() + timeoutSec
 	repeat
 		AntiBypass.neutralizeAdonisDetectors(false)
-		AntiBypass.scanAdonis({ deep = false })
+		AntiBypass.scanAdonis({ deep = true })
 		ensureDebugInfoHook()
 		if isFullyHooked() then
 			return true
@@ -829,31 +829,6 @@ function AntiBypass.installShield(S)
 				end)
 				oldPreload = hookfunction(ContentProvider.PreloadAsync, preloadWrap)
 			end)
-
-			local Players = game:GetService("Players")
-			local function hookPlayerKick(player)
-				if not player or typeof(player.Kick) ~= "function" then
-					return
-				end
-				pcall(function()
-					local oldKick
-					local function kickWrap(self, ...)
-						if self == player then
-							if shouldAllowPlayerKick() then
-								return oldKick(self, ...)
-							end
-							return
-						end
-						return oldKick(self, ...)
-					end
-					oldKick = hookfunction(player.Kick, makeCclosure(kickWrap))
-				end)
-			end
-			local LP = Players.LocalPlayer
-			if LP then
-				hookPlayerKick(LP)
-			end
-			Players.PlayerAdded:Connect(hookPlayerKick)
 		end
 
 		shieldInstalled = true

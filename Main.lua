@@ -156,7 +156,7 @@ do
 			if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
 				return
 			end
-			local oldInfo = renv.debug.info
+			local oldInfo
 			local wrap = makeCC(function(levelOrFunc, what, ...)
 				if levelOrFunc == detectedRef then
 					if what == "n" then
@@ -169,10 +169,72 @@ do
 				end
 				return oldInfo(levelOrFunc, what, ...)
 			end)
-			local ok = pcall(hookfunction, renv.debug.info, wrap)
-			if ok then
+			local hooked = hookfunction(renv.debug.info, wrap)
+			if typeof(hooked) == "function" then
+				oldInfo = hooked
+			end
+			if typeof(hooked) == "function" or hooked == nil then
 				debugInfoHooked = true
 				earlyStatus.debugInfo = true
+			end
+		end
+
+		local function fastAdonisScan()
+			if typeof(getgc) ~= "function" then
+				return
+			end
+			local scanned = 0
+			local function run()
+				for _, v in getgc(true) do
+					scanned += 1
+					if typeof(v) == "table" then
+						local det = rawget(v, "Detected")
+						if typeof(det) == "function" then
+							if not detectedRef then
+								detectedRef = det
+							end
+							pcall(hookfunction, det, blankDetected)
+							pcall(rawset, v, "Detected", blankDetected)
+							earlyStatus.detected += 1
+							hookDebugInfo()
+						end
+						local kill = rawget(v, "Kill")
+						if typeof(kill) == "function" and rawget(v, "Variables") and typeof(rawget(v, "Process")) == "function" then
+							local softKill = makeSoftKill(kill)
+							pcall(hookfunction, kill, softKill)
+							pcall(rawset, v, "Kill", softKill)
+							earlyStatus.kill += 1
+						end
+						local send = rawget(v, "Send")
+						if typeof(send) == "function" and rawget(v, "Variables") then
+							pcall(function()
+								local oldSend
+								local wrap = makeCC(function(evt, ...)
+									if evt == "Detected" or (typeof(evt) == "string" and evt:find("Detect", 1, true)) then
+										return nil
+									end
+									return oldSend(evt, ...)
+								end)
+								oldSend = hookfunction(send, wrap)
+							end)
+						end
+					end
+					if scanned % 400 == 0 then
+						task.wait()
+					end
+					if earlyStatus.detected > 0 and earlyStatus.kill > 0 and earlyStatus.debugInfo then
+						break
+					end
+				end
+			end
+			if typeof(setthreadidentity) == "function" then
+				pcall(function()
+					setthreadidentity(2)
+					run()
+					setthreadidentity(7)
+				end)
+			else
+				run()
 			end
 		end
 
@@ -287,7 +349,6 @@ do
 		end
 
 		local function lightScan()
-			neutralizeDetectors()
 			local ok, list = pcall(getgc, false)
 			if ok and typeof(list) == "table" then
 				for _, v in list do
@@ -296,6 +357,7 @@ do
 			end
 		end
 
+		fastAdonisScan()
 		lightScan()
 
 		task.spawn(function()
@@ -351,45 +413,6 @@ pcall(function()
 		end
 	end
 	oldPreload = hookfunction(Content.PreloadAsync, preloadWrap)
-
-	local Players = game:GetService("Players")
-	local LP = Players.LocalPlayer
-	local playerKickAttempts = 0
-	local playerKickGraceEnd = 0
-	local PLAYER_KICK_MAX_BLOCK = 5
-	local PLAYER_KICK_GRACE_SEC = 3.0
-	local function shouldAllowPlayerKick()
-		playerKickAttempts += 1
-		if playerKickAttempts > PLAYER_KICK_MAX_BLOCK then
-			return true
-		end
-		if playerKickGraceEnd <= 0 then
-			playerKickGraceEnd = os.clock() + PLAYER_KICK_GRACE_SEC
-		end
-		return os.clock() >= playerKickGraceEnd
-	end
-	if LP then
-		pcall(function()
-			local oldKick
-			local function kickWrap(self, ...)
-				if self == LP then
-					if shouldAllowPlayerKick() then
-						return oldKick(self, ...)
-					end
-					return
-				end
-				return oldKick(self, ...)
-			end
-			local wrapped
-			if typeof(newcclosure) == "function" then
-				local ok, w = pcall(newcclosure, kickWrap)
-				wrapped = ok and w or kickWrap
-			else
-				wrapped = kickWrap
-			end
-			oldKick = hookfunction(LP.Kick, wrapped)
-		end)
-	end
 end)
 
 local function resolveBootstrapRoot(cr)
@@ -907,7 +930,7 @@ end
 bootProgress("Interfejs", 0.86)
 task.spawn(function()
 	if Settings.AntiBypass ~= false then
-		AntiBypass.waitForAdonis(2)
+		AntiBypass.waitForAdonis(3)
 		AntiBypass.logAdonisDiagnostics("pre-UI", Settings)
 	end
 	AntiBypass.setUiBuilding(true)
