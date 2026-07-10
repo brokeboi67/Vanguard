@@ -3,6 +3,7 @@ local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
 _G.__VG_LOADING = true
 
+-- File logger: capture full console to Vanguard/logs/vanguard.log
 do
 	local LOG_ROOT = "Vanguard/logs"
 	local LOG_PATH = LOG_ROOT .. "/vanguard.log"
@@ -33,9 +34,7 @@ do
 		if not fileOk and typeof(writefile) == "function" then
 			local prev = ""
 			if typeof(isfile) == "function" and isfile(LOG_PATH) and typeof(readfile) == "function" then
-				pcall(function()
-					prev = readfile(LOG_PATH)
-				end)
+				pcall(function() prev = readfile(LOG_PATH) end)
 			end
 			fileOk = pcall(writefile, LOG_PATH, prev .. line)
 		end
@@ -50,28 +49,18 @@ do
 	_G.__VG_LOG_PATH = LOG_PATH
 	_G.__VG_LOG = bootWrite
 	_G.__VG_LOG_FILE = bootWriteFile
-	if not _G.__VG_OLD_PRINT then
-		_G.__VG_OLD_PRINT = print
-	end
-	if not _G.__VG_OLD_WARN then
-		_G.__VG_OLD_WARN = warn
-	end
+	if not _G.__VG_OLD_PRINT then _G.__VG_OLD_PRINT = print end
+	if not _G.__VG_OLD_WARN then _G.__VG_OLD_WARN = warn end
 	pcall(function()
-		if _G.__VG_LOG_SERVICE then
-			return
-		end
+		if _G.__VG_LOG_SERVICE then return end
 		_G.__VG_LOG_SERVICE = true
 		local LogService = game:GetService("LogService")
 		local ScriptContext = game:GetService("ScriptContext")
 		LogService.MessageOut:Connect(function(message, messageType)
 			local level = "OUT"
-			if messageType == Enum.MessageType.MessageWarning then
-				level = "WARN"
-			elseif messageType == Enum.MessageType.MessageError then
-				level = "ERROR"
-			elseif messageType == Enum.MessageType.MessageInfo then
-				level = "INFO"
-			end
+			if messageType == Enum.MessageType.MessageWarning then level = "WARN"
+			elseif messageType == Enum.MessageType.MessageError then level = "ERROR"
+			elseif messageType == Enum.MessageType.MessageInfo then level = "INFO" end
 			bootWriteFile(level, tostring(message))
 		end)
 		ScriptContext.Error:Connect(function(message, stack)
@@ -81,305 +70,18 @@ do
 	if not _G.__VG_LOG_HOOKED then
 		_G.__VG_LOG_HOOKED = true
 		print = function(...)
-			local text = bootFmt(...)
-			if _G.__VG_LOG_SERVICE then
-				pcall(_G.__VG_OLD_PRINT, ...)
-			else
-				bootWrite("INFO", ...)
-			end
+			if _G.__VG_LOG_SERVICE then pcall(_G.__VG_OLD_PRINT, ...) else bootWrite("INFO", ...) end
 		end
 		warn = function(...)
-			local text = bootFmt(...)
-			if _G.__VG_LOG_SERVICE then
-				pcall(_G.__VG_OLD_WARN, ...)
-			else
-				bootWrite("WARN", ...)
-			end
+			if _G.__VG_LOG_SERVICE then pcall(_G.__VG_OLD_WARN, ...) else bootWrite("WARN", ...) end
 		end
 	end
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
-do
-	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
-		local earlyStatus = { detected = 0, kill = 0, debugInfo = false }
-		_G.__VG_EARLY_ADONIS = earlyStatus
-
-		local function makeCC(fn)
-			if typeof(newcclosure) == "function" then
-				local ok, wrapped = pcall(newcclosure, fn)
-				if ok and wrapped then
-					return wrapped
-				end
-			end
-			return fn
-		end
-
-		local blankDetected = makeCC(function(_action, _info, _noCrash)
-			return true
-		end)
-		local adonisKillAttempts = 0
-		local adonisKillGraceEnd = 0
-		local ADONIS_KILL_MAX_BLOCK = 4
-		local ADONIS_KILL_GRACE_SEC = 2.5
-
-		local function shouldAllowAdonisKill()
-			adonisKillAttempts += 1
-			if adonisKillAttempts > ADONIS_KILL_MAX_BLOCK then
-				return true
-			end
-			if adonisKillGraceEnd <= 0 then
-				adonisKillGraceEnd = os.clock() + ADONIS_KILL_GRACE_SEC
-			end
-			return os.clock() >= adonisKillGraceEnd
-		end
-
-		local function makeSoftKill(oldKill)
-			return makeCC(function(info)
-				if shouldAllowAdonisKill() then
-					if typeof(oldKill) == "function" then
-						pcall(oldKill, info)
-					end
-				end
-			end)
-		end
-
-		local blankKill = makeCC(function(_info) end)
-		local detectedRef = nil
-		local debugInfoHooked = false
-
-		local function hookDebugInfo()
-			if debugInfoHooked or not detectedRef then
-				return
-			end
-			local renv = typeof(getrenv) == "function" and getrenv() or nil
-			if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
-				return
-			end
-			local oldInfo
-			local wrap = makeCC(function(levelOrFunc, what, ...)
-				if levelOrFunc == detectedRef then
-					if what == "n" then
-						return "Adonis"
-					end
-					if what == "s" or what == "l" then
-						return "=[C]"
-					end
-					return nil
-				end
-				return oldInfo(levelOrFunc, what, ...)
-			end)
-			local hooked = hookfunction(renv.debug.info, wrap)
-			if typeof(hooked) == "function" then
-				oldInfo = hooked
-			end
-			if typeof(hooked) == "function" or hooked == nil then
-				debugInfoHooked = true
-				earlyStatus.debugInfo = true
-			end
-		end
-
-		local function fastAdonisScan()
-			if typeof(getgc) ~= "function" then
-				return
-			end
-			local scanned = 0
-			local function run()
-				for _, v in getgc(true) do
-					scanned += 1
-					if typeof(v) == "table" then
-						local det = rawget(v, "Detected")
-						if typeof(det) == "function" then
-							if not detectedRef then
-								detectedRef = det
-							end
-							pcall(hookfunction, det, blankDetected)
-							pcall(rawset, v, "Detected", blankDetected)
-							earlyStatus.detected += 1
-							hookDebugInfo()
-						end
-						local kill = rawget(v, "Kill")
-						if typeof(kill) == "function" and rawget(v, "Variables") and typeof(rawget(v, "Process")) == "function" then
-							local softKill = makeSoftKill(kill)
-							pcall(hookfunction, kill, softKill)
-							pcall(rawset, v, "Kill", softKill)
-							earlyStatus.kill += 1
-						end
-						local send = rawget(v, "Send")
-						if typeof(send) == "function" and rawget(v, "Variables") then
-							pcall(function()
-								local oldSend
-								local wrap = makeCC(function(evt, ...)
-									if evt == "Detected" or (typeof(evt) == "string" and evt:find("Detect", 1, true)) then
-										return nil
-									end
-									return oldSend(evt, ...)
-								end)
-								oldSend = hookfunction(send, wrap)
-							end)
-						end
-					end
-					if scanned % 400 == 0 then
-						task.wait()
-					end
-					if earlyStatus.detected > 0 and earlyStatus.kill > 0 and earlyStatus.debugInfo then
-						break
-					end
-				end
-			end
-			if typeof(setthreadidentity) == "function" then
-				pcall(function()
-					setthreadidentity(2)
-					run()
-					setthreadidentity(7)
-				end)
-			else
-				run()
-			end
-		end
-
-		local hookedDetectorFns = {}
-
-		local function hookDetectorFn(fn)
-			if typeof(fn) ~= "function" or hookedDetectorFns[fn] then
-				return false
-			end
-			hookedDetectorFns[fn] = true
-			local stub = makeCC(function()
-				return false
-			end)
-			pcall(hookfunction, fn, stub)
-			return true
-		end
-
-		local function neutralizeDetectors()
-			if typeof(getgc) ~= "function" then
-				return
-			end
-			local ok, list = pcall(getgc, false)
-			if not ok or typeof(list) ~= "table" then
-				return
-			end
-			for _, v in ipairs(list) do
-				if typeof(v) == "table" then
-					for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
-						local entry = rawget(v, tag)
-						if typeof(entry) == "table" and typeof(entry[2]) == "function" then
-							hookDetectorFn(entry[2])
-						end
-					end
-				end
-			end
-		end
-
-		local function tryHookTable(v, depth)
-			depth = depth or 0
-			if typeof(v) ~= "table" or depth > 2 then
-				return false
-			end
-			if depth == 0 then
-				local hasDet = typeof(rawget(v, "Detected")) == "function"
-				local hasKill = typeof(rawget(v, "Kill")) == "function" and rawget(v, "Variables")
-				local hasAnti = typeof(rawget(v, "Anti")) == "table"
-				if not hasDet and not hasKill and not hasAnti then
-					return false
-				end
-			end
-			local hooked = false
-			local hasVars = rawget(v, "Variables") ~= nil
-			local hasProcess = typeof(rawget(v, "Process")) == "function"
-			local hasRemote = typeof(rawget(v, "Remote")) == "Instance" or typeof(rawget(v, "Remote")) == "table"
-
-			for _, key in ipairs({ "Detected", "Detect", "detect", "checkClient", "CheckClient" }) do
-				local det = rawget(v, key)
-				if typeof(det) == "function" then
-					if not detectedRef then
-						detectedRef = det
-					end
-					pcall(hookfunction, det, blankDetected)
-					pcall(rawset, v, key, blankDetected)
-					earlyStatus.detected += 1
-					hooked = true
-					hookDebugInfo()
-				end
-			end
-
-			local kill = rawget(v, "Kill")
-			if typeof(kill) == "function" and hasVars and hasProcess then
-				local softKill = makeSoftKill(kill)
-				blankKill = softKill
-				pcall(hookfunction, kill, softKill)
-				pcall(rawset, v, "Kill", softKill)
-				earlyStatus.kill += 1
-				hooked = true
-			end
-
-			local proc = rawget(v, "Process")
-			if typeof(proc) == "function" and hasVars then
-				pcall(hookfunction, proc, makeCC(function(...)
-					return true
-				end))
-				hooked = true
-			end
-
-			local send = rawget(v, "Send")
-			if typeof(send) == "function" and (hasVars or hasRemote) then
-				pcall(function()
-					local oldSend
-					local wrap = makeCC(function(evt, ...)
-						if evt == "Detected" or (typeof(evt) == "string" and evt:find("Detect", 1, true)) then
-							return nil
-						end
-						return oldSend(evt, ...)
-					end)
-					oldSend = hookfunction(send, wrap)
-					pcall(rawset, v, "Send", wrap)
-				end)
-				hooked = true
-			end
-
-			for _, key in ipairs({ "Anti", "Client", "Core" }) do
-				local sub = rawget(v, key)
-				if typeof(sub) == "table" and tryHookTable(sub, depth + 1) then
-					hooked = true
-				end
-			end
-
-			return hooked
-		end
-
-		local function lightScan()
-			local ok, list = pcall(getgc, false)
-			if ok and typeof(list) == "table" then
-				for _, v in list do
-					tryHookTable(v, 0)
-				end
-			end
-		end
-
-		fastAdonisScan()
-		lightScan()
-
-		task.spawn(function()
-			for i = 1, 24 do
-				if _G.__VG_LOADING ~= true then
-					break
-				end
-				lightScan()
-				if earlyStatus.detected > 0 and earlyStatus.kill > 0 and earlyStatus.debugInfo then
-					break
-				end
-				task.wait(0.55)
-			end
-		end)
-	end
-end
-
+-- Block Adonis CoreGui scan via PreloadAsync
 pcall(function()
-	if typeof(hookfunction) ~= "function" then
-		return
-	end
-	local Content = game:GetService("ContentProvider")
+	if typeof(hookfunction) ~= "function" then return end
 	local CoreGui = game:GetService("CoreGui")
 	local function isCoreScan(assets)
 		if typeof(assets) ~= "table" then
