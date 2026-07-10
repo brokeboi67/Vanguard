@@ -126,67 +126,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return not isBot and S.Team and isTeammate(plr)
 	end
 
-	local losParams = RaycastParams.new()
-	losParams.FilterType = Enum.RaycastFilterType.Exclude
-
-	local function updateLosFilter()
-		losParams.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-	end
-
-	-- A part is visually transparent if its Transparency is high enough to see through.
-	-- NOTE: CanCollide is intentionally NOT used — many solid walls in games have
-	-- CanCollide=false (collision meshes, simplified hitboxes) but are still visually solid.
-	local function isPassablePart(inst)
-		if not inst then return false end
-		local ok, trans = pcall(function() return inst.Transparency end)
-		if ok and trans >= 0.85 then return true end
-		return false
-	end
-
-	-- Walk a ray from origin toward targetPos, stepping through visually transparent
-	-- parts (glass, force fields, etc). Returns true if line-of-sight is clear.
-	-- Max 6 iterations → handles up to 6 stacked transparent surfaces.
-	local MAX_LOS_ITERS = 6
-	local LOS_STEP      = 0.15
-
-	local function rayHasLOS(origin, targetPos, char)
-		local rayOrigin = origin
-		local totalDir  = targetPos - origin
-		local totalDist = totalDir.Magnitude
-		if totalDist < 0.5 then return true end
-		local unitDir   = totalDir.Unit
-
-		for _ = 1, MAX_LOS_ITERS do
-			local remaining = targetPos - rayOrigin
-			if remaining.Magnitude < LOS_STEP then return true end
-
-			local hit = workspace:Raycast(rayOrigin, remaining, losParams)
-			if not hit then return true end
-
-			-- Hit a part that belongs to the target character → visible.
-			if hit.Instance:IsDescendantOf(char) then return true end
-
-			-- Hit a visually transparent part → step through and continue.
-			if isPassablePart(hit.Instance) then
-				rayOrigin = hit.Position + unitDir * LOS_STEP
-			else
-				-- Solid wall → not visible.
-				return false
-			end
-		end
-		-- Exhausted iterations through transparent layers → treat as not visible.
-		return false
-	end
-
-	-- LOS cache keyed by Player (survives respawn) — NOT Character (leaks on respawn).
-	local LOS_SLOTS    = 16
-	local losCache     = {}   -- [key] = { result=bool }
-	local losBucket    = {}   -- [key] = slot 0..LOS_SLOTS-1
-	local losBucketCnt = 0
-	local losFrame     = 0
-	local losFilterAt  = 0
-
-	local LOS_PARTS_FAST = { "Head", "HumanoidRootPart" }
+	local losFrame = 0
+	local losCache = {}   -- [key] = { frame, result }
 
 	local function getLosKey(plr, char, isBot)
 		if plr then return plr end
@@ -194,64 +135,34 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return char
 	end
 
-	local function getSlot(key)
-		local s = losBucket[key]
-		if s == nil then
-			s = losBucketCnt % LOS_SLOTS
-			losBucket[key] = s
-			losBucketCnt = losBucketCnt + 1
+	local function charHasLineOfSight(losKey, char)
+		if not char or not losKey then
+			return true
 		end
-		return s
-	end
-
-	local function charHasLineOfSight(losKey, char, distSq)
-		if not char or not losKey then return true end
-		-- No hard distance cutoff — let the cache slots handle perf.
-
-		local slot   = getSlot(losKey)
 		local cached = losCache[losKey]
-
-		if cached and (losFrame % LOS_SLOTS) ~= slot then
+		if cached and cached.frame == losFrame then
 			return cached.result
 		end
-
-		local origin = Cam.CFrame.Position
-		local result = false
-		for _, name in ipairs(LOS_PARTS_FAST) do
-			local part = Util.resolveBodyPart(char, name)
-			if part then
-				local dir = part.Position - origin
-				if dir.Magnitude > 0.05 and rayHasLOS(origin, part.Position, char) then
-					result = true
-					break
-				end
-			end
-		end
-
-		losCache[losKey] = { result = result }
+		local result = Util.charHasLineOfSight(Cam.CFrame.Position, char, LP.Character)
+		losCache[losKey] = { frame = losFrame, result = result }
 		return result
 	end
 
 	local function clearLosKey(key)
-		losCache[key]  = nil
-		losBucket[key] = nil
+		losCache[key] = nil
 	end
 
 	local function pruneLosCacheIfNeeded()
-		losFrame = losFrame + 1
-		-- Prune dead entries every ~2 s (was 10 s — respawns were leaking keys).
-		if losFrame % 120 ~= 0 then return end
-		for key in pairs(losCache) do
-			local dead = false
-			if typeof(key) == "Instance" then
-				if key:IsA("Player") then
-					dead = key.Parent == nil
-				elseif key:IsA("Model") then
+		losFrame += 1
+		if losFrame % 300 == 0 then
+			for key in pairs(losCache) do
+				local dead = false
+				if typeof(key) == "Instance" then
 					dead = key.Parent == nil
 				end
-			end
-			if dead then
-				clearLosKey(key)
+				if dead then
+					losCache[key] = nil
+				end
 			end
 		end
 	end
@@ -262,7 +173,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 		losKey = losKey or getLosKey(plr, c, isBot)
 		if isBot then
-			if S.LoS and not charHasLineOfSight(losKey, c, distSq) then
+			if S.LoS and not charHasLineOfSight(losKey, c) then
 				return S.O
 			end
 			return Color3.fromRGB(255, 180, 80)
@@ -270,7 +181,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		if S.RealTeamColor and plr and plr.Team then
 			return plr.Team.TeamColor.Color
 		end
-		if S.LoS and not charHasLineOfSight(losKey, c, distSq) then
+		if S.LoS and not charHasLineOfSight(losKey, c) then
 			return S.O
 		end
 		return S.V
@@ -846,9 +757,6 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 		espTick = espTick + 1
 		local detailSlot = espTick % DETAIL_SLOTS
-		if S.LoS then
-			updateLosFilter()   -- once per frame, not per-player
-		end
 
 		local active = {}
 		rebuildPlayerTargets()

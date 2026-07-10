@@ -561,4 +561,139 @@ function Util.performCompatTriggerShot(RS, Cam, VIM, targetPos, aimFrames, UIS, 
 	Cam.CFrame = saved
 end
 
+-- ── Line of Sight ─────────────────────────────────────────────────────────────
+-- Spherecast + overlap sweep catches CanQuery=false walls and thin ray gaps.
+
+local _losOverlap = OverlapParams.new()
+_losOverlap.FilterType = Enum.RaycastFilterType.Exclude
+
+local function _losPassable(inst)
+	if not inst or not inst:IsA("BasePart") then
+		return true
+	end
+	local ok, trans = pcall(function()
+		return inst.Transparency
+	end)
+	return ok and trans >= 0.95
+end
+
+local function _losBlocking(inst, targetChar, localChar)
+	if not inst or not inst:IsA("BasePart") then
+		return false
+	end
+	if _losPassable(inst) then
+		return false
+	end
+	if targetChar and inst:IsDescendantOf(targetChar) then
+		return false
+	end
+	if localChar and inst:IsDescendantOf(localChar) then
+		return false
+	end
+	if math.max(inst.Size.X, inst.Size.Y, inst.Size.Z) < 0.35 then
+		return false
+	end
+	return true
+end
+
+local function _losSweepBlocked(origin, targetPos, targetChar, localChar)
+	local dir = targetPos - origin
+	local dist = dir.Magnitude
+	if dist < 1 then
+		return false
+	end
+	local unit = dir / dist
+	local exclude = {}
+	if targetChar then
+		table.insert(exclude, targetChar)
+	end
+	if localChar then
+		table.insert(exclude, localChar)
+	end
+	_losOverlap.FilterDescendantsInstances = exclude
+
+	local radius = 1.35
+	local step = 1.75
+	local t = step
+	while t < dist - 1 do
+		local pt = origin + unit * t
+		local parts = workspace:GetPartBoundsInRadius(pt, radius, _losOverlap)
+		for _, p in parts do
+			if _losBlocking(p, targetChar, localChar) then
+				return true
+			end
+		end
+		t += step
+	end
+	return false
+end
+
+function Util.rayHasLOS(origin, targetPos, targetChar, localChar)
+	if not origin or not targetPos then
+		return true
+	end
+	local dir = targetPos - origin
+	local dist = dir.Magnitude
+	if dist < 0.5 then
+		return true
+	end
+
+	local exclude = {}
+	if localChar then
+		table.insert(exclude, localChar)
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = exclude
+
+	local unit = dir / dist
+	local rayOrigin = origin
+	local remaining = dir
+	local SPHERE_R = 0.85
+	local STEP = 0.2
+
+	for _ = 1, 8 do
+		if remaining.Magnitude < STEP then
+			return not _losSweepBlocked(origin, targetPos, targetChar, localChar)
+		end
+
+		local hit
+		if typeof(workspace.Spherecast) == "function" then
+			hit = workspace:Spherecast(rayOrigin, SPHERE_R, remaining, params)
+		else
+			hit = workspace:Raycast(rayOrigin, remaining, params)
+		end
+
+		if not hit then
+			return not _losSweepBlocked(origin, targetPos, targetChar, localChar)
+		end
+
+		if targetChar and hit.Instance:IsDescendantOf(targetChar) then
+			return true
+		end
+
+		if _losPassable(hit.Instance) then
+			rayOrigin = hit.Position + unit * STEP
+			remaining = targetPos - rayOrigin
+		else
+			return false
+		end
+	end
+
+	return false
+end
+
+function Util.charHasLineOfSight(origin, targetChar, localChar)
+	if not targetChar then
+		return true
+	end
+	for _, name in ipairs({ "Head", "UpperTorso", "HumanoidRootPart" }) do
+		local part = Util.resolveBodyPart(targetChar, name)
+		if part and Util.rayHasLOS(origin, part.Position, targetChar, localChar) then
+			return true
+		end
+	end
+	return false
+end
+
 return Util

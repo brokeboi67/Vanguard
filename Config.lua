@@ -125,6 +125,9 @@ function Config.EnforceRules(S)
 	if S.TriggerCompat == nil then
 		S.TriggerCompat = false
 	end
+	if S.SilentCompat == nil then
+		S.SilentCompat = false
+	end
 	if S.ExcludeTeam == nil then
 		S.ExcludeTeam = true
 	end

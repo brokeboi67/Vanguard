@@ -342,14 +342,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not partPos then
 			return false
 		end
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-		local hit = workspace:Raycast(Cam.CFrame.Position, partPos - Cam.CFrame.Position, params)
-		if not hit then
-			return true
-		end
-		return hit.Instance:IsDescendantOf(char)
+		return Util.rayHasLOS(Cam.CFrame.Position, partPos, char, LP.Character)
 	end
 
 	local function collectTargets()
@@ -590,7 +583,11 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		task.spawn(function()
 			markShot(tgt.char, pos)
 			pcall(function()
-				Util.performSilentShot(RS, Cam, VIM, pos, 2, UIS, LP)
+				if S.SilentCompat then
+					Util.performCompatTriggerShot(RS, Cam, VIM, pos, 2, UIS, LP)
+				else
+					Util.performSilentShot(RS, Cam, VIM, pos, 2, UIS, LP)
+				end
 			end)
 			shotBusy = false
 		end)

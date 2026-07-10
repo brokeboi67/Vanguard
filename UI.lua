@@ -2319,7 +2319,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end,
 	})
-	MakeTog(LAim, "Triggerbot", "Trigger", 3, { flat = true })
+	MakeTog(LAim, "Weapon Compat (ACS)", "SilentCompat", 3, { flat = true })
+	MakeHint(LAim, "hint_silent_compat", 4)
+	MakeTog(LAim, "Triggerbot", "Trigger", 5, { flat = true })
 
 	local LAimBind = MakeCard(T3, "KEYBINDS", "card_laimbind_desc", 2)
 	MakeBind(LAimBind, "Aimbot Key", "AimKey", 1)
