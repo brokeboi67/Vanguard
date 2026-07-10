@@ -371,19 +371,36 @@ end
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
 local masterConn = nil
+local crimFrame  = 0
 
 local function startMaster(S)
 	if masterConn then return end
 
-	-- One-time build on first tick (may need map to load first)
 	local espInitTick = false
+	local running = { noFall = false, noSpike = false }
 
 	masterConn = RS.Heartbeat:Connect(function()
-		-- ── ESP build (deferred: waits for Map to exist) ──────────────────
+		crimFrame = crimFrame + 1
+
+		-- Flag watcher (merged — no second Heartbeat connection)
+		if S.CrimNoFall ~= running.noFall then
+			running.noFall = S.CrimNoFall
+			if running.noFall then pcall(startNoFall) else pcall(stopNoFall) end
+		end
+		if S.CrimNoSpike ~= running.noSpike then
+			running.noSpike = S.CrimNoSpike
+			if running.noSpike then pcall(startNoSpike) else pcall(stopNoSpike) end
+		end
+		if S.CrimSafeESP and not espBuilt.safes and workspace:FindFirstChild("Map") then
+			pcall(buildSafeESP, S)
+		end
+		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
+			pcall(buildDealerESP, S)
+		end
+
 		if (S.CrimSafeESP or S.CrimDealerESP) and not espInitTick then
 			espInitTick = true
 			task.spawn(function()
-				-- Wait for Map up to 10 s
 				local deadline = os.clock() + 10
 				while os.clock() < deadline do
 					if workspace:FindFirstChild("Map") then break end
@@ -394,31 +411,26 @@ local function startMaster(S)
 			end)
 		end
 
-		-- ── Instant Reload ────────────────────────────────────────────────
 		if S.CrimInstReload then
 			perfBegin("InstReload")
 			pcall(tickReload)
 			perfEnd("InstReload")
 		end
 
-		-- ── Melee Aura ────────────────────────────────────────────────────
 		if S.CrimMeleeAura then
 			perfBegin("MeleeAura")
 			tickMelee(S)
 			perfEnd("MeleeAura")
 		end
 
-		-- ── ESP visibility update ─────────────────────────────────────────
-		if S.CrimSafeESP or S.CrimDealerESP then
+		-- ESP visibility: every 2 frames (~30 Hz) — enough for labels/highlights
+		if (S.CrimSafeESP or S.CrimDealerESP) and crimFrame % 2 == 0 then
 			perfBegin("ESPVis")
 			tickESP(S)
 			perfEnd("ESPVis")
 		end
 
-		-- ── Profiler report (every 30 s) ──────────────────────────────────
-		perfBegin("PerfReport")
 		perfReport()
-		perfEnd("PerfReport")
 	end)
 end
 
@@ -431,36 +443,10 @@ function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
 
-	-- Features toggled outside Heartbeat (cheap: only on change via CharacterAdded / explicit toggle)
-	local running = { noFall=false, noSpike=false }
-
-	-- Lightweight separate Heartbeat just for NoFall / NoSpike flag watch
-	-- (these are character-lifecycle features, not per-frame work)
-	RS.Heartbeat:Connect(function()
-		if S.CrimNoFall ~= running.noFall then
-			running.noFall = S.CrimNoFall
-			if running.noFall then pcall(startNoFall) else pcall(stopNoFall) end
-		end
-		if S.CrimNoSpike ~= running.noSpike then
-			running.noSpike = S.CrimNoSpike
-			if running.noSpike then pcall(startNoSpike) else pcall(stopNoSpike) end
-		end
-
-		-- Rebuild deferred ESP if individual toggle was just turned on
-		if S.CrimSafeESP and not espBuilt.safes and workspace:FindFirstChild("Map") then
-			pcall(buildSafeESP, S)
-		end
-		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
-			pcall(buildDealerESP, S)
-		end
-	end)
-
-	-- Main feature loop
 	startMaster(S)
 
-	-- Apply already-enabled features
-	if S.CrimNoFall  then running.noFall  = true; pcall(startNoFall) end
-	if S.CrimNoSpike then running.noSpike = true; pcall(startNoSpike) end
+	if S.CrimNoFall then pcall(startNoFall) end
+	if S.CrimNoSpike then pcall(startNoSpike) end
 end
 
 return Criminality

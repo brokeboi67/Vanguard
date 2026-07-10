@@ -146,9 +146,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return false
 	end
 
-	-- Iterative raycast through transparent parts (max 4 iterations to limit cost).
-	local MAX_LOS_ITERS = 4    -- was 10 — reduced for performance
-	local LOS_STEP      = 0.1
+	-- Iterative raycast through transparent parts (max 3 iterations).
+	local MAX_LOS_ITERS = 3
+	local LOS_STEP      = 0.12
 
 	local function rayHasLOS(origin, targetPos, char)
 		local rayOrigin = origin
@@ -169,50 +169,46 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return false
 	end
 
-	-- ── LOS result cache with slot-based staggering ──────────────────────────
-	-- Each character is assigned a permanent "slot" (0..LOS_SLOTS-1).
-	-- Its LOS is recomputed ONLY when losFrame % LOS_SLOTS == slot.
-	-- With 8 slots and 40 players: ~5 LOS computes per frame instead of 40.
-	-- No thundering herd — updates are spread evenly across frames.
-	-- LOS is SKIPPED entirely for players beyond LOS_MAX_DIST studs (dim color used).
-
-	local LOS_SLOTS    = 8     -- spread LOS updates over 8 frames
-	local LOS_MAX_DIST = 150   -- studs — skip LOS beyond this distance (dim = not visible)
-	local losCache     = {}    -- [char] = { result=bool, slot=int }
-	local losBucket    = {}    -- [char] = slot assignment (0..LOS_SLOTS-1)
-	local losBucketCnt = 0     -- rolling counter for slot assignment
-	local losFrame     = 0     -- incremented each RenderStepped
+	-- LOS cache keyed by Player (survives respawn) — NOT Character (leaks on respawn).
+	local LOS_SLOTS    = 16
+	local LOS_MAX_DIST = 120
+	local losCache     = {}   -- [key] = { result=bool }
+	local losBucket    = {}   -- [key] = slot 0..LOS_SLOTS-1
+	local losBucketCnt = 0
+	local losFrame     = 0
+	local losFilterAt  = 0
 
 	local LOS_PARTS_FAST = { "Head", "HumanoidRootPart" }
 
-	local function getSlot(char)
-		local s = losBucket[char]
-		if not s then
+	local function getLosKey(plr, char, isBot)
+		if plr then return plr end
+		if isBot and char then return char end
+		return char
+	end
+
+	local function getSlot(key)
+		local s = losBucket[key]
+		if s == nil then
 			s = losBucketCnt % LOS_SLOTS
-			losBucket[char] = s
-			losBucketCnt    = losBucketCnt + 1
+			losBucket[key] = s
+			losBucketCnt = losBucketCnt + 1
 		end
 		return s
 	end
 
-	local function charHasLineOfSight(char, distSq)
-		if not char then return true end
-
-		-- Beyond LOS_MAX_DIST — treat as not visible (saves all raycasts)
+	local function charHasLineOfSight(losKey, char, distSq)
+		if not char or not losKey then return true end
 		if distSq and distSq > LOS_MAX_DIST * LOS_MAX_DIST then
 			return false
 		end
 
-		local slot   = getSlot(char)
-		local cached = losCache[char]
+		local slot   = getSlot(losKey)
+		local cached = losCache[losKey]
 
-		-- Return cached result unless it's this char's update frame
 		if cached and (losFrame % LOS_SLOTS) ~= slot then
 			return cached.result
 		end
 
-		-- Compute fresh result (only ~5 chars per frame at 40 players)
-		updateLosFilter()
 		local origin = Cam.CFrame.Position
 		local result = false
 		for _, name in ipairs(LOS_PARTS_FAST) do
@@ -226,29 +222,41 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			end
 		end
 
-		losCache[char] = { result = result, slot = slot }
+		losCache[losKey] = { result = result }
 		return result
 	end
 
-	-- Advance frame counter + periodic cleanup (no per-frame cost).
+	local function clearLosKey(key)
+		losCache[key]  = nil
+		losBucket[key] = nil
+	end
+
 	local function pruneLosCacheIfNeeded()
 		losFrame = losFrame + 1
-		if losFrame % 600 ~= 0 then return end   -- prune every ~10 s
-		for char in pairs(losCache) do
-			if not char.Parent then
-				losCache[char]  = nil
-				losBucket[char] = nil
+		-- Prune dead entries every ~2 s (was 10 s — respawns were leaking keys).
+		if losFrame % 120 ~= 0 then return end
+		for key in pairs(losCache) do
+			local dead = false
+			if typeof(key) == "Instance" then
+				if key:IsA("Player") then
+					dead = key.Parent == nil
+				elseif key:IsA("Model") then
+					dead = key.Parent == nil
+				end
+			end
+			if dead then
+				clearLosKey(key)
 			end
 		end
 	end
 
-	-- distSq: pre-computed squared distance to avoid sqrt — passed in to avoid recalculating.
-	local function GetColor(plr, c, isBot, distSq)
+	local function GetColor(plr, c, isBot, distSq, losKey)
 		if S.Chams and S.ChamsRainbow then
 			return Rainbow()
 		end
+		losKey = losKey or getLosKey(plr, c, isBot)
 		if isBot then
-			if S.LoS and not charHasLineOfSight(c, distSq) then
+			if S.LoS and not charHasLineOfSight(losKey, c, distSq) then
 				return S.O
 			end
 			return Color3.fromRGB(255, 180, 80)
@@ -256,7 +264,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		if S.RealTeamColor and plr and plr.Team then
 			return plr.Team.TeamColor.Color
 		end
-		if S.LoS and not charHasLineOfSight(c, distSq) then
+		if S.LoS and not charHasLineOfSight(losKey, c, distSq) then
 			return S.O
 		end
 		return S.V
@@ -342,7 +350,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		table.clear(botList)
 	end
 
-	local function renderEntity(key, c, plr, displayName, isBot)
+	local function renderEntity(key, c, plr, displayName, isBot, fastOnly)
 		if not c or not c.Parent or not Util.isValidTarget(c, plr) then
 			if Cache[key] then
 				hideAll(Cache[key])
@@ -382,7 +390,30 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 
 		local distSq = dist * dist
-		local clr = GetColor(plr, c, isBot, distSq)
+		local losKey = getLosKey(plr, c, isBot)
+		local h2 = math.abs(box.topY - box.bottomY)
+		local w2 = h2 * 0.55
+		local bx, by = box.centerX - w2 / 2, box.topY
+		local rp = Vector2.new(box.centerX, (box.topY + box.bottomY) / 2)
+
+		-- Fast path: box position only (no LOS, skeleton, text). Runs 3/4 frames per player.
+		if fastOnly and ch._lastClr then
+			local clr = ch._lastClr
+			if S.Box then
+				ch.B.Size = UDim2.new(0, w2, 0, h2)
+				ch.B.Position = UDim2.new(0, bx, 0, by)
+				ch.B.Visible = true
+			end
+			if S.Chams and ch.CHM.Enabled then
+				ch.CHM.FillColor = clr
+				ch.CHM.OutlineColor = clr
+			end
+			ch.root.Visible = true
+			return
+		end
+
+		local clr = GetColor(plr, c, isBot, distSq, losKey)
+		ch._lastClr = clr
 
 		if S.Chams then
 			ch.CHM.Adornee = c
@@ -392,11 +423,6 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		else
 			ch.CHM.Enabled = false
 		end
-
-		local h2 = math.abs(box.topY - box.bottomY)
-		local w2 = h2 * 0.55
-		local bx, by = box.centerX - w2 / 2, box.topY
-		local rp = Vector2.new(box.centerX, (box.topY + box.bottomY) / 2)
 
 		if S.Box then
 			ch.B.Size = UDim2.new(0, w2, 0, h2)
@@ -509,6 +535,40 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 	local lastRenderBots = S.RenderBots
 	local lastESP = S.ESP
+
+	-- Performance: cap targets + stagger full-detail updates across frames.
+	local espTick         = 0
+	local DETAIL_SLOTS    = 4
+	local MAX_ESP_TARGETS = 28
+	local espTargets      = {}
+
+	local function rebuildPlayerTargets()
+		table.clear(espTargets)
+		local camPos = Cam.CFrame.Position
+		for _, plr in ipairs(P:GetPlayers()) do
+			if plr ~= LP then
+				local c = plr.Character
+				local hrp = c and c:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					table.insert(espTargets, {
+						key = plr,
+						char = c,
+						plr = plr,
+						name = plr.Name,
+						bot = false,
+						dist = (camPos - hrp.Position).Magnitude,
+						uid = plr.UserId,
+					})
+				end
+			end
+		end
+		if #espTargets > MAX_ESP_TARGETS then
+			table.sort(espTargets, function(a, b) return a.dist < b.dist end)
+			for i = #espTargets, MAX_ESP_TARGETS + 1, -1 do
+				espTargets[i] = nil
+			end
+		end
+	end
 
 	local function getArrowConfig()
 		local high = S.OffscreenArrowHighVis == true
@@ -723,7 +783,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 	RS.RenderStepped:Connect(function()
 		_espT0 = os.clock()
-		pruneLosCacheIfNeeded()   -- advance frame counter + periodic cache cleanup
+		pruneLosCacheIfNeeded()
 
 		if lastESP and not S.ESP then
 			hideAllCaches()
@@ -739,17 +799,23 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
-		local active = {}
+		espTick = espTick + 1
+		local detailSlot = espTick % DETAIL_SLOTS
+		if S.LoS then
+			updateLosFilter()   -- once per frame, not per-player
+		end
 
-		for _, plr in pairs(P:GetPlayers()) do
-			if plr ~= LP then
-				active[plr] = true
-				renderEntity(plr, plr.Character, plr, plr.Name, false)
-			end
+		local active = {}
+		rebuildPlayerTargets()
+
+		for _, t in ipairs(espTargets) do
+			active[t.key] = true
+			local fullDetail = (t.uid % DETAIL_SLOTS) == detailSlot or t.dist < 35
+			renderEntity(t.key, t.char, t.plr, t.name, false, not fullDetail)
 		end
 
 		if S.RenderBots then
-			if tick() - botScanAt > 1.5 then
+			if tick() - botScanAt > 5 then
 				botScanAt = tick()
 				refreshBots()
 			end
@@ -758,7 +824,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				local model = botList[i]
 				if model.Parent and isBotModel(model) then
 					active[model] = true
-					renderEntity(model, model, nil, model.Name, true)
+					local fullDetail = (i % DETAIL_SLOTS) == detailSlot
+					renderEntity(model, model, nil, model.Name, true, not fullDetail)
 					i += 1
 				else
 					destroyCache(model)
@@ -801,7 +868,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				local edge = getOffscreenPlacement(hrp.Position, cfg.margin)
 				if edge then
 					arrowActive[key] = true
-					local clr = GetColor(plr, char, isBot, dist * dist)
+					local ch = Cache[key]
+					local clr = ch and ch._lastClr or S.V
 					local label = plr and plr.Name or (char and char.Name or "?")
 					pcall(renderOffscreen, key, hrp.Position, clr, dist, label)
 				else
@@ -856,6 +924,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	P.PlayerRemoving:Connect(function(plr)
 		destroyCache(plr)
 		purgeArrow(plr)
+		clearLosKey(plr)
 	end)
 end
 
