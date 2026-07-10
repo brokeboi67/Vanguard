@@ -135,20 +135,61 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		losParams.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
 	end
 
-	local function charHasLineOfSight(char)
-		if not char then
-			return true
+	-- Returns true if the part should be treated as transparent / passable for LOS purposes.
+	-- Handles invisible lobby walls, non-collidable decorations, and glass-like elements.
+	local function isPassablePart(inst)
+		if not inst then return false end
+		local ok, trans = pcall(function() return inst.Transparency end)
+		if ok and trans >= 0.95 then return true end           -- fully (or near-fully) invisible
+		local ok2, cc = pcall(function() return inst.CanCollide end)
+		if ok2 and not cc then return true end                 -- ghost / non-collidable part
+		return false
+	end
+
+	-- Iterative raycast: casts repeatedly, skipping passable (transparent / non-collidable)
+	-- parts until a solid obstruction is found or the target character is reached.
+	-- Fixes false-negative "not visible" when standing in front of invisible lobby walls.
+	local MAX_LOS_ITERS = 10
+	local LOS_STEP      = 0.08   -- metres to advance past a passable part each iteration
+
+	local function rayHasLOS(origin, targetPos, char)
+		local rayOrigin = origin
+		local remaining = targetPos - origin
+
+		for _ = 1, MAX_LOS_ITERS do
+			if remaining.Magnitude < LOS_STEP then
+				return true   -- essentially at the target
+			end
+			local hit = workspace:Raycast(rayOrigin, remaining, losParams)
+			if not hit then
+				return true   -- clear path
+			end
+			if hit.Instance:IsDescendantOf(char) then
+				return true   -- hit the target character itself
+			end
+			if isPassablePart(hit.Instance) then
+				-- Step through this transparent/ghost part and cast again
+				local advance = hit.Distance + LOS_STEP
+				local unitDir  = remaining.Unit
+				rayOrigin = origin + unitDir * advance
+				remaining = targetPos - rayOrigin
+			else
+				return false  -- solid wall in the way
+			end
 		end
+		return false
+	end
+
+	local function charHasLineOfSight(char)
+		if not char then return true end
 		updateLosFilter()
 		local origin = Cam.CFrame.Position
 		for _, name in ipairs(LOS_PARTS) do
 			local part = Util.resolveBodyPart(char, name)
 			if part then
 				local dir = part.Position - origin
-				local mag = dir.Magnitude
-				if mag > 0.05 then
-					local hit = workspace:Raycast(origin, dir, losParams)
-					if not hit or hit.Instance:IsDescendantOf(char) then
+				if dir.Magnitude > 0.05 then
+					if rayHasLOS(origin, part.Position, char) then
 						return true
 					end
 				end
