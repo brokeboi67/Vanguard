@@ -2157,6 +2157,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CESP = MakeCard(TCrim, "OBJECT ESP", nil, 4)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 1, { flat = true })
 		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 2, { flat = true })
+		MakeSlider(CESP, "Max Distance", "CrimESPMaxDist", 50, 600, 3, {
+			suffix = " st",
+			step = 10,
+			fmt = function(v) return string.format("%d st", v) end,
+		})
 	end
 
 	local function refreshWorld()
