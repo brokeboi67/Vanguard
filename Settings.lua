@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.20",
+	Version = "2.43.21",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -25,6 +25,8 @@ local Settings = {
 	RealTeamColor = true,
 	LoS = false,
 	MaxDist = 500,
+	ESPRenderLimit = false,
+	ESPRenderDist = 500,
 	Th = 1.5,
 	V = Color3.fromRGB(0, 255, 150),
 	O = Color3.fromRGB(255, 50, 50),

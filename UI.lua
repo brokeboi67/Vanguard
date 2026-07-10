@@ -2176,7 +2176,27 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
 	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })
-	MakeSlider(VDist, "Distance Limit", "MaxDist", 50, 1500, 2)
+	MakeTog(VDist, "Limit Render Distance", "ESPRenderLimit", 2, {
+		flat = true,
+		onChange = function(on)
+			local reg = sliderRegistry.ESPRenderDist
+			if reg and reg.setEnabled then
+				reg.setEnabled(on)
+			end
+		end,
+	})
+	MakeSlider(VDist, "Render Distance", "ESPRenderDist", 50, 2000, 3, {
+		suffix = " st",
+		step = 25,
+		fmt = function(v)
+			return string.format("%d st", v)
+		end,
+		onRowCreated = function(_, __, setEnabled)
+			if setEnabled then
+				setEnabled(S.ESPRenderLimit == true)
+			end
+		end,
+	})
 	local VOver = MakeCard(T1, "OVERLAYS", nil, 4)
 	MakeTog(VOver, "Bounding Boxes", "Box", 1, { flat = true })
 	MakeChoice(VOver, "Box Type", "BoxType", {
@@ -2338,6 +2358,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		{ label = "Random", value = "Random" },
 		{ label = "Closest", value = "Closest" },
 	}, 5)
+	MakeSlider(LTarget, "Max Distance", "MaxDist", 50, 1500, 6, { suffix = "m", step = 25 })
 
 	local LFov = MakeCard(T3, "FOV & SMOOTH", "card_lfov_desc", 5)
 	MakeTog(LFov, "Show FOV Circle", "ShowFOV", 1, { flat = true })

@@ -356,6 +356,13 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		table.clear(botList)
 	end
 
+	local function getEspMaxDist()
+		if not S.ESPRenderLimit then
+			return math.huge
+		end
+		return math.max(50, tonumber(S.ESPRenderDist) or 500)
+	end
+
 	local function renderEntity(key, c, plr, displayName, isBot, fastOnly)
 		if not c or not c.Parent or not Util.isValidTarget(c, plr) then
 			if Cache[key] then
@@ -390,7 +397,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 
 		local dist = box.dist
-		if dist > S.MaxDist then
+		if dist > getEspMaxDist() then
 			hideAll(ch)
 			return
 		end
@@ -556,20 +563,24 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	local function rebuildPlayerTargets()
 		table.clear(espTargets)
 		local camPos = Cam.CFrame.Position
+		local maxDist = getEspMaxDist()
 		for _, plr in ipairs(P:GetPlayers()) do
 			if plr ~= LP then
 				local c = plr.Character
 				local hrp = c and c:FindFirstChild("HumanoidRootPart")
 				if hrp then
-					table.insert(espTargets, {
-						key = plr,
-						char = c,
-						plr = plr,
-						name = plr.Name,
-						bot = false,
-						dist = (camPos - hrp.Position).Magnitude,
-						uid = plr.UserId,
-					})
+					local dist = (camPos - hrp.Position).Magnitude
+					if dist <= maxDist then
+						table.insert(espTargets, {
+							key = plr,
+							char = c,
+							plr = plr,
+							name = plr.Name,
+							bot = false,
+							dist = dist,
+							uid = plr.UserId,
+						})
+					end
 				end
 			end
 		end
@@ -894,7 +905,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 					return
 				end
 				local dist = (Cam.CFrame.Position - hrp.Position).Magnitude
-				if dist > S.MaxDist then
+				if dist > getEspMaxDist() then
 					return
 				end
 				local cfg = getArrowConfig()

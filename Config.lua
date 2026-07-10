@@ -309,6 +309,12 @@ function Config.EnforceRules(S)
 	if S.OffscreenArrowShowName == nil then
 		S.OffscreenArrowShowName = true
 	end
+	if S.ESPRenderLimit == nil then
+		S.ESPRenderLimit = false
+	end
+	if S.ESPRenderDist == nil then
+		S.ESPRenderDist = 500
+	end
 	if S.MusicAutoQueue == nil then
 		S.MusicAutoQueue = true
 	end
