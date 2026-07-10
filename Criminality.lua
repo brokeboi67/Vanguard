@@ -1,6 +1,7 @@
--- Criminality.lua  v2.43.11
--- Game-specific features for Criminality (Universe 1494262959)
--- Covers lobby (4588604953) and Casual (8343259840) via game.GameId.
+-- Criminality.lua  v2.43.12
+-- Game-specific features for Criminality (Universe 1494262959).
+-- Architecture: ONE Heartbeat loop for all features + built-in profiler.
+-- Profiler writes timing stats to the log file every 30 s.
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -13,130 +14,68 @@ local RS    = game:GetService("RunService")
 local Plrs  = game:GetService("Players")
 local RepSt = game:GetService("ReplicatedStorage")
 
-local function getLP()    return Plrs.LocalPlayer end
-local function getChar()  local lp=getLP(); return lp and lp.Character end
-local function getHum()   local c=getChar(); return c and c:FindFirstChildOfClass("Humanoid"),c end
-local function getHRP()   local c=getChar(); return c and c:FindFirstChild("HumanoidRootPart"),c end
+local function getLP()   return Plrs.LocalPlayer end
+local function getChar() local lp=getLP(); return lp and lp.Character end
+local function getHum()  local c=getChar(); return c and c:FindFirstChildOfClass("Humanoid"),c end
+local function getHRP()  local c=getChar(); return c and c:FindFirstChild("HumanoidRootPart"),c end
 
--- ── VirtualInputManager ───────────────────────────────────────────────────────
-local VIM
-pcall(function() VIM = game:GetService("VirtualInputManager") end)
+local VIM; pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- ────────────────────────────────────────────────────────────────────────────
--- INFINITE STAMINA
--- ────────────────────────────────────────────────────────────────────────────
--- Strategy:
---   1. Search CharStats once (fast, no GetDescendants on PlayerGui).
---   2. Cache result; if not found, retry only every 5 s (not every frame).
---   3. WalkSpeed guard: if stamina depletion slows the humanoid, restore speed.
+-- ── built-in profiler ────────────────────────────────────────────────────────
+-- Measures how long each named section takes per Heartbeat frame.
+-- Writes a summary to the log file every PERF_INTERVAL seconds.
 
-local staminaConn     = nil
-local staminaObjs     = {}
-local staminaLastScan = 0
-local STAMINA_SCAN_CD = 5   -- seconds between re-scan attempts if nothing found
+local PERF_INTERVAL = 30   -- seconds between reports
+local _perf         = {}   -- { [name] = {tot=0, cnt=0, max=0} }
+local _perfLast     = 0
 
-local STAMINA_NAMES = {
-	"Stamina","stamina","STAMINA",
-	"Sprint","sprint","SPRINT",
-	"Energy","energy","Endurance",
-}
-
-local function isStaminaName(n)
-	n = n:lower()
-	for _, s in ipairs(STAMINA_NAMES) do
-		if n:find(s:lower(), 1, true) then return true end
-	end
-	return false
+local function perfBegin(name)
+	local s = _perf[name]
+	if not s then s = {tot=0,cnt=0,max=0}; _perf[name]=s end
+	s._t0 = os.clock()
 end
 
-local function scanStamina()
-	local found = {}
-	local lp = getLP(); if not lp then return found end
-
-	-- ── CharStats (Criminality stores player stats here) ──────────────────
-	local cs = RepSt:FindFirstChild("CharStats")
-	if cs then
-		local ms = cs:FindFirstChild(lp.Name)
-		if ms then
-			for _, v in ipairs(ms:GetChildren()) do
-				if (v:IsA("NumberValue") or v:IsA("IntValue")) and isStaminaName(v.Name) then
-					table.insert(found, v)
-				end
-			end
-		end
-	end
-
-	-- ── Character children only (NOT GetDescendants — too slow) ──────────
-	local c = getChar()
-	if c then
-		for _, v in ipairs(c:GetChildren()) do
-			if (v:IsA("NumberValue") or v:IsA("IntValue")) and isStaminaName(v.Name) then
-				table.insert(found, v)
-			end
-		end
-	end
-
-	-- ── LP children ───────────────────────────────────────────────────────
-	for _, v in ipairs(lp:GetChildren()) do
-		if (v:IsA("NumberValue") or v:IsA("IntValue")) and isStaminaName(v.Name) then
-			table.insert(found, v)
-		end
-	end
-
-	return found
+local function perfEnd(name)
+	local s = _perf[name]; if not s or not s._t0 then return end
+	local dt = os.clock() - s._t0
+	s.tot = s.tot + dt
+	s.cnt = s.cnt + 1
+	if dt > s.max then s.max = dt end
+	s._t0 = nil
 end
 
-local origWalkSpeed = nil
-
-local function refillStamina()
+local function perfReport()
 	local now = os.clock()
+	if now - _perfLast < PERF_INTERVAL then return end
+	_perfLast = now
 
-	-- Re-scan if nothing cached AND cooldown elapsed
-	if #staminaObjs == 0 and (now - staminaLastScan) > STAMINA_SCAN_CD then
-		staminaLastScan = now
-		staminaObjs     = scanStamina()
-	end
-
-	-- Max-out found NumberValues
-	for i = #staminaObjs, 1, -1 do
-		local v = staminaObjs[i]
-		if not v or not v.Parent then
-			table.remove(staminaObjs, i)
-		else
-			local max = (v.MaxValue and v.MaxValue > 0) and v.MaxValue or 100
-			if v.Value < max then
-				pcall(function() v.Value = max end)
-			end
+	local lines = {"[VG:PERF Criminality] last "..PERF_INTERVAL.."s:"}
+	local sorted = {}
+	for name, s in pairs(_perf) do
+		if s.cnt > 0 then
+			table.insert(sorted, {
+				name = name,
+				avg  = s.tot / s.cnt * 1000,
+				max  = s.max * 1000,
+				cnt  = s.cnt,
+			})
+			s.tot, s.cnt, s.max = 0, 0, 0   -- reset window
 		end
 	end
+	table.sort(sorted, function(a,b) return a.avg > b.avg end)
+	for _, e in ipairs(sorted) do
+		table.insert(lines, string.format("  %-20s avg=%.3fms  max=%.3fms  n=%d",
+			e.name, e.avg, e.max, e.cnt))
+	end
 
-	-- ── WalkSpeed guard: counteract any stamina-drain slowdown ────────────
-	local hum = getHum()
-	if hum then
-		if not origWalkSpeed then origWalkSpeed = hum.WalkSpeed end
-		-- If game reduced WalkSpeed below the original (stamina drain), restore it
-		if origWalkSpeed and hum.WalkSpeed < origWalkSpeed - 0.5 then
-			pcall(function() hum.WalkSpeed = origWalkSpeed end)
-		end
+	local report = table.concat(lines, "\n")
+	warn(report)
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("PERF", report)
 	end
 end
 
-local function startInfStamina()
-	if staminaConn then return end
-	origWalkSpeed   = nil
-	staminaObjs     = scanStamina()
-	staminaLastScan = os.clock()
-	staminaConn = RS.Heartbeat:Connect(refillStamina)
-end
-
-local function stopInfStamina()
-	if staminaConn then staminaConn:Disconnect(); staminaConn = nil end
-	staminaObjs, origWalkSpeed = {}, nil
-end
-
--- ────────────────────────────────────────────────────────────────────────────
--- NO FALL DAMAGE  (hidden ForceField — starlight method)
--- ────────────────────────────────────────────────────────────────────────────
+-- ── NO FALL DAMAGE ───────────────────────────────────────────────────────────
 local noFallConns = {}
 
 local function addForceField(char)
@@ -144,10 +83,10 @@ local function addForceField(char)
 	for _, o in ipairs(char:GetChildren()) do
 		if o:IsA("ForceField") and not o.Visible then o:Destroy() end
 	end
-	local ff = Instance.new("ForceField"); ff.Visible = false; ff.Parent = char
+	local ff = Instance.new("ForceField"); ff.Visible=false; ff.Parent=char
 	local c = char.ChildAdded:Connect(function(ch)
 		if ch:IsA("ForceField") and not ch.Visible then
-			task.wait(0.1); if ch and ch.Parent then ch.Visible = false end
+			task.wait(0.1); if ch and ch.Parent then ch.Visible=false end
 		end
 	end)
 	table.insert(noFallConns, c)
@@ -163,113 +102,89 @@ local function startNoFall()
 end
 
 local function stopNoFall()
-	for _, c in ipairs(noFallConns) do pcall(c.Disconnect, c) end
-	noFallConns = {}
-	local c = getChar()
+	for _, c in ipairs(noFallConns) do pcall(c.Disconnect,c) end; noFallConns={}
+	local c=getChar()
 	if c then
-		for _, o in ipairs(c:GetChildren()) do
+		for _,o in ipairs(c:GetChildren()) do
 			if o:IsA("ForceField") and not o.Visible then o:Destroy() end
 		end
 	end
 end
 
--- ────────────────────────────────────────────────────────────────────────────
--- NO SPIKE DAMAGE
--- ────────────────────────────────────────────────────────────────────────────
+-- ── NO SPIKE DAMAGE ──────────────────────────────────────────────────────────
 local noSpikeConn = nil
 
 local function disableSpikeParts()
-	local ws = workspace
-	local ff = ws:FindFirstChild("Filter"); if not ff then return end
-	local pf = ff:FindFirstChild("Parts");  if not pf then return end
-	local fp = pf:FindFirstChild("F_Parts"); if not fp then return end
-	for _, d in ipairs(fp:GetDescendants()) do
-		if d:IsA("BasePart") then pcall(function() d.CanTouch = false end) end
+	local ff=workspace:FindFirstChild("Filter"); if not ff then return end
+	local pf=ff:FindFirstChild("Parts");         if not pf then return end
+	local fp=pf:FindFirstChild("F_Parts");        if not fp then return end
+	for _,d in ipairs(fp:GetDescendants()) do
+		if d:IsA("BasePart") then pcall(function() d.CanTouch=false end) end
 	end
 	if noSpikeConn then noSpikeConn:Disconnect() end
 	noSpikeConn = fp.DescendantAdded:Connect(function(d)
-		if d:IsA("BasePart") then pcall(function() d.CanTouch = false end) end
+		if d:IsA("BasePart") then pcall(function() d.CanTouch=false end) end
 	end)
 end
 
 local function startNoSpike()
 	if workspace:FindFirstChild("Filter") then disableSpikeParts()
 	else
-		local c; c = workspace.ChildAdded:Connect(function(ch)
-			if ch.Name == "Filter" then task.wait(0.3); disableSpikeParts(); c:Disconnect() end
+		local c; c=workspace.ChildAdded:Connect(function(ch)
+			if ch.Name=="Filter" then task.wait(0.3); disableSpikeParts(); c:Disconnect() end
 		end)
 	end
 end
 
 local function stopNoSpike()
-	if noSpikeConn then noSpikeConn:Disconnect(); noSpikeConn = nil end
+	if noSpikeConn then noSpikeConn:Disconnect(); noSpikeConn=nil end
 	local fp = workspace:FindFirstChild("Filter") and
 	           workspace.Filter:FindFirstChild("Parts") and
 	           workspace.Filter.Parts:FindFirstChild("F_Parts")
 	if fp then
-		for _, d in ipairs(fp:GetDescendants()) do
-			if d:IsA("BasePart") then pcall(function() d.CanTouch = true end) end
+		for _,d in ipairs(fp:GetDescendants()) do
+			if d:IsA("BasePart") then pcall(function() d.CanTouch=true end) end
 		end
 	end
 end
 
--- ────────────────────────────────────────────────────────────────────────────
--- INSTANT RELOAD
--- ────────────────────────────────────────────────────────────────────────────
-local instReloadConn = nil
+-- ── INSTANT RELOAD ───────────────────────────────────────────────────────────
 local AMMO_NAMES    = {"Ammo","ammo","Magazine","Mag","Bullets","CurrentAmmo","Clip"}
 local MAXAMMO_NAMES = {"MaxAmmo","MagSize","MaxMag","MaxBullets","MaxMagazine","MaxClip"}
 
-local function refillAmmo()
-	local c = getChar(); if not c then return end
-	local tool = c:FindFirstChildOfClass("Tool"); if not tool then return end
-	for _, n in ipairs(AMMO_NAMES) do
-		local v = tool:FindFirstChild(n)
+local function tickReload()
+	local c=getChar(); if not c then return end
+	local tool=c:FindFirstChildOfClass("Tool"); if not tool then return end
+	for _,n in ipairs(AMMO_NAMES) do
+		local v=tool:FindFirstChild(n)
 		if v and (v:IsA("NumberValue") or v:IsA("IntValue")) then
-			local maxV = 0
-			for _, mn in ipairs(MAXAMMO_NAMES) do
-				local mv = tool:FindFirstChild(mn)
-				if mv and mv:IsA("NumberValue") then maxV = mv.Value; break end
+			local maxV=0
+			for _,mn in ipairs(MAXAMMO_NAMES) do
+				local mv=tool:FindFirstChild(mn)
+				if mv and mv:IsA("NumberValue") then maxV=mv.Value; break end
 			end
-			if maxV <= 0 then maxV = 30 end
-			if v.Value < maxV then pcall(function() v.Value = maxV end) end
+			if maxV<=0 then maxV=30 end
+			if v.Value<maxV then v.Value=maxV end
 		end
 	end
 end
 
-local function startInstReload()
-	if instReloadConn then return end
-	instReloadConn = RS.Heartbeat:Connect(refillAmmo)
-end
-
-local function stopInstReload()
-	if instReloadConn then instReloadConn:Disconnect(); instReloadConn = nil end
-end
-
--- ────────────────────────────────────────────────────────────────────────────
--- MELEE AURA
--- ────────────────────────────────────────────────────────────────────────────
--- Uses VirtualInputManager left-click to trigger Tool.Activated naturally.
--- Also faces the target with the camera (not HRP CFrame) to avoid detection.
--- Note: Criminality's melee punch range is ~4-5 studs — set AuraRange ≤ 5
--- for guaranteed hits. Larger ranges show who to focus on.
-
-local meleeConn     = nil
+-- ── MELEE AURA ───────────────────────────────────────────────────────────────
 local meleeCooldown = false
-local MELEE_CD      = 0.5   -- seconds
+local MELEE_CD      = 0.5
 
 local function getClosestInRange(range)
-	local hrp = getHRP(); if not hrp then return nil end
-	local myPos = hrp.Position
-	local best, bestDist = nil, range
-	for _, p in ipairs(Plrs:GetPlayers()) do
-		if p ~= getLP() and p.Character then
-			local h = p.Character:FindFirstChildOfClass("Humanoid")
-			if h and h.Health > 0 then
-				local eHRP = p.Character:FindFirstChild("HumanoidRootPart")
+	local hrp=getHRP(); if not hrp then return nil end
+	local myPos=hrp.Position
+	local best,bestDist=nil,range
+	for _,p in ipairs(Plrs:GetPlayers()) do
+		if p~=getLP() and p.Character then
+			local h=p.Character:FindFirstChildOfClass("Humanoid")
+			if h and h.Health>0 then
+				local eHRP=p.Character:FindFirstChild("HumanoidRootPart")
 				if eHRP then
-					local d = (myPos - eHRP.Position).Magnitude
-					if d < bestDist then bestDist = d; best = p end
+					local d=(myPos-eHRP.Position).Magnitude
+					if d<bestDist then bestDist=d; best=p end
 				end
 			end
 		end
@@ -279,135 +194,104 @@ end
 
 local function doMeleeAttack(target)
 	if not target or not target.Character then return end
-	local eHRP  = target.Character:FindFirstChild("HumanoidRootPart")
-	local hrp   = getHRP()
+	local eHRP=target.Character:FindFirstChild("HumanoidRootPart")
+	local hrp=getHRP()
 	if not eHRP or not hrp then return end
-
-	-- Face the target (camera-based, less detectable than moving HRP)
-	local cam = workspace.CurrentCamera
+	-- Face target
 	pcall(function()
-		local dir = eHRP.Position - cam.CFrame.Position
-		cam.CFrame = CFrame.lookAt(cam.CFrame.Position, cam.CFrame.Position + dir)
+		hrp.CFrame=CFrame.lookAt(hrp.Position,Vector3.new(eHRP.Position.X,hrp.Position.Y,eHRP.Position.Z))
 	end)
-	-- Also face HRP toward target so hitbox cast hits
 	pcall(function()
-		hrp.CFrame = CFrame.lookAt(hrp.Position,
-			Vector3.new(eHRP.Position.X, hrp.Position.Y, eHRP.Position.Z))
+		local cam=workspace.CurrentCamera
+		cam.CFrame=CFrame.lookAt(cam.CFrame.Position,eHRP.Position)
 	end)
-
-	-- Simulate left click via VIM (triggers Tool.Activated naturally)
+	-- Simulate click
 	if VIM then
-		pcall(function() VIM:SendMouseButtonEvent(0, 0, 0, true,  game, 0) end)
+		pcall(function() VIM:SendMouseButtonEvent(0,0,0,true, game,0) end)
 		task.wait(0.04)
-		pcall(function() VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0) end)
+		pcall(function() VIM:SendMouseButtonEvent(0,0,0,false,game,0) end)
 	else
-		-- Fallback: direct Activate
-		local c = getChar()
-		local tool = c and c:FindFirstChildOfClass("Tool")
+		local c=getChar()
+		local tool=c and c:FindFirstChildOfClass("Tool")
 		if tool then pcall(function() tool:Activate() end) end
 	end
 end
 
-local function startMeleeAura(S)
-	if meleeConn then return end
-	meleeConn = RS.Heartbeat:Connect(function()
-		if meleeCooldown or not S.CrimMeleeAura then return end
-		local target = getClosestInRange(S.CrimMeleeRange or 5)
-		if not target then return end
-		meleeCooldown = true
-		task.spawn(function()
-			pcall(doMeleeAttack, target)
-			task.wait(MELEE_CD)
-			meleeCooldown = false
-		end)
+local function tickMelee(S)
+	if meleeCooldown then return end
+	local target=getClosestInRange(S.CrimMeleeRange or 5)
+	if not target then return end
+	meleeCooldown=true
+	task.spawn(function()
+		pcall(doMeleeAttack,target)
+		task.wait(MELEE_CD)
+		meleeCooldown=false
 	end)
 end
 
-local function stopMeleeAura()
-	if meleeConn then meleeConn:Disconnect(); meleeConn = nil end
-	meleeCooldown = false
+-- ── SAFE / DEALER ESP ────────────────────────────────────────────────────────
+-- ONE build pass per session. Per-frame: only reads cached .part.Position
+-- and sets .Enabled — no allocations, no pcalls on happy path.
+
+local ESP = { safes={}, dealers={} }
+local espBuilt = { safes=false, dealers=false }
+
+-- Is the instance still alive? Check Parent without pcall.
+local function alive(inst)
+	return inst and rawequal(typeof(inst),"Instance") and inst.Parent ~= nil
 end
 
--- ────────────────────────────────────────────────────────────────────────────
--- SAFE / DEALER ESP
--- ────────────────────────────────────────────────────────────────────────────
--- Persistent Highlights — created ONCE, NEVER destroyed mid-session.
--- Per-frame: only reads pre-cached BasePart positions + toggles .Enabled.
--- Starts as Enabled=false to prevent the "1-frame flash" bug.
-
-local ESP_ENTRIES   = { safes = {}, dealers = {} }
-local espBuilt      = { safes = false, dealers = false }
-local espVisConn    = nil
-
--- Entry format: { highlight=Highlight, billboard=BillboardGui, label=TextLabel,
---                 part=BasePart, broken=BoolValue|nil }
-
-local function getParentGui()
-	local lp = getLP()
-	return lp and lp:FindFirstChild("PlayerGui") or game:GetService("CoreGui")
+local function getGui()
+	local lp=getLP()
+	return (lp and lp:FindFirstChild("PlayerGui")) or game:GetService("CoreGui")
 end
 
-local function makeEntry(model, fillColor, outlineColor, labelText)
-	-- Find a representative BasePart once and cache it
+local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal)
 	local part = model:FindFirstChildOfClass("BasePart")
-	               or model:FindFirstChildWhichIsA("BasePart")
+	           or model:FindFirstChildWhichIsA("BasePart")
 	if not part then return nil end
 
 	local h = Instance.new("Highlight")
-	h.FillColor           = fillColor
-	h.OutlineColor        = outlineColor
+	h.FillColor           = fillCol
+	h.OutlineColor        = outlineCol
 	h.FillTransparency    = 0.55
 	h.OutlineTransparency = 0
 	h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
 	h.Adornee             = model
-	h.Enabled             = false   -- start disabled; visibility check will enable
-	pcall(function() h.Parent = getParentGui() end)
+	h.Enabled             = false   -- start hidden; visibility loop enables
+	h.Parent              = getGui()
 
-	local bg, lbl
-	local ok = pcall(function()
-		bg = Instance.new("BillboardGui")
-		bg.Name         = "VG_CrimLbl"
-		bg.Size         = UDim2.new(0, 64, 0, 16)
-		bg.StudsOffset  = Vector3.new(0, 4, 0)
-		bg.AlwaysOnTop  = true
-		bg.Enabled      = false
-		bg.Adornee      = part
-		bg.Parent       = getParentGui()
+	local bg  = Instance.new("BillboardGui")
+	bg.Size        = UDim2.new(0, 64, 0, 16)
+	bg.StudsOffset = Vector3.new(0, 4, 0)
+	bg.AlwaysOnTop = true
+	bg.Enabled     = false
+	bg.Adornee     = part
+	bg.Parent      = getGui()
 
-		lbl = Instance.new("TextLabel")
-		lbl.Size                   = UDim2.new(1, 0, 1, 0)
-		lbl.BackgroundTransparency = 1
-		lbl.Text                   = labelText
-		lbl.TextColor3             = Color3.fromRGB(255, 255, 255)
-		lbl.TextSize               = 10
-		lbl.Font                   = Enum.Font.GothamBold
-		lbl.TextStrokeTransparency = 0.35
-		lbl.Parent                 = bg
-	end)
-	if not ok then bg, lbl = nil, nil end
+	local lbl = Instance.new("TextLabel")
+	lbl.Size                   = UDim2.new(1,0,1,0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text                   = labelText
+	lbl.TextColor3             = Color3.fromRGB(255,255,255)
+	lbl.TextSize               = 10
+	lbl.Font                   = Enum.Font.GothamBold
+	lbl.TextStrokeTransparency = 0.35
+	lbl.Parent                 = bg
 
-	return { highlight = h, billboard = bg, label = lbl, part = part }
-end
-
-local function clearEntries(tbl)
-	for _, e in ipairs(tbl) do
-		pcall(function() if e.highlight then e.highlight:Destroy() end end)
-		pcall(function() if e.billboard then e.billboard:Destroy() end end)
-	end
-	table.clear(tbl)
+	return { h=h, bg=bg, lbl=lbl, part=part, model=model, broken=brokenVal,
+	         fillCol=fillCol }
 end
 
 local function buildSafeESP(S)
 	if espBuilt.safes then return end
 	local map   = workspace:FindFirstChild("Map"); if not map then return end
 	local safes = map:FindFirstChild("BredMakurz"); if not safes then return end
-	local color = S.CrimSafeColor or Color3.fromRGB(255, 220, 50)
+	local color = S.CrimSafeColor or Color3.fromRGB(255,220,50)
 	for _, safe in ipairs(safes:GetChildren()) do
-		local ok, entry = pcall(makeEntry, safe, color, Color3.fromRGB(255,255,255), "SAFE")
-		if ok and entry then
-			entry.broken = safe:FindFirstChild("Broken")
-			table.insert(ESP_ENTRIES.safes, entry)
-		end
+		local ok, entry = pcall(makeEntry, safe, color, Color3.fromRGB(255,255,255),
+		                        "SAFE", safe:FindFirstChild("Broken"))
+		if ok and entry then table.insert(ESP.safes, entry) end
 	end
 	espBuilt.safes = true
 end
@@ -416,103 +300,143 @@ local function buildDealerESP(S)
 	if espBuilt.dealers then return end
 	local map   = workspace:FindFirstChild("Map"); if not map then return end
 	local shops = map:FindFirstChild("Shopz"); if not shops then return end
-	local color = S.CrimDealerColor or Color3.fromRGB(100, 200, 255)
+	local color = S.CrimDealerColor or Color3.fromRGB(100,200,255)
 	for _, shop in ipairs(shops:GetChildren()) do
-		local ok, entry = pcall(makeEntry, shop, color, Color3.fromRGB(255,255,255), "DEALER")
-		if ok and entry then
-			table.insert(ESP_ENTRIES.dealers, entry)
-		end
+		local ok, entry = pcall(makeEntry, shop, color, Color3.fromRGB(255,255,255), "DEALER", nil)
+		if ok and entry then table.insert(ESP.dealers, entry) end
 	end
 	espBuilt.dealers = true
 end
 
--- Per-frame: only distance check + toggle .Enabled (no allocations)
-local function updateESPVisibility(S)
-	local hrp = getHRP()
-	local myPos   = hrp and hrp.Position
+local function clearESP(tbl)
+	for _,e in ipairs(tbl) do
+		if alive(e.h)  then e.h:Destroy()  end
+		if alive(e.bg) then e.bg:Destroy() end
+	end
+	table.clear(tbl)
+end
+
+-- Hot path: zero allocations, no pcall on happy path.
+local colOpen   = Color3.fromRGB(100,255,100)
+local colSafeD  = Color3.fromRGB(255,220,50)
+
+local function tickESP(S)
 	local maxDist = S.CrimESPMaxDist or 300
 	local camPos  = workspace.CurrentCamera.CFrame.Position
 
 	-- Safes
-	if S.CrimSafeESP then
-		for _, e in ipairs(ESP_ENTRIES.safes) do
-			local visible = false
-			if myPos and e.part and e.part.Parent then
-				visible = (camPos - e.part.Position).Magnitude <= maxDist
-				-- Dynamic colour for open/closed safes
-				if e.broken then
-					local open = e.broken.Value
-					local fc   = open and Color3.fromRGB(100,255,100)
-					             or (S.CrimSafeColor or Color3.fromRGB(255,220,50))
-					if e.highlight then
-						pcall(function() e.highlight.FillColor = fc end)
-					end
-					if e.label then
-						pcall(function() e.label.Text = open and "OPEN" or "SAFE" end)
-					end
-				end
-			end
-			if e.highlight then pcall(function() e.highlight.Enabled = visible end) end
-			if e.billboard then pcall(function() e.billboard.Enabled = visible end) end
+	local showSafe = S.CrimSafeESP
+	for _, e in ipairs(ESP.safes) do
+		local vis = false
+		if showSafe and alive(e.part) then
+			vis = (camPos - e.part.Position).Magnitude <= maxDist
 		end
-	else
-		for _, e in ipairs(ESP_ENTRIES.safes) do
-			if e.highlight then pcall(function() e.highlight.Enabled = false end) end
-			if e.billboard then pcall(function() e.billboard.Enabled = false end) end
+		if alive(e.h) then
+			if vis then
+				-- Update colour for open/closed state (direct, no pcall)
+				local open   = e.broken and e.broken.Value
+				local newCol = open and colOpen or (S.CrimSafeColor or colSafeD)
+				if e.h.FillColor ~= newCol then e.h.FillColor = newCol end
+				local newTxt = open and "OPEN" or "SAFE"
+				if e.lbl.Text ~= newTxt then e.lbl.Text = newTxt end
+				if not e.h.Enabled  then e.h.Enabled  = true end
+				if not e.bg.Enabled then e.bg.Enabled = true end
+			else
+				if e.h.Enabled  then e.h.Enabled  = false end
+				if e.bg.Enabled then e.bg.Enabled = false end
+			end
 		end
 	end
 
 	-- Dealers
-	if S.CrimDealerESP then
-		for _, e in ipairs(ESP_ENTRIES.dealers) do
-			local visible = false
-			if myPos and e.part and e.part.Parent then
-				visible = (camPos - e.part.Position).Magnitude <= maxDist
-			end
-			if e.highlight then pcall(function() e.highlight.Enabled = visible end) end
-			if e.billboard then pcall(function() e.billboard.Enabled = visible end) end
+	local showDlr = S.CrimDealerESP
+	for _, e in ipairs(ESP.dealers) do
+		local vis = false
+		if showDlr and alive(e.part) then
+			vis = (camPos - e.part.Position).Magnitude <= maxDist
 		end
-	else
-		for _, e in ipairs(ESP_ENTRIES.dealers) do
-			if e.highlight then pcall(function() e.highlight.Enabled = false end) end
-			if e.billboard then pcall(function() e.billboard.Enabled = false end) end
+		if alive(e.h) then
+			if vis then
+				if not e.h.Enabled  then e.h.Enabled  = true end
+				if not e.bg.Enabled then e.bg.Enabled = true end
+			else
+				if e.h.Enabled  then e.h.Enabled  = false end
+				if e.bg.Enabled then e.bg.Enabled = false end
+			end
 		end
 	end
 end
 
-local function startObjectESP(S)
-	if S.CrimSafeESP   then pcall(buildSafeESP,   S) end
-	if S.CrimDealerESP then pcall(buildDealerESP,  S) end
-	if espVisConn then return end
-	espVisConn = RS.Heartbeat:Connect(function()
-		pcall(updateESPVisibility, S)
+-- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
+-- Single connection instead of 5 separate ones = less scheduler overhead.
+
+local masterConn = nil
+
+local function startMaster(S)
+	if masterConn then return end
+
+	-- One-time build on first tick (may need map to load first)
+	local espInitTick = false
+
+	masterConn = RS.Heartbeat:Connect(function()
+		-- ── ESP build (deferred: waits for Map to exist) ──────────────────
+		if (S.CrimSafeESP or S.CrimDealerESP) and not espInitTick then
+			espInitTick = true
+			task.spawn(function()
+				-- Wait for Map up to 10 s
+				local deadline = os.clock() + 10
+				while os.clock() < deadline do
+					if workspace:FindFirstChild("Map") then break end
+					task.wait(0.5)
+				end
+				if S.CrimSafeESP   then pcall(buildSafeESP,   S) end
+				if S.CrimDealerESP then pcall(buildDealerESP,  S) end
+			end)
+		end
+
+		-- ── Instant Reload ────────────────────────────────────────────────
+		if S.CrimInstReload then
+			perfBegin("InstReload")
+			pcall(tickReload)
+			perfEnd("InstReload")
+		end
+
+		-- ── Melee Aura ────────────────────────────────────────────────────
+		if S.CrimMeleeAura then
+			perfBegin("MeleeAura")
+			tickMelee(S)
+			perfEnd("MeleeAura")
+		end
+
+		-- ── ESP visibility update ─────────────────────────────────────────
+		if S.CrimSafeESP or S.CrimDealerESP then
+			perfBegin("ESPVis")
+			tickESP(S)
+			perfEnd("ESPVis")
+		end
+
+		-- ── Profiler report (every 30 s) ──────────────────────────────────
+		perfBegin("PerfReport")
+		perfReport()
+		perfEnd("PerfReport")
 	end)
 end
 
-local function stopObjectESP()
-	if espVisConn then espVisConn:Disconnect(); espVisConn = nil end
-	clearEntries(ESP_ENTRIES.safes);  espBuilt.safes   = false
-	clearEntries(ESP_ENTRIES.dealers); espBuilt.dealers = false
+local function stopMaster()
+	if masterConn then masterConn:Disconnect(); masterConn=nil end
 end
 
--- ────────────────────────────────────────────────────────────────────────────
--- INIT
--- ────────────────────────────────────────────────────────────────────────────
+-- ── INIT ─────────────────────────────────────────────────────────────────────
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
 
-	local running = {
-		infStamina = false, noFall = false, noSpike = false,
-		instReload = false, meleeAura = false, objectESP = false,
-	}
+	-- Features toggled outside Heartbeat (cheap: only on change via CharacterAdded / explicit toggle)
+	local running = { noFall=false, noSpike=false }
 
-	-- Lightweight flag-watcher (just compares booleans — zero allocations)
+	-- Lightweight separate Heartbeat just for NoFall / NoSpike flag watch
+	-- (these are character-lifecycle features, not per-frame work)
 	RS.Heartbeat:Connect(function()
-		if S.CrimInfStamina ~= running.infStamina then
-			running.infStamina = S.CrimInfStamina
-			if running.infStamina then startInfStamina() else stopInfStamina() end
-		end
 		if S.CrimNoFall ~= running.noFall then
 			running.noFall = S.CrimNoFall
 			if running.noFall then pcall(startNoFall) else pcall(stopNoFall) end
@@ -521,35 +445,22 @@ function Criminality.Init(S)
 			running.noSpike = S.CrimNoSpike
 			if running.noSpike then pcall(startNoSpike) else pcall(stopNoSpike) end
 		end
-		if S.CrimInstReload ~= running.instReload then
-			running.instReload = S.CrimInstReload
-			if running.instReload then startInstReload() else stopInstReload() end
-		end
-		if S.CrimMeleeAura ~= running.meleeAura then
-			running.meleeAura = S.CrimMeleeAura
-			if running.meleeAura then startMeleeAura(S) else stopMeleeAura() end
-		end
 
-		local needESP = S.CrimSafeESP or S.CrimDealerESP
-		if needESP ~= running.objectESP then
-			running.objectESP = needESP
-			if running.objectESP then pcall(startObjectESP, S) else stopObjectESP() end
-		elseif running.objectESP then
-			-- Build newly-enabled layer if it wasn't built yet (toggle Safe/Dealer independently)
-			if S.CrimSafeESP   and not espBuilt.safes   then pcall(buildSafeESP,   S) end
-			if S.CrimDealerESP and not espBuilt.dealers then pcall(buildDealerESP,  S) end
+		-- Rebuild deferred ESP if individual toggle was just turned on
+		if S.CrimSafeESP and not espBuilt.safes and workspace:FindFirstChild("Map") then
+			pcall(buildSafeESP, S)
+		end
+		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
+			pcall(buildDealerESP, S)
 		end
 	end)
 
-	-- Apply already-enabled features immediately
-	if S.CrimInfStamina then running.infStamina = true; startInfStamina() end
-	if S.CrimNoFall     then running.noFall     = true; pcall(startNoFall) end
-	if S.CrimNoSpike    then running.noSpike    = true; pcall(startNoSpike) end
-	if S.CrimInstReload then running.instReload = true; startInstReload() end
-	if S.CrimMeleeAura  then running.meleeAura  = true; startMeleeAura(S) end
-	if S.CrimSafeESP or S.CrimDealerESP then
-		running.objectESP = true; pcall(startObjectESP, S)
-	end
+	-- Main feature loop
+	startMaster(S)
+
+	-- Apply already-enabled features
+	if S.CrimNoFall  then running.noFall  = true; pcall(startNoFall) end
+	if S.CrimNoSpike then running.noSpike = true; pcall(startNoSpike) end
 end
 
 return Criminality

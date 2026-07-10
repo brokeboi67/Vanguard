@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.11",
+	Version = "2.43.12",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -170,8 +170,7 @@ local Settings = {
 	FriendClick = true,
 	FriendIds = {},
 
-	-- CRIMINALITY (only active when game.PlaceId == 4588604953)
-	CrimInfStamina = false,
+	-- CRIMINALITY (only active when game.GameId == 1494262959)
 	CrimNoFall = false,
 	CrimNoSpike = false,
 	CrimInstReload = false,
