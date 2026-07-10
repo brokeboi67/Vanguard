@@ -363,33 +363,42 @@ local function withScanIdentity(fn)
 end
 
 local function ensureDebugInfoHook()
-	if debugInfoHooked or not adonisDetectedRef or typeof(hookfunction) ~= "function" then
-		return false
+	-- If Main.lua already set up the hook, mark it done and return
+	if _G.__VG_DBG_HOOKED then
+		debugInfoHooked = true
+		return true
+	end
+	if debugInfoHooked or not adonisDetectedRef then
+		return debugInfoHooked
 	end
 	local renv = typeof(getrenv) == "function" and getrenv() or nil
 	if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
 		return false
 	end
 	local oldInfo = renv.debug.info
-	local wrap = makeCclosure(function(levelOrFunc, what, ...)
-		if levelOrFunc == adonisDetectedRef then
-			if what == "n" then
-				return "Adonis"
-			end
-			if what == "s" or what == "l" then
-				return "=[C]"
-			end
-			return nil
+	-- CORRECT approach: yield the coroutine when Adonis calls debug.info(Detected, ...)
+	-- This suspends the entire anti-cheat routine permanently (no tamper check, no detectors)
+	local detRef = adonisDetectedRef
+	local wrap = makeCclosure(function(fn, ...)
+		if fn == detRef then
+			return coroutine.yield(coroutine.running())
 		end
-		return oldInfo(levelOrFunc, what, ...)
+		return oldInfo(fn, ...)
 	end)
-	local ok = pcall(function()
-		hookfunction(renv.debug.info, wrap)
-	end)
-	if ok then
+	-- Try direct assignment first (hookfunction on debug.info fails in Potassium)
+	local ok1 = pcall(function() renv.debug.info = wrap end)
+	if ok1 then
 		debugInfoHooked = true
+		_G.__VG_DBG_HOOKED = true
+		return true
 	end
-	return ok
+	-- Fallback: hookfunction
+	local ok2 = pcall(hookfunction, oldInfo, wrap)
+	if ok2 then
+		debugInfoHooked = true
+		_G.__VG_DBG_HOOKED = true
+	end
+	return ok2
 end
 
 local function replaceTableFn(tbl, key, replacement)
