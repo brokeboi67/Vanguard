@@ -239,7 +239,7 @@ function Misc.Init(S, TF, Util)
 				end
 			end
 		end
-	end)
+	end))
 
 	Players.PlayerAdded:Connect(function(plr)
 		plr.CharacterAdded:Connect(function(char)
