@@ -711,6 +711,8 @@ local UIMusic = Get("UIMusic.lua")
 local UI = Get("UI.lua")
 local Menus = Get("Menus.lua")
 local GameSupport = Get("GameSupport.lua")
+local WeaponCompat = Get("WeaponCompat.lua")
+_G.__VG_WEAPON_COMPAT = WeaponCompat
 local Criminality = Get("Criminality.lua")
 
 _G.__VG_LOADING = false
@@ -790,6 +792,7 @@ end
 bootProgress("ESP & HUD", 0.78)
 
 phase("ESP.Init",        ESP.Init,        Settings, GUI, TeamFriends, Util)
+WeaponCompat.Init(Settings, Util, GameSupport)
 phase("Aim.Init",        Aim.Init,        Settings, GUI, TeamFriends, Util)
 phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
 phase("Movement.Init",   Movement.Init,   Settings)

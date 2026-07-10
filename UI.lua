@@ -2310,6 +2310,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(VTrace, "hint_vtrace", 3)
 
 	local LAim = MakeCard(T3, "AIMBOT", "card_laim_desc", 1)
+	do
+		local wc = _G.__VG_WEAPON_COMPAT
+		if wc and wc.setNotify then
+			wc.setNotify(showNotify)
+		end
+	end
 	MakeTog(LAim, "Aimbot", "Aimbot", 1, { flat = true })
 	MakeTog(LAim, "Silent Aim (flick)", "Silent", 2, {
 		flat = true,
@@ -2319,9 +2325,42 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end,
 	})
-	MakeTog(LAim, "Weapon Compat (ACS)", "SilentCompat", 3, { flat = true })
-	MakeHint(LAim, "hint_silent_compat", 4)
-	MakeTog(LAim, "Triggerbot", "Trigger", 5, { flat = true })
+	MakeTog(LAim, "Weapon Compat", "SilentCompat", 3, {
+		flat = true,
+		onChange = function(on)
+			local wc = _G.__VG_WEAPON_COMPAT
+			if not wc then
+				return
+			end
+			if on then
+				wc.enable(true)
+			else
+				wc.disable(true)
+			end
+		end,
+	})
+	MakeTog(LAim, "Magic Bullets", "WeaponCompatMagicBullets", 4, {
+		flat = true,
+		requires = "SilentCompat",
+		onChange = function()
+			local wc = _G.__VG_WEAPON_COMPAT
+			if wc then
+				wc.refresh()
+			end
+		end,
+	})
+	MakeTog(LAim, "Rapid Fire", "WeaponCompatRapidFire", 5, {
+		flat = true,
+		requires = "SilentCompat",
+		onChange = function()
+			local wc = _G.__VG_WEAPON_COMPAT
+			if wc then
+				wc.refresh()
+			end
+		end,
+	})
+	MakeHint(LAim, "hint_silent_compat", 6)
+	MakeTog(LAim, "Triggerbot", "Trigger", 7, { flat = true })
 
 	local LAimBind = MakeCard(T3, "KEYBINDS", "card_laimbind_desc", 2)
 	MakeBind(LAimBind, "Aimbot Key", "AimKey", 1)

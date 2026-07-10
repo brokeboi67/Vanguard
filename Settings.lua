@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.22",
+	Version = "2.43.23",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -40,6 +40,8 @@ local Settings = {
 	TriggerDelay = 100,
 	TriggerCompat = false,
 	SilentCompat = false,
+	WeaponCompatMagicBullets = true,
+	WeaponCompatRapidFire = false,
 	ShowTriggerHud = true,
 	TriggerHudMinimal = true,
 	VisibleCheck = true,

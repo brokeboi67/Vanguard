@@ -25,6 +25,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 	local silentRestoreCF = nil
 	local silentRestoreAt = 0
 	local silentSnapTarget = nil
+	local WC = _G.__VG_WEAPON_COMPAT
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
 	local fovLimit = function()
@@ -583,8 +584,8 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		task.spawn(function()
 			markShot(tgt.char, pos)
 			pcall(function()
-				if S.SilentCompat then
-					Util.performCompatTriggerShot(RS, Cam, VIM, pos, 2, UIS, LP)
+				if S.SilentCompat and WC and WC.isActive() then
+					WC.fireSilentShot(RS, Cam, VIM, UIS, LP, pos)
 				else
 					Util.performSilentShot(RS, Cam, VIM, pos, 2, UIS, LP)
 				end
@@ -760,6 +761,22 @@ function Aim.Init(S, ParentGUI, TF, Util)
 
 		updateTriggerCompatAim()
 		pcall(tryTriggerShot)
+
+		if S.SilentCompat and WC and WC.isActive() then
+			local shooting = false
+			pcall(function()
+				shooting = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+			end)
+			if shooting then
+				local tgt = pickBestTarget(fovLimit())
+				if tgt and tgt.part and tgt.char then
+					local pos = Util.getFirePosition(tgt.char, tgt.part)
+					if pos then
+						WC.setAimTarget(pos, tgt.char)
+					end
+				end
+			end
+		end
 
 		if S.Aimbot and not S.Silent and isBindDown(getAimBindName()) then
 			pcall(function()
