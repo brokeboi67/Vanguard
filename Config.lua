@@ -125,15 +125,6 @@ function Config.EnforceRules(S)
 	if S.TriggerCompat == nil then
 		S.TriggerCompat = false
 	end
-	if S.SilentCompat == nil then
-		S.SilentCompat = false
-	end
-	if S.WeaponCompatMagicBullets == nil then
-		S.WeaponCompatMagicBullets = true
-	end
-	if S.WeaponCompatRapidFire == nil then
-		S.WeaponCompatRapidFire = false
-	end
 	if S.ExcludeTeam == nil then
 		S.ExcludeTeam = true
 	end
