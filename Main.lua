@@ -88,6 +88,13 @@ do
 	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then
 		-- skip bypass entirely if executor doesn't support needed functions
 	else
+		-- After a TeleportService transfer the new place may still be loading.
+		-- Wait until the DataModel is ready before scanning GC, otherwise getgc(true)
+		-- runs while Roblox is mid-load and can cause a freeze/crash.
+		if not game:IsLoaded() then
+			pcall(function() game.Loaded:Wait() end)
+		end
+
 		pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
 
 		local function makeCC(f)
