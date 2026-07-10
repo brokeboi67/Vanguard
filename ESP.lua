@@ -403,12 +403,17 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				ch.B.Size = UDim2.new(0, w2, 0, h2)
 				ch.B.Position = UDim2.new(0, bx, 0, by)
 				ch.B.Visible = true
+				if S.BoxType == "Corner" then
+					UpdCorner(ch.Cr, w2, h2, clr)
+				else
+					ch.BO.Enabled = true
+					ch.BO.Color = clr
+				end
 			end
 			if S.Chams and ch.CHM.Enabled then
 				ch.CHM.FillColor = clr
 				ch.CHM.OutlineColor = clr
 			end
-			ch.root.Visible = true
 			return
 		end
 
