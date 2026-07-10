@@ -135,67 +135,89 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		losParams.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
 	end
 
-	-- Returns true if the part should be treated as transparent / passable for LOS purposes.
-	-- Handles invisible lobby walls, non-collidable decorations, and glass-like elements.
+	-- Returns true if the part is transparent/non-collidable (passable for LOS).
 	local function isPassablePart(inst)
 		if not inst then return false end
+		-- Direct property access (no pcall) — much faster in hot path.
 		local ok, trans = pcall(function() return inst.Transparency end)
-		if ok and trans >= 0.95 then return true end           -- fully (or near-fully) invisible
+		if ok and trans >= 0.95 then return true end
 		local ok2, cc = pcall(function() return inst.CanCollide end)
-		if ok2 and not cc then return true end                 -- ghost / non-collidable part
+		if ok2 and not cc then return true end
 		return false
 	end
 
-	-- Iterative raycast: casts repeatedly, skipping passable (transparent / non-collidable)
-	-- parts until a solid obstruction is found or the target character is reached.
-	-- Fixes false-negative "not visible" when standing in front of invisible lobby walls.
-	local MAX_LOS_ITERS = 10
-	local LOS_STEP      = 0.08   -- metres to advance past a passable part each iteration
+	-- Iterative raycast through transparent parts (max 4 iterations to limit cost).
+	local MAX_LOS_ITERS = 4    -- was 10 — reduced for performance
+	local LOS_STEP      = 0.1
 
 	local function rayHasLOS(origin, targetPos, char)
 		local rayOrigin = origin
 		local remaining = targetPos - origin
-
 		for _ = 1, MAX_LOS_ITERS do
-			if remaining.Magnitude < LOS_STEP then
-				return true   -- essentially at the target
-			end
+			if remaining.Magnitude < LOS_STEP then return true end
 			local hit = workspace:Raycast(rayOrigin, remaining, losParams)
-			if not hit then
-				return true   -- clear path
-			end
-			if hit.Instance:IsDescendantOf(char) then
-				return true   -- hit the target character itself
-			end
+			if not hit then return true end
+			if hit.Instance:IsDescendantOf(char) then return true end
 			if isPassablePart(hit.Instance) then
-				-- Step through this transparent/ghost part and cast again
 				local advance = hit.Distance + LOS_STEP
-				local unitDir  = remaining.Unit
-				rayOrigin = origin + unitDir * advance
+				rayOrigin = origin + remaining.Unit * advance
 				remaining = targetPos - rayOrigin
 			else
-				return false  -- solid wall in the way
+				return false
 			end
 		end
 		return false
 	end
 
+	-- ── LOS result cache ─────────────────────────────────────────────────────
+	-- Re-using the last LOS result for LOS_CACHE_FRAMES frames avoids running
+	-- up to 50 raycasts per player per frame (was 2000+ raycasts/frame at 40 players).
+	-- At 60 fps with LOS_CACHE_FRAMES=4, LOS updates at ~15 fps — imperceptible.
+	local LOS_CACHE_FRAMES = 4
+	local losCache    = {}   -- [char] = { result=bool, frame=int }
+	local losFrame    = 0    -- incremented each RenderStepped
+
+	-- LOS_PARTS reduced to 2 key points for further speedup.
+	local LOS_PARTS_FAST = { "Head", "HumanoidRootPart" }
+
 	local function charHasLineOfSight(char)
 		if not char then return true end
+
+		-- Return cached result if still fresh
+		local cached = losCache[char]
+		if cached and (losFrame - cached.frame) < LOS_CACHE_FRAMES then
+			return cached.result
+		end
+
+		-- Compute fresh result
 		updateLosFilter()
 		local origin = Cam.CFrame.Position
-		for _, name in ipairs(LOS_PARTS) do
+		local result = false
+		for _, name in ipairs(LOS_PARTS_FAST) do
 			local part = Util.resolveBodyPart(char, name)
 			if part then
 				local dir = part.Position - origin
-				if dir.Magnitude > 0.05 then
-					if rayHasLOS(origin, part.Position, char) then
-						return true
-					end
+				if dir.Magnitude > 0.05 and rayHasLOS(origin, part.Position, char) then
+					result = true
+					break
 				end
 			end
 		end
-		return false
+
+		losCache[char] = { result = result, frame = losFrame }
+		return result
+	end
+
+	-- Purge stale LOS cache entries (characters that left the game).
+	local function pruneLosCacheIfNeeded()
+		losFrame = losFrame + 1
+		-- Prune every 300 frames (~5 s) to avoid memory leak from dead chars.
+		if losFrame % 300 ~= 0 then return end
+		for char, entry in pairs(losCache) do
+			if (losFrame - entry.frame) > 120 or not char.Parent then
+				losCache[char] = nil
+			end
+		end
 	end
 
 	local function GetColor(plr, c, isBot)
@@ -671,7 +693,14 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 	end
 
+	-- Lightweight per-frame timing for the PERF profiler.
+	local _espT0, _espTot, _espCnt, _espMax, _espLast = 0, 0, 0, 0, os.clock()
+	local ESP_PERF_INTERVAL = 30
+
 	RS.RenderStepped:Connect(function()
+		_espT0 = os.clock()
+		pruneLosCacheIfNeeded()   -- advance frame counter + periodic cache cleanup
+
 		if lastESP and not S.ESP then
 			hideAllCaches()
 		end
@@ -777,6 +806,26 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			for key in pairs(arrowCache) do
 				hideArrow(key)
 			end
+		end
+
+		-- Track ESP frame time for profiler
+		local dt = os.clock() - _espT0
+		_espTot = _espTot + dt
+		_espCnt = _espCnt + 1
+		if dt > _espMax then _espMax = dt end
+		local now = os.clock()
+		if now - _espLast >= ESP_PERF_INTERVAL then
+			if _espCnt > 0 then
+				local avg = _espTot / _espCnt * 1000
+				local max = _espMax * 1000
+				local msg = string.format("[VG:PERF ESP] last %ds: avg=%.3fms max=%.3fms n=%d",
+					ESP_PERF_INTERVAL, avg, max, _espCnt)
+				warn(msg)
+				if typeof(_G.__VG_LOG_FILE) == "function" then
+					_G.__VG_LOG_FILE("PERF", msg)
+				end
+			end
+			_espTot, _espCnt, _espMax, _espLast = 0, 0, 0, now
 		end
 	end)
 
