@@ -169,27 +169,49 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return false
 	end
 
-	-- ── LOS result cache ─────────────────────────────────────────────────────
-	-- Re-using the last LOS result for LOS_CACHE_FRAMES frames avoids running
-	-- up to 50 raycasts per player per frame (was 2000+ raycasts/frame at 40 players).
-	-- At 60 fps with LOS_CACHE_FRAMES=4, LOS updates at ~15 fps — imperceptible.
-	local LOS_CACHE_FRAMES = 4
-	local losCache    = {}   -- [char] = { result=bool, frame=int }
-	local losFrame    = 0    -- incremented each RenderStepped
+	-- ── LOS result cache with slot-based staggering ──────────────────────────
+	-- Each character is assigned a permanent "slot" (0..LOS_SLOTS-1).
+	-- Its LOS is recomputed ONLY when losFrame % LOS_SLOTS == slot.
+	-- With 8 slots and 40 players: ~5 LOS computes per frame instead of 40.
+	-- No thundering herd — updates are spread evenly across frames.
+	-- LOS is SKIPPED entirely for players beyond LOS_MAX_DIST studs (dim color used).
 
-	-- LOS_PARTS reduced to 2 key points for further speedup.
+	local LOS_SLOTS    = 8     -- spread LOS updates over 8 frames
+	local LOS_MAX_DIST = 150   -- studs — skip LOS beyond this distance (dim = not visible)
+	local losCache     = {}    -- [char] = { result=bool, slot=int }
+	local losBucket    = {}    -- [char] = slot assignment (0..LOS_SLOTS-1)
+	local losBucketCnt = 0     -- rolling counter for slot assignment
+	local losFrame     = 0     -- incremented each RenderStepped
+
 	local LOS_PARTS_FAST = { "Head", "HumanoidRootPart" }
 
-	local function charHasLineOfSight(char)
+	local function getSlot(char)
+		local s = losBucket[char]
+		if not s then
+			s = losBucketCnt % LOS_SLOTS
+			losBucket[char] = s
+			losBucketCnt    = losBucketCnt + 1
+		end
+		return s
+	end
+
+	local function charHasLineOfSight(char, distSq)
 		if not char then return true end
 
-		-- Return cached result if still fresh
+		-- Beyond LOS_MAX_DIST — treat as not visible (saves all raycasts)
+		if distSq and distSq > LOS_MAX_DIST * LOS_MAX_DIST then
+			return false
+		end
+
+		local slot   = getSlot(char)
 		local cached = losCache[char]
-		if cached and (losFrame - cached.frame) < LOS_CACHE_FRAMES then
+
+		-- Return cached result unless it's this char's update frame
+		if cached and (losFrame % LOS_SLOTS) ~= slot then
 			return cached.result
 		end
 
-		-- Compute fresh result
+		-- Compute fresh result (only ~5 chars per frame at 40 players)
 		updateLosFilter()
 		local origin = Cam.CFrame.Position
 		local result = false
@@ -204,28 +226,29 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			end
 		end
 
-		losCache[char] = { result = result, frame = losFrame }
+		losCache[char] = { result = result, slot = slot }
 		return result
 	end
 
-	-- Purge stale LOS cache entries (characters that left the game).
+	-- Advance frame counter + periodic cleanup (no per-frame cost).
 	local function pruneLosCacheIfNeeded()
 		losFrame = losFrame + 1
-		-- Prune every 300 frames (~5 s) to avoid memory leak from dead chars.
-		if losFrame % 300 ~= 0 then return end
-		for char, entry in pairs(losCache) do
-			if (losFrame - entry.frame) > 120 or not char.Parent then
-				losCache[char] = nil
+		if losFrame % 600 ~= 0 then return end   -- prune every ~10 s
+		for char in pairs(losCache) do
+			if not char.Parent then
+				losCache[char]  = nil
+				losBucket[char] = nil
 			end
 		end
 	end
 
-	local function GetColor(plr, c, isBot)
+	-- distSq: pre-computed squared distance to avoid sqrt — passed in to avoid recalculating.
+	local function GetColor(plr, c, isBot, distSq)
 		if S.Chams and S.ChamsRainbow then
 			return Rainbow()
 		end
 		if isBot then
-			if S.LoS and not charHasLineOfSight(c) then
+			if S.LoS and not charHasLineOfSight(c, distSq) then
 				return S.O
 			end
 			return Color3.fromRGB(255, 180, 80)
@@ -233,7 +256,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		if S.RealTeamColor and plr and plr.Team then
 			return plr.Team.TeamColor.Color
 		end
-		if S.LoS and not charHasLineOfSight(c) then
+		if S.LoS and not charHasLineOfSight(c, distSq) then
 			return S.O
 		end
 		return S.V
@@ -358,7 +381,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
-		local clr = GetColor(plr, c, isBot)
+		local distSq = dist * dist
+		local clr = GetColor(plr, c, isBot, distSq)
 
 		if S.Chams then
 			ch.CHM.Adornee = c
@@ -777,7 +801,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				local edge = getOffscreenPlacement(hrp.Position, cfg.margin)
 				if edge then
 					arrowActive[key] = true
-					local clr = GetColor(plr, char, isBot)
+					local clr = GetColor(plr, char, isBot, dist * dist)
 					local label = plr and plr.Name or (char and char.Name or "?")
 					pcall(renderOffscreen, key, hrp.Position, clr, dist, label)
 				else
