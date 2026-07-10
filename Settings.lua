@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.10",
+	Version = "2.43.11",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -176,7 +176,7 @@ local Settings = {
 	CrimNoSpike = false,
 	CrimInstReload = false,
 	CrimMeleeAura = false,
-	CrimMeleeRange = 12,
+	CrimMeleeRange = 5,
 	CrimSafeESP = false,
 	CrimSafeColor = Color3.fromRGB(255, 220, 50),
 	CrimDealerESP = false,

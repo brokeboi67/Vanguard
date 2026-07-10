@@ -192,18 +192,19 @@ do
 			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
 
 			-- RETRY WATCHER: for games where Adonis loads AFTER our script (e.g. Criminality).
-			-- Polls every 2 s for up to 60 s until bypass is confirmed installed.
+			-- Polls every 3 s for up to 30 s (10 attempts). Stops as soon as hook confirmed.
+			-- Uses light scan (getgc false) first to avoid blocking scheduler in big games.
 			if not installed then
 				if typeof(_G.__VG_LOG_FILE) == "function" then
 					_G.__VG_LOG_FILE("WARN", "[VG:bypass] Det not found — starting retry watcher (Adonis may load late)")
 				end
 				task.spawn(function()
-					for _ = 1, 30 do
-						task.wait(2)
+					for _ = 1, 10 do      -- max 10 × 3s = 30 s
+						task.wait(3)
 						if _G.__VG_DBG_HOOKED then break end
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
+						-- Light scan only — avoids the heavy getgc(true) causing stutters
 						local d, k = scanForAdonis(false)
-						if not d then d, k = scanForAdonis(true) end
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
 						if d then
 							applyBypass(d, k)

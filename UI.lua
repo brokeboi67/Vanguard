@@ -2140,7 +2140,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	if TCrim then
 		local CCombat = MakeCard(TCrim, "COMBAT", nil, 1)
 		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1, { flat = true })
-		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 4, 40, 2, {
+		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 3, 15, 2, {
 			suffix = " st",
 			step = 1,
 			fmt = function(v) return string.format("%d st", v) end,
