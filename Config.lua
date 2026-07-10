@@ -315,6 +315,9 @@ function Config.EnforceRules(S)
 	if S.ESPRenderDist == nil then
 		S.ESPRenderDist = 500
 	end
+	if S.ESPRenderOnlyVisible == nil then
+		S.ESPRenderOnlyVisible = false
+	end
 	if S.MusicAutoQueue == nil then
 		S.MusicAutoQueue = true
 	end

@@ -315,6 +315,12 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 		local distSq = dist * dist
 		local losKey = getLosKey(plr, c, isBot)
+
+		if S.ESPRenderOnlyVisible and not charHasLineOfSight(losKey, c) then
+			hideAll(ch)
+			return
+		end
+
 		local h2 = math.abs(box.topY - box.bottomY)
 		local w2 = h2 * 0.55
 		local bx, by = box.centerX - w2 / 2, box.topY
@@ -815,6 +821,12 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				local dist = (Cam.CFrame.Position - hrp.Position).Magnitude
 				if dist > getEspMaxDist() then
 					return
+				end
+				if S.ESPRenderOnlyVisible then
+					local losKey = getLosKey(plr, char, isBot)
+					if not charHasLineOfSight(losKey, char) then
+						return
+					end
 				end
 				local cfg = getArrowConfig()
 				local edge = getOffscreenPlacement(hrp.Position, cfg.margin)
