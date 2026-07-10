@@ -740,7 +740,9 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		end
 	end)
 
-	RS.RenderStepped:Connect(function()
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
+	RS.RenderStepped:Connect(perfWrap("Aim.Main", function()
 		updFOV()
 		updTriggerHud()
 
@@ -773,7 +775,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 				end
 			end)
 		end
-	end)
+	end))
 
 	S.GetAimTarget = function()
 		if S.MasterRage and S.RageBot and S.GetRageTarget then

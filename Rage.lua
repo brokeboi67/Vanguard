@@ -546,7 +546,9 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		end
 	end)
 
-	RS.RenderStepped:Connect(function()
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
+	RS.RenderStepped:Connect(perfWrap("Rage.Main", function()
 		updRageHud()
 
 		if not S.MasterRage or not S.RageBot then
@@ -565,7 +567,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			return
 		end
 		pcall(tryRageShot)
-	end)
+	end))
 
 	LP.CharacterAdded:Connect(function()
 		aaActive = false

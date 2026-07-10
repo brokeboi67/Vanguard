@@ -755,8 +755,9 @@ function Effects.Init(S, Util)
 	end
 
 	local scanAt = 0
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
-	RS.Heartbeat:Connect(function()
+	RS.Heartbeat:Connect(perfWrap("Effects.Main", function()
 		if S.Unloaded then
 			return
 		end
@@ -764,7 +765,7 @@ function Effects.Init(S, Util)
 			scanAt = tick()
 			scanChars()
 		end
-	end)
+	end))
 end
 
 return Effects

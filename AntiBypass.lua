@@ -624,6 +624,15 @@ function AntiBypass.scanAdonis(opts)
 	return hooked or adonisHookCount > 0
 end
 
+do
+	local _scanAdonis = AntiBypass.scanAdonis
+	function AntiBypass.scanAdonis(opts)
+		local perf = _G.__VG_PERF
+		local wrap = perf and perf.wrap or function(_, fn) return fn end
+		return wrap("AntiBypass.Scan", _scanAdonis)(opts)
+	end
+end
+
 function AntiBypass.isAdonisHooked()
 	return adonisHookCount > 0
 end
@@ -824,12 +833,15 @@ function AntiBypass.Init(S)
 	end)
 
 	task.spawn(function()
+		local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 		while S.AntiBypass ~= false and not S.Unloaded do
 			if _G.VANGUARD and not _G.VANGUARD.Active then
 				break
 			end
 			if root.Parent then
-				sweep(root)
+				perfWrap("AntiBypass.ConcealSweep", function()
+					sweep(root)
+				end)()
 			end
 			task.wait(8)
 		end

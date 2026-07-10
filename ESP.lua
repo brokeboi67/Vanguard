@@ -743,10 +743,34 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		ch.stack.Size = UDim2.new(1, 0, 0, showName and 28 or 18)
 	end
 
+	local function purgeArrow(key)
+		local ch = arrowCache[key]
+		if ch then
+			pcall(function() ch.root:Destroy() end)
+			arrowCache[key] = nil
+		end
+	end
+
 	local function hideArrow(key)
 		local ch = arrowCache[key]
 		if ch then
 			ch.root.Visible = false
+			ch.bg.Visible = false
+			ch.nameLbl.Visible = false
+			ch.glyph.Visible = false
+			ch.distLbl.Visible = false
+		end
+	end
+
+	local function hideAllArrows()
+		for key in pairs(arrowCache) do
+			hideArrow(key)
+		end
+	end
+
+	local function purgeAllArrows()
+		for key in pairs(arrowCache) do
+			purgeArrow(key)
 		end
 	end
 
@@ -763,7 +787,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		ch.root.Rotation = 0
 		ch.rotWrap.Rotation = angle
 		ch.glyph.TextColor3 = clr
+		ch.glyph.Visible = true
 		ch.distLbl.Text = math.floor(dist) .. "m"
+		ch.distLbl.Visible = true
 		ch.distLbl.TextColor3 = cfg.highVis and Color3.fromRGB(245, 245, 248) or clr
 		if cfg.showName and cfg.highVis then
 			ch.nameLbl.Text = tostring(displayName or "")
@@ -774,35 +800,32 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		ch.root.Visible = true
 	end
 
-	local function purgeArrow(key)
-		local ch = arrowCache[key]
-		if ch then
-			pcall(function() ch.root:Destroy() end)
-			arrowCache[key] = nil
-		end
-	end
+	-- Lightweight per-frame timing via global Perf module.
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
-	-- Lightweight per-frame timing for the PERF profiler.
-	local _espT0, _espTot, _espCnt, _espMax, _espLast = 0, 0, 0, 0, os.clock()
-	local ESP_PERF_INTERVAL = 30
-
-	RS.RenderStepped:Connect(function()
-		_espT0 = os.clock()
+	RS.RenderStepped:Connect(perfWrap("ESP.Main", function()
 		pruneLosCacheIfNeeded()
 
-		if lastESP and not S.ESP then
-			hideAllCaches()
+		if not S.ESP then
+			ESP_C.Visible = false
+			Arrow_C.Visible = false
+			if lastESP then
+				hideAllCaches()
+				purgeAllArrows()
+			else
+				hideAllArrows()
+			end
+			lastESP = false
+			return
 		end
+
+		ESP_C.Visible = true
+		Arrow_C.Visible = S.OffscreenArrows == true
+
 		if lastRenderBots and not S.RenderBots then
 			purgeBotCaches()
 		end
-		lastESP = S.ESP
 		lastRenderBots = S.RenderBots
-
-		ESP_C.Visible = S.ESP
-		if not S.ESP then
-			return
-		end
 
 		espTick = espTick + 1
 		local detailSlot = espTick % DETAIL_SLOTS
@@ -850,7 +873,6 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			end
 		end
 
-		Arrow_C.Visible = S.ESP and S.OffscreenArrows
 		if S.ESP and S.OffscreenArrows then
 			local arrowActive = {}
 			local function trackOffscreen(key, char, plr, isBot)
@@ -900,31 +922,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				end
 			end
 		else
-			for key in pairs(arrowCache) do
-				hideArrow(key)
-			end
+			hideAllArrows()
 		end
-
-		-- Track ESP frame time for profiler
-		local dt = os.clock() - _espT0
-		_espTot = _espTot + dt
-		_espCnt = _espCnt + 1
-		if dt > _espMax then _espMax = dt end
-		local now = os.clock()
-		if now - _espLast >= ESP_PERF_INTERVAL then
-			if _espCnt > 0 then
-				local avg = _espTot / _espCnt * 1000
-				local max = _espMax * 1000
-				local msg = string.format("[VG:PERF ESP] last %ds: avg=%.3fms max=%.3fms n=%d",
-					ESP_PERF_INTERVAL, avg, max, _espCnt)
-				warn(msg)
-				if typeof(_G.__VG_LOG_FILE) == "function" then
-					_G.__VG_LOG_FILE("PERF", msg)
-				end
-			end
-			_espTot, _espCnt, _espMax, _espLast = 0, 0, 0, now
-		end
-	end)
+	end))
 
 	P.PlayerRemoving:Connect(function(plr)
 		destroyCache(plr)

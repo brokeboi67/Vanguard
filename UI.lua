@@ -62,6 +62,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local FOOTER_RIGHT_W = 196
 	local tabLayoutProfiles = {}
 	local RS = game:GetService("RunService")
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
 	ParentGUI.DisplayOrder = 8
 	ParentGUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -715,11 +716,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		UpdSkelPreview()
 		UpdPrevCorner(M_Box.AbsoluteSize.X, M_Box.AbsoluteSize.Y)
 	end)
-	RS.RenderStepped:Connect(function()
+	RS.RenderStepped:Connect(perfWrap("UI.PreviewChams", function()
 		if S.Chams and S.ChamsRainbow and M_Cham.Visible then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		end
-	end)
+	end))
 
 	local Footer = C("Frame", {
 		Size = UDim2.new(1, 0, 0, 32),
@@ -3117,13 +3118,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				mouseUnlockHB:Disconnect()
 			end
 			local unlockBeat = false
-			mouseUnlockConn = RS.RenderStepped:Connect(function()
+			mouseUnlockConn = RS.RenderStepped:Connect(perfWrap("UI.MenuMouseRS", function()
 				if not menuOpen then
 					return
 				end
 				forceMenuCursor()
-			end)
-			mouseUnlockHB = RS.Heartbeat:Connect(function()
+			end))
+			mouseUnlockHB = RS.Heartbeat:Connect(perfWrap("UI.MenuMouseHB", function()
 				if not menuOpen then
 					return
 				end
@@ -3131,7 +3132,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				if unlockBeat then
 					forceMenuCursor()
 				end
-			end)
+			end))
 
 			task.defer(forceMenuCursor)
 			task.delay(0.05, function()
@@ -3167,7 +3168,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				mouseRestoreConn:Disconnect()
 			end
 			local framesTarget = savedMouse.wasFree and 10 or 14
-			mouseRestoreConn = RS.RenderStepped:Connect(function()
+			mouseRestoreConn = RS.RenderStepped:Connect(perfWrap("UI.MenuMouseRestore", function()
 				if menuOpen then
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
@@ -3179,7 +3180,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
 				end
-			end)
+			end))
 
 			task.defer(restoreMouseState)
 			task.delay(0.05, function()

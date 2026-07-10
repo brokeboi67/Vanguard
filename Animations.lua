@@ -625,7 +625,8 @@ function Animations.Init(S)
 		local burstTick = 0
 		local speedMul = math.clamp(S.AnimSpeed or 1, 0.1, 3)
 
-		proceduralConn = RS.RenderStepped:Connect(function()
+		local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+		proceduralConn = RS.RenderStepped:Connect(perfWrap("Animations.Procedural", function()
 			if proceduralStop or not char.Parent or hum.Health <= 0 then
 				return
 			end
@@ -679,7 +680,7 @@ function Animations.Init(S)
 				local bob = math.sin(t * 2.5) * 0.25
 				hrp.CFrame = baseCF * CFrame.new(0, 1.2 + bob, 0) * CFrame.Angles(0, elapsed * 1.5, 0)
 			end
-		end)
+		end))
 
 		S.LastAnim = entry.label .. " (local FX)"
 		Animations._stopProcedural = function()

@@ -31,6 +31,7 @@ function Music.Init(S, I18nModule)
 	end
 	local currentSound = nil
 	local progressConn = nil
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 	local loading = false
 	local paused = false
 	local nowPlaying = nil
@@ -1768,7 +1769,7 @@ function Music.Init(S, I18nModule)
 			end
 			handleTrackEnded()
 		end)
-		progressConn = RS.Heartbeat:Connect(function()
+		progressConn = RS.Heartbeat:Connect(perfWrap("Music.Progress", function()
 			if currentSound ~= sound or paused or loading or resuming then
 				return
 			end
@@ -1803,7 +1804,7 @@ function Music.Init(S, I18nModule)
 					handleTrackEnded()
 				end
 			end
-		end)
+		end))
 	end
 
 	local function soundIdFromSession(session)
@@ -3355,7 +3356,7 @@ function Music.Init(S, I18nModule)
 
 	local transferHeartbeatConn = nil
 	local transferHeartbeatAt = 0
-	transferHeartbeatConn = RS.Heartbeat:Connect(function()
+	transferHeartbeatConn = RS.Heartbeat:Connect(perfWrap("Music.Transfer", function()
 		if not S.TransferScript then
 			return
 		end
@@ -3366,7 +3367,7 @@ function Music.Init(S, I18nModule)
 		if #queue > 0 or nowPlaying or pausedSession or (paused and currentSound) then
 			Music.SaveTransferState()
 		end
-	end)
+	end))
 
 	local TeleportService = game:GetService("TeleportService")
 	local tpConn = nil

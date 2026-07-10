@@ -21,60 +21,6 @@ local function getHRP()  local c=getChar(); return c and c:FindFirstChild("Human
 
 local VIM; pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- ── built-in profiler ────────────────────────────────────────────────────────
--- Measures how long each named section takes per Heartbeat frame.
--- Writes a summary to the log file every PERF_INTERVAL seconds.
-
-local PERF_INTERVAL = 30   -- seconds between reports
-local _perf         = {}   -- { [name] = {tot=0, cnt=0, max=0} }
-local _perfLast     = 0
-
-local function perfBegin(name)
-	local s = _perf[name]
-	if not s then s = {tot=0,cnt=0,max=0}; _perf[name]=s end
-	s._t0 = os.clock()
-end
-
-local function perfEnd(name)
-	local s = _perf[name]; if not s or not s._t0 then return end
-	local dt = os.clock() - s._t0
-	s.tot = s.tot + dt
-	s.cnt = s.cnt + 1
-	if dt > s.max then s.max = dt end
-	s._t0 = nil
-end
-
-local function perfReport()
-	local now = os.clock()
-	if now - _perfLast < PERF_INTERVAL then return end
-	_perfLast = now
-
-	local lines = {"[VG:PERF Criminality] last "..PERF_INTERVAL.."s:"}
-	local sorted = {}
-	for name, s in pairs(_perf) do
-		if s.cnt > 0 then
-			table.insert(sorted, {
-				name = name,
-				avg  = s.tot / s.cnt * 1000,
-				max  = s.max * 1000,
-				cnt  = s.cnt,
-			})
-			s.tot, s.cnt, s.max = 0, 0, 0   -- reset window
-		end
-	end
-	table.sort(sorted, function(a,b) return a.avg > b.avg end)
-	for _, e in ipairs(sorted) do
-		table.insert(lines, string.format("  %-20s avg=%.3fms  max=%.3fms  n=%d",
-			e.name, e.avg, e.max, e.cnt))
-	end
-
-	local report = table.concat(lines, "\n")
-	warn(report)
-	if typeof(_G.__VG_LOG_FILE) == "function" then
-		_G.__VG_LOG_FILE("PERF", report)
-	end
-end
-
 -- ── NO FALL DAMAGE ───────────────────────────────────────────────────────────
 local noFallConns = {}
 
@@ -379,10 +325,11 @@ local function startMaster(S)
 	local espInitTick = false
 	local running = { noFall = false, noSpike = false }
 
-	masterConn = RS.Heartbeat:Connect(function()
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
+	masterConn = RS.Heartbeat:Connect(perfWrap("Criminality.Main", function()
 		crimFrame = crimFrame + 1
 
-		-- Flag watcher (merged — no second Heartbeat connection)
 		if S.CrimNoFall ~= running.noFall then
 			running.noFall = S.CrimNoFall
 			if running.noFall then pcall(startNoFall) else pcall(stopNoFall) end
@@ -412,26 +359,17 @@ local function startMaster(S)
 		end
 
 		if S.CrimInstReload then
-			perfBegin("InstReload")
 			pcall(tickReload)
-			perfEnd("InstReload")
 		end
 
 		if S.CrimMeleeAura then
-			perfBegin("MeleeAura")
 			tickMelee(S)
-			perfEnd("MeleeAura")
 		end
 
-		-- ESP visibility: every 2 frames (~30 Hz) — enough for labels/highlights
 		if (S.CrimSafeESP or S.CrimDealerESP) and crimFrame % 2 == 0 then
-			perfBegin("ESPVis")
 			tickESP(S)
-			perfEnd("ESPVis")
 		end
-
-		perfReport()
-	end)
+	end))
 end
 
 local function stopMaster()

@@ -271,21 +271,23 @@ function World.Init(S)
 		applyMenuBlur()
 	end
 
-	RS.RenderStepped:Connect(function()
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
+	RS.RenderStepped:Connect(perfWrap("World.Render", function()
 		if S.WorldTimeLock then
 			Lighting.ClockTime = math.clamp(S.WorldTime or 14, 0, 24)
 		end
 		applyMenuBlur()
-	end)
+	end))
 
-	RS.Heartbeat:Connect(function()
+	RS.Heartbeat:Connect(perfWrap("World.Heartbeat", function()
 		captureDefaults()
 		applyFullBright(S.FullBright == true)
 		applyLighting()
 		applyFog()
 		applyGrade()
 		applyPost()
-	end)
+	end))
 
 	function World.Refresh()
 		applyAll()

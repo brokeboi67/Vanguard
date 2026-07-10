@@ -179,12 +179,18 @@ do
 			if not game:IsLoaded() then pcall(function() game.Loaded:Wait() end) end
 			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
 
+			local function timedBypassScan(deep)
+				local perf = _G.__VG_PERF
+				local wrap = perf and perf.wrap or function(_, fn) return fn end
+				return wrap("Main.BypassScan", scanForAdonis)(deep)
+			end
+
 			-- Fast light scan first (getgc false) — works if Adonis is already loaded.
-			local Detected, Kill = scanForAdonis(false)
+			local Detected, Kill = timedBypassScan(false)
 
 			-- Deep scan fallback if light scan missed it (Adonis tables may not be in light GC).
 			if not Detected then
-				Detected, Kill = scanForAdonis(true)
+				Detected, Kill = timedBypassScan(true)
 			end
 
 			local installed = applyBypass(Detected, Kill)
@@ -204,7 +210,7 @@ do
 						if _G.__VG_DBG_HOOKED then break end
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
 						-- Light scan only — avoids the heavy getgc(true) causing stutters
-						local d, k = scanForAdonis(false)
+						local d, k = timedBypassScan(false)
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
 						if d then
 							applyBypass(d, k)
@@ -656,6 +662,8 @@ Stealth.Init(AntiBypass)
 
 local Settings = Get("Settings.lua")
 local Logger = Get("Logger.lua")
+local Perf = Get("Perf.lua")
+_G.__VG_PERF = Perf
 pcall(function()
 	Logger.Init(Settings)
 end)

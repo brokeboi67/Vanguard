@@ -102,13 +102,15 @@ function Movement.Init(S)
 		end
 	end
 
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
 	local function stopNoclip()
 		if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
 	end
 
 	local function startNoclip()
 		stopNoclip()
-		noclipConn = RS.Stepped:Connect(applyNoclip)
+		noclipConn = RS.Stepped:Connect(perfWrap("Movement.Noclip", applyNoclip))
 	end
 
 	-- ── Infinite Stamina ────────────────────────────────────────────────────
@@ -231,7 +233,9 @@ function Movement.Init(S)
 
 	-- ── Main loop ────────────────────────────────────────────────────────────
 
-	RS.RenderStepped:Connect(function()
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
+	RS.RenderStepped:Connect(perfWrap("Movement.Main", function()
 		local needBHop    = S.BHop
 		local needStrafe  = S.AutoStrafe
 		local needFly     = S.Fly
@@ -305,7 +309,7 @@ function Movement.Init(S)
 		else
 			stopNoFallDmg()
 		end
-	end)
+	end))
 end
 
 return Movement

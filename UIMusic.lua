@@ -1837,6 +1837,7 @@ function UIMusic.buildWidget(env)
 	local TweenPlay = env.TweenPlay
 	local UIS = game:GetService("UserInputService")
 	local RS = game:GetService("RunService")
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
 	if ParentGUI then
 		local oldWidget = ParentGUI:FindFirstChild("VanguardMusicWidget")
@@ -2323,12 +2324,12 @@ function UIMusic.buildWidget(env)
 		end
 		Glow.BackgroundColor3 = accent or SPOTIFY
 		local t0 = os.clock()
-		pulseConn = RS.Heartbeat:Connect(function()
+		pulseConn = RS.Heartbeat:Connect(perfWrap("UIMusic.Pulse", function()
 			local wave = (math.sin((os.clock() - t0) * 3.2) + 1) * 0.5
 			ArtRing.BackgroundTransparency = 0.45 + wave * 0.35
 			ArtScale.Scale = 1 + wave * 0.035
 			Glow.BackgroundTransparency = 0.9 + wave * 0.06
-		end)
+		end))
 	end
 
 	local function showWidget(animateIn)

@@ -1988,8 +1988,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 
 	local specAt = 0
 	local lastShotTrack = 0
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
-	RS.Heartbeat:Connect(function()
+	RS.Heartbeat:Connect(perfWrap("Features.HUD", function()
 		updCrosshair()
 		if not S.DamageLog or S.MenuOpen then
 			if dmgVisible then
@@ -2019,16 +2020,16 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			lastShotTrack = shotAt
 			session.shots += 1
 		end
-	end)
+	end))
 
-	RS.Heartbeat:Connect(function()
+	RS.Heartbeat:Connect(perfWrap("Features.Spectators", function()
 		if tick() - specAt < 0.45 then
 			return
 		end
 		specAt = tick()
 		scanHumanoids()
 		updSpectators()
-	end)
+	end))
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerGui(HudGui)

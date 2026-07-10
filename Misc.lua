@@ -213,7 +213,9 @@ function Misc.Init(S, TF, Util)
 		end
 	end
 
-	RS.RenderStepped:Connect(function()
+	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+
+	RS.RenderStepped:Connect(perfWrap("Misc.Render", function()
 		if S.Unloaded then
 			return
 		end
@@ -270,7 +272,7 @@ function Misc.Init(S, TF, Util)
 		end)
 	end
 
-	RS.Heartbeat:Connect(function()
+	RS.Heartbeat:Connect(perfWrap("Misc.Refresh", function()
 		if S.Unloaded then
 			return
 		end
@@ -282,7 +284,7 @@ function Misc.Init(S, TF, Util)
 		end
 		lastRefresh = tick()
 		pcall(refreshAll)
-	end)
+	end))
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerCleanup(function()
