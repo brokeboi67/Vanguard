@@ -79,10 +79,14 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
--- Early bypass: hook Detected + Send (block server report) + detector disablers.
--- NO debug.info hook   — Potassium can't hook it, causes warns/instability.
--- NO blank Kill hook   — blank Kill = Adonis infinite retry loop = game freeze.
--- NO rawset            — only hookfunction; rawset breaks Adonis internal refs.
+-- Early bypass: hook Detected (nil return, not true!) + Send (block server report).
+-- Lessons learned:
+--   hookfunction on debug.info  → Potassium instability, warns false
+--   hookfunction on Kill (blank) → Adonis retry loop → freeze
+--   hookfunction on namecallInstance/indexInstance/newindexInstance detectors
+--       → Adonis Anti line 427 "while not detector()" = "while not false" = infinite loop → freeze
+-- ONLY Detected + Send are safe to hook.
+-- Detected returns nil (not true) to avoid any retry-on-truthy-return pattern.
 task.spawn(function()
 	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then return end
 	local function makeCC(f)
@@ -92,17 +96,17 @@ task.spawn(function()
 		return f
 	end
 
-	local blankDet   = makeCC(function() return true end)
-	local blankFalse = makeCC(function() return false end)
-	local hookedFns  = {}
-	local n, hooks   = 0, 0
+	-- Returns nil (nothing), not true/false — prevents any Adonis retry loop
+	local blankDet  = makeCC(function() end)
+	local hookedFns = {}
+	local n, hooks  = 0, 0
 
 	for _, v in getgc(true) do
 		n += 1
 		if typeof(v) == "table" then
 			local hasVars = rawget(v, "Variables") ~= nil
 
-			-- Detected: swallow anti-cheat detection calls
+			-- Detected: swallow all detection calls (returns nil → Adonis moves on)
 			local det = rawget(v, "Detected")
 			if typeof(det) == "function" and not hookedFns[det] then
 				hookedFns[det] = true
@@ -111,7 +115,6 @@ task.spawn(function()
 			end
 
 			-- Send: block "Detected" events from reaching the server
-			-- (Adonis calls Send("Detected", info) → FireServer → server kicks)
 			local send = rawget(v, "Send")
 			if typeof(send) == "function" and hasVars and not hookedFns[send] then
 				hookedFns[send] = true
@@ -125,20 +128,6 @@ task.spawn(function()
 				local ok2, ret = pcall(hookfunction, send, sendWrap)
 				if ok2 and typeof(ret) == "function" then oldSend = ret end
 				hooks += 1
-			end
-
-			-- Detector entries: namecallInstance/indexInstance/newindexInstance
-			-- These check for hookfunction tampering; return false to hide our hooks
-			for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
-				local entry = rawget(v, tag)
-				if typeof(entry) == "table" then
-					local fn = rawget(entry, 2) or entry[2]
-					if typeof(fn) == "function" and not hookedFns[fn] then
-						hookedFns[fn] = true
-						pcall(hookfunction, fn, blankFalse)
-						hooks += 1
-					end
-				end
 			end
 		end
 		if n % 200 == 0 then task.wait() end

@@ -299,55 +299,10 @@ local function tryNeutralizeDetectorEntry(entry, tag)
 	return hookDetectorFn(fn)
 end
 
-function AntiBypass.neutralizeAdonisDetectors(useDeep)
-	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then
-		return adonisDetectorsHooked
-	end
-	local function scanList(list)
-		for _, v in ipairs(list) do
-			if typeof(v) ~= "table" then
-				continue
-			end
-			for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
-				local entry = rawget(v, tag)
-				if typeof(entry) == "table" and (entry[1] == "kick" or rawget(entry, 1) == "kick") then
-					tryNeutralizeDetectorEntry(entry, tag)
-				end
-			end
-			for _, sub in pairs(v) do
-				if typeof(sub) == "table" and (sub[1] == "kick" or rawget(sub, 1) == "kick") and typeof(sub[2]) == "function" then
-					tryNeutralizeDetectorEntry(sub, nil)
-				end
-			end
-		end
-	end
-	local ok, loose = pcall(getgc, false)
-	if ok and typeof(loose) == "table" then
-		scanList(loose)
-	end
-	if useDeep and not isLoadPhase() and not uiBuilding then
-		local now = os.clock()
-		if now - adonisLastDeepScanAt >= ADONIS_DEEP_SCAN_COOLDOWN then
-			adonisLastDeepScanAt = now
-			task.spawn(function()
-				local n = 0
-				for _, v in getgc(true) do
-					n += 1
-					if typeof(v) == "table" then
-						for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
-							local entry = rawget(v, tag)
-							if typeof(entry) == "table" and (entry[1] == "kick" or rawget(entry, 1) == "kick") then
-								tryNeutralizeDetectorEntry(entry, tag)
-							end
-						end
-					end
-					if n % 200 == 0 then
-						task.wait()
-					end
-				end
-			end)
-		end
-	end
+function AntiBypass.neutralizeAdonisDetectors(_useDeep)
+	-- DISABLED: hooking namecallInstance/indexInstance/newindexInstance detector functions
+	-- causes Adonis Anti line 427 infinite loop ("while not detector()" = "while not false").
+	-- Only Detected + Send hooks are safe. Detectors must not be touched.
 	return adonisDetectorsHooked
 end
 
