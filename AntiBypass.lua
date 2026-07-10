@@ -837,7 +837,7 @@ function AntiBypass.installShield(S)
 				end
 				pcall(function()
 					local oldKick
-					local kickWrap = makeCclosure(function(self, ...)
+					local function kickWrap(self, ...)
 						if self == player then
 							if shouldAllowPlayerKick() then
 								return oldKick(self, ...)
@@ -845,8 +845,8 @@ function AntiBypass.installShield(S)
 							return
 						end
 						return oldKick(self, ...)
-					end)
-					oldKick = hookfunction(player.Kick, kickWrap)
+					end
+					oldKick = hookfunction(player.Kick, makeCclosure(kickWrap))
 				end)
 			end
 			local LP = Players.LocalPlayer

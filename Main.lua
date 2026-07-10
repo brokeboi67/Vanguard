@@ -369,20 +369,9 @@ pcall(function()
 		return os.clock() >= playerKickGraceEnd
 	end
 	if LP then
-		local oldKick
-		local kickWrap
-		if typeof(newcclosure) == "function" then
-			kickWrap = newcclosure(function(self, ...)
-				if self == LP then
-					if shouldAllowPlayerKick() then
-						return oldKick(self, ...)
-					end
-					return
-				end
-				return oldKick(self, ...)
-			end)
-		else
-			kickWrap = function(self, ...)
+		pcall(function()
+			local oldKick
+			local function kickWrap(self, ...)
 				if self == LP then
 					if shouldAllowPlayerKick() then
 						return oldKick(self, ...)
@@ -391,8 +380,15 @@ pcall(function()
 				end
 				return oldKick(self, ...)
 			end
-		end
-		oldKick = hookfunction(LP.Kick, kickWrap)
+			local wrapped
+			if typeof(newcclosure) == "function" then
+				local ok, w = pcall(newcclosure, kickWrap)
+				wrapped = ok and w or kickWrap
+			else
+				wrapped = kickWrap
+			end
+			oldKick = hookfunction(LP.Kick, wrapped)
+		end)
 	end
 end)
 
