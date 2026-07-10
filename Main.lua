@@ -176,6 +176,40 @@ do
 			end
 		end
 
+		local hookedDetectorFns = {}
+
+		local function hookDetectorFn(fn)
+			if typeof(fn) ~= "function" or hookedDetectorFns[fn] then
+				return false
+			end
+			hookedDetectorFns[fn] = true
+			local stub = makeCC(function()
+				return false
+			end)
+			pcall(hookfunction, fn, stub)
+			return true
+		end
+
+		local function neutralizeDetectors()
+			if typeof(getgc) ~= "function" then
+				return
+			end
+			local ok, list = pcall(getgc, false)
+			if not ok or typeof(list) ~= "table" then
+				return
+			end
+			for _, v in ipairs(list) do
+				if typeof(v) == "table" then
+					for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
+						local entry = rawget(v, tag)
+						if typeof(entry) == "table" and typeof(entry[2]) == "function" then
+							hookDetectorFn(entry[2])
+						end
+					end
+				end
+			end
+		end
+
 		local function tryHookTable(v, depth)
 			depth = depth or 0
 			if typeof(v) ~= "table" or depth > 2 then
@@ -253,6 +287,7 @@ do
 		end
 
 		local function lightScan()
+			neutralizeDetectors()
 			local ok, list = pcall(getgc, false)
 			if ok and typeof(list) == "table" then
 				for _, v in list do
@@ -277,74 +312,6 @@ do
 		end)
 	end
 end
-
-pcall(function()
-	if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
-		return
-	end
-	local function makeNC(fn)
-		if typeof(newcclosure) == "function" then
-			local ok, w = pcall(newcclosure, fn)
-			if ok and w then
-				return w
-			end
-		end
-		return fn
-	end
-	local function isBlockedRemoteArg(arg)
-		if typeof(arg) ~= "string" then
-			return false
-		end
-		local lower = string.lower(arg)
-		return lower == "detected" or lower:find("clientcheck", 1, true) ~= nil
-	end
-	local function shouldCheckRemote(self)
-		if typeof(self) ~= "userdata" and typeof(self) ~= "Instance" then
-			return false
-		end
-		local ok, isRemote = pcall(function()
-			return self:IsA("RemoteEvent") or self:IsA("RemoteFunction")
-		end)
-		return ok and isRemote
-	end
-	local oldNC
-	oldNC = hookmetamethod(game, "__namecall", makeNC(function(self, ...)
-		local method = getnamecallmethod()
-		if method == "FireServer" or method == "InvokeServer" then
-			if shouldCheckRemote(self) then
-				for i = 1, select("#", ...) do
-					if isBlockedRemoteArg(select(i, ...)) then
-						if _G.__VG_LOG_FILE then
-							_G.__VG_LOG_FILE("BLOCK", "namecall " .. method .. " " .. tostring(select(i, ...)))
-						end
-						return nil
-					end
-				end
-			end
-		end
-		return oldNC(self, ...)
-	end))
-	_G.__VG_NAMECALL_SHIELD = true
-end)
-
-pcall(function()
-	if typeof(getgc) ~= "function" or _G.__VG_INDEX_KICK_DONE then
-		return
-	end
-	_G.__VG_INDEX_KICK_DONE = true
-	for _, v in getgc(false) do
-		if typeof(v) == "table" then
-			local idx = rawget(v, "indexInstance")
-			if typeof(idx) == "table" and idx[1] == "kick" then
-				pcall(function()
-					rawset(v, "tvk", { "kick", function()
-						return workspace:WaitForChild("")
-					end })
-				end)
-			end
-		end
-	end
-end)
 
 pcall(function()
 	if typeof(hookfunction) ~= "function" then

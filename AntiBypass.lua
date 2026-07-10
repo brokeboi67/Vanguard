@@ -250,69 +250,105 @@ function AntiBypass.isVanguardGui(gui)
 	return gui and concealed[gui] == true
 end
 
+local hookedDetectorFns = {}
+local adonisDetectorsHooked = 0
+
 local function isFullyHooked()
 	return adonisDetectedHooked > 0 and adonisKillHooked > 0 and debugInfoHooked
 end
 
-local function isBlockedRemoteArg(arg)
-	if typeof(arg) ~= "string" then
+local function hookDetectorFn(fn)
+	if typeof(fn) ~= "function" or hookedDetectorFns[fn] then
 		return false
 	end
-	local lower = string.lower(arg)
-	return lower == "detected" or lower:find("clientcheck", 1, true) ~= nil
-end
-
-local function shouldCheckRemote(self)
-	if typeof(self) ~= "userdata" and typeof(self) ~= "Instance" then
+	hookedDetectorFns[fn] = true
+	local stub = makeCclosure(function()
 		return false
-	end
-	local ok, isRemote = pcall(function()
-		return self:IsA("RemoteEvent") or self:IsA("RemoteFunction")
 	end)
-	return ok and isRemote
+	if typeof(hookfunction) == "function" then
+		pcall(hookfunction, fn, stub)
+	end
+	adonisDetectorsHooked += 1
+	adonisHookCount += 1
+	return true
 end
 
-local function installNamecallShield()
-	if _G.__VG_NAMECALL_SHIELD or typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
-		return
+local function tryNeutralizeDetectorEntry(entry, tag)
+	if typeof(entry) ~= "table" then
+		return false
 	end
-	local oldNC
-	local wrap = makeCclosure(function(self, ...)
-		local method = getnamecallmethod()
-		if method == "FireServer" or method == "InvokeServer" then
-			if shouldCheckRemote(self) then
-				for i = 1, select("#", ...) do
-					if isBlockedRemoteArg(select(i, ...)) then
-						if _G.__VG_LOG_FILE then
-							_G.__VG_LOG_FILE("BLOCK", "ab namecall " .. method .. " " .. tostring(select(i, ...)))
-						end
-						return nil
-					end
+	local fn = entry[2] or rawget(entry, 2)
+	if typeof(fn) ~= "function" then
+		return false
+	end
+	if tag and typeof(getconstants) == "function" then
+		local ok, constants = pcall(getconstants, fn)
+		if ok and typeof(constants) == "table" then
+			local matched = false
+			for _, c in ipairs(constants) do
+				if c == tag then
+					matched = true
+					break
+				end
+			end
+			if not matched then
+				return false
+			end
+		end
+	end
+	return hookDetectorFn(fn)
+end
+
+function AntiBypass.neutralizeAdonisDetectors(useDeep)
+	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then
+		return adonisDetectorsHooked
+	end
+	local function scanList(list)
+		for _, v in ipairs(list) do
+			if typeof(v) ~= "table" then
+				continue
+			end
+			for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
+				local entry = rawget(v, tag)
+				if typeof(entry) == "table" and (entry[1] == "kick" or rawget(entry, 1) == "kick") then
+					tryNeutralizeDetectorEntry(entry, tag)
+				end
+			end
+			for _, sub in pairs(v) do
+				if typeof(sub) == "table" and (sub[1] == "kick" or rawget(sub, 1) == "kick") and typeof(sub[2]) == "function" then
+					tryNeutralizeDetectorEntry(sub, nil)
 				end
 			end
 		end
-		return oldNC(self, ...)
-	end)
-	oldNC = hookmetamethod(game, "__namecall", wrap)
-	_G.__VG_NAMECALL_SHIELD = true
-end
-
-local function installIndexKickBypass()
-	if typeof(getgc) ~= "function" then
-		return
 	end
-	for _, v in getgc(false) do
-		if typeof(v) == "table" then
-			local idx = rawget(v, "indexInstance")
-			if typeof(idx) == "table" and idx[1] == "kick" then
-				pcall(function()
-					rawset(v, "tvk", { "kick", function()
-						return workspace:WaitForChild("")
-					end })
-				end)
-			end
+	local ok, loose = pcall(getgc, false)
+	if ok and typeof(loose) == "table" then
+		scanList(loose)
+	end
+	if useDeep and not isLoadPhase() and not uiBuilding then
+		local now = os.clock()
+		if now - adonisLastDeepScanAt >= ADONIS_DEEP_SCAN_COOLDOWN then
+			adonisLastDeepScanAt = now
+			task.spawn(function()
+				local n = 0
+				for _, v in getgc(true) do
+					n += 1
+					if typeof(v) == "table" then
+						for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
+							local entry = rawget(v, tag)
+							if typeof(entry) == "table" and (entry[1] == "kick" or rawget(entry, 1) == "kick") then
+								tryNeutralizeDetectorEntry(entry, tag)
+							end
+						end
+					end
+					if n % 200 == 0 then
+						task.wait()
+					end
+				end
+			end)
 		end
 	end
+	return adonisDetectorsHooked
 end
 
 local function installAdonisLogTrigger()
@@ -331,10 +367,12 @@ local function installAdonisLogTrigger()
 				or message:find("Start ClientCheck", 1, true)
 				or message:find("Loading Core Module", 1, true) then
 				task.defer(function()
+					AntiBypass.neutralizeAdonisDetectors(false)
 					AntiBypass.scanAdonis({ deep = false })
 					ensureDebugInfoHook()
 					if not isLoadPhase() and not uiBuilding then
 						task.delay(1.5, function()
+							AntiBypass.neutralizeAdonisDetectors(true)
 							AntiBypass.scanAdonis({ deep = true })
 							ensureDebugInfoHook()
 						end)
@@ -629,6 +667,7 @@ function AntiBypass.scanAdonis(opts)
 		return adonisHookCount > 0
 	end
 	opts = opts or {}
+	AntiBypass.neutralizeAdonisDetectors(false)
 	local hooked = runLightScan()
 	local allowDeep = opts.deep == true and not isLoadPhase() and not uiBuilding
 	if not hooked and allowDeep then
@@ -648,7 +687,7 @@ function AntiBypass.getAdonisStatus()
 		count = adonisHookCount,
 		detected = adonisDetectedHooked,
 		kill = adonisKillHooked,
-		namecallShield = _G.__VG_NAMECALL_SHIELD == true,
+		detectors = adonisDetectorsHooked,
 		hasGetgc = typeof(getgc) == "function",
 		hasHookfunction = typeof(hookfunction) == "function",
 		hasHiddenGui = usingHiddenGui,
@@ -698,6 +737,7 @@ function AntiBypass.onLoadComplete()
 		if isLoadPhase() or adonisWatcherStop then
 			return
 		end
+		AntiBypass.neutralizeAdonisDetectors(true)
 		AntiBypass.scanAdonis({ deep = true })
 		ensureDebugInfoHook()
 		if not isFullyHooked() then
@@ -710,9 +750,9 @@ function AntiBypass.waitForAdonis(timeoutSec)
 	timeoutSec = math.min(timeoutSec or 2, 2)
 	local deadline = os.clock() + timeoutSec
 	repeat
+		AntiBypass.neutralizeAdonisDetectors(false)
 		AntiBypass.scanAdonis({ deep = false })
 		ensureDebugInfoHook()
-		installIndexKickBypass()
 		if isFullyHooked() then
 			return true
 		end
@@ -735,14 +775,14 @@ function AntiBypass.logAdonisDiagnostics(tag, S)
 	local st = AntiBypass.getAdonisStatus()
 	local early = _G.__VG_EARLY_ADONIS
 	local msg = string.format(
-		"[VG:%s] hooked=%s count=%d det=%d kill=%d debugInfo=%s namecall=%s hidden=%s uiBuilding=%s loading=%s",
+		"[VG:%s] hooked=%s count=%d det=%d kill=%d detectors=%d debugInfo=%s hidden=%s uiBuilding=%s loading=%s",
 		tostring(tag or "?"),
 		tostring(st.hooked),
 		st.count,
 		st.detected or 0,
 		st.kill or 0,
+		st.detectors or 0,
 		tostring(st.debugInfoHooked),
-		tostring(st.namecallShield),
 		tostring(st.hasHiddenGui),
 		tostring(uiBuilding),
 		tostring(isLoadPhase())
@@ -775,8 +815,7 @@ function AntiBypass.installShield(S)
 	end
 
 	if not shieldInstalled then
-		installNamecallShield()
-		installIndexKickBypass()
+		AntiBypass.neutralizeAdonisDetectors(false)
 		installAdonisLogTrigger()
 
 		if typeof(hookfunction) == "function" then
