@@ -79,7 +79,8 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
--- Early light scan: hook Adonis Detected/Kill while modules download (non-blocking)
+-- Early deep scan: hook Adonis Detected/Kill immediately after inject (spawned, yields every 200)
+-- getgc(false) misses Adonis tables — getgc(true) finds them but must yield to avoid freeze
 task.spawn(function()
 	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then return end
 	local function makeCC(f)
@@ -90,31 +91,30 @@ task.spawn(function()
 	end
 	local blankDet = makeCC(function() return true end)
 	local hookedFns = {}
-	local hookedKills = {}
-	for attempt = 1, 30 do
-		if _G.__VG_LOADING ~= true then break end
-		local ok, list = pcall(getgc, false)
-		if ok and typeof(list) == "table" then
-			for _, v in list do
-				if typeof(v) ~= "table" then continue end
-				-- Hook Detected
-				local det = rawget(v, "Detected")
-				if typeof(det) == "function" and not hookedFns[det] then
-					hookedFns[det] = true
-					pcall(hookfunction, det, blankDet)
-					pcall(rawset, v, "Detected", blankDet)
-				end
-				-- Hook Kill (soft: just swallow, don't call original during load)
-				local kill = rawget(v, "Kill")
-				if typeof(kill) == "function" and rawget(v, "Variables") and not hookedKills[kill] then
-					hookedKills[kill] = true
-					local softKill = makeCC(function() end)
-					pcall(hookfunction, kill, softKill)
-					pcall(rawset, v, "Kill", softKill)
-				end
+	local n, hooks = 0, 0
+	for _, v in getgc(true) do
+		n += 1
+		if typeof(v) == "table" then
+			local det = rawget(v, "Detected")
+			if typeof(det) == "function" and not hookedFns[det] then
+				hookedFns[det] = true
+				pcall(hookfunction, det, blankDet)
+				pcall(rawset, v, "Detected", blankDet)
+				hooks += 1
+			end
+			local kill = rawget(v, "Kill")
+			if typeof(kill) == "function" and rawget(v, "Variables") and not hookedFns[kill] then
+				hookedFns[kill] = true
+				local softKill = makeCC(function() end)
+				pcall(hookfunction, kill, softKill)
+				pcall(rawset, v, "Kill", softKill)
+				hooks += 1
 			end
 		end
-		task.wait(0.4)
+		if n % 200 == 0 then task.wait() end
+	end
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", string.format("[VG:earlyDeep] scanned=%d hooked=%d", n, hooks))
 	end
 end)
 
@@ -643,18 +643,55 @@ AntiBypass.concealGui(GUI)
 Core.registerGui(GUI)
 AntiBypass.Init(Settings)
 
+-- Phase tracker: logs exactly WHAT was active when the kick happened
+local _kickPhase = "post-AntiBypass.Init"
+do
+	local LP = game:GetService("Players").LocalPlayer
+	if LP then
+		LP.AncestryChanged:Connect(function()
+			if LP.Parent then return end
+			local st = pcall(AntiBypass.getAdonisStatus) and AntiBypass.getAdonisStatus() or {}
+			local msg = string.format(
+				"[VG:KICK] phase=%s | bypass hooked=%s count=%d det=%d kill=%d detectors=%d",
+				_kickPhase,
+				tostring(st.hooked or false), st.count or 0,
+				st.detected or 0, st.kill or 0, st.detectors or 0
+			)
+			if typeof(_G.__VG_LOG_FILE) == "function" then _G.__VG_LOG_FILE("WARN", msg) end
+			pcall(warn, msg)
+		end)
+	end
+end
+
+-- Helper: log phase start/end to file
+local function phase(name, fn, ...)
+	_kickPhase = name
+	if typeof(_G.__VG_LOG_FILE) == "function" then _G.__VG_LOG_FILE("INFO", "[VG:phase] >>> " .. name) end
+	local args = { ... }
+	local ok, err = pcall(function() fn(table.unpack(args)) end)
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		if ok then
+			_G.__VG_LOG_FILE("INFO", "[VG:phase] <<< " .. name .. " OK")
+		else
+			_G.__VG_LOG_FILE("ERROR", "[VG:phase] <<< " .. name .. " ERR: " .. tostring(err))
+		end
+	end
+	return ok
+end
+
 bootProgress("ESP & HUD", 0.78)
 
-ESP.Init(Settings, GUI, TeamFriends, Util)
-Aim.Init(Settings, GUI, TeamFriends, Util)
-Rage.Init(Settings, GUI, TeamFriends, Util)
-Movement.Init(Settings)
-Misc.Init(Settings, TeamFriends, Util)
-Features.Init(Settings, GUI, AntiBypass)
-Effects.Init(Settings, Util)
-Animations.Init(Settings)
-World.Init(Settings)
-Music.Init(Settings, I18n)
+phase("ESP.Init",        ESP.Init,        Settings, GUI, TeamFriends, Util)
+phase("Aim.Init",        Aim.Init,        Settings, GUI, TeamFriends, Util)
+phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
+phase("Movement.Init",   Movement.Init,   Settings)
+phase("Misc.Init",       Misc.Init,       Settings, TeamFriends, Util)
+phase("Features.Init",   Features.Init,   Settings, GUI, AntiBypass)
+phase("Effects.Init",    Effects.Init,    Settings, Util)
+phase("Animations.Init", Animations.Init, Settings)
+phase("World.Init",      World.Init,      Settings)
+phase("Music.Init",      Music.Init,      Settings, I18n)
+
 if isTransferLoad and Music.ApplyTransferSettings then
 	pcall(Music.ApplyTransferSettings)
 elseif isTransferLoad and Music.ApplyTransferVolume then
@@ -668,9 +705,19 @@ if isTransferLoad and Music.RestoreFromTransfer then
 		end
 	end)
 end
+
+-- Log bypass status after all feature inits, before UI
+if typeof(_G.__VG_LOG_FILE) == "function" then
+	local st = pcall(AntiBypass.getAdonisStatus) and AntiBypass.getAdonisStatus() or {}
+	_G.__VG_LOG_FILE("INFO", string.format(
+		"[VG:pre-UI] bypass hooked=%s count=%d det=%d kill=%d detectors=%d",
+		tostring(st.hooked or false), st.count or 0, st.detected or 0, st.kill or 0, st.detectors or 0
+	))
+end
+
 bootProgress("Interfejs", 0.86)
 
--- Run bypass scans in background — do NOT block UI.Init
+-- Bypass scans in background — do NOT block UI.Init
 if Settings.AntiBypass ~= false then
 	task.spawn(function()
 		task.wait(0.3)
@@ -680,9 +727,11 @@ if Settings.AntiBypass ~= false then
 end
 
 task.spawn(function()
+	_kickPhase = "UI.Init-start"
 	AntiBypass.setUiBuilding(true)
 	task.wait()
-	UI.Init(Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
+	phase("UI.Init", UI.Init, Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
+	_kickPhase = "post-UI.Init"
 	AntiBypass.setUiBuilding(false)
 	AntiBypass.logAdonisDiagnostics("post-UI", Settings)
 
@@ -695,5 +744,6 @@ task.spawn(function()
 		pcall(Settings.ApplyTransferScript)
 	end
 
+	_kickPhase = "loaded"
 	Stealth.silentPrint(isTransferLoad and "VANGUARD: Loaded (transfer)" or "VANGUARD: Loaded")
 end)
