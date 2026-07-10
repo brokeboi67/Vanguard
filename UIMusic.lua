@@ -2008,6 +2008,32 @@ function UIMusic.buildWidget(env)
 	})
 	savePosToSettings(Root.Position)
 
+	local SHELL_RADIUS = 16
+	local GLOW_PAD = 7
+	local GLOW_RADIUS = SHELL_RADIUS + GLOW_PAD
+
+	local Body = C("Frame", {
+		Name = "Body",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ClipsDescendants = false,
+		ZIndex = 80,
+		Parent = Root,
+	})
+
+	local Glow = C("Frame", {
+		Size = UDim2.new(1, GLOW_PAD * 2, 1, GLOW_PAD * 2),
+		Position = UDim2.new(0.5, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = SPOTIFY,
+		BackgroundTransparency = 0.94,
+		BorderSizePixel = 0,
+		ZIndex = 80,
+		Parent = Body,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, GLOW_RADIUS), Parent = Glow })
+
 	local Shell = C("Frame", {
 		Name = "Shell",
 		Size = UDim2.fromScale(1, 1),
@@ -2016,27 +2042,15 @@ function UIMusic.buildWidget(env)
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
 		ZIndex = 81,
-		Parent = Root,
+		Parent = Body,
 	})
-	C("UICorner", { CornerRadius = UDim.new(0, 16), Parent = Shell })
+	C("UICorner", { CornerRadius = UDim.new(0, SHELL_RADIUS), Parent = Shell })
 	C("UIStroke", {
 		Color = Color3.fromRGB(48, 48, 58),
 		Thickness = 1,
 		Transparency = 0.45,
 		Parent = Shell,
 	})
-
-	local Glow = C("Frame", {
-		Size = UDim2.new(1, 12, 1, 12),
-		Position = UDim2.new(0.5, 0, 0.5, 0),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundColor3 = SPOTIFY,
-		BackgroundTransparency = 0.94,
-		BorderSizePixel = 0,
-		ZIndex = 80,
-		Parent = Shell,
-	})
-	C("UICorner", { CornerRadius = UDim.new(0, 20), Parent = Glow })
 
 	local MainRow = C("Frame", {
 		Size = UDim2.new(1, -12, 0, 54),
@@ -2340,10 +2354,12 @@ function UIMusic.buildWidget(env)
 		Root.Visible = true
 		if animateIn then
 			cancelTweens()
-			Shell.Position = UDim2.new(0, 0, 0, 16)
+			Body.Position = UDim2.new(0, 0, 0, 16)
 			Shell.BackgroundTransparency = 1
-			tween(Shell, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			tween(Body, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				Position = UDim2.new(0, 0, 0, 0),
+			})
+			tween(Shell, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				BackgroundTransparency = 0.04,
 			})
 		end
@@ -2356,14 +2372,16 @@ function UIMusic.buildWidget(env)
 		widgetVisible = false
 		setPulse(false)
 		cancelTweens()
-		local tw = tween(Shell, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+		local tw = tween(Body, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 			Position = UDim2.new(0, 0, 0, 20),
+		})
+		tween(Shell, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 			BackgroundTransparency = 1,
 		})
 		tw.Completed:Connect(function()
 			if not widgetVisible then
 				Root.Visible = false
-				Shell.Position = UDim2.new(0, 0, 0, 0)
+				Body.Position = UDim2.new(0, 0, 0, 0)
 			end
 		end)
 	end
