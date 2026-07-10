@@ -457,9 +457,7 @@ local function hookDetectedFn(fn, tbl, key)
 	if typeof(hookfunction) == "function" then
 		pcall(hookfunction, fn, blankDetected)
 	end
-	if tbl and key then
-		replaceTableFn(tbl, key, blankDetected)
-	end
+	-- No rawset/replaceTableFn — modifying Adonis table entries breaks its internal refs
 	adonisHookCount += 1
 	adonisDetectedHooked += 1
 	ensureDebugInfoHook()

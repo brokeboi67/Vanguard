@@ -79,8 +79,9 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
--- Early deep scan: hook Adonis Detected/Kill immediately after inject (spawned, yields every 200)
--- getgc(false) misses Adonis tables — getgc(true) finds them but must yield to avoid freeze
+-- Early bypass: hook debug.info FIRST (hides our hooks from Adonis detection),
+-- then hook Detected/Kill/detectors via getgc(true) with yields every 200 items.
+-- NO rawset — only hookfunction so we don't break Adonis internal references.
 task.spawn(function()
 	if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then return end
 	local function makeCC(f)
@@ -89,30 +90,62 @@ task.spawn(function()
 		end
 		return f
 	end
-	local blankDet = makeCC(function() return true end)
-	local hookedFns = {}
+
+	local hookedFns = {}  -- functions we've hooked (used by debug.info wrap)
+
+	-- Step 1: hook debug.info BEFORE touching any Adonis function.
+	-- Adonis Anti checks debug.info(Detected,"n") to detect hookfunction tampering.
+	-- We return fake source info so all our hooked functions look like native C code.
+	local renv = typeof(getrenv) == "function" and getrenv() or nil
+	if renv and typeof(renv.debug) == "table" and typeof(renv.debug.info) == "function" then
+		local oldDbgInfo = renv.debug.info
+		local dbgWrap = makeCC(function(fn, what, ...)
+			if hookedFns[fn] then
+				if what == "n" then return "hook" end
+				if what == "s" or what == "l" then return "=[C]" end
+				return nil
+			end
+			return oldDbgInfo(fn, what, ...)
+		end)
+		pcall(hookfunction, renv.debug.info, dbgWrap)
+	end
+
+	local blankDet   = makeCC(function() return true end)
+	local blankFalse = makeCC(function() return false end)
 	local n, hooks = 0, 0
+
+	-- Step 2: scan GC, hook Detected/Kill and neutralize detector entries
 	for _, v in getgc(true) do
 		n += 1
 		if typeof(v) == "table" then
+			-- Detected: swallow anti-cheat reports
 			local det = rawget(v, "Detected")
 			if typeof(det) == "function" and not hookedFns[det] then
 				hookedFns[det] = true
 				pcall(hookfunction, det, blankDet)
-				pcall(rawset, v, "Detected", blankDet)
 				hooks += 1
 			end
+			-- Kill: swallow kick attempts
 			local kill = rawget(v, "Kill")
 			if typeof(kill) == "function" and rawget(v, "Variables") and not hookedFns[kill] then
 				hookedFns[kill] = true
 				local softKill = makeCC(function() end)
 				pcall(hookfunction, kill, softKill)
-				pcall(rawset, v, "Kill", softKill)
 				hooks += 1
+			end
+			-- Detector entries: namecallInstance/indexInstance/newindexInstance → return false
+			for _, tag in ipairs({ "namecallInstance", "indexInstance", "newindexInstance" }) do
+				local entry = rawget(v, tag)
+				if typeof(entry) == "table" and typeof(entry[2]) == "function" and not hookedFns[entry[2]] then
+					hookedFns[entry[2]] = true
+					pcall(hookfunction, entry[2], blankFalse)
+					hooks += 1
+				end
 			end
 		end
 		if n % 200 == 0 then task.wait() end
 	end
+
 	if typeof(_G.__VG_LOG_FILE) == "function" then
 		_G.__VG_LOG_FILE("INFO", string.format("[VG:earlyDeep] scanned=%d hooked=%d", n, hooks))
 	end
