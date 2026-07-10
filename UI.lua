@@ -2103,9 +2103,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	task.wait()
 	local TMusic = MakeTab("music", false, false, 10, { fixed = true, layout = "music" })
 
-	-- Criminality tab — only visible when running inside Criminality (PlaceId 4588604953)
+	-- Criminality tab — visible in ALL Criminality places (lobby + Casual + sub-places)
+	-- Uses game.GameId (Universe ID = 1494262959) so it works after any in-game teleport.
 	local TCrim = nil
-	if game.PlaceId == 4588604953 then
+	if game.GameId == 1494262959 then
 		TCrim = MakeTab("criminality", false, false, 11)
 	end
 

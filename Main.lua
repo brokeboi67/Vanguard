@@ -777,7 +777,7 @@ phase("ESP.Init",        ESP.Init,        Settings, GUI, TeamFriends, Util)
 phase("Aim.Init",        Aim.Init,        Settings, GUI, TeamFriends, Util)
 phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
 phase("Movement.Init",   Movement.Init,   Settings)
-if game.PlaceId == 4588604953 then
+if game.GameId == 1494262959 then   -- Criminality universe (lobby + Casual + sub-places)
 	phase("Criminality.Init", Criminality.Init, Settings)
 end
 phase("Misc.Init",       Misc.Init,       Settings, TeamFriends, Util)

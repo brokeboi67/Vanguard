@@ -16,8 +16,13 @@ local GameSupport = {}
 	  ["game:123456789"] = { status = "Not Supported", note = "Silny anty-cheat" },
 ]]
 GameSupport.ENTRIES = {
-	-- Criminality (RVVZ/CRIMCORP) — free-roam open world, standard R15 rig, Adonis AC
-	[4588604953] = { status = "Supported", note = "Criminality — bypass aktywny" },
+	-- Criminality — lobby (4588604953) AND Casual (8343259840) matched via GameId
+	["game:1494262959"] = { status = "Supported", note = "Criminality — bypass aktywny" },
+	[4588604953]  = { status = "Supported", note = "Criminality — bypass aktywny" },
+	[8343259840]  = { status = "Supported", note = "Criminality: Casual — bypass aktywny" },
+	-- Rivals (PlaceId 17625359962, Universe 6035872082)
+	[17625359962] = { status = "Partially Supported", note = "Rivals — ESP/Aim OK, transfer w toku" },
+	["game:6035872082"] = { status = "Partially Supported", note = "Rivals — ESP/Aim OK, transfer w toku" },
 	[120851538706364] = { status = "Partially Supported", note = "Murder Duels — tylko legit" },
 	[106502313058092] = { status = "Supported", note = "Aura Edit Arena" },
 	[109397169461300] = { status = "Partially Supported", note = "SNIPER DUELS" },

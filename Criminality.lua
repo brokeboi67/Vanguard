@@ -1,13 +1,14 @@
 -- Criminality.lua
--- Game-specific features for Criminality (PlaceId 4588604953)
--- Only initialised when the script detects the correct game.
+-- Game-specific features for Criminality (GameId/Universe 1494262959)
+-- Matches ALL places in the Criminality universe: lobby (4588604953),
+-- Casual server (8343259840), and any future sub-places.
 
 local Criminality = {}
 
-Criminality.PLACE_ID = 4588604953
+Criminality.GAME_ID = 1494262959   -- Universe ID — same in lobby AND Casual
 
 function Criminality.IsCriminality()
-	return game.PlaceId == Criminality.PLACE_ID
+	return game.GameId == Criminality.GAME_ID
 end
 
 -- ── helpers ──────────────────────────────────────────────────────────────────

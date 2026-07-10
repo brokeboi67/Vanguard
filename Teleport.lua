@@ -53,7 +53,9 @@ task.defer(function()
 	if not LP then
 		return
 	end
-	task.wait(0.4)
+	-- Minimal wait — some games (e.g. Rivals) have fast server-side anti-cheat
+	-- that fires before a longer delay, so keep this as short as possible.
+	task.wait(0.1)
 	if game.GameId ~= EXPECTED_GAME then
 		return
 	end
