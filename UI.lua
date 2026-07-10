@@ -2598,6 +2598,27 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local MMove = MakeCard(TM, "MOVEMENT", "card_mmove_desc", 1)
 	MakeTog(MMove, "Bunny Hop", "BHop", 1, { flat = true })
 	MakeTog(MMove, "Auto Strafe", "AutoStrafe", 2, { flat = true })
+	MakeTog(MMove, "Walk Speed", "Speed", 3, { flat = true })
+	MakeSlider(MMove, "Speed Value", "SpeedValue", 16, 200, 4, {
+		suffix = " st/s",
+		step = 1,
+		fmt = function(v) return string.format("%d st/s", v) end,
+	})
+	MakeTog(MMove, "Jump Power", "JumpPower", 5, { flat = true })
+	MakeSlider(MMove, "Jump Value", "JumpPowerValue", 10, 250, 6, {
+		suffix = "",
+		step = 5,
+		fmt = function(v) return string.format("%d", v) end,
+	})
+	MakeTog(MMove, "Fly", "Fly", 7, { flat = true })
+	MakeSlider(MMove, "Fly Speed", "FlySpeed", 10, 200, 8, {
+		suffix = "",
+		step = 5,
+		fmt = function(v) return string.format("%d", v) end,
+	})
+	MakeTog(MMove, "Noclip", "Noclip", 9, { flat = true })
+	MakeTog(MMove, "Infinite Stamina", "InfStamina", 10, { flat = true })
+	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 11, { flat = true })
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })

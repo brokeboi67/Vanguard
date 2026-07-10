@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.6",
+	Version = "2.43.7",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -116,6 +116,16 @@ local Settings = {
 	-- MOVEMENT
 	BHop = false,
 	AutoStrafe = false,
+	Speed = false,
+	SpeedValue = 25,
+	JumpPower = false,
+	JumpPowerValue = 50,
+	Fly = false,
+	FlySpeed = 40,
+	FlyKey = "E",
+	Noclip = false,
+	InfStamina = false,
+	NoFallDmg = false,
 
 	-- ANIMATIONS
 	AnimSpeed = 1,
