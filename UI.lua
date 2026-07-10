@@ -2151,9 +2151,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
 
-		local CWeapon = MakeCard(TCrim, "WEAPONS", nil, 3)
-		MakeTog(CWeapon, "Instant Reload", "CrimInstReload", 1, { flat = true })
-
 		local CESP = MakeCard(TCrim, "OBJECT ESP", nil, 4)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 1, { flat = true })
 		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 2, { flat = true })

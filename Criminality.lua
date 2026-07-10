@@ -94,26 +94,6 @@ local function stopNoSpike()
 	end
 end
 
--- ── INSTANT RELOAD ───────────────────────────────────────────────────────────
-local AMMO_NAMES    = {"Ammo","ammo","Magazine","Mag","Bullets","CurrentAmmo","Clip"}
-local MAXAMMO_NAMES = {"MaxAmmo","MagSize","MaxMag","MaxBullets","MaxMagazine","MaxClip"}
-
-local function tickReload()
-	local c=getChar(); if not c then return end
-	local tool=c:FindFirstChildOfClass("Tool"); if not tool then return end
-	for _,n in ipairs(AMMO_NAMES) do
-		local v=tool:FindFirstChild(n)
-		if v and (v:IsA("NumberValue") or v:IsA("IntValue")) then
-			local maxV=0
-			for _,mn in ipairs(MAXAMMO_NAMES) do
-				local mv=tool:FindFirstChild(mn)
-				if mv and mv:IsA("NumberValue") then maxV=mv.Value; break end
-			end
-			if maxV<=0 then maxV=30 end
-			if v.Value<maxV then v.Value=maxV end
-		end
-	end
-end
 
 -- ── MELEE AURA ───────────────────────────────────────────────────────────────
 local meleeCooldown = false
@@ -356,10 +336,6 @@ local function startMaster(S)
 				if S.CrimSafeESP   then pcall(buildSafeESP,   S) end
 				if S.CrimDealerESP then pcall(buildDealerESP,  S) end
 			end)
-		end
-
-		if S.CrimInstReload then
-			pcall(tickReload)
 		end
 
 		if S.CrimMeleeAura then

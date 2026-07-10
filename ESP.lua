@@ -129,49 +129,57 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	local losParams = RaycastParams.new()
 	losParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	local LOS_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
-
 	local function updateLosFilter()
 		losParams.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
 	end
 
-	-- Returns true if the part is transparent/non-collidable (passable for LOS).
+	-- A part is visually transparent if its Transparency is high enough to see through.
+	-- NOTE: CanCollide is intentionally NOT used — many solid walls in games have
+	-- CanCollide=false (collision meshes, simplified hitboxes) but are still visually solid.
 	local function isPassablePart(inst)
 		if not inst then return false end
-		-- Direct property access (no pcall) — much faster in hot path.
 		local ok, trans = pcall(function() return inst.Transparency end)
-		if ok and trans >= 0.95 then return true end
-		local ok2, cc = pcall(function() return inst.CanCollide end)
-		if ok2 and not cc then return true end
+		if ok and trans >= 0.85 then return true end
 		return false
 	end
 
-	-- Iterative raycast through transparent parts (max 3 iterations).
-	local MAX_LOS_ITERS = 3
-	local LOS_STEP      = 0.12
+	-- Walk a ray from origin toward targetPos, stepping through visually transparent
+	-- parts (glass, force fields, etc). Returns true if line-of-sight is clear.
+	-- Max 6 iterations → handles up to 6 stacked transparent surfaces.
+	local MAX_LOS_ITERS = 6
+	local LOS_STEP      = 0.15
 
 	local function rayHasLOS(origin, targetPos, char)
 		local rayOrigin = origin
-		local remaining = targetPos - origin
+		local totalDir  = targetPos - origin
+		local totalDist = totalDir.Magnitude
+		if totalDist < 0.5 then return true end
+		local unitDir   = totalDir.Unit
+
 		for _ = 1, MAX_LOS_ITERS do
+			local remaining = targetPos - rayOrigin
 			if remaining.Magnitude < LOS_STEP then return true end
+
 			local hit = workspace:Raycast(rayOrigin, remaining, losParams)
 			if not hit then return true end
+
+			-- Hit a part that belongs to the target character → visible.
 			if hit.Instance:IsDescendantOf(char) then return true end
+
+			-- Hit a visually transparent part → step through and continue.
 			if isPassablePart(hit.Instance) then
-				local advance = hit.Distance + LOS_STEP
-				rayOrigin = origin + remaining.Unit * advance
-				remaining = targetPos - rayOrigin
+				rayOrigin = hit.Position + unitDir * LOS_STEP
 			else
+				-- Solid wall → not visible.
 				return false
 			end
 		end
+		-- Exhausted iterations through transparent layers → treat as not visible.
 		return false
 	end
 
 	-- LOS cache keyed by Player (survives respawn) — NOT Character (leaks on respawn).
 	local LOS_SLOTS    = 16
-	local LOS_MAX_DIST = 120
 	local losCache     = {}   -- [key] = { result=bool }
 	local losBucket    = {}   -- [key] = slot 0..LOS_SLOTS-1
 	local losBucketCnt = 0
