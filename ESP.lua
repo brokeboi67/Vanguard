@@ -198,9 +198,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 	local function charHasLineOfSight(losKey, char, distSq)
 		if not char or not losKey then return true end
-		if distSq and distSq > LOS_MAX_DIST * LOS_MAX_DIST then
-			return false
-		end
+		-- No hard distance cutoff — let the cache slots handle perf.
 
 		local slot   = getSlot(losKey)
 		local cached = losCache[losKey]
@@ -543,7 +541,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 	-- Performance: cap targets + stagger full-detail updates across frames.
 	local espTick         = 0
-	local DETAIL_SLOTS    = 4
+	local DETAIL_SLOTS    = 2   -- full detail every 2 frames (~33ms lag) — was 4 (67ms lag)
 	local MAX_ESP_TARGETS = 28
 	local espTargets      = {}
 
@@ -924,6 +922,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		else
 			hideAllArrows()
 		end
+
+		lastESP = true
 	end))
 
 	P.PlayerRemoving:Connect(function(plr)

@@ -16,7 +16,9 @@ local adonisHookCount = 0
 local adonisDetectedHooked = 0
 local adonisKillHooked = 0
 local adonisLastDeepScanAt = 0
-local ADONIS_DEEP_SCAN_COOLDOWN = 4
+local ADONIS_DEEP_SCAN_COOLDOWN = 300  -- never run deep scans more than once per 5 min
+local deepScanAttempts = 0
+local MAX_DEEP_SCAN_ATTEMPTS = 2       -- give up after 2 attempts (no Adonis = no point)
 local adonisWatcherStop = false
 local debugInfoHooked = false
 local uiBuilding = false
@@ -559,6 +561,10 @@ local function runDeepScanBatched()
 	if typeof(getgc) ~= "function" then
 		return false
 	end
+	-- Never run if bypass is already installed — wastes RAM and causes freezes.
+	if _G.__VG_DBG_HOOKED then
+		return false
+	end
 	if isLoadPhase() then
 		return false
 	end
@@ -594,16 +600,22 @@ local function runDeepScanBatched()
 end
 
 local function scheduleDeepScan(delaySec)
+	-- Stop if bypass already hooked or too many failed attempts (e.g. game has no Adonis).
+	if _G.__VG_DBG_HOOKED or deepScanAttempts >= MAX_DEEP_SCAN_ATTEMPTS then
+		return
+	end
 	task.delay(delaySec or 2, function()
-		if adonisWatcherStop or isLoadPhase() then
+		if _G.__VG_DBG_HOOKED or adonisWatcherStop or isLoadPhase() then
 			return
 		end
 		if isFullyHooked() then
 			return
 		end
+		deepScanAttempts = deepScanAttempts + 1
 		AntiBypass.scanAdonis({ deep = true })
 		ensureDebugInfoHook()
-		if adonisHookCount <= 0 or not isFullyHooked() then
+		-- Only reschedule if still not hooked AND under attempt cap.
+		if not isFullyHooked() and deepScanAttempts < MAX_DEEP_SCAN_ATTEMPTS then
 			scheduleDeepScan(ADONIS_DEEP_SCAN_COOLDOWN)
 		end
 	end)
@@ -658,22 +670,19 @@ function AntiBypass.startAdonisWatcher()
 	adonisScanTask = task.spawn(function()
 		task.wait(0.5)
 		for i = 1, 8 do
-			if adonisWatcherStop then
+			if adonisWatcherStop or _G.__VG_DBG_HOOKED then
 				return
 			end
-			local allowDeep = not isLoadPhase() and i >= 6 and not uiBuilding
-			AntiBypass.scanAdonis({ deep = allowDeep })
+			-- Never run getgc(true) deep scans in the watcher — they take 14-60s in large games.
+			AntiBypass.scanAdonis({ deep = false })
 			ensureDebugInfoHook()
 			if isFullyHooked() then
 				return
 			end
 			task.wait(i <= 3 and 1.5 or 5)
 		end
-		if not isLoadPhase() then
-			scheduleDeepScan(1)
-		end
 		while not adonisWatcherStop do
-			if isFullyHooked() then
+			if isFullyHooked() or _G.__VG_DBG_HOOKED then
 				task.wait(30)
 			else
 				AntiBypass.scanAdonis({ deep = false })
@@ -690,15 +699,13 @@ function AntiBypass.onLoadComplete()
 	end
 	task.defer(function()
 		task.wait(0.3)
-		if isLoadPhase() or adonisWatcherStop then
+		if isLoadPhase() or adonisWatcherStop or _G.__VG_DBG_HOOKED then
 			return
 		end
 		AntiBypass.neutralizeAdonisDetectors(true)
-		AntiBypass.scanAdonis({ deep = true })
+		-- Light scan only — deep scan (getgc true) takes 14-60s in large games.
+		AntiBypass.scanAdonis({ deep = false })
 		ensureDebugInfoHook()
-		if not isFullyHooked() then
-			scheduleDeepScan(1.5)
-		end
 	end)
 end
 
@@ -707,16 +714,14 @@ function AntiBypass.waitForAdonis(timeoutSec)
 	local deadline = os.clock() + timeoutSec
 	repeat
 		AntiBypass.neutralizeAdonisDetectors(false)
-		AntiBypass.scanAdonis({ deep = true })
+		-- Light scan only in the wait loop — deep scans take too long.
+		AntiBypass.scanAdonis({ deep = false })
 		ensureDebugInfoHook()
 		if isFullyHooked() then
 			return true
 		end
 		task.wait(0.35)
 	until os.clock() >= deadline
-	if not isLoadPhase() and not isFullyHooked() then
-		scheduleDeepScan(0.5)
-	end
 	return adonisHookCount > 0
 end
 
