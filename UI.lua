@@ -685,18 +685,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function UpdPreview()
 		local showBox = S.Box
+		local previewClr = (S.FriendsESP and S.F) or S.V
 		M_Box.Visible = showBox or S.Name or S.DistView or S.Health or S.HealthText or S.Weapon or S.Trace or S.Skel or S.Chams
 		M_Cham.Visible = S.Chams
 		if S.Chams and S.ChamsRainbow then
 			M_Cham.BackgroundColor3 = Color3.fromHSV((tick() * 0.45) % 1, 0.9, 1)
 		else
-			M_Cham.BackgroundColor3 = S.V
+			M_Cham.BackgroundColor3 = previewClr
 		end
-		M_BoxStroke.Color = S.V
+		M_BoxStroke.Color = previewClr
 		M_BoxStroke.Thickness = S.Th
-		M_Nm.TextColor3 = S.V
+		M_Nm.TextColor3 = previewClr
 		M_Tr.Size = UDim2.new(0, S.Th, 0, 52)
-		M_Tr.BackgroundColor3 = S.V
+		M_Tr.BackgroundColor3 = previewClr
 		M_Nm.Visible = S.Name
 		M_Dist.Visible = S.DistView
 		M_Nm.Position = UDim2.new(0.5, -46, 0, S.DistView and -22 or -14)
@@ -1664,7 +1665,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 			setToggleVisual(key, enabled)
 			UpdPreview()
-			if key == "LoS" or key == "RealTeamColor" or key == "ChamsRainbow" then
+			if key == "LoS" or key == "RealTeamColor" or key == "ChamsRainbow" or key == "FriendsESP" then
 				if updateEspColorControls then
 					updateEspColorControls()
 				end
@@ -2172,8 +2173,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
 	local VFilter = MakeCard(T1, "FILTERS", "card_vfilter_desc", 2)
 	MakeTog(VFilter, "Hide Teammates", "Team", 1, { flat = true })
-	MakeTog(VFilter, "Render Only Visible", "ESPRenderOnlyVisible", 2, { flat = true })
-	MakeHint(VFilter, "hint_vfilter", 3)
+	MakeTog(VFilter, "Friends ESP", "FriendsESP", 2, { flat = true })
+	MakeTog(VFilter, "Render Only Visible", "ESPRenderOnlyVisible", 3, { flat = true })
+	MakeHint(VFilter, "hint_vfilter", 4)
 
 	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
 	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })
@@ -2215,7 +2217,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(VColors, "hint_vcolors", 3)
 	MakeColorPicker(VColors, "Visible Color", "V", 4, { espColor = true })
 	MakeColorPicker(VColors, "Hidden Color", "O", 5, { espColor = true })
-	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 6, {
+	MakeColorPicker(VColors, "Friend Color", "F", 6, { friendColor = true })
+	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 7, {
 		suffix = "px",
 		step = 0.1,
 		fmt = function(v)
@@ -2229,6 +2232,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			if reg.espOnly then
 				reg.setEnabled(on)
 				if on then
+					reg.refresh()
+				end
+			elseif reg.friendOnly then
+				reg.setEnabled(S.FriendsESP == true)
+				if S.FriendsESP then
 					reg.refresh()
 				end
 			end

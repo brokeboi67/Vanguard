@@ -134,6 +134,12 @@ function Config.EnforceRules(S)
 	if typeof(S.FriendIds) ~= "table" then
 		S.FriendIds = {}
 	end
+	if S.FriendsESP == nil then
+		S.FriendsESP = false
+	end
+	if typeof(S.F) ~= "Color3" then
+		S.F = Color3.fromRGB(170, 90, 255)
+	end
 	if S.HitSound == nil then
 		S.HitSound = true
 	end

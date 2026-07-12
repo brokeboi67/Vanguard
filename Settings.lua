@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.27",
+	Version = "2.43.28",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -21,6 +21,7 @@ local Settings = {
 	OffscreenArrowShowName = true,
 	RenderBots = false,
 	Team = false,
+	FriendsESP = false,
 	ExcludeTeam = true,
 	RealTeamColor = true,
 	LoS = false,
@@ -31,6 +32,7 @@ local Settings = {
 	Th = 1.5,
 	V = Color3.fromRGB(0, 255, 150),
 	O = Color3.fromRGB(255, 50, 50),
+	F = Color3.fromRGB(170, 90, 255),
 
 	-- AIM
 	Aimbot = false,

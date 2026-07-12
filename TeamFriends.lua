@@ -46,7 +46,7 @@ function TeamFriends.shouldHideESP(S, LP, plr, isBot)
 		return false
 	end
 	if TeamFriends.isFriend(S, plr) then
-		return true
+		return not S.FriendsESP
 	end
 	if S.Team and TeamFriends.isTeammate(LP, plr) then
 		return true

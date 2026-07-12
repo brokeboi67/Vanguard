@@ -178,6 +178,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			end
 			return Color3.fromRGB(255, 180, 80)
 		end
+		if plr and TF and TF.isFriend(S, plr) and S.FriendsESP then
+			return S.F
+		end
 		if S.RealTeamColor and plr and plr.Team then
 			return plr.Team.TeamColor.Color
 		end

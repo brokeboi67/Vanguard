@@ -400,6 +400,7 @@ function UIColorPicker.create(env)
 
 		table.insert(colorRegistry, {
 			espOnly = opts.espColor == true,
+			friendOnly = opts.friendColor == true,
 			row = Row,
 			swatch = Swatch,
 			hex = HexRow,
