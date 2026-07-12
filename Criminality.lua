@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.39
+-- Criminality.lua  v2.43.40
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -293,9 +293,6 @@ local function addCrateESP(model, S)
 		return
 	end
 	local rare = isRareCrate(model)
-	if S.CrimCrateOnlyRare and not rare then
-		return
-	end
 	local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
 	local label = rare and "RARE CRATE" or "CRATE"
 	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
@@ -328,14 +325,11 @@ local function syncCrateESP(S)
 		return
 	end
 
-	-- Drop dead / filtered-out crates
+	-- Drop dead crates
 	for i = #ESP.crates, 1, -1 do
 		local e = ESP.crates[i]
 		local model = e.model
 		local keep = alive(model) and isCrateModel(model)
-		if keep and S.CrimCrateOnlyRare and not isRareCrate(model) then
-			keep = false
-		end
 		if not keep then
 			destroyCrateEntry(model)
 		else

@@ -2166,11 +2166,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CESP, "Rare Crates Only (cot_ = 7)", "CrimCrateOnlyRare", 4, {
-			flat = true,
-			requires = "CrimCrateESP",
-		})
-		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 800, 5, {
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 800, 4, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
@@ -2180,12 +2176,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 6, {
+		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 5, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CESP, "hint_crim_crate", 7)
+		MakeHint(CESP, "hint_crim_crate", 6)
 	end
 
 	local function refreshWorld()

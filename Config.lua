@@ -357,9 +357,6 @@ function Config.EnforceRules(S)
 	if S.CrimCrateESP == nil then
 		S.CrimCrateESP = false
 	end
-	if S.CrimCrateOnlyRare == nil then
-		S.CrimCrateOnlyRare = false
-	end
 	if S.CrimCrateMaxDist == nil then
 		S.CrimCrateMaxDist = 400
 	end
