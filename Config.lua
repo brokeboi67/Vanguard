@@ -375,6 +375,21 @@ function Config.EnforceRules(S)
 	if typeof(S.CrimCrateRareColor) ~= "Color3" then
 		S.CrimCrateRareColor = Color3.fromRGB(255, 55, 55)
 	end
+	if S.CrimCratePickup == nil then
+		S.CrimCratePickup = false
+	end
+	if S.CrimCratePickupBasic == nil then
+		S.CrimCratePickupBasic = true
+	end
+	if S.CrimCratePickupRare == nil then
+		S.CrimCratePickupRare = true
+	end
+	if S.CrimCratePickupDist == nil then
+		S.CrimCratePickupDist = 25
+	end
+	if S.CrimCratePickupDelay == nil then
+		S.CrimCratePickupDelay = 200
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

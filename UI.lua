@@ -2190,6 +2190,48 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d st", v) end,
 		})
 		MakeHint(CESP, "hint_crim_crate", 8)
+
+		local CCrate = MakeCard(TCrim, "AUTO PICKUP", nil, 3)
+		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 1, {
+			flat = true,
+			onChange = function(on)
+				for _, key in ipairs({ "CrimCratePickupDist", "CrimCratePickupDelay" }) do
+					local reg = sliderRegistry[key]
+					if reg and reg.setEnabled then
+						reg.setEnabled(on)
+					end
+				end
+			end,
+		})
+		MakeTog(CCrate, "Pickup Basic Crates", "CrimCratePickupBasic", 2, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
+		MakeTog(CCrate, "Pickup Rare Crates", "CrimCratePickupRare", 3, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
+		MakeSlider(CCrate, "Pickup Distance", "CrimCratePickupDist", 5, 60, 4, {
+			suffix = " st",
+			step = 1,
+			fmt = function(v) return string.format("%d st", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimCratePickup == true)
+				end
+			end,
+		})
+		MakeSlider(CCrate, "Pickup Delay", "CrimCratePickupDelay", 80, 800, 5, {
+			suffix = "ms",
+			step = 20,
+			fmt = function(v) return string.format("%d ms", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimCratePickup == true)
+				end
+			end,
+		})
+		MakeHint(CCrate, "hint_crim_pickup", 6)
 	end
 
 	local function refreshWorld()

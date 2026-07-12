@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.42
+-- Criminality.lua  v2.43.44
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -477,6 +477,141 @@ local function tickESP(S)
 	end
 end
 
+-- ── CRATE AUTO PICKUP ────────────────────────────────────────────────────────
+-- ReplicatedStorage.Events.PIC_PU:FireServer(crateId)
+
+local picPuRemote = nil
+local lastPickupAt = 0
+local pickupCooldownIds = {}
+
+local function getPicPuRemote()
+	if picPuRemote and picPuRemote.Parent then
+		return picPuRemote
+	end
+	local events = RepSt:FindFirstChild("Events")
+	if not events then
+		return nil
+	end
+	local ev = events:FindFirstChild("PIC_PU")
+	if ev and ev:IsA("RemoteEvent") then
+		picPuRemote = ev
+		return ev
+	end
+	return nil
+end
+
+local function getCrateId(model)
+	if not model then
+		return nil
+	end
+	local id = model:GetAttribute("Id")
+	if id == nil then
+		return nil
+	end
+	return tostring(id)
+end
+
+local function getCratePart(model)
+	if not model then
+		return nil
+	end
+	local part = model.PrimaryPart
+	if part and part:IsA("BasePart") then
+		return part
+	end
+	return model:FindFirstChild("MeshPart")
+		or model:FindFirstChildWhichIsA("BasePart")
+end
+
+local function getCrateDist(model)
+	local hrp = getHRP()
+	local part = getCratePart(model)
+	if not hrp or not part then
+		return math.huge
+	end
+	return (hrp.Position - part.Position).Magnitude
+end
+
+local function shouldPickupCrate(S, model)
+	if not S.CrimCratePickup then
+		return false
+	end
+	if not isCrateModel(model) then
+		return false
+	end
+	local rare = isRareCrate(model)
+	if rare then
+		return S.CrimCratePickupRare ~= false
+	end
+	return S.CrimCratePickupBasic ~= false
+end
+
+local function tryPickupCrate(model)
+	local id = getCrateId(model)
+	if not id then
+		return false
+	end
+	local now = tick()
+	if pickupCooldownIds[id] and now - pickupCooldownIds[id] < 2.5 then
+		return false
+	end
+	local remote = getPicPuRemote()
+	if not remote then
+		return false
+	end
+	local ok = pcall(function()
+		remote:FireServer(id)
+	end)
+	if ok then
+		pickupCooldownIds[id] = now
+		lastPickupAt = now
+	end
+	return ok
+end
+
+local function tickCratePickup(S)
+	if not S.CrimCratePickup then
+		return
+	end
+	local now = tick()
+	local delay = math.max(0.08, (tonumber(S.CrimCratePickupDelay) or 200) / 1000)
+	if now - lastPickupAt < delay then
+		return
+	end
+
+	local piles = getSpawnedPiles()
+	if not piles then
+		return
+	end
+
+	local maxDist = math.max(5, tonumber(S.CrimCratePickupDist) or 25)
+	local best, bestScore = nil, math.huge
+
+	for _, model in ipairs(piles:GetChildren()) do
+		if alive(model) and shouldPickupCrate(S, model) then
+			local dist = getCrateDist(model)
+			if dist <= maxDist then
+				local rare = isRareCrate(model)
+				local score = dist + (rare and 0 or 1000)
+				if score < bestScore then
+					bestScore = score
+					best = model
+				end
+			end
+		end
+	end
+
+	if best then
+		tryPickupCrate(best)
+	end
+
+	for id, t in pairs(pickupCooldownIds) do
+		if now - t > 12 then
+			pickupCooldownIds[id] = nil
+		end
+	end
+end
+
 -- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
@@ -534,6 +669,10 @@ local function startMaster(S)
 
 		if S.CrimMeleeAura then
 			tickMelee(S)
+		end
+
+		if S.CrimCratePickup and crimFrame % 3 == 0 then
+			pcall(tickCratePickup, S)
 		end
 
 		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP) and crimFrame % 2 == 0 then

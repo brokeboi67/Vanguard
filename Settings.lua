@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.43",
+	Version = "2.43.44",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -202,6 +202,11 @@ local Settings = {
 	CrimCrateColor = Color3.fromRGB(255, 190, 60),
 	CrimCrateRareColor = Color3.fromRGB(255, 55, 55),
 	CrimCrateMaxDist = 400,
+	CrimCratePickup = false,
+	CrimCratePickupBasic = true,
+	CrimCratePickupRare = true,
+	CrimCratePickupDist = 25,
+	CrimCratePickupDelay = 200,
 	CrimESPMaxDist = 300,
 
 	-- MISC
