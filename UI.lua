@@ -2223,18 +2223,235 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end,
 	})
-	local VOver = MakeCard(T1, "OVERLAYS", nil, 4)
+
+	local function formatTargetInput(plr)
+		if not plr then
+			return ""
+		end
+		if S.ESPDisplayName and plr.DisplayName and plr.DisplayName ~= "" then
+			return plr.DisplayName
+		end
+		return plr.Name
+	end
+
+	local function resolveTargetFromText(text)
+		text = string.lower((text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+		if text == "" then
+			return nil
+		end
+		local PlayersSvc = game:GetService("Players")
+		local localPlr = PlayersSvc.LocalPlayer
+		local exact, partial
+		for _, plr in ipairs(PlayersSvc:GetPlayers()) do
+			if plr ~= localPlr then
+				local name = string.lower(plr.Name)
+				local disp = string.lower(plr.DisplayName or "")
+				if name == text or disp == text then
+					exact = plr
+					break
+				end
+				if not partial and (name:find(text, 1, true) or disp:find(text, 1, true)) then
+					partial = plr
+				end
+			end
+		end
+		return exact or partial
+	end
+
+	local VTarget = MakeCard(T1, "TARGET", "card_vtarget_desc", 4)
+	local targetPickerHost = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 1,
+		ZIndex = 6,
+		Parent = VTarget,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = targetPickerHost })
+
+	local targetInputRow = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+		BorderSizePixel = 0,
+		LayoutOrder = 1,
+		ZIndex = 7,
+		Parent = targetPickerHost,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = targetInputRow })
+	C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = targetInputRow })
+
+	local TargetInput = C("TextBox", {
+		Size = UDim2.new(1, -8, 1, 0),
+		Position = UDim2.new(0, 8, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		PlaceholderText = L("esp_target_ph"),
+		Font = Enum.Font.GothamMedium,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(210, 210, 220),
+		PlaceholderColor3 = Color3.fromRGB(95, 95, 105),
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 8,
+		Parent = targetInputRow,
+	})
+
+	local TargetSuggestHost = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Visible = false,
+		LayoutOrder = 2,
+		ZIndex = 7,
+		Parent = targetPickerHost,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, Parent = TargetSuggestHost })
+
+	local function refreshTargetInputFromSetting()
+		local uid = tonumber(S.ESPTargetUserId) or 0
+		if uid <= 0 then
+			TargetInput.Text = ""
+			return
+		end
+		for _, plr in ipairs(game:GetService("Players"):GetPlayers()) do
+			if plr.UserId == uid then
+				TargetInput.Text = formatTargetInput(plr)
+				return
+			end
+		end
+	end
+
+	local function hideTargetSuggestions()
+		TargetSuggestHost.Visible = false
+		for _, ch in ipairs(TargetSuggestHost:GetChildren()) do
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
+				ch:Destroy()
+			end
+		end
+	end
+
+	local function setEspTarget(plr)
+		if not plr then
+			return
+		end
+		S.ESPTargetUserId = plr.UserId
+		TargetInput.Text = formatTargetInput(plr)
+		hideTargetSuggestions()
+		showNotify(L("notify_esp_target_set", formatTargetInput(plr)))
+	end
+
+	local function clearEspTargetUi()
+		S.ESPTargetUserId = 0
+		TargetInput.Text = ""
+		hideTargetSuggestions()
+		showNotify(L("notify_esp_target_cleared"))
+	end
+
+	S.OnEspTargetCleared = function()
+		TargetInput.Text = ""
+		hideTargetSuggestions()
+	end
+
+	local function showTargetSuggestions(query)
+		hideTargetSuggestions()
+		query = string.lower((query or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+		if query == "" then
+			return
+		end
+		local PlayersSvc = game:GetService("Players")
+		local localPlr = PlayersSvc.LocalPlayer
+		local matches = {}
+		for _, plr in ipairs(PlayersSvc:GetPlayers()) do
+			if plr ~= localPlr then
+				local name = string.lower(plr.Name)
+				local disp = string.lower(plr.DisplayName or "")
+				if name:find(query, 1, true) or disp:find(query, 1, true) then
+					table.insert(matches, plr)
+				end
+			end
+		end
+		table.sort(matches, function(a, b) return a.Name < b.Name end)
+		local shown = 0
+		for _, plr in ipairs(matches) do
+			shown += 1
+			if shown > 6 then
+				break
+			end
+			local label = plr.DisplayName ~= plr.Name and (plr.DisplayName .. "  ·  " .. plr.Name) or plr.Name
+			local btn = C("TextButton", {
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundColor3 = Color3.fromRGB(22, 22, 28),
+				Text = label,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(190, 190, 200),
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				LayoutOrder = shown,
+				ZIndex = 8,
+				Parent = TargetSuggestHost,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = btn })
+			btn.MouseEnter:Connect(function()
+				btn.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+			end)
+			btn.MouseLeave:Connect(function()
+				btn.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+			end)
+			btn.MouseButton1Click:Connect(function()
+				setEspTarget(plr)
+			end)
+		end
+		TargetSuggestHost.Visible = shown > 0
+	end
+
+	TargetInput:GetPropertyChangedSignal("Text"):Connect(function()
+		if tonumber(S.ESPTargetUserId) and S.ESPTargetUserId > 0 then
+			local uid = S.ESPTargetUserId
+			for _, plr in ipairs(game:GetService("Players"):GetPlayers()) do
+				if plr.UserId == uid and TargetInput.Text == formatTargetInput(plr) then
+					return
+				end
+			end
+		end
+		showTargetSuggestions(TargetInput.Text)
+	end)
+
+	TargetInput.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			local plr = resolveTargetFromText(TargetInput.Text)
+			if plr then
+				setEspTarget(plr)
+				return
+			end
+		end
+		hideTargetSuggestions()
+	end)
+
+	MakeButton(VTarget, nil, 2, clearEspTargetUi, "esp_target_clear")
+	MakeColorPicker(VTarget, "Target Color", "T", 3, { targetColor = true })
+	MakeHint(VTarget, "hint_vtarget", 4)
+	refreshTargetInputFromSetting()
+
+	local VOver = MakeCard(T1, "OVERLAYS", nil, 5)
 	MakeTog(VOver, "Bounding Boxes", "Box", 1, { flat = true })
 	MakeChoice(VOver, "Box Type", "BoxType", {
 		{ label = "Full", value = "Full" },
 		{ label = "Corner", value = "Corner" },
 	}, 2)
 	MakeTog(VOver, "Player Names", "Name", 3, { flat = true })
-	MakeTog(VOver, "Health Bars", "Health", 4, { flat = true })
-	MakeTog(VOver, "Health Text", "HealthText", 5, { flat = true })
-	MakeTog(VOver, "Weapon ESP", "Weapon", 6, { flat = true })
+	MakeTog(VOver, "Display Name", "ESPDisplayName", 4, {
+		flat = true,
+		requires = "Name",
+		onChange = function()
+			refreshTargetInputFromSetting()
+		end,
+	})
+	MakeTog(VOver, "Health Bars", "Health", 5, { flat = true })
+	MakeTog(VOver, "Health Text", "HealthText", 6, { flat = true })
+	MakeTog(VOver, "Weapon ESP", "Weapon", 7, { flat = true })
 
-	local VColors = MakeCard(T1, "ESP COLORS", "card_vcolors_desc", 5)
+	local VColors = MakeCard(T1, "ESP COLORS", "card_vcolors_desc", 6)
 	MakeTog(VColors, "Team Colors", "RealTeamColor", 1, { flat = true })
 	MakeTog(VColors, "Line of Sight", "LoS", 2, { flat = true })
 	MakeHint(VColors, "hint_vcolors", 3)
@@ -2261,12 +2478,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				if S.FriendsESP then
 					reg.refresh()
 				end
+			elseif reg.targetOnly then
+				reg.setEnabled(S.ESP == true)
+				if S.ESP then
+					reg.refresh()
+				end
 			end
 		end
 	end
 	updateEspColorControls()
 
-	local VAdv = MakeCard(T1, "ADVANCED", "card_vadv_desc", 6)
+	local VAdv = MakeCard(T1, "ADVANCED", "card_vadv_desc", 7)
 	MakeTog(VAdv, "Render Bots", "RenderBots", 1, { flat = true })
 	MakeTog(VAdv, "Skeleton", "Skel", 2, { flat = true })
 	MakeTog(VAdv, "Tracers", "Trace", 3, { flat = true })
@@ -2335,7 +2557,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	syncOffscreenTrackerUi()
 	MakeHint(VAdv, "hint_vadv", 10)
 
-	local VTrace = MakeCard(T1, "SHOT TRACERS", "card_vtrace_desc", 7)
+	local VTrace = MakeCard(T1, "SHOT TRACERS", "card_vtrace_desc", 8)
 	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })
 	MakeTog(VTrace, "Kill Tracer (grubszy + glow)", "KillShotTracers", 2, { flat = true })
 	MakeHint(VTrace, "hint_vtrace", 3)

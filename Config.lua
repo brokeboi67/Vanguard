@@ -345,6 +345,15 @@ function Config.EnforceRules(S)
 	if S.ESPLowerOpacityAmount == nil then
 		S.ESPLowerOpacityAmount = 55
 	end
+	if S.ESPDisplayName == nil then
+		S.ESPDisplayName = false
+	end
+	if S.ESPTargetUserId == nil then
+		S.ESPTargetUserId = 0
+	end
+	if typeof(S.T) ~= "Color3" then
+		S.T = Color3.fromRGB(255, 190, 40)
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

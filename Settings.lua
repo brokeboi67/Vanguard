@@ -1,12 +1,14 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.33",
+	Version = "2.43.35",
 	-- ESP
 	ESP = false,
 	Box = false,
 	BoxType = "Full",
 	Name = false,
+	ESPDisplayName = false,
+	ESPTargetUserId = 0,
 	DistView = true,
 	Health = false,
 	HealthText = false,
@@ -41,6 +43,7 @@ local Settings = {
 	V = Color3.fromRGB(0, 255, 150),
 	O = Color3.fromRGB(255, 50, 50),
 	F = Color3.fromRGB(170, 90, 255),
+	T = Color3.fromRGB(255, 190, 40),
 
 	-- AIM
 	Aimbot = false,

@@ -119,7 +119,43 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return TF and TF.isTeammate(LP, plr)
 	end
 
+	local function getEspTargetId()
+		local id = tonumber(S.ESPTargetUserId) or 0
+		if id > 0 then
+			return id
+		end
+		return nil
+	end
+
+	local function isEspTarget(plr)
+		local id = getEspTargetId()
+		return plr and id and plr.UserId == id
+	end
+
+	local function getEspPlayerLabel(plr, fallback)
+		if not plr then
+			return fallback or "?"
+		end
+		if S.ESPDisplayName then
+			local dn = plr.DisplayName
+			if dn and dn ~= "" then
+				return dn
+			end
+		end
+		return plr.Name
+	end
+
+	local function clearEspTarget()
+		S.ESPTargetUserId = 0
+		if S.OnEspTargetCleared then
+			pcall(S.OnEspTargetCleared)
+		end
+	end
+
 	local function shouldHidePlayer(plr, isBot)
+		if isEspTarget(plr) then
+			return false
+		end
 		if TF then
 			return TF.shouldHideESP(S, LP, plr, isBot)
 		end
@@ -243,6 +279,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 	local function GetColor(plr, c, isBot, distSq, losKey)
 		losKey = losKey or getLosKey(plr, c, isBot)
+		if isEspTarget(plr) then
+			return S.T
+		end
 		if plr and TF and TF.isFriend(S, plr) and S.FriendsESP then
 			if S.FriendsESPSkipVisible and charHasLineOfSight(losKey, c) then
 				return false
@@ -377,6 +416,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		local ch = ensureCache(key)
 
 		if not h or not hrp or h.Health <= 0 then
+			if isEspTarget(plr) then
+				clearEspTarget()
+			end
 			hideAll(ch)
 			return
 		end
@@ -388,7 +430,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		end
 
 		local dist = box.dist
-		if dist > getEspMaxDist() then
+		local targetMarked = isEspTarget(plr)
+		if not targetMarked and dist > getEspMaxDist() then
 			hideAll(ch)
 			return
 		end
@@ -396,7 +439,14 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		local distSq = dist * dist
 		local losKey = getLosKey(plr, c, isBot)
 
-		if S.ESPRenderOnlyVisible and not charHasLineOfSight(losKey, c) then
+		if S.ESPRenderOnlyVisible and not targetMarked and not charHasLineOfSight(losKey, c) then
+			hideAll(ch)
+			return
+		end
+
+		local friendEsp = isFriendEsp(plr)
+		if friendEsp and not targetMarked and friendSkipHighlight(losKey, c, plr) then
+			ch._lastClr = false
 			hideAll(ch)
 			return
 		end
@@ -623,31 +673,46 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		table.clear(espTargets)
 		local camPos = Cam.CFrame.Position
 		local maxDist = getEspMaxDist()
+		local targetId = getEspTargetId()
+		local targetEntry = nil
+
 		for _, plr in ipairs(P:GetPlayers()) do
 			if plr ~= LP then
 				local c = plr.Character
 				local hrp = c and c:FindFirstChild("HumanoidRootPart")
 				if hrp then
 					local dist = (camPos - hrp.Position).Magnitude
-					if dist <= maxDist then
-						table.insert(espTargets, {
+					local marked = targetId and plr.UserId == targetId
+					if marked or dist <= maxDist then
+						local entry = {
 							key = plr,
 							char = c,
 							plr = plr,
-							name = plr.Name,
+							name = getEspPlayerLabel(plr, plr.Name),
 							bot = false,
 							dist = dist,
 							uid = plr.UserId,
-						})
+							isTarget = marked == true,
+						}
+						if marked then
+							targetEntry = entry
+						else
+							table.insert(espTargets, entry)
+						end
 					end
 				end
 			end
 		end
+
 		if #espTargets > MAX_ESP_TARGETS then
 			table.sort(espTargets, function(a, b) return a.dist < b.dist end)
 			for i = #espTargets, MAX_ESP_TARGETS + 1, -1 do
 				espTargets[i] = nil
 			end
+		end
+
+		if targetEntry then
+			table.insert(espTargets, 1, targetEntry)
 		end
 	end
 
@@ -911,7 +976,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 		for _, t in ipairs(espTargets) do
 			active[t.key] = true
-			local fullDetail = (t.uid % DETAIL_SLOTS) == detailSlot or t.dist < 35
+			local fullDetail = t.isTarget or (t.uid % DETAIL_SLOTS) == detailSlot or t.dist < 35
 			renderEntity(t.key, t.char, t.plr, t.name, false, not fullDetail)
 		end
 
@@ -961,10 +1026,10 @@ function ESP.Init(S, ParentGUI, TF, Util)
 					return
 				end
 				local dist = (Cam.CFrame.Position - hrp.Position).Magnitude
-				if dist > getEspMaxDist() then
+				if not isEspTarget(plr) and dist > getEspMaxDist() then
 					return
 				end
-				if S.ESPRenderOnlyVisible then
+				if S.ESPRenderOnlyVisible and not isEspTarget(plr) then
 					local losKey = getLosKey(plr, char, isBot)
 					if not charHasLineOfSight(losKey, char) then
 						return
@@ -981,6 +1046,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 						clr = nil
 					elseif rawClr then
 						clr = rawClr
+					elseif isEspTarget(plr) then
+						clr = S.T
 					elseif isFriendEsp(plr) then
 						clr = S.F
 					else
@@ -990,7 +1057,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 						hideArrow(key)
 						return
 					end
-					local label = plr and plr.Name or (char and char.Name or "?")
+					local label = plr and getEspPlayerLabel(plr, plr.Name) or (char and char.Name or "?")
 					pcall(renderOffscreen, key, hrp.Position, clr, dist, label)
 				else
 					hideArrow(key)
@@ -1022,6 +1089,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	end))
 
 	P.PlayerRemoving:Connect(function(plr)
+		if isEspTarget(plr) then
+			clearEspTarget()
+		end
 		destroyCache(plr)
 		purgeArrow(plr)
 		clearLosKey(plr)
