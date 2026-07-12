@@ -143,7 +143,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		if cached and cached.frame == losFrame then
 			return cached.result
 		end
-		local result = Util.charHasLineOfSight(Cam.CFrame.Position, char, LP.Character)
+		local result = Util.charHasLineOfSight(Cam.CFrame.Position, char, LP.Character, S.LOSIgnoreSelf ~= false)
 		losCache[losKey] = { frame = losFrame, result = result }
 		return result
 	end

@@ -2177,7 +2177,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VFilter, "Hide Teammates", "Team", 1, { flat = true })
 	MakeTog(VFilter, "Render Only Visible", "ESPRenderOnlyVisible", 2, { flat = true })
 	MakeTog(VFilter, "Lower Opacity When Visible", "ESPLowerOpacityVisible", 3, { flat = true })
-	MakeHint(VFilter, "hint_vfilter", 4)
+	MakeTog(VFilter, "Ignore Self in LOS", "LOSIgnoreSelf", 4, { flat = true })
+	MakeHint(VFilter, "hint_vfilter", 5)
 
 	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
 	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })

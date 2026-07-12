@@ -43,23 +43,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		if not partPos then
 			return false
 		end
-		local origin = Cam.CFrame.Position
-		local dir = partPos - origin
-		local dist = dir.Magnitude
-		if dist < 0.05 then
-			return true
-		end
-		local params = RaycastParams.new()
-		params.FilterType = Enum.RaycastFilterType.Exclude
-		params.FilterDescendantsInstances = LP.Character and { LP.Character } or {}
-		local hit = workspace:Raycast(origin, dir, params)
-		if not hit then
-			return true
-		end
-		if hit.Instance == part or hit.Instance:IsDescendantOf(char) then
-			return true
-		end
-		return false
+		return Util.rayHasLOS(Cam.CFrame.Position, partPos, char, LP.Character, S.LOSIgnoreSelf ~= false)
 	end
 
 	local RageHud = C("Frame", {

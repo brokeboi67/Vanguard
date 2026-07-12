@@ -342,7 +342,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not partPos then
 			return false
 		end
-		return Util.rayHasLOS(Cam.CFrame.Position, partPos, char, LP.Character)
+		return Util.rayHasLOS(Cam.CFrame.Position, partPos, char, LP.Character, S.LOSIgnoreSelf ~= false)
 	end
 
 	local function collectTargets()

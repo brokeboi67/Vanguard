@@ -581,23 +581,49 @@ local function _losPassable(inst)
 	return false
 end
 
-function Util.rayHasLOS(origin, targetPos, targetChar, localChar)
+local function _losBuildExclude(localChar, ignoreSelf)
+	local exclude = {}
+	if not localChar then
+		return exclude
+	end
+	table.insert(exclude, localChar)
+	if ignoreSelf then
+		for _, inst in ipairs(localChar:GetDescendants()) do
+			if inst:IsA("BasePart") then
+				table.insert(exclude, inst)
+			end
+		end
+	end
+	return exclude
+end
+
+local function _losOrigin(origin, targetPos, ignoreSelf)
+	if not ignoreSelf or not origin or not targetPos then
+		return origin
+	end
+	local dir = targetPos - origin
+	local dist = dir.Magnitude
+	if dist < 0.5 then
+		return origin
+	end
+	local push = math.min(3, dist * 0.1)
+	return origin + dir.Unit * push
+end
+
+function Util.rayHasLOS(origin, targetPos, targetChar, localChar, ignoreSelf)
 	if not origin or not targetPos then
 		return true
 	end
+	origin = _losOrigin(origin, targetPos, ignoreSelf)
 	local dir = targetPos - origin
 	local dist = dir.Magnitude
 	if dist < 0.5 then
 		return true
 	end
 
-	local exclude = {}
-	if localChar then
-		table.insert(exclude, localChar)
-	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = exclude
+	params.FilterDescendantsInstances = _losBuildExclude(localChar, ignoreSelf)
 
 	local unit = dir / dist
 	local rayOrigin = origin
@@ -629,13 +655,13 @@ function Util.rayHasLOS(origin, targetPos, targetChar, localChar)
 	return false
 end
 
-function Util.charHasLineOfSight(origin, targetChar, localChar)
+function Util.charHasLineOfSight(origin, targetChar, localChar, ignoreSelf)
 	if not targetChar then
 		return true
 	end
 	for _, name in ipairs({ "Head", "UpperTorso", "HumanoidRootPart" }) do
 		local part = Util.resolveBodyPart(targetChar, name)
-		if part and Util.rayHasLOS(origin, part.Position, targetChar, localChar) then
+		if part and Util.rayHasLOS(origin, part.Position, targetChar, localChar, ignoreSelf) then
 			return true
 		end
 	end
