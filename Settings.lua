@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.30",
+	Version = "2.43.31",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -34,6 +34,7 @@ local Settings = {
 	ESPRenderLimit = false,
 	ESPRenderDist = 500,
 	ESPRenderOnlyVisible = false,
+	ESPLowerOpacityVisible = false,
 	Th = 1.5,
 	V = Color3.fromRGB(0, 255, 150),
 	O = Color3.fromRGB(255, 50, 50),

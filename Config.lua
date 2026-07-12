@@ -339,6 +339,9 @@ function Config.EnforceRules(S)
 	if S.ESPRenderOnlyVisible == nil then
 		S.ESPRenderOnlyVisible = false
 	end
+	if S.ESPLowerOpacityVisible == nil then
+		S.ESPLowerOpacityVisible = false
+	end
 	if S.MusicAutoQueue == nil then
 		S.MusicAutoQueue = true
 	end

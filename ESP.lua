@@ -148,6 +148,70 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return result
 	end
 
+	local VISIBLE_OPACITY_BOOST = 0.55
+
+	local function getVisibleOpacityBoost(losKey, char)
+		if not S.ESPLowerOpacityVisible then
+			return 0
+		end
+		return charHasLineOfSight(losKey, char) and VISIBLE_OPACITY_BOOST or 0
+	end
+
+	local function applyVisibleOpacity(ch, boost)
+		if not ch then
+			return
+		end
+		local textT = boost > 0 and math.clamp(boost, 0, 0.85) or 0
+		local lineT = textT
+		local chamFill = 0.6 + (boost > 0 and boost * 0.25 or 0)
+		local chamOut = 0.2 + (boost > 0 and boost * 0.35 or 0)
+
+		if ch.T then
+			ch.T.TextTransparency = ch.T.Visible and textT or 0
+		end
+		if ch.WT then
+			ch.WT.TextTransparency = ch.WT.Visible and math.clamp(textT + 0.05, 0, 0.9) or 0
+		end
+		if ch.HT then
+			ch.HT.TextTransparency = ch.HT.Visible and textT or 0
+		end
+		if ch.BO then
+			ch.BO.Transparency = ch.BO.Enabled and textT or 0
+		end
+		if ch.Cr then
+			for _, cr in ipairs(ch.Cr) do
+				if cr.Visible then
+					cr.BackgroundTransparency = lineT
+				else
+					cr.BackgroundTransparency = 0
+				end
+			end
+		end
+		if ch.Tr then
+			ch.Tr.BackgroundTransparency = ch.Tr.Visible and lineT or 0
+		end
+		if ch.Sk then
+			for _, sk in ipairs(ch.Sk) do
+				sk.BackgroundTransparency = sk.Visible and lineT or 0
+			end
+		end
+		if ch.CHM then
+			if ch.CHM.Enabled then
+				ch.CHM.FillTransparency = math.clamp(chamFill, 0, 1)
+				ch.CHM.OutlineTransparency = math.clamp(chamOut, 0, 1)
+			else
+				ch.CHM.FillTransparency = 0.6
+				ch.CHM.OutlineTransparency = 0.2
+			end
+		end
+		if ch.HB then
+			ch.HB.BackgroundTransparency = ch.HB.Visible and lineT * 0.5 or 0
+		end
+		if ch.HF then
+			ch.HF.BackgroundTransparency = ch.HB and ch.HB.Visible and lineT * 0.35 or 0
+		end
+	end
+
 	local function clearLosKey(key)
 		losCache[key] = nil
 	end
@@ -349,6 +413,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				ch.CHM.FillColor = clr
 				ch.CHM.OutlineColor = clr
 			end
+			applyVisibleOpacity(ch, getVisibleOpacityBoost(losKey, c))
 			return
 		end
 
@@ -477,6 +542,8 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				bn.Visible = false
 			end
 		end
+
+		applyVisibleOpacity(ch, getVisibleOpacityBoost(losKey, c))
 	end
 
 	local lastRenderBots = S.RenderBots
