@@ -2325,8 +2325,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local menuPos = MenuRoot.AbsolutePosition
 		local pos = TargetInput.AbsolutePosition
 		local size = TargetInput.AbsoluteSize
-		TargetSuggestFloat.Position = UDim2.fromOffset(pos.X - menuPos.X, pos.Y + size.Y + 2 - menuPos.Y)
-		TargetSuggestFloat.Size = UDim2.fromOffset(size.X, 0)
+		TargetSuggestFloat.Position = UDim2.new(0, pos.X - menuPos.X, 0, pos.Y + size.Y + 2 - menuPos.Y)
+		TargetSuggestFloat.Size = UDim2.new(0, size.X, 0, 0)
 	end
 
 	local function refreshTargetInputFromSetting()
@@ -2434,10 +2434,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			pickSuggestion(plr)
 		end
 		btn.Active = true
-		btn.Selectable = true
+		pcall(function()
+			btn.Selectable = true
+		end)
 		btn.MouseButton1Down:Connect(onPick)
 		btn.MouseButton1Click:Connect(onPick)
-		btn.Activated:Connect(onPick)
+		pcall(function()
+			if btn.Activated then
+				btn.Activated:Connect(onPick)
+			end
+		end)
 	end
 
 	local function showTargetSuggestions(query)
@@ -2496,8 +2502,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
-	T1:GetPropertyChangedSignal("CanvasPosition"):Connect(positionTargetSuggestFloat)
-	RS:GetPropertyChangedSignal("ViewportSize"):Connect(positionTargetSuggestFloat)
+	if T1:IsA("ScrollingFrame") then
+		T1:GetPropertyChangedSignal("CanvasPosition"):Connect(positionTargetSuggestFloat)
+	end
+	Cam:GetPropertyChangedSignal("ViewportSize"):Connect(positionTargetSuggestFloat)
 
 	TargetInput:GetPropertyChangedSignal("Text"):Connect(function()
 		if tonumber(S.ESPTargetUserId) and S.ESPTargetUserId > 0 then
