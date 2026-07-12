@@ -149,6 +149,9 @@ function Config.EnforceRules(S)
 	if S.FriendWeapon == nil then
 		S.FriendWeapon = false
 	end
+	if S.FriendDistView == nil then
+		S.FriendDistView = false
+	end
 	if typeof(S.F) ~= "Color3" then
 		S.F = Color3.fromRGB(170, 90, 255)
 	end

@@ -2478,7 +2478,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(FOver, "Health Bars", "FriendHealth", 1, { flat = true, requires = "FriendsESP" })
 	MakeTog(FOver, "Health Text", "FriendHealthText", 2, { flat = true, requires = "FriendsESP" })
 	MakeTog(FOver, "Weapon ESP", "FriendWeapon", 3, { flat = true, requires = "FriendsESP" })
-	MakeHint(FOver, "hint_friend_over", 4)
+	MakeTog(FOver, "Show Distance", "FriendDistView", 4, { flat = true, requires = "FriendsESP" })
+	MakeHint(FOver, "hint_friend_over", 5)
 
 	local LAim = MakeCard(T3, "AIMBOT", "card_laim_desc", 1)
 	MakeTog(LAim, "Aimbot", "Aimbot", 1, { flat = true })

@@ -359,6 +359,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		local showHealth = isFriendEsp and S.FriendHealth or (not isFriendEsp and S.Health)
 		local showHealthText = isFriendEsp and S.FriendHealthText or (not isFriendEsp and S.HealthText)
 		local showWeapon = isFriendEsp and S.FriendWeapon or (not isFriendEsp and S.Weapon)
+		local showDist = isFriendEsp and S.FriendDistView or (not isFriendEsp and S.DistView)
 
 		if S.Chams then
 			ch.CHM.Adornee = c
@@ -393,9 +394,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			label = "[BOT] " .. label
 		end
 
-		if S.Name or S.DistView then
-			local distStr = S.DistView and ("[" .. math.floor(dist) .. "m]") or ""
-			if S.Name and S.DistView then
+		if S.Name or showDist then
+			local distStr = showDist and ("[" .. math.floor(dist) .. "m]") or ""
+			if S.Name and showDist then
 				ch.T.Text = label .. "  " .. distStr
 			elseif S.Name then
 				ch.T.Text = label
