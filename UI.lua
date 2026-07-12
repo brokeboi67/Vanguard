@@ -2260,20 +2260,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local VTarget = MakeCard(T1, "TARGET", "card_vtarget_desc", 4)
 	local targetPickerHost = C("Frame", {
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, 34),
 		BackgroundTransparency = 1,
 		LayoutOrder = 1,
 		ZIndex = 6,
 		Parent = VTarget,
 	})
-	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = targetPickerHost })
 
 	local targetInputRow = C("Frame", {
-		Size = UDim2.new(1, 0, 0, 34),
+		Size = UDim2.new(1, 0, 1, 0),
 		BackgroundColor3 = Color3.fromRGB(17, 17, 21),
 		BorderSizePixel = 0,
-		LayoutOrder = 1,
 		ZIndex = 7,
 		Parent = targetPickerHost,
 	})
@@ -2296,16 +2293,41 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = targetInputRow,
 	})
 
-	local TargetSuggestHost = C("Frame", {
-		Size = UDim2.new(1, 0, 0, 0),
+	local TargetSuggestFloat = C("Frame", {
+		Name = "VG_TargetSuggest",
+		BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+		BackgroundTransparency = 0.04,
+		BorderSizePixel = 0,
 		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
 		Visible = false,
-		LayoutOrder = 2,
-		ZIndex = 15,
-		Parent = targetPickerHost,
+		ZIndex = 250,
+		Parent = MenuRoot,
 	})
-	C("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, Parent = TargetSuggestHost })
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = TargetSuggestFloat })
+	C("UIStroke", { Color = Color3.fromRGB(48, 48, 58), Thickness = 1, Transparency = 0.35, Parent = TargetSuggestFloat })
+	C("UIPadding", {
+		PaddingTop = UDim.new(0, 3),
+		PaddingBottom = UDim.new(0, 3),
+		PaddingLeft = UDim.new(0, 3),
+		PaddingRight = UDim.new(0, 3),
+		Parent = TargetSuggestFloat,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, Parent = TargetSuggestFloat })
+
+	local targetSuggestEntries = {}
+	local targetSuggestLock = false
+	local targetSuggestPickConn = nil
+
+	local function positionTargetSuggestFloat()
+		if not TargetSuggestFloat.Visible then
+			return
+		end
+		local menuPos = MenuRoot.AbsolutePosition
+		local pos = TargetInput.AbsolutePosition
+		local size = TargetInput.AbsoluteSize
+		TargetSuggestFloat.Position = UDim2.fromOffset(pos.X - menuPos.X, pos.Y + size.Y + 2 - menuPos.Y)
+		TargetSuggestFloat.Size = UDim2.fromOffset(size.X, 0)
+	end
 
 	local function refreshTargetInputFromSetting()
 		local uid = tonumber(S.ESPTargetUserId) or 0
@@ -2322,24 +2344,36 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local function hideTargetSuggestions()
-		TargetSuggestHost.Visible = false
-		for _, ch in ipairs(TargetSuggestHost:GetChildren()) do
-			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
+		TargetSuggestFloat.Visible = false
+		table.clear(targetSuggestEntries)
+		for _, ch in ipairs(TargetSuggestFloat:GetChildren()) do
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") and not ch:IsA("UICorner") and not ch:IsA("UIStroke") then
 				ch:Destroy()
 			end
 		end
+		if targetSuggestPickConn then
+			targetSuggestPickConn:Disconnect()
+			targetSuggestPickConn = nil
+		end
 	end
 
-	local targetSuggestLock = false
-
-	local function setEspTarget(plr)
-		if not plr then
+	local function pickSuggestion(plr)
+		if not plr or targetSuggestLock then
 			return
 		end
+		targetSuggestLock = true
 		S.ESPTargetUserId = plr.UserId
 		TargetInput.Text = formatTargetInput(plr)
 		hideTargetSuggestions()
+		TargetInput:ReleaseFocus()
 		showNotify(L("notify_esp_target_set", formatTargetInput(plr)))
+		task.delay(0.25, function()
+			targetSuggestLock = false
+		end)
+	end
+
+	local function setEspTarget(plr)
+		pickSuggestion(plr)
 	end
 
 	local function clearEspTargetUi()
@@ -2352,6 +2386,58 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	S.OnEspTargetCleared = function()
 		TargetInput.Text = ""
 		hideTargetSuggestions()
+	end
+
+	local function isMouseOverSuggestions()
+		local mouse = UIS:GetMouseLocation()
+		for _, entry in ipairs(targetSuggestEntries) do
+			local btn = entry.btn
+			if btn and btn.Parent then
+				local ap = btn.AbsolutePosition
+				local as = btn.AbsoluteSize
+				if mouse.X >= ap.X and mouse.X <= ap.X + as.X and mouse.Y >= ap.Y and mouse.Y <= ap.Y + as.Y then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	local function enableSuggestClickCapture()
+		if targetSuggestPickConn then
+			return
+		end
+		targetSuggestPickConn = UIS.InputEnded:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+			if not TargetSuggestFloat.Visible then
+				return
+			end
+			local mouse = UIS:GetMouseLocation()
+			for _, entry in ipairs(targetSuggestEntries) do
+				local btn = entry.btn
+				if btn and btn.Parent then
+					local ap = btn.AbsolutePosition
+					local as = btn.AbsoluteSize
+					if mouse.X >= ap.X and mouse.X <= ap.X + as.X and mouse.Y >= ap.Y and mouse.Y <= ap.Y + as.Y then
+						pickSuggestion(entry.plr)
+						return
+					end
+				end
+			end
+		end)
+	end
+
+	local function bindSuggestionButton(btn, plr)
+		local function onPick()
+			pickSuggestion(plr)
+		end
+		btn.Active = true
+		btn.Selectable = true
+		btn.MouseButton1Down:Connect(onPick)
+		btn.MouseButton1Click:Connect(onPick)
+		btn.Activated:Connect(onPick)
 	end
 
 	local function showTargetSuggestions(query)
@@ -2390,8 +2476,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				AutoButtonColor = false,
 				BorderSizePixel = 0,
 				LayoutOrder = shown,
-				ZIndex = 20,
-				Parent = TargetSuggestHost,
+				ZIndex = 251,
+				Parent = TargetSuggestFloat,
 			})
 			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = btn })
 			btn.MouseEnter:Connect(function()
@@ -2400,17 +2486,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			btn.MouseLeave:Connect(function()
 				btn.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
 			end)
-			btn.MouseButton1Down:Connect(function()
-				targetSuggestLock = true
-				setEspTarget(plr)
-				TargetInput:ReleaseFocus()
-				task.defer(function()
-					targetSuggestLock = false
-				end)
-			end)
+			bindSuggestionButton(btn, plr)
+			table.insert(targetSuggestEntries, { btn = btn, plr = plr })
 		end
-		TargetSuggestHost.Visible = shown > 0
+		if shown > 0 then
+			TargetSuggestFloat.Visible = true
+			task.defer(positionTargetSuggestFloat)
+			enableSuggestClickCapture()
+		end
 	end
+
+	T1:GetPropertyChangedSignal("CanvasPosition"):Connect(positionTargetSuggestFloat)
+	RS:GetPropertyChangedSignal("ViewportSize"):Connect(positionTargetSuggestFloat)
 
 	TargetInput:GetPropertyChangedSignal("Text"):Connect(function()
 		if tonumber(S.ESPTargetUserId) and S.ESPTargetUserId > 0 then
@@ -2425,16 +2512,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end)
 
 	TargetInput.FocusLost:Connect(function(enterPressed)
-		task.defer(function()
-			if targetSuggestLock then
+		if enterPressed then
+			local plr = resolveTargetFromText(TargetInput.Text)
+			if plr then
+				setEspTarget(plr)
+			end
+			return
+		end
+		task.delay(0.22, function()
+			if targetSuggestLock or TargetInput:IsFocused() then
 				return
 			end
-			if enterPressed then
-				local plr = resolveTargetFromText(TargetInput.Text)
-				if plr then
-					setEspTarget(plr)
-					return
-				end
+			if isMouseOverSuggestions() then
+				return
 			end
 			hideTargetSuggestions()
 		end)
