@@ -2857,11 +2857,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(FEsp, "hint_friend_esp", 4)
 
 	local FOver = MakeCard(TFriend, "FRIEND OVERLAYS", "card_friend_over_desc", 3)
-	MakeTog(FOver, "Health Bars", "FriendHealth", 1, { flat = true, requires = "FriendsESP" })
-	MakeTog(FOver, "Health Text", "FriendHealthText", 2, { flat = true, requires = "FriendsESP" })
-	MakeTog(FOver, "Weapon ESP", "FriendWeapon", 3, { flat = true, requires = "FriendsESP" })
-	MakeTog(FOver, "Show Distance", "FriendDistView", 4, { flat = true, requires = "FriendsESP" })
-	MakeHint(FOver, "hint_friend_over", 5)
+	MakeTog(FOver, "Bounding Boxes", "FriendBox", 1, { flat = true, requires = "FriendsESP" })
+	MakeTog(FOver, "Health Bars", "FriendHealth", 2, { flat = true, requires = "FriendsESP" })
+	MakeTog(FOver, "Health Text", "FriendHealthText", 3, { flat = true, requires = "FriendsESP" })
+	MakeTog(FOver, "Weapon ESP", "FriendWeapon", 4, { flat = true, requires = "FriendsESP" })
+	MakeTog(FOver, "Show Distance", "FriendDistView", 5, { flat = true, requires = "FriendsESP" })
+	MakeHint(FOver, "hint_friend_over", 6)
 
 	local LAim = MakeCard(T3, "AIMBOT", "card_laim_desc", 1)
 	MakeTog(LAim, "Aimbot", "Aimbot", 1, { flat = true })

@@ -140,6 +140,9 @@ function Config.EnforceRules(S)
 	if S.FriendsESPSkipVisible == nil then
 		S.FriendsESPSkipVisible = false
 	end
+	if S.FriendBox == nil then
+		S.FriendBox = false
+	end
 	if S.FriendHealth == nil then
 		S.FriendHealth = false
 	end

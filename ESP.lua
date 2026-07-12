@@ -467,15 +467,21 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 			if friendEsp then
 				if not friendSkip and clr then
-					ch.B.Size = UDim2.new(0, w2, 0, h2)
-					ch.B.Position = UDim2.new(0, bx, 0, by)
-					ch.B.Visible = true
-					if S.BoxType == "Corner" then
-						UpdCorner(ch.Cr, w2, h2, clr)
-						ch.BO.Enabled = false
+					if S.FriendBox then
+						ch.B.Size = UDim2.new(0, w2, 0, h2)
+						ch.B.Position = UDim2.new(0, bx, 0, by)
+						ch.B.Visible = true
+						if S.BoxType == "Corner" then
+							UpdCorner(ch.Cr, w2, h2, clr)
+							ch.BO.Enabled = false
+						else
+							ch.BO.Enabled = true
+							ch.BO.Color = clr
+							HideCorner(ch.Cr)
+						end
 					else
-						ch.BO.Enabled = true
-						ch.BO.Color = clr
+						ch.B.Visible = false
+						ch.BO.Enabled = false
 						HideCorner(ch.Cr)
 					end
 					ch.CHM.Adornee = c
@@ -520,7 +526,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		local showHealthText = friendEsp and S.FriendHealthText or (not friendEsp and S.HealthText)
 		local showWeapon = friendEsp and S.FriendWeapon or (not friendEsp and S.Weapon)
 		local showDist = friendEsp and S.FriendDistView or (not friendEsp and S.DistView)
-		local showBox = friendEsp and (not friendSkip and clr ~= nil) or (not friendEsp and S.Box)
+		local showBox = friendEsp and (S.FriendBox and not friendSkip and clr ~= nil) or (not friendEsp and S.Box)
 		local showChams = friendEsp and (not friendSkip and clr ~= nil) or (not friendEsp and S.Chams)
 
 		if showChams and clr then
