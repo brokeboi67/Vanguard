@@ -342,6 +342,9 @@ function Config.EnforceRules(S)
 	if S.ESPLowerOpacityVisible == nil then
 		S.ESPLowerOpacityVisible = false
 	end
+	if S.ESPLowerOpacityAmount == nil then
+		S.ESPLowerOpacityAmount = 55
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

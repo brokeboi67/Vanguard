@@ -148,13 +148,23 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		return result
 	end
 
-	local VISIBLE_OPACITY_BOOST = 0.55
-
 	local function getVisibleOpacityBoost(losKey, char)
 		if not S.ESPLowerOpacityVisible then
 			return 0
 		end
-		return charHasLineOfSight(losKey, char) and VISIBLE_OPACITY_BOOST or 0
+		if not charHasLineOfSight(losKey, char) then
+			return 0
+		end
+		local pct = tonumber(S.ESPLowerOpacityAmount) or 55
+		return math.clamp(pct / 100, 0.1, 0.95)
+	end
+
+	local function isFriendEsp(plr)
+		return plr and TF and TF.isFriend(S, plr) and S.FriendsESP
+	end
+
+	local function friendSkipHighlight(losKey, char, plr)
+		return isFriendEsp(plr) and S.FriendsESPSkipVisible and charHasLineOfSight(losKey, char)
 	end
 
 	local function applyVisibleOpacity(ch, boost)
@@ -232,20 +242,21 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	end
 
 	local function GetColor(plr, c, isBot, distSq, losKey)
+		losKey = losKey or getLosKey(plr, c, isBot)
+		if plr and TF and TF.isFriend(S, plr) and S.FriendsESP then
+			if S.FriendsESPSkipVisible and charHasLineOfSight(losKey, c) then
+				return false
+			end
+			return S.F
+		end
 		if S.Chams and S.ChamsRainbow then
 			return Rainbow()
 		end
-		losKey = losKey or getLosKey(plr, c, isBot)
 		if isBot then
 			if S.LoS and not charHasLineOfSight(losKey, c) then
 				return S.O
 			end
 			return Color3.fromRGB(255, 180, 80)
-		end
-		if plr and TF and TF.isFriend(S, plr) and S.FriendsESP then
-			if not S.FriendsESPSkipVisible or not charHasLineOfSight(losKey, c) then
-				return S.F
-			end
 		end
 		if S.RealTeamColor and plr and plr.Team then
 			return plr.Team.TeamColor.Color
@@ -396,37 +407,73 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		local rp = Vector2.new(box.centerX, (box.topY + box.bottomY) / 2)
 
 		-- Fast path: box position only (no LOS, skeleton, text). Runs 3/4 frames per player.
-		if fastOnly and ch._lastClr then
+		if fastOnly then
+			local friendEsp = isFriendEsp(plr)
+			local friendSkip = friendSkipHighlight(losKey, c, plr)
 			local clr = ch._lastClr
-			if S.Box then
-				ch.B.Size = UDim2.new(0, w2, 0, h2)
-				ch.B.Position = UDim2.new(0, bx, 0, by)
-				ch.B.Visible = true
-				if S.BoxType == "Corner" then
-					UpdCorner(ch.Cr, w2, h2, clr)
-				else
-					ch.BO.Enabled = true
-					ch.BO.Color = clr
-				end
+			if clr == false then
+				clr = nil
 			end
-			if S.Chams and ch.CHM.Enabled then
-				ch.CHM.FillColor = clr
-				ch.CHM.OutlineColor = clr
+
+			if friendEsp then
+				if not friendSkip and clr then
+					ch.B.Size = UDim2.new(0, w2, 0, h2)
+					ch.B.Position = UDim2.new(0, bx, 0, by)
+					ch.B.Visible = true
+					if S.BoxType == "Corner" then
+						UpdCorner(ch.Cr, w2, h2, clr)
+						ch.BO.Enabled = false
+					else
+						ch.BO.Enabled = true
+						ch.BO.Color = clr
+						HideCorner(ch.Cr)
+					end
+					ch.CHM.Adornee = c
+					ch.CHM.FillColor = clr
+					ch.CHM.OutlineColor = clr
+					ch.CHM.Enabled = true
+				else
+					ch.B.Visible = false
+					ch.BO.Enabled = false
+					HideCorner(ch.Cr)
+					ch.CHM.Enabled = false
+				end
+			elseif clr then
+				if S.Box then
+					ch.B.Size = UDim2.new(0, w2, 0, h2)
+					ch.B.Position = UDim2.new(0, bx, 0, by)
+					ch.B.Visible = true
+					if S.BoxType == "Corner" then
+						UpdCorner(ch.Cr, w2, h2, clr)
+					else
+						ch.BO.Enabled = true
+						ch.BO.Color = clr
+					end
+				end
+				if S.Chams then
+					ch.CHM.FillColor = clr
+					ch.CHM.OutlineColor = clr
+					ch.CHM.Enabled = true
+				end
 			end
 			applyVisibleOpacity(ch, getVisibleOpacityBoost(losKey, c))
 			return
 		end
 
-		local clr = GetColor(plr, c, isBot, distSq, losKey)
-		ch._lastClr = clr
+		local rawClr = GetColor(plr, c, isBot, distSq, losKey)
+		local friendEsp = isFriendEsp(plr)
+		local friendSkip = friendSkipHighlight(losKey, c, plr)
+		local clr = rawClr == false and nil or rawClr
+		ch._lastClr = rawClr
 
-		local isFriendEsp = plr and TF and TF.isFriend(S, plr) and S.FriendsESP
-		local showHealth = isFriendEsp and S.FriendHealth or (not isFriendEsp and S.Health)
-		local showHealthText = isFriendEsp and S.FriendHealthText or (not isFriendEsp and S.HealthText)
-		local showWeapon = isFriendEsp and S.FriendWeapon or (not isFriendEsp and S.Weapon)
-		local showDist = isFriendEsp and S.FriendDistView or (not isFriendEsp and S.DistView)
+		local showHealth = friendEsp and S.FriendHealth or (not friendEsp and S.Health)
+		local showHealthText = friendEsp and S.FriendHealthText or (not friendEsp and S.HealthText)
+		local showWeapon = friendEsp and S.FriendWeapon or (not friendEsp and S.Weapon)
+		local showDist = friendEsp and S.FriendDistView or (not friendEsp and S.DistView)
+		local showBox = friendEsp and (not friendSkip and clr ~= nil) or (not friendEsp and S.Box)
+		local showChams = friendEsp and (not friendSkip and clr ~= nil) or (not friendEsp and S.Chams)
 
-		if S.Chams then
+		if showChams and clr then
 			ch.CHM.Adornee = c
 			ch.CHM.FillColor = clr
 			ch.CHM.OutlineColor = clr
@@ -435,7 +482,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			ch.CHM.Enabled = false
 		end
 
-		if S.Box then
+		if showBox and clr then
 			ch.B.Size = UDim2.new(0, w2, 0, h2)
 			ch.B.Position = UDim2.new(0, bx, 0, by)
 			ch.B.Visible = true
@@ -459,7 +506,24 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			label = "[BOT] " .. label
 		end
 
-		if S.Name or showDist then
+		if friendEsp then
+			if showDist or (clr and not friendSkip) then
+				local distStr = showDist and ("[" .. math.floor(dist) .. "m]") or ""
+				if clr and not friendSkip and showDist then
+					ch.T.Text = label .. "  " .. distStr
+				elseif clr and not friendSkip then
+					ch.T.Text = label
+				else
+					ch.T.Text = distStr
+				end
+				ch.T.Size = UDim2.new(0, w2 + 50, 0, 14)
+				ch.T.Position = UDim2.new(0, bx - 25, 0, by - ((clr and not friendSkip) and 16 or 8))
+				ch.T.TextColor3 = clr or S.F
+				ch.T.Visible = true
+			else
+				ch.T.Visible = false
+			end
+		elseif S.Name or showDist then
 			local distStr = showDist and ("[" .. math.floor(dist) .. "m]") or ""
 			if S.Name and showDist then
 				ch.T.Text = label .. "  " .. distStr
@@ -508,7 +572,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			ch.HT.Visible = false
 		end
 
-		if S.Trace then
+		if not friendEsp and S.Trace then
 			local origin = Vector2.new(Cam.ViewportSize.X / 2, Cam.ViewportSize.Y)
 			if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
 				local mpos, mos = Cam:WorldToViewportPoint(LP.Character.HumanoidRootPart.Position)
@@ -521,7 +585,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			ch.Tr.Visible = false
 		end
 
-		if S.Skel then
+		if not friendEsp and S.Skel then
 			for i, bn in ipairs(Bones) do
 				local p1 = c:FindFirstChild(bn[1])
 				local p2 = c:FindFirstChild(bn[2])
@@ -911,7 +975,21 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				if edge then
 					arrowActive[key] = true
 					local ch = Cache[key]
-					local clr = ch and ch._lastClr or S.V
+					local rawClr = ch and ch._lastClr
+					local clr
+					if rawClr == false then
+						clr = nil
+					elseif rawClr then
+						clr = rawClr
+					elseif isFriendEsp(plr) then
+						clr = S.F
+					else
+						clr = S.V
+					end
+					if not clr then
+						hideArrow(key)
+						return
+					end
 					local label = plr and plr.Name or (char and char.Name or "?")
 					pcall(renderOffscreen, key, hrp.Position, clr, dist, label)
 				else

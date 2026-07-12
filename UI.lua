@@ -2176,9 +2176,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local VFilter = MakeCard(T1, "FILTERS", "card_vfilter_desc", 2)
 	MakeTog(VFilter, "Hide Teammates", "Team", 1, { flat = true })
 	MakeTog(VFilter, "Render Only Visible", "ESPRenderOnlyVisible", 2, { flat = true })
-	MakeTog(VFilter, "Lower Opacity When Visible", "ESPLowerOpacityVisible", 3, { flat = true })
-	MakeTog(VFilter, "Ignore Self in LOS", "LOSIgnoreSelf", 4, { flat = true })
-	MakeHint(VFilter, "hint_vfilter", 5)
+	MakeTog(VFilter, "Lower Opacity When Visible", "ESPLowerOpacityVisible", 3, {
+		flat = true,
+		onChange = function(on)
+			local reg = sliderRegistry.ESPLowerOpacityAmount
+			if reg and reg.setEnabled then
+				reg.setEnabled(on)
+			end
+		end,
+	})
+	MakeSlider(VFilter, "Visible Fade Amount", "ESPLowerOpacityAmount", 10, 90, 4, {
+		suffix = "%",
+		step = 5,
+		fmt = function(v)
+			return string.format("%d%%", v)
+		end,
+		onRowCreated = function(_, __, setEnabled)
+			if setEnabled then
+				setEnabled(S.ESPLowerOpacityVisible == true)
+			end
+		end,
+	})
+	MakeTog(VFilter, "Ignore Self in LOS", "LOSIgnoreSelf", 5, { flat = true })
+	MakeHint(VFilter, "hint_vfilter", 6)
 
 	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
 	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })
