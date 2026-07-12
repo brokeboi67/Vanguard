@@ -2302,7 +2302,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		BackgroundTransparency = 1,
 		Visible = false,
 		LayoutOrder = 2,
-		ZIndex = 7,
+		ZIndex = 15,
 		Parent = targetPickerHost,
 	})
 	C("UIListLayout", { Padding = UDim.new(0, 3), SortOrder = Enum.SortOrder.LayoutOrder, Parent = TargetSuggestHost })
@@ -2329,6 +2329,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end
 	end
+
+	local targetSuggestLock = false
 
 	local function setEspTarget(plr)
 		if not plr then
@@ -2388,7 +2390,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				AutoButtonColor = false,
 				BorderSizePixel = 0,
 				LayoutOrder = shown,
-				ZIndex = 8,
+				ZIndex = 20,
 				Parent = TargetSuggestHost,
 			})
 			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = btn })
@@ -2398,8 +2400,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			btn.MouseLeave:Connect(function()
 				btn.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
 			end)
-			btn.MouseButton1Click:Connect(function()
+			btn.MouseButton1Down:Connect(function()
+				targetSuggestLock = true
 				setEspTarget(plr)
+				TargetInput:ReleaseFocus()
+				task.defer(function()
+					targetSuggestLock = false
+				end)
 			end)
 		end
 		TargetSuggestHost.Visible = shown > 0
@@ -2418,14 +2425,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end)
 
 	TargetInput.FocusLost:Connect(function(enterPressed)
-		if enterPressed then
-			local plr = resolveTargetFromText(TargetInput.Text)
-			if plr then
-				setEspTarget(plr)
+		task.defer(function()
+			if targetSuggestLock then
 				return
 			end
-		end
-		hideTargetSuggestions()
+			if enterPressed then
+				local plr = resolveTargetFromText(TargetInput.Text)
+				if plr then
+					setEspTarget(plr)
+					return
+				end
+			end
+			hideTargetSuggestions()
+		end)
 	end)
 
 	MakeButton(VTarget, nil, 2, clearEspTargetUi, "esp_target_clear")
