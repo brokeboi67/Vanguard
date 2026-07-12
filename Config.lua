@@ -137,6 +137,18 @@ function Config.EnforceRules(S)
 	if S.FriendsESP == nil then
 		S.FriendsESP = false
 	end
+	if S.FriendsESPSkipVisible == nil then
+		S.FriendsESPSkipVisible = false
+	end
+	if S.FriendHealth == nil then
+		S.FriendHealth = false
+	end
+	if S.FriendHealthText == nil then
+		S.FriendHealthText = false
+	end
+	if S.FriendWeapon == nil then
+		S.FriendWeapon = false
+	end
 	if typeof(S.F) ~= "Color3" then
 		S.F = Color3.fromRGB(170, 90, 255)
 	end

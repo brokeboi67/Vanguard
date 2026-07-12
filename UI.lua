@@ -38,6 +38,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		rage = Color3.fromRGB(255, 85, 85),
 		anim = Color3.fromRGB(255, 150, 230),
 		world = Color3.fromRGB(130, 210, 110),
+		friends = Color3.fromRGB(170, 90, 255),
 		settings = Color3.fromRGB(175, 175, 195),
 		misc = Color3.fromRGB(255, 195, 75),
 		config = Color3.fromRGB(155, 135, 255),
@@ -2098,18 +2099,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	task.wait()
 	local TAnim = MakeTab("anim", false, false, 4)
 	local TWorld = MakeTab("world", false, false, 5)
-	local T2 = MakeTab("settings", false, false, 6)
-	local TM = MakeTab("misc", false, false, 7)
-	local TMenu = MakeTab("menus", false, false, 8)
-	local T4 = MakeTab("config", false, false, 9)
+	local TFriend = MakeTab("friends", false, false, 6)
+	local T2 = MakeTab("settings", false, false, 7)
+	local TM = MakeTab("misc", false, false, 8)
+	local TMenu = MakeTab("menus", false, false, 9)
+	local T4 = MakeTab("config", false, false, 10)
 	task.wait()
-	local TMusic = MakeTab("music", false, false, 10, { fixed = true, layout = "music" })
+	local TMusic = MakeTab("music", false, false, 11, { fixed = true, layout = "music" })
 
 	-- Criminality tab — visible in ALL Criminality places (lobby + Casual + sub-places)
 	-- Uses game.GameId (Universe ID = 1494262959) so it works after any in-game teleport.
 	local TCrim = nil
 	if game.GameId == 1494262959 then
-		TCrim = MakeTab("criminality", false, false, 11)
+		TCrim = MakeTab("criminality", false, false, 12)
 	end
 
 	if UIMusicModule and MusicModule then
@@ -2173,9 +2175,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VCore, "Master ESP", "ESP", 1, { flat = true })
 	local VFilter = MakeCard(T1, "FILTERS", "card_vfilter_desc", 2)
 	MakeTog(VFilter, "Hide Teammates", "Team", 1, { flat = true })
-	MakeTog(VFilter, "Friends ESP", "FriendsESP", 2, { flat = true })
-	MakeTog(VFilter, "Render Only Visible", "ESPRenderOnlyVisible", 3, { flat = true })
-	MakeHint(VFilter, "hint_vfilter", 4)
+	MakeTog(VFilter, "Render Only Visible", "ESPRenderOnlyVisible", 2, { flat = true })
+	MakeHint(VFilter, "hint_vfilter", 3)
 
 	local VDist = MakeCard(T1, "DISTANCE", nil, 3)
 	MakeTog(VDist, "Show Distance", "DistView", 1, { flat = true })
@@ -2217,8 +2218,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(VColors, "hint_vcolors", 3)
 	MakeColorPicker(VColors, "Visible Color", "V", 4, { espColor = true })
 	MakeColorPicker(VColors, "Hidden Color", "O", 5, { espColor = true })
-	MakeColorPicker(VColors, "Friend Color", "F", 6, { friendColor = true })
-	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 7, {
+	MakeSlider(VColors, "Line Thickness", "Th", 0.5, 4, 6, {
 		suffix = "px",
 		step = 0.1,
 		fmt = function(v)
@@ -2317,6 +2317,168 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeTog(VTrace, "Bullet Tracers", "ShotTracers", 1, { flat = true })
 	MakeTog(VTrace, "Kill Tracer (grubszy + glow)", "KillShotTracers", 2, { flat = true })
 	MakeHint(VTrace, "hint_vtrace", 3)
+
+	local FFriend = MakeCard(TFriend, "FRIENDS", "card_sfriend_desc", 1)
+	MakeTog(FFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })
+	MakeHint(FFriend, "hint_friend_click", 2)
+
+	local FriendListHost = C("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		LayoutOrder = 3,
+		ZIndex = 6,
+		Parent = FFriend,
+	})
+	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = FriendListHost })
+
+	local function refreshFriendList()
+		for _, ch in ipairs(FriendListHost:GetChildren()) do
+			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
+				ch:Destroy()
+			end
+		end
+		local ids = S.FriendIds or {}
+		if #ids == 0 then
+			C("TextLabel", {
+				Size = UDim2.new(1, 0, 0, 28),
+				BackgroundTransparency = 1,
+				Text = L("friends_empty"),
+				Font = Enum.Font.Gotham,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(95, 95, 105),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				LayoutOrder = 1,
+				ZIndex = 7,
+				Parent = FriendListHost,
+			})
+			return
+		end
+		local sorted = {}
+		for _, id in ipairs(ids) do
+			table.insert(sorted, id)
+		end
+		table.sort(sorted)
+		for i, uid in ipairs(sorted) do
+			local row = C("Frame", {
+				Size = UDim2.new(1, 0, 0, 32),
+				BackgroundColor3 = Color3.fromRGB(22, 22, 28),
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+				ZIndex = 7,
+				Parent = FriendListHost,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = row })
+			local avWrap = C("Frame", {
+				Size = UDim2.new(0, 24, 0, 24),
+				Position = UDim2.new(0, 6, 0.5, -12),
+				BackgroundColor3 = Color3.fromRGB(40, 40, 48),
+				BorderSizePixel = 0,
+				ZIndex = 8,
+				Parent = row,
+			})
+			C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = avWrap })
+			local avImg = C("ImageLabel", {
+				Size = UDim2.new(1, -2, 1, -2),
+				Position = UDim2.new(0, 1, 0, 1),
+				BackgroundTransparency = 1,
+				ScaleType = Enum.ScaleType.Crop,
+				Image = string.format(
+					"https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=48&height=48&format=png",
+					uid
+				),
+				ZIndex = 9,
+				Parent = avWrap,
+			})
+			C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = avImg })
+			local nameLbl = C("TextLabel", {
+				Size = UDim2.new(1, -62, 1, 0),
+				Position = UDim2.new(0, 36, 0, 0),
+				BackgroundTransparency = 1,
+				Text = "User " .. tostring(uid),
+				Font = Enum.Font.GothamMedium,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(190, 190, 200),
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd,
+				ZIndex = 8,
+				Parent = row,
+			})
+			task.spawn(function()
+				local ok, name = pcall(function()
+					return game:GetService("Players"):GetNameFromUserIdAsync(uid)
+				end)
+				if ok and nameLbl.Parent then
+					nameLbl.Text = name
+				end
+			end)
+			local rm = C("TextButton", {
+				Size = UDim2.new(0, 22, 0, 22),
+				Position = UDim2.new(1, -26, 0.5, -11),
+				BackgroundColor3 = Color3.fromRGB(40, 40, 48),
+				Text = "×",
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				TextColor3 = Color3.fromRGB(200, 200, 210),
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				ZIndex = 8,
+				Parent = row,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 4), Parent = rm })
+			rm.MouseButton1Click:Connect(function()
+				if TF then
+					TF.removeFriend(S, uid)
+				else
+					for j, id in ipairs(S.FriendIds or {}) do
+						if id == uid then
+							table.remove(S.FriendIds, j)
+							break
+						end
+					end
+				end
+				refreshFriendList()
+				showNotify(L("notify_friend_removed"))
+			end)
+		end
+	end
+
+	MakeButton(FFriend, nil, 4, function()
+		if TF then
+			TF.clearFriends(S)
+		else
+			S.FriendIds = {}
+		end
+		refreshFriendList()
+		showNotify(L("notify_friends_cleared"))
+	end, "btn_clear_list")
+	refreshFriendList()
+	if TF then
+		TF.Init(S, ParentGUI, ACC, refreshFriendList, AntiBypassModule)
+	end
+
+	local FEsp = MakeCard(TFriend, "FRIENDS ESP", "card_friend_esp_desc", 2)
+	MakeTog(FEsp, "Friends ESP", "FriendsESP", 1, {
+		flat = true,
+		onChange = function()
+			if updateEspColorControls then
+				updateEspColorControls()
+			end
+			UpdPreview()
+		end,
+	})
+	MakeTog(FEsp, "Skip Highlight When Visible", "FriendsESPSkipVisible", 2, {
+		flat = true,
+		requires = "FriendsESP",
+	})
+	MakeColorPicker(FEsp, "Friend Color", "F", 3, { friendColor = true })
+	MakeHint(FEsp, "hint_friend_esp", 4)
+
+	local FOver = MakeCard(TFriend, "FRIEND OVERLAYS", "card_friend_over_desc", 3)
+	MakeTog(FOver, "Health Bars", "FriendHealth", 1, { flat = true, requires = "FriendsESP" })
+	MakeTog(FOver, "Health Text", "FriendHealthText", 2, { flat = true, requires = "FriendsESP" })
+	MakeTog(FOver, "Weapon ESP", "FriendWeapon", 3, { flat = true, requires = "FriendsESP" })
+	MakeHint(FOver, "hint_friend_over", 4)
 
 	local LAim = MakeCard(T3, "AIMBOT", "card_laim_desc", 1)
 	MakeTog(LAim, "Aimbot", "Aimbot", 1, { flat = true })
@@ -2779,144 +2941,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			showNotify(I18n and I18n.t("notify_style_changed") or "Notification style updated.", { type = "success" })
 		end,
 	})
-
-	local SFriend = MakeCard(T2, "FRIENDS", "card_sfriend_desc", 2)
-	MakeTog(SFriend, "Ctrl + Click Friend", "FriendClick", 1, { flat = true })
-
-	local FriendListHost = C("Frame", {
-		Size = UDim2.new(1, 0, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
-		LayoutOrder = 2,
-		ZIndex = 6,
-		Parent = SFriend,
-	})
-	C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = FriendListHost })
-
-	local function refreshFriendList()
-		for _, ch in ipairs(FriendListHost:GetChildren()) do
-			if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") then
-				ch:Destroy()
-			end
-		end
-		local ids = S.FriendIds or {}
-		if #ids == 0 then
-			C("TextLabel", {
-				Size = UDim2.new(1, 0, 0, 28),
-				BackgroundTransparency = 1,
-				Text = L("friends_empty"),
-				Font = Enum.Font.Gotham,
-				TextSize = 10,
-				TextColor3 = Color3.fromRGB(95, 95, 105),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				LayoutOrder = 1,
-				ZIndex = 7,
-				Parent = FriendListHost,
-			})
-			return
-		end
-		local sorted = {}
-		for _, id in ipairs(ids) do
-			table.insert(sorted, id)
-		end
-		table.sort(sorted)
-		for i, uid in ipairs(sorted) do
-			local row = C("Frame", {
-				Size = UDim2.new(1, 0, 0, 32),
-				BackgroundColor3 = Color3.fromRGB(22, 22, 28),
-				BorderSizePixel = 0,
-				LayoutOrder = i,
-				ZIndex = 7,
-				Parent = FriendListHost,
-			})
-			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = row })
-			local avWrap = C("Frame", {
-				Size = UDim2.new(0, 24, 0, 24),
-				Position = UDim2.new(0, 6, 0.5, -12),
-				BackgroundColor3 = Color3.fromRGB(40, 40, 48),
-				BorderSizePixel = 0,
-				ZIndex = 8,
-				Parent = row,
-			})
-			C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = avWrap })
-			local avImg = C("ImageLabel", {
-				Size = UDim2.new(1, -2, 1, -2),
-				Position = UDim2.new(0, 1, 0, 1),
-				BackgroundTransparency = 1,
-				ScaleType = Enum.ScaleType.Crop,
-				Image = string.format(
-					"https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=48&height=48&format=png",
-					uid
-				),
-				ZIndex = 9,
-				Parent = avWrap,
-			})
-			C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = avImg })
-			local nameLbl = C("TextLabel", {
-				Size = UDim2.new(1, -62, 1, 0),
-				Position = UDim2.new(0, 36, 0, 0),
-				BackgroundTransparency = 1,
-				Text = "User " .. tostring(uid),
-				Font = Enum.Font.GothamMedium,
-				TextSize = 10,
-				TextColor3 = Color3.fromRGB(190, 190, 200),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextTruncate = Enum.TextTruncate.AtEnd,
-				ZIndex = 8,
-				Parent = row,
-			})
-			task.spawn(function()
-				local ok, name = pcall(function()
-					return game:GetService("Players"):GetNameFromUserIdAsync(uid)
-				end)
-				if ok and nameLbl.Parent then
-					nameLbl.Text = name
-				end
-			end)
-			local rm = C("TextButton", {
-				Size = UDim2.new(0, 22, 0, 22),
-				Position = UDim2.new(1, -26, 0.5, -11),
-				BackgroundColor3 = Color3.fromRGB(40, 40, 48),
-				Text = "×",
-				Font = Enum.Font.GothamBold,
-				TextSize = 12,
-				TextColor3 = Color3.fromRGB(200, 200, 210),
-				AutoButtonColor = false,
-				BorderSizePixel = 0,
-				ZIndex = 8,
-				Parent = row,
-			})
-			C("UICorner", { CornerRadius = UDim.new(0, 4), Parent = rm })
-			rm.MouseButton1Click:Connect(function()
-				if TF then
-					TF.removeFriend(S, uid)
-				else
-					for j, id in ipairs(S.FriendIds or {}) do
-						if id == uid then
-							table.remove(S.FriendIds, j)
-							break
-						end
-					end
-				end
-				refreshFriendList()
-				showNotify(L("notify_friend_removed"))
-			end)
-		end
-	end
-
-	MakeButton(SFriend, nil, 3, function()
-		if TF then
-			TF.clearFriends(S)
-		else
-			S.FriendIds = {}
-		end
-		refreshFriendList()
-		showNotify(L("notify_friends_cleared"))
-	end, "btn_clear_list")
-	refreshFriendList()
-	if TF then
-		TF.Init(S, ParentGUI, ACC, refreshFriendList, AntiBypassModule)
-	end
 
 	local SHud = MakeCard(T2, "HUD", nil, 2)
 	MakeTog(SHud, "Crosshair", "Crosshair", 1, { flat = true })

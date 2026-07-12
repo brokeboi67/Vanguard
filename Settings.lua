@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.28",
+	Version = "2.43.29",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -22,6 +22,10 @@ local Settings = {
 	RenderBots = false,
 	Team = false,
 	FriendsESP = false,
+	FriendsESPSkipVisible = false,
+	FriendHealth = false,
+	FriendHealthText = false,
+	FriendWeapon = false,
 	ExcludeTeam = true,
 	RealTeamColor = true,
 	LoS = false,

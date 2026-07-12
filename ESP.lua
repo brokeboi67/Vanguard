@@ -179,7 +179,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			return Color3.fromRGB(255, 180, 80)
 		end
 		if plr and TF and TF.isFriend(S, plr) and S.FriendsESP then
-			return S.F
+			if not S.FriendsESPSkipVisible or not charHasLineOfSight(losKey, c) then
+				return S.F
+			end
 		end
 		if S.RealTeamColor and plr and plr.Team then
 			return plr.Team.TeamColor.Color
@@ -353,6 +355,11 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		local clr = GetColor(plr, c, isBot, distSq, losKey)
 		ch._lastClr = clr
 
+		local isFriendEsp = plr and TF and TF.isFriend(S, plr) and S.FriendsESP
+		local showHealth = isFriendEsp and S.FriendHealth or (not isFriendEsp and S.Health)
+		local showHealthText = isFriendEsp and S.FriendHealthText or (not isFriendEsp and S.HealthText)
+		local showWeapon = isFriendEsp and S.FriendWeapon or (not isFriendEsp and S.Weapon)
+
 		if S.Chams then
 			ch.CHM.Adornee = c
 			ch.CHM.FillColor = clr
@@ -403,7 +410,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			ch.T.Visible = false
 		end
 
-		if S.Weapon then
+		if showWeapon then
 			ch.WT.Text = GetWeapon(c) or "None"
 			ch.WT.Size = UDim2.new(0, w2 + 40, 0, 12)
 			ch.WT.Position = UDim2.new(0, bx - 20, 0, by + h2 + 2)
@@ -413,7 +420,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			ch.WT.Visible = false
 		end
 
-		if S.Health then
+		if showHealth then
 			local hpRatio = math.clamp(h.Health / h.MaxHealth, 0, 1)
 			ch.HB.Size = UDim2.new(0, 3, 0, h2)
 			ch.HB.Position = UDim2.new(0, bx - 7, 0, by)
@@ -425,7 +432,7 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			ch.HB.Visible = false
 		end
 
-		if S.HealthText then
+		if showHealthText then
 			ch.HT.Text = math.floor(h.Health) .. " HP"
 			ch.HT.Size = UDim2.new(0, 36, 0, 12)
 			ch.HT.Position = UDim2.new(0, bx - 44, 0, by + h2 / 2 - 6)
