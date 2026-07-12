@@ -354,6 +354,21 @@ function Config.EnforceRules(S)
 	if typeof(S.T) ~= "Color3" then
 		S.T = Color3.fromRGB(255, 190, 40)
 	end
+	if S.CrimCrateESP == nil then
+		S.CrimCrateESP = false
+	end
+	if S.CrimCrateOnlyRare == nil then
+		S.CrimCrateOnlyRare = false
+	end
+	if S.CrimCrateMaxDist == nil then
+		S.CrimCrateMaxDist = 400
+	end
+	if typeof(S.CrimCrateColor) ~= "Color3" then
+		S.CrimCrateColor = Color3.fromRGB(255, 190, 60)
+	end
+	if typeof(S.CrimCrateRareColor) ~= "Color3" then
+		S.CrimCrateRareColor = Color3.fromRGB(255, 55, 55)
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

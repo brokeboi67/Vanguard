@@ -2157,11 +2157,35 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CESP = MakeCard(TCrim, "OBJECT ESP", nil, 4)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 1, { flat = true })
 		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 2, { flat = true })
-		MakeSlider(CESP, "Max Distance", "CrimESPMaxDist", 50, 600, 3, {
+		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 3, {
+			flat = true,
+			onChange = function(on)
+				local dist = sliderRegistry.CrimCrateMaxDist
+				if dist and dist.setEnabled then
+					dist.setEnabled(on)
+				end
+			end,
+		})
+		MakeTog(CESP, "Rare Crates Only (cot_ = 7)", "CrimCrateOnlyRare", 4, {
+			flat = true,
+			requires = "CrimCrateESP",
+		})
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 800, 5, {
+			suffix = " st",
+			step = 25,
+			fmt = function(v) return string.format("%d st", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimCrateESP == true)
+				end
+			end,
+		})
+		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 6, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
+		MakeHint(CESP, "hint_crim_crate", 7)
 	end
 
 	local function refreshWorld()

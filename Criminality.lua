@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.12
+-- Criminality.lua  v2.43.39
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -155,12 +155,17 @@ local function tickMelee(S)
 	end)
 end
 
--- ── SAFE / DEALER ESP ────────────────────────────────────────────────────────
--- ONE build pass per session. Per-frame: only reads cached .part.Position
--- and sets .Enabled — no allocations, no pcalls on happy path.
+-- ── SAFE / DEALER / CRATE ESP ────────────────────────────────────────────────
+-- Safes/dealers: one build pass. Crates: dynamic (SpawnedPiles).
+-- Per-frame: only reads cached .part.Position and sets .Enabled.
 
-local ESP = { safes={}, dealers={} }
+local ESP = { safes={}, dealers={}, crates={} }
 local espBuilt = { safes=false, dealers=false }
+local crateByModel = {}
+local crateScanAt = 0
+local crateFolderConn = nil
+local crateRemoveConn = nil
+local crateFolderWatch = nil
 
 -- Is the instance still alive? Check Parent without pcall.
 local function alive(inst)
@@ -242,12 +247,162 @@ local function clearESP(tbl)
 	table.clear(tbl)
 end
 
+local function destroyCrateEntry(model)
+	local e = crateByModel[model]
+	if not e then return end
+	crateByModel[model] = nil
+	if alive(e.h)  then e.h:Destroy()  end
+	if alive(e.bg) then e.bg:Destroy() end
+	for i, entry in ipairs(ESP.crates) do
+		if entry == e then
+			table.remove(ESP.crates, i)
+			break
+		end
+	end
+end
+
+local function clearCrateESP()
+	for model in pairs(crateByModel) do
+		destroyCrateEntry(model)
+	end
+	table.clear(ESP.crates)
+	table.clear(crateByModel)
+end
+
+local function isCrateModel(model)
+	if not model or not model:IsA("Model") then
+		return false
+	end
+	if model:GetAttribute("IsCrate") == true then
+		return true
+	end
+	-- Fallback: SpawnedPiles children are usually crates named C1
+	return model.Name == "C1"
+end
+
+local function isRareCrate(model)
+	local cot = model:GetAttribute("cot_")
+	return cot == 7 or cot == "7"
+end
+
+local colCrateNorm = Color3.fromRGB(255, 190, 60)
+local colCrateRare = Color3.fromRGB(255, 55, 55)
+
+local function addCrateESP(model, S)
+	if not isCrateModel(model) or crateByModel[model] then
+		return
+	end
+	local rare = isRareCrate(model)
+	if S.CrimCrateOnlyRare and not rare then
+		return
+	end
+	local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
+	local label = rare and "RARE CRATE" or "CRATE"
+	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
+	if not ok or not entry then
+		return
+	end
+	entry.rare = rare
+	crateByModel[model] = entry
+	table.insert(ESP.crates, entry)
+end
+
+local function getSpawnedPiles()
+	local filter = workspace:FindFirstChild("Filter")
+	if not filter then
+		return nil
+	end
+	return filter:FindFirstChild("SpawnedPiles")
+end
+
+local function syncCrateESP(S)
+	if not S.CrimCrateESP then
+		if #ESP.crates > 0 then
+			clearCrateESP()
+		end
+		return
+	end
+
+	local piles = getSpawnedPiles()
+	if not piles then
+		return
+	end
+
+	-- Drop dead / filtered-out crates
+	for i = #ESP.crates, 1, -1 do
+		local e = ESP.crates[i]
+		local model = e.model
+		local keep = alive(model) and isCrateModel(model)
+		if keep and S.CrimCrateOnlyRare and not isRareCrate(model) then
+			keep = false
+		end
+		if not keep then
+			destroyCrateEntry(model)
+		else
+			-- Refresh rarity label/color if attribute changed
+			local rare = isRareCrate(model)
+			if e.rare ~= rare then
+				e.rare = rare
+				local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
+				local label = rare and "RARE CRATE" or "CRATE"
+				if alive(e.h) then
+					e.h.FillColor = fill
+					e.h.OutlineColor = Color3.fromRGB(255, 255, 255)
+				end
+				if alive(e.lbl) then
+					e.lbl.Text = label
+				end
+			end
+		end
+	end
+
+	for _, model in ipairs(piles:GetChildren()) do
+		addCrateESP(model, S)
+	end
+end
+
+local function ensureCrateWatch(S)
+	local piles = getSpawnedPiles()
+	if piles then
+		if crateFolderWatch then
+			crateFolderWatch:Disconnect()
+			crateFolderWatch = nil
+		end
+		if not crateFolderConn then
+			crateFolderConn = piles.ChildAdded:Connect(function(ch)
+				if S.CrimCrateESP then
+					task.defer(addCrateESP, ch, S)
+				end
+			end)
+			crateRemoveConn = piles.ChildRemoved:Connect(function(ch)
+				destroyCrateEntry(ch)
+			end)
+		end
+		return
+	end
+
+	if crateFolderWatch then
+		return
+	end
+	crateFolderWatch = workspace.DescendantAdded:Connect(function(ch)
+		if ch.Name == "SpawnedPiles" and ch.Parent and ch.Parent.Name == "Filter" then
+			task.defer(function()
+				if S.CrimCrateESP then
+					syncCrateESP(S)
+					ensureCrateWatch(S)
+				end
+			end)
+		end
+	end)
+end
+
 -- Hot path: zero allocations, no pcall on happy path.
 local colOpen   = Color3.fromRGB(100,255,100)
 local colSafeD  = Color3.fromRGB(255,220,50)
 
 local function tickESP(S)
 	local maxDist = S.CrimESPMaxDist or 300
+	local crateDist = S.CrimCrateMaxDist or maxDist
 	local camPos  = workspace.CurrentCamera.CFrame.Position
 
 	-- Safes
@@ -280,6 +435,24 @@ local function tickESP(S)
 		local vis = false
 		if showDlr and alive(e.part) then
 			vis = (camPos - e.part.Position).Magnitude <= maxDist
+		end
+		if alive(e.h) then
+			if vis then
+				if not e.h.Enabled  then e.h.Enabled  = true end
+				if not e.bg.Enabled then e.bg.Enabled = true end
+			else
+				if e.h.Enabled  then e.h.Enabled  = false end
+				if e.bg.Enabled then e.bg.Enabled = false end
+			end
+		end
+	end
+
+	-- Crates
+	local showCrate = S.CrimCrateESP
+	for _, e in ipairs(ESP.crates) do
+		local vis = false
+		if showCrate and alive(e.part) then
+			vis = (camPos - e.part.Position).Magnitude <= crateDist
 		end
 		if alive(e.h) then
 			if vis then
@@ -325,6 +498,16 @@ local function startMaster(S)
 			pcall(buildDealerESP, S)
 		end
 
+		if S.CrimCrateESP then
+			pcall(ensureCrateWatch, S)
+			if crimFrame % 30 == 0 or tick() - crateScanAt > 1.2 then
+				crateScanAt = tick()
+				pcall(syncCrateESP, S)
+			end
+		elseif #ESP.crates > 0 then
+			pcall(clearCrateESP)
+		end
+
 		if (S.CrimSafeESP or S.CrimDealerESP) and not espInitTick then
 			espInitTick = true
 			task.spawn(function()
@@ -342,7 +525,7 @@ local function startMaster(S)
 			tickMelee(S)
 		end
 
-		if (S.CrimSafeESP or S.CrimDealerESP) and crimFrame % 2 == 0 then
+		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP) and crimFrame % 2 == 0 then
 			tickESP(S)
 		end
 	end))
@@ -350,6 +533,10 @@ end
 
 local function stopMaster()
 	if masterConn then masterConn:Disconnect(); masterConn=nil end
+	if crateFolderConn then crateFolderConn:Disconnect(); crateFolderConn=nil end
+	if crateRemoveConn then crateRemoveConn:Disconnect(); crateRemoveConn=nil end
+	if crateFolderWatch then crateFolderWatch:Disconnect(); crateFolderWatch=nil end
+	clearCrateESP()
 end
 
 -- ── INIT ─────────────────────────────────────────────────────────────────────
