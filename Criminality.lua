@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.66
+-- Criminality.lua  v2.43.67
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -623,6 +623,14 @@ local function getSpawnedTools()
 		return nil
 	end
 	return filter:FindFirstChild("SpawnedTools")
+end
+
+local function isInSpawnedTools(model)
+	local folder = getSpawnedTools()
+	if not folder or not model then
+		return false
+	end
+	return model:IsDescendantOf(folder)
 end
 
 local function iterSpawnedToolModels(folder)
