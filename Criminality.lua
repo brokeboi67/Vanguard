@@ -1177,7 +1177,7 @@ local function tickMoneyPickup(S)
 	end
 end
 
--- ── GUN MODS (no recoil + rapid fire) ────────────────────────────────────────
+-- ── NO RECOIL (weapon GC tables) ─────────────────────────────────────────────
 local featureRunning = {
 	noFall = false,
 	noSpike = false,
@@ -1187,54 +1187,8 @@ local featureRunning = {
 	fullBright = false,
 }
 local gunModConns = {}
-local weaponCache   = {}
-local weaponOrig    = {}
-local weaponFireKeys = {}
-local crimNotify
-
-local FIRE_KEY_HINTS = {
-	"FireDelay", "ShotDelay", "BulletDelay", "ShootDelay", "ShootingCooldown",
-	"FireCooldown", "ShotCooldown", "Cooldown", "Delay",
-	"FireRate", "Firerate", "RPM", "Rate",
-}
-local FIRE_KEY_EXCLUDE = { "reload", "equip", "recoil", "spread", "angle" }
-
-local function isFireRateKey(name)
-	local lower = string.lower(tostring(name))
-	if lower == "equiptime" then
-		return false
-	end
-	for _, ex in ipairs(FIRE_KEY_EXCLUDE) do
-		if string.find(lower, ex, 1, true) then
-			return false
-		end
-	end
-	for _, hint in ipairs(FIRE_KEY_HINTS) do
-		if lower == string.lower(hint) then
-			return true
-		end
-	end
-	return string.find(lower, "fire", 1, true) ~= nil
-		or string.find(lower, "cooldown", 1, true) ~= nil
-		or string.find(lower, "delay", 1, true) ~= nil
-		or string.find(lower, "rpm", 1, true) ~= nil
-end
-
-local function collectFireKeys(tbl)
-	local keys = {}
-	for _, k in ipairs(FIRE_KEY_HINTS) do
-		local val = rawget(tbl, k)
-		if type(val) == "number" and val > 0 then
-			keys[k] = true
-		end
-	end
-	for k, val in pairs(tbl) do
-		if type(k) == "string" and type(val) == "number" and val > 0 and not keys[k] and isFireRateKey(k) then
-			keys[k] = true
-		end
-	end
-	return keys
-end
+local weaponCache = {}
+local weaponOrig  = {}
 
 local function isWeaponTable(v)
 	return type(v) == "table" and rawget(v, "EquipTime") ~= nil
@@ -1254,69 +1208,23 @@ local function cacheWeapons()
 					AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
 					AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
 					Spread = v.Spread,
-					fire = {},
 				}
 			end
-			local fireKeys = collectFireKeys(v)
-			weaponFireKeys[v] = fireKeys
-			for k in pairs(fireKeys) do
-				if weaponOrig[v].fire[k] == nil then
-					weaponOrig[v].fire[k] = rawget(v, k)
-				end
-			end
 		end
 	end
 end
-
-local function fireValueForKey(key, delayMs)
-	local delaySec = math.max(0.001, tonumber(delayMs) or 30) / 1000
-	local lower = string.lower(tostring(key))
-	if lower == "rpm" then
-		return math.clamp(60 / delaySec, 60, 1200)
-	end
-	if lower == "firerate" or lower == "fire rate" or lower == "rate" then
-		return math.clamp(1 / delaySec, 1, 100)
-	end
-	return delaySec
-end
-
-local gunModFireNotified = false
 
 local function applyGunMods(S)
-	local fireDelayMs = math.max(1, tonumber(S.CrimRapidFireDelay) or 30)
-	for _, weapon in ipairs(weaponCache) do
-		if S.CrimNoRecoil then
-			weapon.Recoil = 0
-			weapon.CameraRecoilingEnabled = false
-			weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
-			weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
-			weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
-			weapon.Spread = 0
-		end
-		if S.CrimRapidFire then
-			local keys = weaponFireKeys[weapon]
-			if keys then
-				for k in pairs(keys) do
-					weapon[k] = fireValueForKey(k, fireDelayMs)
-				end
-			end
-		end
+	if not S.CrimNoRecoil then
+		return
 	end
-	if S.CrimRapidFire and not gunModFireNotified then
-		local n = 0
-		for _, keys in pairs(weaponFireKeys) do
-			if keys and next(keys) then
-				n = n + 1
-			end
-		end
-		if n > 0 then
-			gunModFireNotified = true
-			crimNotify(
-				"Rapid Fire",
-				n .. " weapon table(s) patched. Raise Fire Delay if kicked.",
-				6
-			)
-		end
+	for _, weapon in ipairs(weaponCache) do
+		weapon.Recoil = 0
+		weapon.CameraRecoilingEnabled = false
+		weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
+		weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
+		weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
+		weapon.Spread = 0
 	end
 end
 
@@ -1329,11 +1237,6 @@ local function resetGunMods()
 			weapon.AngleY_Min = values.AngleY_Min; weapon.AngleY_Max = values.AngleY_Max
 			weapon.AngleZ_Min = values.AngleZ_Min; weapon.AngleZ_Max = values.AngleZ_Max
 			weapon.Spread = values.Spread
-			if type(values.fire) == "table" then
-				for k, val in pairs(values.fire) do
-					weapon[k] = val
-				end
-			end
 		end
 	end
 end
@@ -1366,7 +1269,6 @@ local function onGunModCharacter(character)
 end
 
 local function startGunMods(S)
-	gunModFireNotified = false
 	cacheWeapons()
 	applyGunMods(S)
 	local lp = getLP()
@@ -1381,7 +1283,7 @@ local function stopGunMods()
 end
 
 local function gunModsWant(S)
-	return S.CrimNoRecoil == true or S.CrimRapidFire == true
+	return S.CrimNoRecoil == true
 end
 
 local function syncGunMods(S)

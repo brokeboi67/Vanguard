@@ -2272,27 +2272,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d st", v) end,
 		})
 		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3)
-		MakeTog(CCombat, "Rapid Fire", "CrimRapidFire", 4, {
-			onChange = function(on)
-				local reg = sliderRegistry.CrimRapidFireDelay
-				if reg and reg.setEnabled then
-					reg.setEnabled(on)
-				end
-			end,
-		})
-		MakeSlider(CCombat, "Fire Delay", "CrimRapidFireDelay", 1, 100, 5, {
-			suffix = " ms",
-			step = 1,
-			requires = "CrimRapidFire",
-			fmt = function(v) return string.format("%d ms", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimRapidFire == true)
-				end
-			end,
-		})
-		MakeHint(CCombat, "hint_crim_gunmods", 6)
-		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 7, {
+		MakeHint(CCombat, "hint_crim_norecoil", 4)
+		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 5, {
 			onChange = function(on)
 				local reg = sliderRegistry.CrimAimPredictionLead
 				if reg and reg.setEnabled then
@@ -2300,7 +2281,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 8, {
+		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 6, {
 			suffix = "",
 			step = 1,
 			requires = "CrimAimPrediction",
@@ -2311,7 +2292,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_prediction", 9)
+		MakeHint(CCombat, "hint_crim_prediction", 7)
 
 		local CSurv = MakeCard(TCrim, "SURVIVAL", "card_crim_surv_desc", 2, { accent = CRIM_SURV })
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1)
