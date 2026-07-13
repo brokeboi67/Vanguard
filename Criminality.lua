@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.67
+-- Criminality.lua  v2.43.68
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -211,7 +211,7 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal)
 	h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
 	h.Adornee             = model
 	h.Enabled             = false
-	h.Parent              = model
+	h.Parent              = getGui()
 
 	local bg  = Instance.new("BillboardGui")
 	bg.Size        = UDim2.new(0, 64, 0, 16)
@@ -733,7 +733,7 @@ local function syncGunESP(S)
 	for i = #ESP.guns, 1, -1 do
 		local e = ESP.guns[i]
 		local model = e.model
-		local keep = alive(model) and isSpawnedToolModel(model)
+		local keep = alive(model) and isSpawnedToolModel(model) and isInSpawnedTools(model)
 		if keep then
 			local label, kind = identifySpawnedTool(model)
 			keep = shouldShowGun(S, kind)
@@ -923,7 +923,7 @@ local function tickESP(S)
 	local showGun = S.CrimGunESP
 	for _, e in ipairs(ESP.guns) do
 		local vis = false
-		if showGun and alive(e.model) then
+		if showGun and alive(e.model) and isInSpawnedTools(e.model) then
 			if not alive(e.part) then
 				e.part = getModelPart(e.model)
 			end
@@ -1450,6 +1450,7 @@ local function tryFastPickup(model)
 	end)
 	if ok then
 		lastFastPickupAt = now
+		destroyGunEntry(model)
 		hideFastPickupPrompt()
 	end
 	return ok
