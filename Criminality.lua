@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.73
+-- Criminality.lua  v2.43.74
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -237,7 +237,18 @@ local function getCrateVisualPart(model)
 			end
 		end
 	end
-	return best
+	if not best then
+		for _, ch in ipairs(model:GetChildren()) do
+			if ch:IsA("BasePart") then
+				local vol = ch.Size.X * ch.Size.Y * ch.Size.Z
+				if vol < bestVol then
+					bestVol = vol
+					best = ch
+				end
+			end
+		end
+	end
+	return best or getModelPart(model)
 end
 
 local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highlightAdornee)
@@ -366,17 +377,8 @@ local function isCrateModel(model)
 	if not model or not model:IsA("Model") then
 		return false
 	end
-	if not isInSpawnedPiles(model) then
-		return false
-	end
-	if model:GetAttribute("IsCrate") == true then
-		return true
-	end
-	-- SpawnedPiles crates are C1 models with an Id attribute for PIC_PU.
-	if model.Name ~= "C1" or model:GetAttribute("Id") == nil then
-		return false
-	end
-	return getCrateVisualPart(model) ~= nil
+	-- Workspace.Filter.SpawnedPiles → each child named C1 is a crate.
+	return model.Name == "C1" and isInSpawnedPiles(model)
 end
 
 local function getCrateRarityValue(model)
@@ -389,17 +391,7 @@ end
 
 local function isRareCrate(model)
 	local cot = getCrateRarityValue(model)
-	if cot == 7 or cot == "7" then
-		return true
-	end
-	local msh = getCrateMeshPart(model)
-	if msh and msh:IsA("MeshPart") then
-		local tid = tostring(msh.TextureID)
-		if tid:find("11157915894", 1, true) then
-			return true
-		end
-	end
-	return false
+	return cot == 7 or cot == "7"
 end
 
 local colCrateNorm = Color3.fromRGB(255, 190, 60)
