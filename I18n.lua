@@ -311,7 +311,7 @@ local STR = {
 		card_sauto_desc = "Config loads when the script starts.",
 		card_ssession_desc = "Script session management.",
 		hint_vfilter = "Render Only Visible = line-of-sight only. Lower Opacity + slider = fade strength when visible. Ignore Self = your body does not block LOS.",
-		hint_crim_crate = "Crate ESP — szybki scan. Rare = col_/cot_==7 lub TextureID 11157915894.",
+		hint_crim_crate = "Crate ESP — fast scan. Rare = col_/cot_==7 or TextureID 11157915894.",
 		hint_crim_gun = "SpawnedTools — child fingerprint (Chain=CHAINSAW, MagPart=PISTOL, Crowbar…).",
 		hint_crim_pickup = "PIC_PU only within Pickup Range (~3.5 st). Search Range finds crates farther; Auto Walk moves you in.",
 		hint_crim_money = "SpawnedBread + CZDPZUS. Picks up cash in Money Pickup Distance. No autofarm.",
