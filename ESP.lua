@@ -1010,9 +1010,10 @@ function ESP.Init(S, ParentGUI, TF, Util)
 
 		for key, ch in pairs(Cache) do
 			if not active[key] then
-				hideAll(ch)
-				if isBotKey(key) then
+				if typeof(key) == "Instance" and (key:IsA("Player") or isBotKey(key)) then
 					destroyCache(key)
+				else
+					hideAll(ch)
 				end
 			end
 		end

@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.72
+-- Criminality.lua  v2.43.73
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -199,6 +199,47 @@ local function getModelPart(model)
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
+local CRATE_MAX_AXIS = 10
+
+local function isReasonableCratePart(part)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	local sz = part.Size
+	return sz.X <= CRATE_MAX_AXIS and sz.Y <= CRATE_MAX_AXIS and sz.Z <= CRATE_MAX_AXIS
+end
+
+local function getCrateVisualPart(model)
+	if not model then
+		return nil
+	end
+	local pp = model.PrimaryPart
+	if isReasonableCratePart(pp) then
+		return pp
+	end
+	local best, bestVol = nil, math.huge
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("BasePart") and isReasonableCratePart(ch) then
+			local vol = ch.Size.X * ch.Size.Y * ch.Size.Z
+			if vol < bestVol then
+				bestVol = vol
+				best = ch
+			end
+		elseif ch:IsA("Model") then
+			for _, sub in ipairs(ch:GetChildren()) do
+				if sub:IsA("BasePart") and isReasonableCratePart(sub) then
+					local vol = sub.Size.X * sub.Size.Y * sub.Size.Z
+					if vol < bestVol then
+						bestVol = vol
+						best = sub
+					end
+				end
+			end
+		end
+	end
+	return best
+end
+
 local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highlightAdornee)
 	local part = getModelPart(model)
 	if not part then return nil end
@@ -332,7 +373,10 @@ local function isCrateModel(model)
 		return true
 	end
 	-- SpawnedPiles crates are C1 models with an Id attribute for PIC_PU.
-	return model.Name == "C1" and model:GetAttribute("Id") ~= nil
+	if model.Name ~= "C1" or model:GetAttribute("Id") == nil then
+		return false
+	end
+	return getCrateVisualPart(model) ~= nil
 end
 
 local function getCrateRarityValue(model)
@@ -340,16 +384,7 @@ local function getCrateRarityValue(model)
 end
 
 local function getCrateMeshPart(model)
-	local part = getModelPart(model)
-	if part and part:IsA("MeshPart") then
-		return part
-	end
-	for _, ch in ipairs(model:GetChildren()) do
-		if ch:IsA("MeshPart") then
-			return ch
-		end
-	end
-	return part
+	return getCrateVisualPart(model)
 end
 
 local function isRareCrate(model)
@@ -437,7 +472,7 @@ local function addCrateESP(model, S, withSpawnFx)
 	end
 	local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
 	local label = rare and "RARE CRATE" or "CRATE"
-	local part = getModelPart(model)
+	local part = getCrateVisualPart(model)
 	if not part then
 		return false
 	end
@@ -962,8 +997,8 @@ local function tickESP(S)
 	for _, e in ipairs(ESP.crates) do
 		local vis = false
 		if showCrate and alive(e.model) and isInSpawnedPiles(e.model) then
-			if not alive(e.part) then
-				e.part = getModelPart(e.model)
+			if not alive(e.part) or not isReasonableCratePart(e.part) then
+				e.part = getCrateVisualPart(e.model)
 			end
 			if alive(e.part) then
 				if alive(e.bg) and e.bg.Adornee ~= e.part then
@@ -1045,7 +1080,7 @@ local function getCrateId(model)
 end
 
 local function getCratePart(model)
-	return getModelPart(model)
+	return getCrateVisualPart(model)
 end
 
 local function getCrateDist(model)
