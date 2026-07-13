@@ -1270,9 +1270,6 @@ local function tickMoneyPickup(S)
 	end
 end
 
-	end
-end
-
 -- ── FAST PICKUP (PIC_TLO — guns/melee on ground) ─────────────────────────────
 -- Cobalt dump uses getnilinstances + WeaponHandle; we resolve dynamically.
 
