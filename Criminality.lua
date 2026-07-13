@@ -1178,10 +1178,19 @@ local function tickMoneyPickup(S)
 end
 
 -- ── GUN MODS (no recoil + fast reload) ───────────────────────────────────────
+local featureRunning = {
+	noFall = false,
+	noSpike = false,
+	gunMods = false,
+	staffDetect = false,
+	noFailLockpick = false,
+	fullBright = false,
+}
 local gunModConns = {}
 local weaponCache   = {}
 local weaponOrig    = {}
 local weaponReloadKeys = {}
+local crimNotify
 
 local RELOAD_KEY_HINTS = {
 	"ReloadTime", "Reload", "ReloadSpeed", "TimeToReload", "ReloadDelay",
@@ -1416,7 +1425,7 @@ local STAFF_USERS = {
 	608073286,
 }
 
-local function crimNotify(title, text, duration)
+crimNotify = function(title, text, duration)
 	pcall(function()
 		game:GetService("StarterGui"):SetCore("SendNotification", {
 			Title = title or "Vanguard",
@@ -1779,14 +1788,6 @@ end
 
 local masterConn = nil
 local crimFrame  = 0
-local featureRunning = {
-	noFall = false,
-	noSpike = false,
-	gunMods = false,
-	staffDetect = false,
-	noFailLockpick = false,
-	fullBright = false,
-}
 
 local function crimFlag(v)
 	return v == true
