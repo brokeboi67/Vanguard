@@ -2199,7 +2199,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 1, {
 			flat = true,
 			onChange = function(on)
-				for _, key in ipairs({ "CrimCratePickupDist", "CrimCratePickupDelay" }) do
+				for _, key in ipairs({ "CrimCratePickupDist", "CrimCratePickupSearch", "CrimCratePickupDelay" }) do
 					local reg = sliderRegistry[key]
 					if reg and reg.setEnabled then
 						reg.setEnabled(on)
@@ -2215,9 +2215,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			flat = true,
 			requires = "CrimCratePickup",
 		})
-		MakeSlider(CCrate, "Pickup Distance", "CrimCratePickupDist", 5, 60, 4, {
+		MakeSlider(CCrate, "Pickup Range", "CrimCratePickupDist", 2, 8, 4, {
 			suffix = " st",
-			step = 1,
+			step = 0.5,
+			fmt = function(v) return string.format("%.1f st", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimCratePickup == true)
+				end
+			end,
+		})
+		MakeSlider(CCrate, "Search Range", "CrimCratePickupSearch", 10, 80, 5, {
+			suffix = " st",
+			step = 5,
 			fmt = function(v) return string.format("%d st", v) end,
 			onRowCreated = function(_, __, setEnabled)
 				if setEnabled then
@@ -2225,7 +2235,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCrate, "Pickup Delay", "CrimCratePickupDelay", 80, 800, 5, {
+		MakeSlider(CCrate, "Pickup Delay", "CrimCratePickupDelay", 80, 800, 6, {
 			suffix = "ms",
 			step = 20,
 			fmt = function(v) return string.format("%d ms", v) end,
@@ -2235,8 +2245,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCrate, "hint_crim_pickup", 6)
-		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 7, {
+		MakeTog(CCrate, "Auto Walk To Crate", "CrimCrateAutoWalk", 7, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
+		MakeHint(CCrate, "hint_crim_pickup", 8)
+		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 9, {
 			flat = true,
 			requires = "CrimCratePickup",
 		})

@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.46
+-- Criminality.lua  v2.43.47
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -644,7 +644,48 @@ local function startPickupFx(model, rare)
 	end)
 end
 
+local function getCrateFireDist(S)
+	return math.clamp(tonumber(S.CrimCratePickupDist) or 3.5, 2, 8)
+end
+
+local function getCrateSearchDist(S)
+	local fire = getCrateFireDist(S)
+	local search = tonumber(S.CrimCratePickupSearch) or 45
+	return math.max(fire + 2, math.clamp(search, 8, 80))
+end
+
+local function walkTowardCrate(S, model)
+	if S.CrimCrateAutoWalk == false then
+		return
+	end
+	local char = getChar()
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local hrp = getHRP()
+	local part = getCratePart(model)
+	if not hum or not hrp or not part or hum.Health <= 0 then
+		return
+	end
+
+	local target = part.Position
+	local myPos = hrp.Position
+	local flat = Vector3.new(target.X - myPos.X, 0, target.Z - myPos.Z)
+	local flatDist = flat.Magnitude
+	local stopAt = getCrateFireDist(S) * 0.9
+	if flatDist <= stopAt then
+		return
+	end
+
+	local goal = target - flat.Unit * stopAt
+	pcall(function()
+		hum:MoveTo(goal)
+	end)
+end
+
 local function tryPickupCrate(S, model)
+	local dist = getCrateDist(model)
+	if dist > getCrateFireDist(S) then
+		return false
+	end
 	local id = getCrateId(model)
 	if not id then
 		return false
@@ -687,13 +728,14 @@ local function tickCratePickup(S)
 		return
 	end
 
-	local maxDist = math.max(5, tonumber(S.CrimCratePickupDist) or 25)
+	local searchDist = getCrateSearchDist(S)
+	local fireDist = getCrateFireDist(S)
 	local best, bestScore = nil, math.huge
 
 	for _, model in ipairs(piles:GetChildren()) do
 		if alive(model) and shouldPickupCrate(S, model) then
 			local dist = getCrateDist(model)
-			if dist <= maxDist then
+			if dist <= searchDist then
 				local rare = isRareCrate(model)
 				local score = dist + (rare and 0 or 1000)
 				if score < bestScore then
@@ -705,7 +747,15 @@ local function tickCratePickup(S)
 	end
 
 	if best then
-		tryPickupCrate(S, best)
+		local dist = getCrateDist(best)
+		if dist > fireDist then
+			walkTowardCrate(S, best)
+			if S.CrimCratePickupFx ~= false then
+				startPickupFx(best, isRareCrate(best))
+			end
+		else
+			tryPickupCrate(S, best)
+		end
 	end
 
 	for id, t in pairs(pickupCooldownIds) do
