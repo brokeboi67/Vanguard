@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.57
+-- Criminality.lua  v2.43.63
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -488,15 +488,17 @@ local function ensureCrateWatch(S)
 	if crateFolderWatch then
 		return
 	end
-	crateFolderWatch = workspace.DescendantAdded:Connect(function(ch)
-		if ch.Name == "SpawnedPiles" and ch.Parent and ch.Parent.Name == "Filter" then
-			task.defer(function()
-				if S.CrimCrateESP then
-					syncCrateESP(S)
-					ensureCrateWatch(S)
-				end
-			end)
+	crateFolderWatch = workspace.ChildAdded:Connect(function(ch)
+		if ch.Name ~= "Filter" then
+			return
 		end
+		task.defer(function()
+			local curS = _G.__VG_S
+			if curS and curS.CrimCrateESP then
+				syncCrateESP(curS)
+				ensureCrateWatch(curS)
+			end
+		end)
 	end)
 end
 
@@ -516,7 +518,19 @@ local function hasDeepChild(model, name)
 	return model and model:FindFirstChild(name, true) ~= nil
 end
 
+local toolIdCache = setmetatable({}, { __mode = "k" })
+
+local function rememberToolId(model, label, kind)
+	local entry = { label, kind }
+	toolIdCache[model] = entry
+	return label, kind
+end
+
 local function identifySpawnedTool(model)
+	local cached = toolIdCache[model]
+	if cached then
+		return cached[1], cached[2]
+	end
 	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName" }) do
 		local val = model:GetAttribute(key)
 		if val ~= nil and tostring(val) ~= "" then
@@ -529,25 +543,25 @@ local function identifySpawnedTool(model)
 			elseif hasDeepChild(model, "WeaponHandle") or hasDeepChild(model, "ClubMesh") or hasDeepChild(model, "Crowbar") then
 				kind = "melee"
 			end
-			return label, kind
+			return rememberToolId(model, label, kind)
 		end
 	end
 
-	if hasDeepChild(model, "Crowbar") then return "CROWBAR", "melee" end
-	if hasDeepChild(model, "ClubMesh") then return "CLUB", "melee" end
-	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then return "WRENCH", "melee" end
-	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") then return "GRENADE", "grenade" end
+	if hasDeepChild(model, "Crowbar") then return rememberToolId(model, "CROWBAR", "melee") end
+	if hasDeepChild(model, "ClubMesh") then return rememberToolId(model, "CLUB", "melee") end
+	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then return rememberToolId(model, "WRENCH", "melee") end
+	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") then return rememberToolId(model, "GRENADE", "grenade") end
 	if hasDeepChild(model, "Chain1") or (hasDeepChild(model, "Blade") and hasDeepChild(model, "Cord")) then
-		return "CHAINSAW", "melee"
+		return rememberToolId(model, "CHAINSAW", "melee")
 	end
-	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then return "RIFLE", "gun" end
-	if hasDeepChild(model, "Barrel") and hasDeepChild(model, "MagPart") then return "PISTOL", "gun" end
-	if hasDeepChild(model, "MagPart") and hasDeepChild(model, "Bullets") then return "GUN", "gun" end
-	if hasDeepChild(model, "MagPart") then return "GUN", "gun" end
-	if hasDeepChild(model, "WeaponHandle") then return "WEAPON", "melee" end
-	if hasDeepChild(model, "Handle") and hasDeepChild(model, "Pin") then return "GRENADE", "grenade" end
+	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then return rememberToolId(model, "RIFLE", "gun") end
+	if hasDeepChild(model, "Barrel") and hasDeepChild(model, "MagPart") then return rememberToolId(model, "PISTOL", "gun") end
+	if hasDeepChild(model, "MagPart") and hasDeepChild(model, "Bullets") then return rememberToolId(model, "GUN", "gun") end
+	if hasDeepChild(model, "MagPart") then return rememberToolId(model, "GUN", "gun") end
+	if hasDeepChild(model, "WeaponHandle") then return rememberToolId(model, "WEAPON", "melee") end
+	if hasDeepChild(model, "Handle") and hasDeepChild(model, "Pin") then return rememberToolId(model, "GRENADE", "grenade") end
 
-	return "ITEM", "other"
+	return rememberToolId(model, "ITEM", "other")
 end
 
 local function kindColor(kind, S)
@@ -592,6 +606,7 @@ local function destroyGunEntry(model)
 	local e = gunByModel[model]
 	if not e then return end
 	gunByModel[model] = nil
+	toolIdCache[model] = nil
 	if alive(e.h)  then e.h:Destroy()  end
 	if alive(e.bg) then e.bg:Destroy() end
 	for i, entry in ipairs(ESP.guns) do
@@ -727,16 +742,17 @@ local function ensureGunWatch(S)
 	if gunFolderWatch then
 		return
 	end
-	gunFolderWatch = workspace.DescendantAdded:Connect(function(ch)
-		if ch.Name == "SpawnedTools" and ch.Parent and ch.Parent.Name == "Filter" then
-			task.defer(function()
-				local curS = _G.__VG_S
-				if curS and curS.CrimGunESP then
-					syncGunESP(curS)
-					ensureGunWatch(curS)
-				end
-			end)
+	gunFolderWatch = workspace.ChildAdded:Connect(function(ch)
+		if ch.Name ~= "Filter" then
+			return
 		end
+		task.defer(function()
+			local curS = _G.__VG_S
+			if curS and curS.CrimGunESP then
+				syncGunESP(curS)
+				ensureGunWatch(curS)
+			end
+		end)
 	end)
 end
 
@@ -1189,29 +1205,52 @@ local featureRunning = {
 local gunModConns = {}
 local weaponCache = {}
 local weaponOrig  = {}
+local lastGunModApplyAt = 0
+local GUNMOD_REAPPLY_INTERVAL = 8
 
 local function isWeaponTable(v)
 	return type(v) == "table" and rawget(v, "EquipTime") ~= nil
 end
 
-local function cacheWeapons()
-	if typeof(getgc) ~= "function" then return end
-	weaponCache = {}
-	for _, v in getgc(true) do
-		if isWeaponTable(v) then
-			table.insert(weaponCache, v)
-			if not weaponOrig[v] then
-				weaponOrig[v] = {
-					Recoil = v.Recoil,
-					CameraRecoilingEnabled = v.CameraRecoilingEnabled,
-					AngleX_Min = v.AngleX_Min, AngleX_Max = v.AngleX_Max,
-					AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
-					AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
-					Spread = v.Spread,
-				}
-			end
+local function pruneWeaponOrig(active)
+	for weapon in pairs(weaponOrig) do
+		if not active[weapon] then
+			weaponOrig[weapon] = nil
 		end
 	end
+end
+
+local function cacheWeapons(deep)
+	if typeof(getgc) ~= "function" then return end
+	local active = {}
+	local found = {}
+	local scans = deep and { true } or { false, true }
+	for _, useDeep in ipairs(scans) do
+		local ok, gc = pcall(getgc, useDeep)
+		if ok and type(gc) == "table" then
+			for _, v in ipairs(gc) do
+				if isWeaponTable(v) and not active[v] then
+					active[v] = true
+					table.insert(found, v)
+					if not weaponOrig[v] then
+						weaponOrig[v] = {
+							Recoil = v.Recoil,
+							CameraRecoilingEnabled = v.CameraRecoilingEnabled,
+							AngleX_Min = v.AngleX_Min, AngleX_Max = v.AngleX_Max,
+							AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
+							AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
+							Spread = v.Spread,
+						}
+					end
+				end
+			end
+		end
+		if #found > 0 and not useDeep then
+			break
+		end
+	end
+	weaponCache = found
+	pruneWeaponOrig(active)
 end
 
 local function applyGunMods(S)
@@ -1239,13 +1278,17 @@ local function resetGunMods()
 			weapon.Spread = values.Spread
 		end
 	end
+	weaponCache = {}
+	table.clear(weaponOrig)
+	lastGunModApplyAt = 0
 end
 
 local function onGunModWeapon(tool)
 	task.wait(0.1)
-	cacheWeapons()
+	cacheWeapons(true)
 	if _G.__VG_S then
 		applyGunMods(_G.__VG_S)
+		lastGunModApplyAt = tick()
 	end
 end
 
@@ -1260,17 +1303,19 @@ local function onGunModCharacter(character)
 	if humanoid then
 		table.insert(gunModConns, humanoid.Died:Connect(function()
 			task.wait(1.5)
-			cacheWeapons()
+			cacheWeapons(true)
 			if _G.__VG_S then
 				applyGunMods(_G.__VG_S)
+				lastGunModApplyAt = tick()
 			end
 		end))
 	end
 end
 
 local function startGunMods(S)
-	cacheWeapons()
+	cacheWeapons(true)
 	applyGunMods(S)
+	lastGunModApplyAt = tick()
 	local lp = getLP()
 	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
 	if lp.Character then onGunModCharacter(lp.Character) end
@@ -1289,9 +1334,6 @@ end
 local function syncGunMods(S)
 	local want = gunModsWant(S)
 	if featureRunning.gunMods == want then
-		if want then
-			applyGunMods(S)
-		end
 		return
 	end
 	featureRunning.gunMods = want
@@ -1774,13 +1816,16 @@ local function startMaster(S)
 			setupCrimStaminaHook()
 		end
 		crimStaminaActive = crimFlag(S.CrimInfStamina)
-		if crimStaminaActive then
+		if crimStaminaActive and crimFrame % 8 == 0 then
 			refillCrimStamina()
 		end
 
-		if featureRunning.gunMods and crimFrame % 45 == 0 then
-			cacheWeapons()
-			applyGunMods(S)
+		if featureRunning.gunMods and S.CrimNoRecoil then
+			local now = tick()
+			if now - lastGunModApplyAt >= GUNMOD_REAPPLY_INTERVAL then
+				lastGunModApplyAt = now
+				applyGunMods(S)
+			end
 		end
 
 		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then
@@ -1795,7 +1840,7 @@ local function startMaster(S)
 
 		if S.CrimCrateESP then
 			pcall(ensureCrateWatch, S)
-			if crimFrame % 6 == 0 or tick() - crateScanAt > 0.3 then
+			if crimFrame % 30 == 0 or tick() - crateScanAt > 1.2 then
 				crateScanAt = tick()
 				pcall(syncCrateESP, S)
 			end
@@ -1805,7 +1850,7 @@ local function startMaster(S)
 
 		if S.CrimGunESP then
 			pcall(ensureGunWatch, S)
-			if crimFrame % 6 == 0 or tick() - gunScanAt > 0.3 then
+			if crimFrame % 30 == 0 or tick() - gunScanAt > 1.2 then
 				gunScanAt = tick()
 				pcall(syncGunESP, S)
 			end
@@ -1839,7 +1884,7 @@ local function startMaster(S)
 		end
 
 		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP)
-			and (S.CrimCrateESP or S.CrimGunESP or crimFrame % 2 == 0) then
+			and crimFrame % 3 == 0 then
 			tickESP(S)
 		end
 	end))
@@ -1862,6 +1907,7 @@ local function stopMaster()
 	lastDoorTick = 0
 	clearCrateESP()
 	clearGunESP()
+	table.clear(toolIdCache)
 end
 
 -- ── INIT ─────────────────────────────────────────────────────────────────────
