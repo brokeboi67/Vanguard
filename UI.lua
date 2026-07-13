@@ -2338,8 +2338,31 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 7, { requires = "CrimCratePickup" })
 		MakeHint(CCrate, "hint_crim_pickup", 8)
-		MakeSubHeader(CCrate, nil, 9, { labelKey = "crim_sub_pickup_money", accent = Color3.fromRGB(255, 220, 120) })
-		MakeTog(CCrate, "Auto Pickup Money", "CrimMoneyPickup", 10, {
+		MakeSubHeader(CCrate, nil, 9, { labelKey = "crim_sub_pickup_guns", accent = Color3.fromRGB(120, 220, 255) })
+		MakeTog(CCrate, "Fast Pickup", "CrimFastPickup", 10, {
+			onChange = function(on)
+				local reg = sliderRegistry.CrimFastPickupRange
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+			end,
+		})
+		MakeTog(CCrate, "Pickup Guns", "CrimFastPickupGuns", 11, { requires = "CrimFastPickup" })
+		MakeTog(CCrate, "Pickup Melee", "CrimFastPickupMelee", 12, { requires = "CrimFastPickup" })
+		MakeSlider(CCrate, "Pickup Range", "CrimFastPickupRange", 2, 12, 13, {
+			suffix = " st",
+			step = 0.5,
+			requires = "CrimFastPickup",
+			fmt = function(v) return string.format("%.1f st", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimFastPickup == true)
+				end
+			end,
+		})
+		MakeHint(CCrate, "hint_crim_fastpickup", 14)
+		MakeSubHeader(CCrate, nil, 15, { labelKey = "crim_sub_pickup_money", accent = Color3.fromRGB(255, 220, 120) })
+		MakeTog(CCrate, "Auto Pickup Money", "CrimMoneyPickup", 16, {
 			onChange = function(on)
 				for _, key in ipairs({ "CrimMoneyPickupDist", "CrimMoneyPickupDelay" }) do
 					local reg = sliderRegistry[key]
@@ -2349,19 +2372,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCrate, "Money Pickup Distance", "CrimMoneyPickupDist", 2, 25, 11, {
+		MakeSlider(CCrate, "Money Pickup Distance", "CrimMoneyPickupDist", 2, 25, 17, {
 			suffix = " st",
 			step = 1,
 			requires = "CrimMoneyPickup",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSlider(CCrate, "Money Pickup Delay", "CrimMoneyPickupDelay", 500, 2500, 12, {
+		MakeSlider(CCrate, "Money Pickup Delay", "CrimMoneyPickupDelay", 500, 2500, 18, {
 			suffix = "ms",
 			step = 100,
 			requires = "CrimMoneyPickup",
 			fmt = function(v) return string.format("%d ms", v) end,
 		})
-		MakeHint(CCrate, "hint_crim_money", 13)
+		MakeHint(CCrate, "hint_crim_money", 19)
 
 		local CESP = MakeCard(TCrim, "OBJECT ESP", "card_crim_esp_desc", 4, { accent = CRIM_ESP })
 		MakeSubHeader(CESP, nil, 1, { labelKey = "crim_sub_world", accent = Color3.fromRGB(255, 220, 90) })

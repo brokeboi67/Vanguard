@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.65
+-- Criminality.lua  v2.43.66
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -22,6 +22,7 @@ local function getHum()  local c=getChar(); return c and c:FindFirstChildOfClass
 local function getHRP()  local c=getChar(); return c and c:FindFirstChild("HumanoidRootPart"),c end
 
 local VIM; pcall(function() VIM = game:GetService("VirtualInputManager") end)
+local UIS; pcall(function() UIS = game:GetService("UserInputService") end)
 
 -- ── NO FALL DAMAGE ───────────────────────────────────────────────────────────
 local noFallConns = {}
@@ -1269,6 +1270,235 @@ local function tickMoneyPickup(S)
 	end
 end
 
+	end
+end
+
+-- ── FAST PICKUP (PIC_TLO — guns/melee on ground) ─────────────────────────────
+-- Cobalt dump uses getnilinstances + WeaponHandle; we resolve dynamically.
+
+local picTloRemote = nil
+local fastPickupPromptBg = nil
+local fastPickupTarget = nil
+local lastFastPickupAt = 0
+local fastPickupInputConn = nil
+
+local function getPicTloRemote()
+	if picTloRemote and picTloRemote.Parent then
+		return picTloRemote
+	end
+	local events = RepSt:FindFirstChild("Events")
+	if not events then
+		return nil
+	end
+	local ev = events:FindFirstChild("PIC_TLO")
+	if ev and ev:IsA("RemoteEvent") then
+		picTloRemote = ev
+		return ev
+	end
+	return nil
+end
+
+local function resolvePickupHandle(model)
+	if not model then
+		return nil
+	end
+	local wh = model:FindFirstChild("WeaponHandle", true)
+	if wh and wh:IsA("BasePart") then
+		return wh
+	end
+	local handle = model:FindFirstChild("Handle", true)
+	if handle and handle:IsA("BasePart") then
+		return handle
+	end
+	if typeof(getnilinstances) == "function" then
+		local anchor = getModelPart(model)
+		if anchor then
+			local pos = anchor.Position
+			local best, bestDist = nil, 10
+			for _, obj in ipairs(getnilinstances()) do
+				if obj.Name == "WeaponHandle" and obj:IsA("BasePart") then
+					local d = (obj.Position - pos).Magnitude
+					if d < bestDist then
+						bestDist = d
+						best = obj
+					end
+				end
+			end
+			return best
+		end
+	end
+	return nil
+end
+
+local function getToolPickupDist(model)
+	local hrp = getHRP()
+	local part = getModelPart(model)
+	if not hrp or not part then
+		return math.huge
+	end
+	return (hrp.Position - part.Position).Magnitude
+end
+
+local function shouldFastPickupItem(S, model)
+	if not S.CrimFastPickup then
+		return false
+	end
+	if not isSpawnedToolModel(model) or not alive(model) then
+		return false
+	end
+	local _, kind = identifySpawnedTool(model)
+	if kind == "gun" or kind == "grenade" then
+		return S.CrimFastPickupGuns ~= false
+	end
+	if kind == "melee" then
+		return S.CrimFastPickupMelee ~= false
+	end
+	return true
+end
+
+local function hideFastPickupPrompt()
+	fastPickupTarget = nil
+	if fastPickupPromptBg and alive(fastPickupPromptBg) then
+		fastPickupPromptBg.Enabled = false
+	end
+end
+
+local function ensureFastPickupPrompt()
+	if fastPickupPromptBg and alive(fastPickupPromptBg) then
+		return
+	end
+	local bg = Instance.new("BillboardGui")
+	bg.Name = "VG_FastPickup"
+	bg.Size = UDim2.new(0, 40, 0, 40)
+	bg.StudsOffset = Vector3.new(0, 2.8, 0)
+	bg.AlwaysOnTop = true
+	bg.Enabled = false
+	bg.Parent = getGui()
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, 0, 1, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = "Q"
+	lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+	lbl.TextSize = 24
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextStrokeTransparency = 0.15
+	lbl.Parent = bg
+
+	fastPickupPromptBg = bg
+end
+
+local function showFastPickupPrompt(model)
+	ensureFastPickupPrompt()
+	local part = getModelPart(model)
+	if not part or not fastPickupPromptBg then
+		hideFastPickupPrompt()
+		return
+	end
+	fastPickupTarget = model
+	fastPickupPromptBg.Adornee = part
+	fastPickupPromptBg.Enabled = true
+end
+
+local function findNearestFastPickup(S)
+	local folder = getSpawnedTools()
+	if not folder then
+		return nil
+	end
+	local maxDist = math.clamp(tonumber(S.CrimFastPickupRange) or 6, 2, 15)
+	local best, bestDist = nil, maxDist
+	for _, model in ipairs(iterSpawnedToolModels(folder)) do
+		if shouldFastPickupItem(S, model) then
+			local dist = getToolPickupDist(model)
+			if dist <= maxDist and dist < bestDist then
+				bestDist = dist
+				best = model
+			end
+		end
+	end
+	return best
+end
+
+local function tryFastPickup(model)
+	if not model or not alive(model) then
+		return false
+	end
+	local S = _G.__VG_S
+	if not S or not S.CrimFastPickup then
+		return false
+	end
+	local maxDist = math.clamp(tonumber(S.CrimFastPickupRange) or 6, 2, 15)
+	if getToolPickupDist(model) > maxDist then
+		return false
+	end
+	local now = tick()
+	if now - lastFastPickupAt < 0.35 then
+		return false
+	end
+	local remote = getPicTloRemote()
+	local handle = resolvePickupHandle(model)
+	if not remote or not handle then
+		return false
+	end
+	local ok = pcall(function()
+		remote:FireServer(handle, nil, nil)
+	end)
+	if ok then
+		lastFastPickupAt = now
+		hideFastPickupPrompt()
+	end
+	return ok
+end
+
+local function tickFastPickup(S)
+	if not S.CrimFastPickup then
+		hideFastPickupPrompt()
+		return
+	end
+	local hum = getHum()
+	if not hum or hum.Health <= 0 then
+		hideFastPickupPrompt()
+		return
+	end
+	local nearest = findNearestFastPickup(S)
+	if nearest then
+		showFastPickupPrompt(nearest)
+	else
+		hideFastPickupPrompt()
+	end
+end
+
+local function startFastPickupInput()
+	if fastPickupInputConn or not UIS then
+		return
+	end
+	fastPickupInputConn = UIS.InputBegan:Connect(function(input, processed)
+		if processed then
+			return
+		end
+		if input.KeyCode ~= Enum.KeyCode.Q then
+			return
+		end
+		local S = _G.__VG_S
+		if not S or not S.CrimFastPickup or not fastPickupTarget then
+			return
+		end
+		tryFastPickup(fastPickupTarget)
+	end)
+end
+
+local function stopFastPickupInput()
+	if fastPickupInputConn then
+		fastPickupInputConn:Disconnect()
+		fastPickupInputConn = nil
+	end
+	hideFastPickupPrompt()
+	if fastPickupPromptBg and alive(fastPickupPromptBg) then
+		fastPickupPromptBg:Destroy()
+		fastPickupPromptBg = nil
+	end
+end
+
 -- ── NO RECOIL (weapon GC tables) ─────────────────────────────────────────────
 local featureRunning = {
 	noFall = false,
@@ -1985,6 +2215,10 @@ local function startMaster(S)
 			pcall(tickMoneyPickup, S)
 		end
 
+		if S.CrimFastPickup and crimFrame % 4 == 0 then
+			pcall(tickFastPickup, S)
+		end
+
 		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP)
 			and crimFrame % 3 == 0 then
 			tickESP(S)
@@ -2005,6 +2239,7 @@ local function stopMaster()
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
 	clearAllPickupFx()
+	stopFastPickupInput()
 	crimStaminaActive = false
 	lastDoorTick = 0
 	clearCrateESP()
@@ -2023,6 +2258,7 @@ function Criminality.Init(S)
 	end)
 
 	setupCrimStaminaHook()
+	startFastPickupInput()
 	startMaster(S)
 	syncFromConfig(S)
 end

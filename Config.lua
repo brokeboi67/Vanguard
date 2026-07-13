@@ -484,6 +484,18 @@ function Config.EnforceRules(S)
 	if S.CrimMoneyPickupDelay == nil then
 		S.CrimMoneyPickupDelay = 1000
 	end
+	if S.CrimFastPickup == nil then
+		S.CrimFastPickup = false
+	end
+	if S.CrimFastPickupGuns == nil then
+		S.CrimFastPickupGuns = true
+	end
+	if S.CrimFastPickupMelee == nil then
+		S.CrimFastPickupMelee = true
+	end
+	if S.CrimFastPickupRange == nil then
+		S.CrimFastPickupRange = 6
+	end
 	if S.CrimGunESP == nil then
 		S.CrimGunESP = false
 	end
