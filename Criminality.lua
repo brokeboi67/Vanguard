@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.75
+-- Criminality.lua  v2.43.76
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -248,7 +248,7 @@ local function getCrateVisualPart(model)
 			end
 		end
 	end
-	return best or getModelPart(model)
+	return best
 end
 
 local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highlightAdornee)
@@ -791,7 +791,9 @@ local function addGunESP(model, S, withSpawnFx)
 		return false
 	end
 	local fill = kindColor(kind, S)
-	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
+	local gunPart = getModelPart(model)
+	if not gunPart then return false end
+	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil, gunPart)
 	if not ok or not entry then
 		return false
 	end
