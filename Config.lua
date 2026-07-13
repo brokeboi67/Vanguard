@@ -448,11 +448,11 @@ function Config.EnforceRules(S)
 	if S.CrimNoRecoil == nil then
 		S.CrimNoRecoil = false
 	end
-	if S.CrimFastReload == nil then
-		S.CrimFastReload = false
+	if S.CrimRapidFire == nil then
+		S.CrimRapidFire = false
 	end
-	if S.CrimFastReloadTime == nil then
-		S.CrimFastReloadTime = 0
+	if S.CrimRapidFireDelay == nil then
+		S.CrimRapidFireDelay = 30
 	end
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false

@@ -2272,22 +2272,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d st", v) end,
 		})
 		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3)
-		MakeTog(CCombat, "Fast Reload", "CrimFastReload", 4, {
+		MakeTog(CCombat, "Rapid Fire", "CrimRapidFire", 4, {
 			onChange = function(on)
-				local reg = sliderRegistry.CrimFastReloadTime
+				local reg = sliderRegistry.CrimRapidFireDelay
 				if reg and reg.setEnabled then
 					reg.setEnabled(on)
 				end
 			end,
 		})
-		MakeSlider(CCombat, "Reload Time", "CrimFastReloadTime", 0, 20, 5, {
-			suffix = " s",
+		MakeSlider(CCombat, "Fire Delay", "CrimRapidFireDelay", 1, 100, 5, {
+			suffix = " ms",
 			step = 1,
-			requires = "CrimFastReload",
-			fmt = function(v) return string.format("%.2f s", v / 100) end,
+			requires = "CrimRapidFire",
+			fmt = function(v) return string.format("%d ms", v) end,
 			onRowCreated = function(_, __, setEnabled)
 				if setEnabled then
-					setEnabled(S.CrimFastReload == true)
+					setEnabled(S.CrimRapidFire == true)
 				end
 			end,
 		})
