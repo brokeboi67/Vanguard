@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.70
+-- Criminality.lua  v2.43.71
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -199,7 +199,7 @@ local function getModelPart(model)
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal)
+local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highlightAdornee)
 	local part = getModelPart(model)
 	if not part then return nil end
 
@@ -209,7 +209,7 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal)
 	h.FillTransparency    = 0.55
 	h.OutlineTransparency = 0
 	h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
-	h.Adornee             = model
+	h.Adornee             = highlightAdornee or model
 	h.Enabled             = false
 	h.Parent              = getGui()
 
@@ -288,21 +288,66 @@ local function clearCrateESP()
 	end
 	table.clear(ESP.crates)
 	table.clear(crateByModel)
+	local gui = getGui()
+	local piles = getSpawnedPiles()
+	if gui and piles then
+		for _, ch in ipairs(gui:GetChildren()) do
+			if ch:IsA("Highlight") and ch.Adornee and ch.Adornee:IsA("Instance") then
+				local adorn = ch.Adornee
+				local model = adorn:IsA("Model") and adorn or adorn:FindFirstAncestorOfClass("Model")
+				if model and model:IsDescendantOf(piles) and not crateByModel[model] then
+					ch:Destroy()
+				end
+			end
+		end
+	end
+end
+
+local function getSpawnedPiles()
+	local filter = workspace:FindFirstChild("Filter")
+	if not filter then
+		return nil
+	end
+	return filter:FindFirstChild("SpawnedPiles")
+end
+
+local function isInSpawnedPiles(model)
+	local piles = getSpawnedPiles()
+	if not piles or not model then
+		return false
+	end
+	return model:IsDescendantOf(piles)
 end
 
 local function isCrateModel(model)
 	if not model or not model:IsA("Model") then
 		return false
 	end
+	if not isInSpawnedPiles(model) then
+		return false
+	end
 	if model:GetAttribute("IsCrate") == true then
 		return true
 	end
-	-- Fallback: SpawnedPiles children are usually crates named C1
-	return model.Name == "C1"
+	-- SpawnedPiles crates are C1 models with an Id attribute for PIC_PU.
+	return model.Name == "C1" and model:GetAttribute("Id") ~= nil
 end
 
 local function getCrateRarityValue(model)
 	return model:GetAttribute("cot_") or model:GetAttribute("col_")
+end
+
+local function getCrateMeshPart(model)
+	local part = getModelPart(model)
+	if part and part:IsA("MeshPart") then
+		return part
+	end
+	for _, ch in ipairs(model:GetChildren()) do
+		if ch:IsA("MeshPart") then
+			return ch
+		end
+	end
+	return part
 end
 
 local function isRareCrate(model)
@@ -310,8 +355,8 @@ local function isRareCrate(model)
 	if cot == 7 or cot == "7" then
 		return true
 	end
-	local msh = model:IsA("MeshPart") and model or model:FindFirstChildWhichIsA("MeshPart", true)
-	if msh then
+	local msh = getCrateMeshPart(model)
+	if msh and msh:IsA("MeshPart") then
 		local tid = tostring(msh.TextureID)
 		if tid:find("11157915894", 1, true) then
 			return true
@@ -390,7 +435,11 @@ local function addCrateESP(model, S, withSpawnFx)
 	end
 	local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
 	local label = rare and "RARE CRATE" or "CRATE"
-	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
+	local part = getModelPart(model)
+	if not part then
+		return false
+	end
+	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil, part)
 	if not ok or not entry then
 		return false
 	end
@@ -401,14 +450,6 @@ local function addCrateESP(model, S, withSpawnFx)
 		playCrateSpawnFx(entry, rare)
 	end
 	return true
-end
-
-local function getSpawnedPiles()
-	local filter = workspace:FindFirstChild("Filter")
-	if not filter then
-		return nil
-	end
-	return filter:FindFirstChild("SpawnedPiles")
 end
 
 local function syncCrateESP(S)
@@ -428,7 +469,7 @@ local function syncCrateESP(S)
 	for i = #ESP.crates, 1, -1 do
 		local e = ESP.crates[i]
 		local model = e.model
-		local keep = alive(model) and isCrateModel(model)
+		local keep = alive(model) and isCrateModel(model) and isInSpawnedPiles(model)
 		if keep then
 			local rare = isRareCrate(model)
 			keep = shouldShowCrate(S, rare)
@@ -918,7 +959,7 @@ local function tickESP(S)
 	local showCrate = S.CrimCrateESP
 	for _, e in ipairs(ESP.crates) do
 		local vis = false
-		if showCrate and alive(e.model) then
+		if showCrate and alive(e.model) and isInSpawnedPiles(e.model) then
 			if not alive(e.part) then
 				e.part = getModelPart(e.model)
 			end
