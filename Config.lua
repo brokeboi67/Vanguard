@@ -420,6 +420,24 @@ function Config.EnforceRules(S)
 	if S.CrimCratePickupFx == nil then
 		S.CrimCratePickupFx = true
 	end
+	if S.CrimGunESP == nil then
+		S.CrimGunESP = false
+	end
+	if S.CrimGunESPGuns == nil then
+		S.CrimGunESPGuns = true
+	end
+	if S.CrimGunESPMelee == nil then
+		S.CrimGunESPMelee = true
+	end
+	if S.CrimGunESPMaxDist == nil then
+		S.CrimGunESPMaxDist = 250
+	end
+	if typeof(S.CrimGunESPGunColor) ~= "Color3" then
+		S.CrimGunESPGunColor = Color3.fromRGB(80, 255, 140)
+	end
+	if typeof(S.CrimGunESPMeleeColor) ~= "Color3" then
+		S.CrimGunESPMeleeColor = Color3.fromRGB(255, 170, 60)
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

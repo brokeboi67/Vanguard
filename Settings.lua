@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.49",
+	Version = "2.43.50",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -218,6 +218,12 @@ local Settings = {
 	CrimInfStamina = false,
 	CrimFullBright = false,
 	CrimCratePickupFx = true,
+	CrimGunESP = false,
+	CrimGunESPGuns = true,
+	CrimGunESPMelee = true,
+	CrimGunESPMaxDist = 250,
+	CrimGunESPGunColor = Color3.fromRGB(80, 255, 140),
+	CrimGunESPMeleeColor = Color3.fromRGB(255, 170, 60),
 
 	-- MISC
 	HeadSize = false,

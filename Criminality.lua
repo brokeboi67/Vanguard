@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.49
+-- Criminality.lua  v2.43.50
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -161,7 +161,7 @@ end
 -- Safes/dealers: one build pass. Crates: dynamic (SpawnedPiles).
 -- Per-frame: only reads cached .part.Position and sets .Enabled.
 
-local ESP = { safes={}, dealers={}, crates={} }
+local ESP = { safes={}, dealers={}, crates={}, guns={} }
 local espBuilt = { safes=false, dealers=false }
 local crateByModel = {}
 local crateScanAt = 0
@@ -490,6 +490,246 @@ local function ensureCrateWatch(S)
 	end)
 end
 
+-- ── SPAWNED TOOL / GUN ESP (SpawnedTools) ────────────────────────────────────
+local gunByModel = {}
+local gunScanAt = 0
+local gunFolderConn = nil
+local gunRemoveConn = nil
+local gunFolderWatch = nil
+
+local colGun    = Color3.fromRGB(80, 255, 140)
+local colMelee  = Color3.fromRGB(255, 170, 60)
+local colNade   = Color3.fromRGB(255, 90, 90)
+local colTool   = Color3.fromRGB(170, 195, 255)
+
+local function hasDeepChild(model, name)
+	return model and model:FindFirstChild(name, true) ~= nil
+end
+
+local function identifySpawnedTool(model)
+	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName" }) do
+		local val = model:GetAttribute(key)
+		if val ~= nil and tostring(val) ~= "" then
+			local label = string.upper(tostring(val))
+			local kind = "other"
+			if label:find("GRENADE", 1, true) then
+				kind = "grenade"
+			elseif hasDeepChild(model, "MagPart") or hasDeepChild(model, "BoltPart") or hasDeepChild(model, "Barrel") then
+				kind = "gun"
+			elseif hasDeepChild(model, "WeaponHandle") or hasDeepChild(model, "ClubMesh") or hasDeepChild(model, "Crowbar") then
+				kind = "melee"
+			end
+			return label, kind
+		end
+	end
+
+	if hasDeepChild(model, "Crowbar") then return "CROWBAR", "melee" end
+	if hasDeepChild(model, "ClubMesh") then return "CLUB", "melee" end
+	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then return "WRENCH", "melee" end
+	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") then return "GRENADE", "grenade" end
+	if hasDeepChild(model, "Chain1") or (hasDeepChild(model, "Blade") and hasDeepChild(model, "Cord")) then
+		return "FLAIL", "melee"
+	end
+	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then return "RIFLE", "gun" end
+	if hasDeepChild(model, "Barrel") and hasDeepChild(model, "MagPart") then return "PISTOL", "gun" end
+	if hasDeepChild(model, "MagPart") and hasDeepChild(model, "Bullets") then return "GUN", "gun" end
+	if hasDeepChild(model, "MagPart") then return "GUN", "gun" end
+	if hasDeepChild(model, "WeaponHandle") then return "WEAPON", "melee" end
+	if hasDeepChild(model, "Handle") and hasDeepChild(model, "Pin") then return "GRENADE", "grenade" end
+
+	return "ITEM", "other"
+end
+
+local function kindColor(kind, S)
+	if kind == "gun" then
+		return S.CrimGunESPGunColor or colGun
+	end
+	if kind == "grenade" then
+		return colNade
+	end
+	if kind == "melee" then
+		return S.CrimGunESPMeleeColor or colMelee
+	end
+	return colTool
+end
+
+local function shouldShowGun(S, kind)
+	if not S.CrimGunESP then
+		return false
+	end
+	if kind == "gun" or kind == "grenade" then
+		return S.CrimGunESPGuns ~= false
+	end
+	if kind == "melee" then
+		return S.CrimGunESPMelee ~= false
+	end
+	return true
+end
+
+local function isSpawnedToolModel(model)
+	return model and model:IsA("Model")
+end
+
+local function getSpawnedTools()
+	local filter = workspace:FindFirstChild("Filter")
+	if not filter then
+		return nil
+	end
+	return filter:FindFirstChild("SpawnedTools")
+end
+
+local function destroyGunEntry(model)
+	local e = gunByModel[model]
+	if not e then return end
+	gunByModel[model] = nil
+	if alive(e.h)  then e.h:Destroy()  end
+	if alive(e.bg) then e.bg:Destroy() end
+	for i, entry in ipairs(ESP.guns) do
+		if entry == e then
+			table.remove(ESP.guns, i)
+			break
+		end
+	end
+end
+
+local function clearGunESP()
+	for model in pairs(gunByModel) do
+		destroyGunEntry(model)
+	end
+	table.clear(ESP.guns)
+	table.clear(gunByModel)
+end
+
+local function playGunSpawnFx(entry, fill)
+	if not entry or not alive(entry.h) then
+		return
+	end
+	entry.h.Enabled = true
+	entry.h.FillColor = fill
+	entry.h.FillTransparency = 1
+	entry.h.OutlineTransparency = 1
+	if alive(entry.bg) then
+		entry.bg.Enabled = true
+		entry.bg.StudsOffset = Vector3.new(0, 1.5, 0)
+	end
+	local popIn = TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	TS:Create(entry.h, popIn, { FillTransparency = 0.42, OutlineTransparency = 0 }):Play()
+	if alive(entry.bg) then
+		TS:Create(entry.bg, popIn, { StudsOffset = Vector3.new(0, 4.5, 0) }):Play()
+	end
+end
+
+local function addGunESP(model, S, withSpawnFx)
+	if not isSpawnedToolModel(model) or gunByModel[model] then
+		return false
+	end
+	local label, kind = identifySpawnedTool(model)
+	if not shouldShowGun(S, kind) then
+		return false
+	end
+	local fill = kindColor(kind, S)
+	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
+	if not ok or not entry then
+		return false
+	end
+	if alive(entry.bg) then
+		entry.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 18, 64, 110), 0, 16)
+	end
+	entry.kind = kind
+	entry.label = label
+	gunByModel[model] = entry
+	table.insert(ESP.guns, entry)
+	if withSpawnFx then
+		playGunSpawnFx(entry, fill)
+	end
+	return true
+end
+
+local function syncGunESP(S)
+	if not S.CrimGunESP then
+		if #ESP.guns > 0 then
+			clearGunESP()
+		end
+		return
+	end
+
+	local folder = getSpawnedTools()
+	if not folder then
+		return
+	end
+
+	for i = #ESP.guns, 1, -1 do
+		local e = ESP.guns[i]
+		local model = e.model
+		local keep = alive(model) and isSpawnedToolModel(model)
+		if keep then
+			local label, kind = identifySpawnedTool(model)
+			keep = shouldShowGun(S, kind)
+			if keep and (e.label ~= label or e.kind ~= kind) then
+				e.label = label
+				e.kind = kind
+				local fill = kindColor(kind, S)
+				if alive(e.h) then e.h.FillColor = fill end
+				if alive(e.lbl) then e.lbl.Text = label end
+				if alive(e.bg) then
+					e.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 18, 64, 110), 0, 16)
+				end
+			end
+		end
+		if not keep then
+			destroyGunEntry(model)
+		end
+	end
+
+	for _, model in ipairs(folder:GetChildren()) do
+		addGunESP(model, S, false)
+	end
+end
+
+local function ensureGunWatch(S)
+	local folder = getSpawnedTools()
+	if folder then
+		if gunFolderWatch then
+			gunFolderWatch:Disconnect()
+			gunFolderWatch = nil
+		end
+		if not gunFolderConn then
+			gunFolderConn = folder.ChildAdded:Connect(function(ch)
+				task.defer(function()
+					local curS = _G.__VG_S
+					if not curS or not curS.CrimGunESP then
+						return
+					end
+					RS.Heartbeat:Wait()
+					local added = addGunESP(ch, curS, true)
+					if added then
+						pcall(tickESP, curS)
+					end
+				end)
+			end)
+			gunRemoveConn = folder.ChildRemoved:Connect(function(ch)
+				destroyGunEntry(ch)
+			end)
+		end
+		return
+	end
+
+	if gunFolderWatch then
+		return
+	end
+	gunFolderWatch = workspace.DescendantAdded:Connect(function(ch)
+		if ch.Name == "SpawnedTools" and ch.Parent and ch.Parent.Name == "Filter" then
+			task.defer(function()
+				local curS = _G.__VG_S
+				if curS and curS.CrimGunESP then
+					syncGunESP(curS)
+					ensureGunWatch(curS)
+				end
+			end)
+		end
+	end)
+end
+
 -- Hot path: zero allocations, no pcall on happy path.
 local colOpen   = Color3.fromRGB(100,255,100)
 local colSafeD  = Color3.fromRGB(255,220,50)
@@ -497,6 +737,7 @@ local colSafeD  = Color3.fromRGB(255,220,50)
 local function tickESP(S)
 	local maxDist = S.CrimESPMaxDist or 300
 	local crateDist = S.CrimCrateMaxDist or maxDist
+	local gunDist = S.CrimGunESPMaxDist or maxDist
 	local camPos  = workspace.CurrentCamera.CFrame.Position
 
 	-- Safes
@@ -554,6 +795,32 @@ local function tickESP(S)
 					e.bg.Adornee = e.part
 				end
 				vis = (camPos - e.part.Position).Magnitude <= crateDist
+			end
+		end
+		if alive(e.h) then
+			if vis then
+				if not e.h.Enabled  then e.h.Enabled  = true end
+				if not e.bg.Enabled then e.bg.Enabled = true end
+			else
+				if e.h.Enabled  then e.h.Enabled  = false end
+				if e.bg.Enabled then e.bg.Enabled = false end
+			end
+		end
+	end
+
+	-- Guns / dropped tools (SpawnedTools)
+	local showGun = S.CrimGunESP
+	for _, e in ipairs(ESP.guns) do
+		local vis = false
+		if showGun and alive(e.model) then
+			if not alive(e.part) then
+				e.part = getModelPart(e.model)
+			end
+			if alive(e.part) then
+				if alive(e.bg) and e.bg.Adornee ~= e.part then
+					e.bg.Adornee = e.part
+				end
+				vis = (camPos - e.part.Position).Magnitude <= gunDist
 			end
 		end
 		if alive(e.h) then
@@ -1397,6 +1664,16 @@ local function startMaster(S)
 			pcall(clearCrateESP)
 		end
 
+		if S.CrimGunESP then
+			pcall(ensureGunWatch, S)
+			if crimFrame % 6 == 0 or tick() - gunScanAt > 0.3 then
+				gunScanAt = tick()
+				pcall(syncGunESP, S)
+			end
+		elseif #ESP.guns > 0 then
+			pcall(clearGunESP)
+		end
+
 		if (S.CrimSafeESP or S.CrimDealerESP) and not espInitTick then
 			espInitTick = true
 			task.spawn(function()
@@ -1418,7 +1695,8 @@ local function startMaster(S)
 			pcall(tickCratePickup, S)
 		end
 
-		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP) and (S.CrimCrateESP or crimFrame % 2 == 0) then
+		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP)
+			and (S.CrimCrateESP or S.CrimGunESP or crimFrame % 2 == 0) then
 			tickESP(S)
 		end
 	end))
@@ -1429,6 +1707,9 @@ local function stopMaster()
 	if crateFolderConn then crateFolderConn:Disconnect(); crateFolderConn=nil end
 	if crateRemoveConn then crateRemoveConn:Disconnect(); crateRemoveConn=nil end
 	if crateFolderWatch then crateFolderWatch:Disconnect(); crateFolderWatch=nil end
+	if gunFolderConn then gunFolderConn:Disconnect(); gunFolderConn=nil end
+	if gunRemoveConn then gunRemoveConn:Disconnect(); gunRemoveConn=nil end
+	if gunFolderWatch then gunFolderWatch:Disconnect(); gunFolderWatch=nil end
 	pcall(stopNoRecoil)
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
@@ -1437,6 +1718,7 @@ local function stopMaster()
 	crimStaminaActive = false
 	lastDoorTick = 0
 	clearCrateESP()
+	clearGunESP()
 end
 
 -- ── INIT ─────────────────────────────────────────────────────────────────────

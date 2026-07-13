@@ -2161,7 +2161,34 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CESP = MakeCard(TCrim, "OBJECT ESP", nil, 4)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 1, { flat = true })
 		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 2, { flat = true })
-		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 3, {
+		MakeTog(CESP, "Gun ESP", "CrimGunESP", 3, {
+			flat = true,
+			onChange = function(on)
+				local dist = sliderRegistry.CrimGunESPMaxDist
+				if dist and dist.setEnabled then
+					dist.setEnabled(on)
+				end
+			end,
+		})
+		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 4, {
+			flat = true,
+			requires = "CrimGunESP",
+		})
+		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 5, {
+			flat = true,
+			requires = "CrimGunESP",
+		})
+		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 6, {
+			suffix = " st",
+			step = 10,
+			fmt = function(v) return string.format("%d st", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimGunESP == true)
+				end
+			end,
+		})
+		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 7, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimCrateMaxDist
@@ -2170,15 +2197,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 4, {
+		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 8, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 5, {
+		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 9, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 800, 6, {
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 800, 10, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
@@ -2188,12 +2215,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 7, {
+		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 11, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CESP, "hint_crim_crate", 8)
+		MakeHint(CESP, "hint_crim_crate", 12)
+		MakeHint(CESP, "hint_crim_gun", 13)
 
 		local CCrate = MakeCard(TCrim, "AUTO PICKUP", nil, 3)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 1, {
