@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.45
+-- Criminality.lua  v2.43.46
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -13,6 +13,8 @@ end
 local RS    = game:GetService("RunService")
 local Plrs  = game:GetService("Players")
 local RepSt = game:GetService("ReplicatedStorage")
+local Lighting = game:GetService("Lighting")
+local TS    = game:GetService("TweenService")
 
 local function getLP()   return Plrs.LocalPlayer end
 local function getChar() local lp=getLP(); return lp and lp.Character end
@@ -546,7 +548,103 @@ local function shouldPickupCrate(S, model)
 	return S.CrimCratePickupBasic ~= false
 end
 
-local function tryPickupCrate(model)
+local pickupFxByModel = {}
+local PICKUP_FX_DURATION = 2.0
+
+local function stopPickupFx(model)
+	local fx = pickupFxByModel[model]
+	if not fx then
+		return
+	end
+	pickupFxByModel[model] = nil
+	if fx.pulseTween then
+		pcall(function() fx.pulseTween:Cancel() end)
+	end
+	if fx.bobTween then
+		pcall(function() fx.bobTween:Cancel() end)
+	end
+	if alive(fx.h) then
+		fx.h:Destroy()
+	end
+	if alive(fx.bg) then
+		fx.bg:Destroy()
+	end
+end
+
+local function clearAllPickupFx()
+	for model in pairs(pickupFxByModel) do
+		stopPickupFx(model)
+	end
+end
+
+local function startPickupFx(model, rare)
+	if not model or not alive(model) then
+		return
+	end
+	for m in pairs(pickupFxByModel) do
+		if m ~= model then
+			stopPickupFx(m)
+		end
+	end
+	if pickupFxByModel[model] then
+		return
+	end
+
+	local part = getCratePart(model)
+	if not part then
+		return
+	end
+
+	local fill = rare and Color3.fromRGB(255, 70, 255) or Color3.fromRGB(60, 255, 130)
+	local gui = getGui()
+
+	local h = Instance.new("Highlight")
+	h.Name = "VG_CratePickupFx"
+	h.FillColor = fill
+	h.OutlineColor = Color3.fromRGB(255, 255, 255)
+	h.FillTransparency = 0.3
+	h.OutlineTransparency = 0
+	h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	h.Adornee = model
+	h.Parent = gui
+
+	local bg = Instance.new("BillboardGui")
+	bg.Name = "VG_CratePickupFx"
+	bg.Size = UDim2.new(0, 96, 0, 24)
+	bg.StudsOffset = Vector3.new(0, 5, 0)
+	bg.AlwaysOnTop = true
+	bg.Adornee = part
+	bg.Parent = gui
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, 0, 1, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = rare and "RARE PICKUP" or "PICKING UP"
+	lbl.TextColor3 = fill
+	lbl.TextSize = 11
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextStrokeTransparency = 0.2
+	lbl.Parent = bg
+
+	local fx = { h = h, bg = bg, lbl = lbl, model = model }
+	pickupFxByModel[model] = fx
+
+	local pulseInfo = TweenInfo.new(0.38, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+	fx.pulseTween = TS:Create(h, pulseInfo, { FillTransparency = 0.72, OutlineTransparency = 0.35 })
+	fx.pulseTween:Play()
+
+	local bobInfo = TweenInfo.new(0.42, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+	fx.bobTween = TS:Create(bg, bobInfo, { StudsOffset = Vector3.new(0, 6.4, 0) })
+	fx.bobTween:Play()
+
+	task.delay(PICKUP_FX_DURATION, function()
+		if pickupFxByModel[model] == fx then
+			stopPickupFx(model)
+		end
+	end)
+end
+
+local function tryPickupCrate(S, model)
 	local id = getCrateId(model)
 	if not id then
 		return false
@@ -559,12 +657,17 @@ local function tryPickupCrate(model)
 	if not remote then
 		return false
 	end
+	if S.CrimCratePickupFx ~= false then
+		startPickupFx(model, isRareCrate(model))
+	end
 	local ok = pcall(function()
 		remote:FireServer(id)
 	end)
 	if ok then
 		pickupCooldownIds[id] = now
 		lastPickupAt = now
+	elseif S.CrimCratePickupFx ~= false then
+		stopPickupFx(model)
 	end
 	return ok
 end
@@ -602,7 +705,7 @@ local function tickCratePickup(S)
 	end
 
 	if best then
-		tryPickupCrate(best)
+		tryPickupCrate(S, best)
 	end
 
 	for id, t in pairs(pickupCooldownIds) do
@@ -1017,6 +1120,81 @@ local function refillCrimStamina()
 	end
 end
 
+-- ── FULLBRIGHT (Criminality) ─────────────────────────────────────────────────
+local fbConn = nil
+local fbSaved = nil
+
+local FB_TARGET = {
+	Brightness = 5,
+	ClockTime = 14,
+	Ambient = Color3.new(1, 1, 1),
+	OutdoorAmbient = Color3.new(1, 1, 1),
+	ColorShift_Top = Color3.new(0, 0, 0),
+	FogStart = 100000,
+	FogEnd = 100000,
+}
+
+local function captureFbLighting()
+	if fbSaved then
+		return
+	end
+	fbSaved = {
+		Brightness = Lighting.Brightness,
+		ClockTime = Lighting.ClockTime,
+		Ambient = Lighting.Ambient,
+		OutdoorAmbient = Lighting.OutdoorAmbient,
+		ColorShift_Top = Lighting.ColorShift_Top,
+		FogStart = Lighting.FogStart,
+		FogEnd = Lighting.FogEnd,
+		GlobalShadows = Lighting.GlobalShadows,
+	}
+end
+
+local function applyFbTarget()
+	for k, v in pairs(FB_TARGET) do
+		Lighting[k] = v
+	end
+	Lighting.GlobalShadows = false
+end
+
+local function startFullBright()
+	if fbConn then
+		return
+	end
+	captureFbLighting()
+	applyFbTarget()
+	fbConn = RS.RenderStepped:Connect(function()
+		if not _G.__VG_S or not _G.__VG_S.CrimFullBright then
+			return
+		end
+		for k, v in pairs(FB_TARGET) do
+			if Lighting[k] ~= v then
+				Lighting[k] = v
+			end
+		end
+		if Lighting.GlobalShadows then
+			Lighting.GlobalShadows = false
+		end
+	end)
+end
+
+local function stopFullBright()
+	if fbConn then
+		fbConn:Disconnect()
+		fbConn = nil
+	end
+	if fbSaved then
+		Lighting.Brightness = fbSaved.Brightness
+		Lighting.ClockTime = fbSaved.ClockTime
+		Lighting.Ambient = fbSaved.Ambient
+		Lighting.OutdoorAmbient = fbSaved.OutdoorAmbient
+		Lighting.ColorShift_Top = fbSaved.ColorShift_Top
+		Lighting.FogStart = fbSaved.FogStart
+		Lighting.FogEnd = fbSaved.FogEnd
+		Lighting.GlobalShadows = fbSaved.GlobalShadows
+	end
+end
+
 -- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
@@ -1030,6 +1208,7 @@ local function startMaster(S)
 	local running = {
 		noFall = false, noSpike = false,
 		noRecoil = false, staffDetect = false, noFailLockpick = false,
+		fullBright = false,
 	}
 
 	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
@@ -1056,6 +1235,10 @@ local function startMaster(S)
 		if S.CrimNoFailLockpick ~= running.noFailLockpick then
 			running.noFailLockpick = S.CrimNoFailLockpick
 			if running.noFailLockpick then pcall(startNoFailLockpick) else pcall(stopNoFailLockpick) end
+		end
+		if S.CrimFullBright ~= running.fullBright then
+			running.fullBright = S.CrimFullBright
+			if running.fullBright then pcall(startFullBright) else pcall(stopFullBright) end
 		end
 
 		crimStaminaActive = S.CrimInfStamina == true
@@ -1118,6 +1301,8 @@ local function stopMaster()
 	pcall(stopNoRecoil)
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
+	pcall(stopFullBright)
+	clearAllPickupFx()
 	crimStaminaActive = false
 	lastDoorTick = 0
 	clearCrateESP()
@@ -1136,6 +1321,7 @@ function Criminality.Init(S)
 	if S.CrimNoRecoil then pcall(startNoRecoil) end
 	if S.CrimStaffDetect then pcall(startStaffDetect) end
 	if S.CrimNoFailLockpick then pcall(startNoFailLockpick) end
+	if S.CrimFullBright then pcall(startFullBright) end
 end
 
 return Criminality

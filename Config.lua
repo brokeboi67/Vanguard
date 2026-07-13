@@ -408,6 +408,12 @@ function Config.EnforceRules(S)
 	if S.CrimInfStamina == nil then
 		S.CrimInfStamina = false
 	end
+	if S.CrimFullBright == nil then
+		S.CrimFullBright = false
+	end
+	if S.CrimCratePickupFx == nil then
+		S.CrimCratePickupFx = true
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

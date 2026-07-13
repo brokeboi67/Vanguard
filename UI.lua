@@ -2236,6 +2236,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeHint(CCrate, "hint_crim_pickup", 6)
+		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 7, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
+
+		local CVIS = MakeCard(TCrim, "VISUAL", nil, 6)
+		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
+		MakeHint(CVIS, "hint_crim_fullbright", 2)
 
 		local CUtil = MakeCard(TCrim, "UTILITY", nil, 5)
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
