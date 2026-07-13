@@ -2247,7 +2247,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 1, {
 			flat = true,
 			onChange = function(on)
-				for _, key in ipairs({ "CrimCratePickupDist", "CrimCratePickupSearch", "CrimCratePickupDelay" }) do
+				for _, key in ipairs({ "CrimCratePickupDist", "CrimCratePickupDelay" }) do
 					local reg = sliderRegistry[key]
 					if reg and reg.setEnabled then
 						reg.setEnabled(on)

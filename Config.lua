@@ -387,12 +387,6 @@ function Config.EnforceRules(S)
 	if S.CrimCratePickupDist == nil or S.CrimCratePickupDist > 10 then
 		S.CrimCratePickupDist = 3.5
 	end
-	if S.CrimCratePickupSearch == nil then
-		S.CrimCratePickupSearch = 45
-	end
-	if S.CrimCrateAutoWalk == nil then
-		S.CrimCrateAutoWalk = true
-	end
 	if S.CrimCratePickupDelay == nil then
 		S.CrimCratePickupDelay = 200
 	end
