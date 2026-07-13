@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.68
+-- Criminality.lua  v2.43.69
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -664,12 +664,33 @@ local function destroyGunEntry(model)
 	end
 end
 
+local function sweepOrphanGunGui()
+	local gui = getGui()
+	local folder = getSpawnedTools()
+	if not gui or not folder then
+		return
+	end
+	for _, ch in ipairs(gui:GetChildren()) do
+		if ch:IsA("Highlight") and ch.Adornee and ch.Adornee:IsA("Model") then
+			if ch.Adornee:IsDescendantOf(folder) and not gunByModel[ch.Adornee] then
+				ch:Destroy()
+			end
+		elseif ch:IsA("BillboardGui") and ch.Adornee and ch.Adornee:IsA("BasePart") then
+			local model = ch.Adornee:FindFirstAncestorOfClass("Model")
+			if model and model:IsDescendantOf(folder) and not gunByModel[model] then
+				ch:Destroy()
+			end
+		end
+	end
+end
+
 local function clearGunESP()
 	for model in pairs(gunByModel) do
 		destroyGunEntry(model)
 	end
 	table.clear(ESP.guns)
 	table.clear(gunByModel)
+	sweepOrphanGunGui()
 end
 
 local function playGunSpawnFx(entry, fill)
@@ -2225,9 +2246,12 @@ local function startMaster(S)
 			pcall(tickFastPickup, S)
 		end
 
-		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP)
-			and crimFrame % 3 == 0 then
-			tickESP(S)
+		if crimFrame % 3 == 0 then
+			if S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP then
+				tickESP(S)
+			elseif #ESP.guns > 0 then
+				pcall(clearGunESP)
+			end
 		end
 	end))
 end

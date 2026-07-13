@@ -1279,6 +1279,47 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 	end
 
+	local function setToggleDimmed(key, dimmed)
+		local list = toggleRegistry[key]
+		if not list then
+			return
+		end
+		for _, t in ipairs(list) do
+			if not t.requires then
+				continue
+			end
+			if t.Title then
+				t.Title.TextColor3 = dimmed and Color3.fromRGB(95, 95, 105) or t.titleColor
+			end
+			if t.Row then
+				t.Row.BackgroundTransparency = dimmed and 0.35 or 0
+			end
+		end
+	end
+
+	local function refreshToggleVisual(key)
+		local list = toggleRegistry[key]
+		if not list then
+			return
+		end
+		local requires = list[1] and list[1].requires
+		local parentOff = requires and S[requires] ~= true
+		local effectiveOn = not parentOff and S[key] == true
+		setToggleVisual(key, effectiveOn)
+		setToggleDimmed(key, parentOff)
+	end
+
+	local function refreshNestedToggles(parentKey)
+		for key, list in pairs(toggleRegistry) do
+			for _, t in ipairs(list) do
+				if t.requires == parentKey then
+					refreshToggleVisual(key)
+					break
+				end
+			end
+		end
+	end
+
 	local NotifyRoot = C("Frame", {
 		Name = "NotifyRoot",
 		Size = UDim2.new(0, 320, 0, 200),
@@ -1621,7 +1662,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function refreshAllControls()
 		for key, _ in pairs(toggleRegistry) do
-			setToggleVisual(key, S[key] == true)
+			refreshToggleVisual(key)
 		end
 		for key, reg in pairs(choiceRegistry) do
 			local cur = S[key]
@@ -1763,7 +1804,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				applyRageLegitExclusivity(key, true)
 			end
 
-			setToggleVisual(key, enabled)
+			refreshToggleVisual(key)
+			refreshNestedToggles(key)
 			UpdPreview()
 			if key == "LoS" or key == "RealTeamColor" or key == "ChamsRainbow" or key == "FriendsESP" then
 				if updateEspColorControls then
@@ -1785,6 +1827,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			dotOff = dotOff,
 			Row = Row,
 			Title = Title,
+			requires = opts.requires,
+			nested = nested,
+			titleColor = Title.TextColor3,
 		})
 		if opts.onRowCreated then
 			opts.onRowCreated(Row, Title)
@@ -2402,6 +2447,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				if dist and dist.setEnabled then
 					dist.setEnabled(on)
 				end
+				refreshNestedToggles("CrimGunESP")
 			end,
 		})
 		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 7, { requires = "CrimGunESP" })
