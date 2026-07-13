@@ -2266,14 +2266,33 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		local CCombat = MakeCard(TCrim, "COMBAT", "card_crim_combat_desc", 1, { accent = CRIM_COMBAT })
 		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1)
-		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 2)
-		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 3, 15, 3, {
+		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 3, 15, 2, {
 			suffix = " st",
 			step = 1,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CCombat, "hint_crim_norecoil", 4)
-		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 5, {
+		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3)
+		MakeTog(CCombat, "Fast Reload", "CrimFastReload", 4, {
+			onChange = function(on)
+				local reg = sliderRegistry.CrimFastReloadTime
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+			end,
+		})
+		MakeSlider(CCombat, "Reload Time", "CrimFastReloadTime", 0, 20, 5, {
+			suffix = " s",
+			step = 1,
+			requires = "CrimFastReload",
+			fmt = function(v) return string.format("%.2f s", v / 100) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimFastReload == true)
+				end
+			end,
+		})
+		MakeHint(CCombat, "hint_crim_gunmods", 6)
+		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 7, {
 			onChange = function(on)
 				local reg = sliderRegistry.CrimAimPredictionLead
 				if reg and reg.setEnabled then
@@ -2281,7 +2300,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 6, {
+		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 8, {
 			suffix = "",
 			step = 1,
 			requires = "CrimAimPrediction",
@@ -2292,7 +2311,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_prediction", 7)
+		MakeHint(CCombat, "hint_crim_prediction", 9)
 
 		local CSurv = MakeCard(TCrim, "SURVIVAL", "card_crim_surv_desc", 2, { accent = CRIM_SURV })
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1)

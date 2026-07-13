@@ -1177,16 +1177,44 @@ local function tickMoneyPickup(S)
 	end
 end
 
--- ── NO RECOIL ────────────────────────────────────────────────────────────────
-local noRecoilConns = {}
+-- ── GUN MODS (no recoil + fast reload) ───────────────────────────────────────
+local gunModConns = {}
 local weaponCache   = {}
 local weaponOrig    = {}
+local weaponReloadKeys = {}
+
+local RELOAD_KEY_HINTS = {
+	"ReloadTime", "Reload", "ReloadSpeed", "TimeToReload", "ReloadDelay",
+}
+
+local function isWeaponTable(v)
+	return type(v) == "table" and rawget(v, "EquipTime") ~= nil
+end
+
+local function collectReloadKeys(tbl)
+	local keys = {}
+	for _, k in ipairs(RELOAD_KEY_HINTS) do
+		local val = rawget(tbl, k)
+		if type(val) == "number" then
+			keys[k] = true
+		end
+	end
+	for k, val in pairs(tbl) do
+		if type(k) == "string" and type(val) == "number" then
+			local lower = string.lower(k)
+			if string.find(lower, "reload", 1, true) and not keys[k] then
+				keys[k] = true
+			end
+		end
+	end
+	return keys
+end
 
 local function cacheWeapons()
 	if typeof(getgc) ~= "function" then return end
 	weaponCache = {}
 	for _, v in getgc(true) do
-		if type(v) == "table" and rawget(v, "EquipTime") then
+		if isWeaponTable(v) then
 			table.insert(weaponCache, v)
 			if not weaponOrig[v] then
 				weaponOrig[v] = {
@@ -1196,24 +1224,78 @@ local function cacheWeapons()
 					AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
 					AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
 					Spread = v.Spread,
+					reload = {},
 				}
+			end
+			local reloadKeys = collectReloadKeys(v)
+			weaponReloadKeys[v] = reloadKeys
+			for k in pairs(reloadKeys) do
+				if weaponOrig[v].reload[k] == nil then
+					weaponOrig[v].reload[k] = rawget(v, k)
+				end
 			end
 		end
 	end
 end
 
-local function applyNoRecoil()
+local function reloadValueForKey(key, sliderVal)
+	local seconds = math.max(0, tonumber(sliderVal) or 0) / 100
+	local lower = string.lower(tostring(key))
+	if lower == "reloadspeed" then
+		if seconds <= 0 then
+			return 999
+		end
+		return math.clamp(1 / seconds, 1, 999)
+	end
+	return seconds
+end
+
+local function countReloadWeapons()
+	local n = 0
+	for _, keys in pairs(weaponReloadKeys) do
+		if keys and next(keys) then
+			n = n + 1
+		end
+	end
+	return n
+end
+
+local gunModReloadNotified = false
+
+local function applyGunMods(S)
+	local reloadSlider = math.max(0, tonumber(S.CrimFastReloadTime) or 0)
 	for _, weapon in ipairs(weaponCache) do
-		weapon.Recoil = 0
-		weapon.CameraRecoilingEnabled = false
-		weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
-		weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
-		weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
-		weapon.Spread = 0
+		if S.CrimNoRecoil then
+			weapon.Recoil = 0
+			weapon.CameraRecoilingEnabled = false
+			weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
+			weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
+			weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
+			weapon.Spread = 0
+		end
+		if S.CrimFastReload then
+			local keys = weaponReloadKeys[weapon]
+			if keys then
+				for k in pairs(keys) do
+					weapon[k] = reloadValueForKey(k, reloadSlider)
+				end
+			end
+		end
+	end
+	if S.CrimFastReload and not gunModReloadNotified then
+		local n = countReloadWeapons()
+		if n > 0 then
+			gunModReloadNotified = true
+			crimNotify(
+				"Fast Reload",
+				n .. " weapon table(s) with reload fields (ReloadTime etc.). Raise Reload Time if kicked.",
+				6
+			)
+		end
 	end
 end
 
-local function resetNoRecoil()
+local function resetGunMods()
 	for weapon, values in pairs(weaponOrig) do
 		if type(weapon) == "table" then
 			weapon.Recoil = values.Recoil
@@ -1222,45 +1304,80 @@ local function resetNoRecoil()
 			weapon.AngleY_Min = values.AngleY_Min; weapon.AngleY_Max = values.AngleY_Max
 			weapon.AngleZ_Min = values.AngleZ_Min; weapon.AngleZ_Max = values.AngleZ_Max
 			weapon.Spread = values.Spread
+			if type(values.reload) == "table" then
+				for k, val in pairs(values.reload) do
+					weapon[k] = val
+				end
+			end
 		end
 	end
 end
 
-local function onNoRecoilWeapon(tool)
+local function onGunModWeapon(tool)
 	task.wait(0.1)
 	cacheWeapons()
-	applyNoRecoil()
+	if _G.__VG_S then
+		applyGunMods(_G.__VG_S)
+	end
 end
 
-local function onNoRecoilCharacter(character)
+local function onGunModCharacter(character)
 	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("Tool") then task.spawn(onNoRecoilWeapon, child) end
+		if child:IsA("Tool") then task.spawn(onGunModWeapon, child) end
 	end
-	table.insert(noRecoilConns, character.ChildAdded:Connect(function(child)
-		if child:IsA("Tool") then task.spawn(onNoRecoilWeapon, child) end
+	table.insert(gunModConns, character.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then task.spawn(onGunModWeapon, child) end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
-		table.insert(noRecoilConns, humanoid.Died:Connect(function()
+		table.insert(gunModConns, humanoid.Died:Connect(function()
 			task.wait(1.5)
 			cacheWeapons()
-			applyNoRecoil()
+			if _G.__VG_S then
+				applyGunMods(_G.__VG_S)
+			end
 		end))
 	end
 end
 
-local function startNoRecoil()
+local function startGunMods(S)
+	gunModReloadNotified = false
 	cacheWeapons()
-	applyNoRecoil()
+	applyGunMods(S)
 	local lp = getLP()
-	table.insert(noRecoilConns, lp.CharacterAdded:Connect(onNoRecoilCharacter))
-	if lp.Character then onNoRecoilCharacter(lp.Character) end
+	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
+	if lp.Character then onGunModCharacter(lp.Character) end
 end
 
+local function stopGunMods()
+	resetGunMods()
+	for _, conn in ipairs(gunModConns) do pcall(conn.Disconnect, conn) end
+	gunModConns = {}
+end
+
+local function gunModsWant(S)
+	return S.CrimNoRecoil == true or S.CrimFastReload == true
+end
+
+local function syncGunMods(S)
+	local want = gunModsWant(S)
+	if featureRunning.gunMods == want then
+		if want then
+			applyGunMods(S)
+		end
+		return
+	end
+	featureRunning.gunMods = want
+	if want then
+		pcall(function() startGunMods(S) end)
+	else
+		pcall(stopGunMods)
+	end
+end
+
+-- legacy names for stopMaster
 local function stopNoRecoil()
-	resetNoRecoil()
-	for _, conn in ipairs(noRecoilConns) do pcall(conn.Disconnect, conn) end
-	noRecoilConns = {}
+	stopGunMods()
 end
 
 -- ── STAFF DETECTOR ───────────────────────────────────────────────────────────
@@ -1665,7 +1782,7 @@ local crimFrame  = 0
 local featureRunning = {
 	noFall = false,
 	noSpike = false,
-	noRecoil = false,
+	gunMods = false,
 	staffDetect = false,
 	noFailLockpick = false,
 	fullBright = false,
@@ -1696,7 +1813,7 @@ local function syncFromConfig(S)
 	crimStaminaActive = crimFlag(S.CrimInfStamina)
 	syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 	syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
-	syncFeatureToggle("noRecoil", "CrimNoRecoil", startNoRecoil, stopNoRecoil, S)
+	syncGunMods(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
@@ -1729,7 +1846,7 @@ local function startMaster(S)
 
 		syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 		syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
-		syncFeatureToggle("noRecoil", "CrimNoRecoil", startNoRecoil, stopNoRecoil, S)
+		syncGunMods(S)
 		syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 		syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 		syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
@@ -1740,6 +1857,11 @@ local function startMaster(S)
 		crimStaminaActive = crimFlag(S.CrimInfStamina)
 		if crimStaminaActive then
 			refillCrimStamina()
+		end
+
+		if featureRunning.gunMods and crimFrame % 45 == 0 then
+			cacheWeapons()
+			applyGunMods(S)
 		end
 
 		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then
