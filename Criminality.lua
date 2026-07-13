@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.74
+-- Criminality.lua  v2.43.75
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2454,7 +2454,9 @@ local function startMaster(S)
 		end
 
 		if crimFrame % 3 == 0 then
-			if anyObjectESPOn(S) or hasCachedObjectESP() then
+			local anyOn = S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
+			local hasCached = #ESP.safes > 0 or #ESP.dealers > 0 or #ESP.crates > 0 or #ESP.guns > 0
+			if anyOn or hasCached then
 				tickESP(S)
 			end
 			if not S.CrimCrateESP and #ESP.crates > 0 then
@@ -2463,33 +2465,20 @@ local function startMaster(S)
 			if not S.CrimGunESP and #ESP.guns > 0 then
 				pcall(clearGunESP)
 			end
-			if not anyObjectESPOn(S) then
-				pcall(sweepAllCrimESPGui)
+			if not anyOn then
+				local gui = getGui()
+				if gui then
+					for _, ch in ipairs(gui:GetChildren()) do
+						if ch.Name == "VG_CrimESP" or ch.Name == "VG_CratePickupFx" then
+							ch:Destroy()
+						elseif ch:IsA("Highlight") and ch.Parent == gui and not ch.Name:find("^VG_") then
+							ch:Destroy()
+						end
+					end
+				end
 			end
 		end
 	end))
-end
-
-local function hasCachedObjectESP()
-	return #ESP.safes > 0 or #ESP.dealers > 0 or #ESP.crates > 0 or #ESP.guns > 0
-end
-
-local function anyObjectESPOn(S)
-	return S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
-end
-
-local function sweepAllCrimESPGui()
-	local gui = getGui()
-	if not gui then
-		return
-	end
-	for _, ch in ipairs(gui:GetChildren()) do
-		if ch.Name == "VG_CrimESP" or ch.Name == "VG_CratePickupFx" then
-			ch:Destroy()
-		elseif ch:IsA("Highlight") and ch.Parent == gui and not ch.Name:find("^VG_") then
-			ch:Destroy()
-		end
-	end
 end
 
 local function stopMaster()
