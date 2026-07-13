@@ -1567,8 +1567,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end
 		for key, reg in pairs(sliderRegistry) do
+			if reg.setEnabled and reg.parentKey then
+				reg.setEnabled(S[reg.parentKey] == true)
+			end
+		end
+		for key, reg in pairs(sliderRegistry) do
 			if reg.setValue and S[key] ~= nil then
-				reg.setValue(S[key])
+				reg.setValue(S[key], true)
 			end
 		end
 		for key, lbl in pairs(bindRegistry) do
@@ -1953,10 +1958,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			ValLbl.TextColor3 = sliderEnabled and ACC or Color3.fromRGB(90, 90, 100)
 		end
 
-		local function setValue(raw)
-			if not sliderEnabled then
-				return
-			end
+		local function paintValue(val)
+			ValLbl.Text = fmt(val)
+			local p = (val - min) / (max - min)
+			Fill.Size = UDim2.new(p, 0, 1, 0)
+			Knob.Position = UDim2.new(p, 0, 0.5, 0)
+		end
+
+		local function setValue(raw, visualOnly)
 			local pct = math.clamp(raw, 0, 1)
 			local val = min + (max - min) * pct
 			if step >= 1 then
@@ -1965,11 +1974,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				val = math.floor(val * 100 + 0.5) / 100
 			end
 			val = math.clamp(val, min, max)
+			if visualOnly then
+				paintValue(val)
+				return
+			end
+			if not sliderEnabled then
+				return
+			end
 			S[key] = val
-			ValLbl.Text = fmt(val)
-			local p = (val - min) / (max - min)
-			Fill.Size = UDim2.new(p, 0, 1, 0)
-			Knob.Position = UDim2.new(p, 0, 0.5, 0)
+			paintValue(val)
 			if opts.onChange then
 				pcall(opts.onChange, val)
 			end
@@ -1999,11 +2012,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end)
 
 		sliderRegistry[key] = {
-			setValue = function(val)
+			setValue = function(val, visualOnly)
 				local p = (val - min) / (max - min)
-				setValue(p)
+				setValue(p, visualOnly == true)
 			end,
 			setEnabled = setSliderEnabled,
+			parentKey = opts.requires,
 		}
 		if opts.onRowCreated then
 			opts.onRowCreated(Row, TitleLbl, setSliderEnabled)
@@ -2163,6 +2177,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 6, {
 			suffix = "",
 			step = 1,
+			requires = "CrimAimPrediction",
 			fmt = function(v) return string.format("%.2f", v / 100) end,
 			onRowCreated = function(_, __, setEnabled)
 				if setEnabled then
@@ -2201,12 +2216,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 6, {
 			suffix = " st",
 			step = 10,
+			requires = "CrimGunESP",
 			fmt = function(v) return string.format("%d st", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimGunESP == true)
-				end
-			end,
 		})
 		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 7, {
 			flat = true,
@@ -2228,12 +2239,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 10, {
 			suffix = " st",
 			step = 25,
+			requires = "CrimCrateESP",
 			fmt = function(v) return string.format("%d st", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimCrateESP == true)
-				end
-			end,
 		})
 		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 11, {
 			suffix = " st",
@@ -2266,6 +2273,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSlider(CCrate, "Pickup Range", "CrimCratePickupDist", 2, 8, 4, {
 			suffix = " st",
 			step = 0.5,
+			requires = "CrimCratePickup",
 			fmt = function(v) return string.format("%.1f st", v) end,
 			onRowCreated = function(_, __, setEnabled)
 				if setEnabled then
@@ -2276,6 +2284,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSlider(CCrate, "Pickup Delay", "CrimCratePickupDelay", 80, 800, 5, {
 			suffix = "ms",
 			step = 20,
+			requires = "CrimCratePickup",
 			fmt = function(v) return string.format("%d ms", v) end,
 			onRowCreated = function(_, __, setEnabled)
 				if setEnabled then
@@ -2302,22 +2311,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSlider(CCrate, "Money Pickup Distance", "CrimMoneyPickupDist", 2, 25, 11, {
 			suffix = " st",
 			step = 1,
+			requires = "CrimMoneyPickup",
 			fmt = function(v) return string.format("%d st", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimMoneyPickup == true)
-				end
-			end,
 		})
 		MakeSlider(CCrate, "Money Pickup Delay", "CrimMoneyPickupDelay", 500, 2500, 12, {
 			suffix = "ms",
 			step = 100,
+			requires = "CrimMoneyPickup",
 			fmt = function(v) return string.format("%d ms", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimMoneyPickup == true)
-				end
-			end,
 		})
 		MakeHint(CCrate, "hint_crim_money", 13)
 
@@ -3871,8 +3872,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			refreshConfigList()
 			local autoload = ConfigModule.GetAutoload()
 			if autoload ~= "" then
-				refreshAllControls()
-				setFooterStatus("Autoload · " .. autoload)
+				local ok = ConfigModule.Autoload(S)
+				if ok then
+					refreshAllControls()
+					setFooterStatus("Autoload · " .. autoload)
+				end
 			end
 		end
 

@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.54
+-- Criminality.lua  v2.43.57
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1662,49 +1662,83 @@ end
 
 local masterConn = nil
 local crimFrame  = 0
+local featureRunning = {
+	noFall = false,
+	noSpike = false,
+	noRecoil = false,
+	staffDetect = false,
+	noFailLockpick = false,
+	fullBright = false,
+}
+
+local function crimFlag(v)
+	return v == true
+end
+
+local function syncFeatureToggle(key, settingKey, startFn, stopFn, S)
+	local want = crimFlag(S[settingKey])
+	if featureRunning[key] == want then
+		return
+	end
+	featureRunning[key] = want
+	if want then
+		pcall(startFn)
+	else
+		pcall(stopFn)
+	end
+end
+
+local function syncFromConfig(S)
+	if not Criminality.IsCriminality() then
+		return
+	end
+	setupCrimStaminaHook()
+	crimStaminaActive = crimFlag(S.CrimInfStamina)
+	syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
+	syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
+	syncFeatureToggle("noRecoil", "CrimNoRecoil", startNoRecoil, stopNoRecoil, S)
+	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
+	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
+	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+	if crimFlag(S.CrimInfStamina) then
+		refillCrimStamina()
+	end
+	if crimFlag(S.CrimCrateESP) then
+		pcall(ensureCrateWatch, S)
+		pcall(syncCrateESP, S)
+	elseif #ESP.crates > 0 then
+		pcall(clearCrateESP)
+	end
+	if crimFlag(S.CrimGunESP) then
+		pcall(ensureGunWatch, S)
+		pcall(syncGunESP, S)
+	elseif #ESP.guns > 0 then
+		pcall(clearGunESP)
+	end
+end
 
 local function startMaster(S)
 	if masterConn then return end
 
 	local espInitTick = false
-	local running = {
-		noFall = false, noSpike = false,
-		noRecoil = false, staffDetect = false, noFailLockpick = false,
-		fullBright = false,
-	}
 
 	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
 	masterConn = RS.Heartbeat:Connect(perfWrap("Criminality.Main", function()
 		crimFrame = crimFrame + 1
 
-		if S.CrimNoFall ~= running.noFall then
-			running.noFall = S.CrimNoFall
-			if running.noFall then pcall(startNoFall) else pcall(stopNoFall) end
-		end
-		if S.CrimNoSpike ~= running.noSpike then
-			running.noSpike = S.CrimNoSpike
-			if running.noSpike then pcall(startNoSpike) else pcall(stopNoSpike) end
-		end
-		if S.CrimNoRecoil ~= running.noRecoil then
-			running.noRecoil = S.CrimNoRecoil
-			if running.noRecoil then pcall(startNoRecoil) else pcall(stopNoRecoil) end
-		end
-		if S.CrimStaffDetect ~= running.staffDetect then
-			running.staffDetect = S.CrimStaffDetect
-			if running.staffDetect then pcall(startStaffDetect) else pcall(stopStaffDetect) end
-		end
-		if S.CrimNoFailLockpick ~= running.noFailLockpick then
-			running.noFailLockpick = S.CrimNoFailLockpick
-			if running.noFailLockpick then pcall(startNoFailLockpick) else pcall(stopNoFailLockpick) end
-		end
-		if S.CrimFullBright ~= running.fullBright then
-			running.fullBright = S.CrimFullBright
-			if running.fullBright then pcall(startFullBright) else pcall(stopFullBright) end
-		end
+		syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
+		syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
+		syncFeatureToggle("noRecoil", "CrimNoRecoil", startNoRecoil, stopNoRecoil, S)
+		syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
+		syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
+		syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 
-		crimStaminaActive = S.CrimInfStamina == true
-		if S.CrimInfStamina then
+		if crimFlag(S.CrimInfStamina) and not crimStaminaHooked then
+			setupCrimStaminaHook()
+		end
+		crimStaminaActive = crimFlag(S.CrimInfStamina)
+		if crimStaminaActive then
 			refillCrimStamina()
 		end
 
@@ -1794,15 +1828,14 @@ function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
 
+	S._configApplyHooks = S._configApplyHooks or {}
+	table.insert(S._configApplyHooks, function()
+		syncFromConfig(S)
+	end)
+
 	setupCrimStaminaHook()
 	startMaster(S)
-
-	if S.CrimNoFall then pcall(startNoFall) end
-	if S.CrimNoSpike then pcall(startNoSpike) end
-	if S.CrimNoRecoil then pcall(startNoRecoil) end
-	if S.CrimStaffDetect then pcall(startStaffDetect) end
-	if S.CrimNoFailLockpick then pcall(startNoFailLockpick) end
-	if S.CrimFullBright then pcall(startFullBright) end
+	syncFromConfig(S)
 end
 
 return Criminality

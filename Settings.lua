@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.56",
+	Version = "2.43.57",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -207,6 +207,7 @@ local Settings = {
 	CrimCratePickupRare = true,
 	CrimCratePickupDist = 3.5,
 	CrimCratePickupDelay = 200,
+	CrimCratePickupFx = true,
 	CrimESPMaxDist = 300,
 	CrimAimPrediction = false,
 	CrimAimPredictionLead = 12,

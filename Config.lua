@@ -17,7 +17,53 @@ local RUNTIME_KEYS = {
 	LastShotPos = true,
 	LastShotRayOrigin = true,
 	LastShotRayDir = true,
+	_configApplyHooks = true,
+	OnConfigApplied = true,
 }
+
+local function coerceConfigValue(v, current)
+	if typeof(v) == "boolean" or typeof(v) == "number" then
+		return v
+	end
+	if typeof(v) == "string" then
+		local lower = string.lower(v)
+		if lower == "true" or lower == "on" or lower == "yes" or lower == "1" then
+			return true
+		end
+		if lower == "false" or lower == "off" or lower == "no" or lower == "0" then
+			return false
+		end
+		if typeof(current) == "number" then
+			local n = tonumber(v)
+			if n ~= nil then
+				return n
+			end
+		end
+	end
+	return v
+end
+
+local function shouldSkipSerializeKey(k)
+	if RUNTIME_KEYS[k] then
+		return true
+	end
+	if typeof(k) == "string" and string.sub(k, 1, 1) == "_" then
+		return true
+	end
+	return false
+end
+
+local function fireApplyCallbacks(S)
+	if typeof(S._configApplyHooks) ~= "table" then
+		return
+	end
+	for _, fn in ipairs(S._configApplyHooks) do
+		pcall(fn, S)
+	end
+	if typeof(S.OnConfigApplied) == "function" then
+		pcall(S.OnConfigApplied, S)
+	end
+end
 
 local function canPersist()
 	return typeof(writefile) == "function"
@@ -78,7 +124,7 @@ end
 function Config.Serialize(S)
 	local data = {}
 	for k, v in pairs(S) do
-		if not RUNTIME_KEYS[k] then
+		if not shouldSkipSerializeKey(k) then
 			if typeof(v) == "Color3" then
 				data[k] = { __color = true, r = v.R, g = v.G, b = v.B }
 			else
@@ -100,12 +146,21 @@ function Config.Apply(S, data)
 			S[k] = Color3.new(v.r, v.g, v.b)
 		elseif typeof(v) == "table" then
 			S[k] = v
-		elseif S[k] ~= nil then
-			S[k] = v
+		else
+			S[k] = coerceConfigValue(v, S[k])
 		end
 	end
 	Config.EnforceRules(S)
+	fireApplyCallbacks(S)
 	return true
+end
+
+function Config.RegisterApplyHook(S, fn)
+	if typeof(S) ~= "table" or typeof(fn) ~= "function" then
+		return
+	end
+	S._configApplyHooks = S._configApplyHooks or {}
+	table.insert(S._configApplyHooks, fn)
 end
 
 function Config.EnforceRules(S)
