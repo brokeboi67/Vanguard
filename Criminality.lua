@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.48
+-- Criminality.lua  v2.43.49
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -322,23 +322,74 @@ local function shouldShowCrate(S, rare)
 	return S.CrimCrateBasic ~= false
 end
 
-local function addCrateESP(model, S)
-	if not isCrateModel(model) or crateByModel[model] then
+local function playCrateSpawnFx(entry, rare)
+	if not entry or not alive(entry.h) then
 		return
+	end
+	local fill = rare and (colCrateRare) or (colCrateNorm)
+	entry.h.Enabled = true
+	entry.h.FillColor = fill
+	entry.h.FillTransparency = 1
+	entry.h.OutlineTransparency = 1
+
+	if alive(entry.bg) then
+		entry.bg.Enabled = true
+		entry.bg.StudsOffset = Vector3.new(0, 1.2, 0)
+	end
+
+	local popIn = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+	TS:Create(entry.h, popIn, {
+		FillTransparency = 0.4,
+		OutlineTransparency = 0,
+	}):Play()
+
+	if alive(entry.bg) then
+		TS:Create(entry.bg, popIn, {
+			StudsOffset = Vector3.new(0, 4.8, 0),
+		}):Play()
+	end
+
+	if alive(entry.lbl) then
+		local finalText = entry.lbl.Text
+		entry.lbl.Text = rare and "✦ RARE SPAWN ✦" or "▲ CRATE SPAWN ▲"
+		task.delay(1.1, function()
+			if alive(entry.lbl) and entry.lbl.Text:find("SPAWN") then
+				entry.lbl.Text = finalText
+			end
+		end)
+	end
+
+	-- Second pulse ring
+	task.delay(0.15, function()
+		if not alive(entry.h) then
+			return
+		end
+		local pulse = TweenInfo.new(0.28, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 1, true)
+		TS:Create(entry.h, pulse, { FillTransparency = 0.72 }):Play()
+	end)
+end
+
+local function addCrateESP(model, S, withSpawnFx)
+	if not isCrateModel(model) or crateByModel[model] then
+		return false
 	end
 	local rare = isRareCrate(model)
 	if not shouldShowCrate(S, rare) then
-		return
+		return false
 	end
 	local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
 	local label = rare and "RARE CRATE" or "CRATE"
 	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
 	if not ok or not entry then
-		return
+		return false
 	end
 	entry.rare = rare
 	crateByModel[model] = entry
 	table.insert(ESP.crates, entry)
+	if withSpawnFx then
+		playCrateSpawnFx(entry, rare)
+	end
+	return true
 end
 
 local function getSpawnedPiles()
@@ -405,9 +456,17 @@ local function ensureCrateWatch(S)
 		end
 		if not crateFolderConn then
 			crateFolderConn = piles.ChildAdded:Connect(function(ch)
-				if S.CrimCrateESP then
-					task.defer(addCrateESP, ch, S)
-				end
+				task.defer(function()
+					local curS = _G.__VG_S
+					if not curS or not curS.CrimCrateESP then
+						return
+					end
+					RS.Heartbeat:Wait()
+					local added = addCrateESP(ch, curS, true)
+					if added then
+						pcall(tickESP, curS)
+					end
+				end)
 			end)
 			crateRemoveConn = piles.ChildRemoved:Connect(function(ch)
 				destroyCrateEntry(ch)
@@ -1330,7 +1389,7 @@ local function startMaster(S)
 
 		if S.CrimCrateESP then
 			pcall(ensureCrateWatch, S)
-			if crimFrame % 30 == 0 or tick() - crateScanAt > 1.2 then
+			if crimFrame % 6 == 0 or tick() - crateScanAt > 0.3 then
 				crateScanAt = tick()
 				pcall(syncCrateESP, S)
 			end
@@ -1359,7 +1418,7 @@ local function startMaster(S)
 			pcall(tickCratePickup, S)
 		end
 
-		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP) and crimFrame % 2 == 0 then
+		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP) and (S.CrimCrateESP or crimFrame % 2 == 0) then
 			tickESP(S)
 		end
 	end))
