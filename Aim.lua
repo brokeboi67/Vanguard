@@ -431,24 +431,29 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		if not pos or not S.CrimAimPrediction or game.GameId ~= CRIM_GAME_ID then
 			return pos
 		end
-		local bp = part
-		if not bp or not bp:IsA("BasePart") then
-			bp = char and (Util.resolveAimPart(char, "Head") or Util.resolveAimPart(char, "HumanoidRootPart"))
-		end
-		if not bp or not bp:IsA("BasePart") then
+		if not char then
 			return pos
 		end
-		local vel = bp.AssemblyLinearVelocity
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		local velPart = (hrp and hrp:IsA("BasePart")) and hrp or part
+		if not velPart or not velPart:IsA("BasePart") then
+			return pos
+		end
+		local vel = velPart.AssemblyLinearVelocity
 		if not vel or vel.Magnitude < 0.5 then
 			return pos
 		end
-		local lead = tonumber(S.CrimAimPredictionLead) or 0.12
+		-- Slider stores 5-35; UI shows /100 (default 12 = 0.12 s)
+		local lead = (tonumber(S.CrimAimPredictionLead) or 12) / 100
 		local ping = 0
 		pcall(function()
 			ping = LP:GetNetworkPing()
 		end)
-		-- Hybrid: Kogo ping term (ping * 0.1) + Kutak fixed lead
-		return pos + vel * ((ping * 0.1) + lead)
+		local offset = vel * ((ping * 0.1) + lead)
+		if offset.Magnitude > 10 then
+			offset = offset.Unit * 10
+		end
+		return pos + offset
 	end
 
 	local function finishTriggerShot()
