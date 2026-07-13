@@ -420,6 +420,15 @@ function Config.EnforceRules(S)
 	if S.CrimCratePickupFx == nil then
 		S.CrimCratePickupFx = true
 	end
+	if S.CrimMoneyPickup == nil then
+		S.CrimMoneyPickup = false
+	end
+	if S.CrimMoneyPickupDist == nil then
+		S.CrimMoneyPickupDist = 5
+	end
+	if S.CrimMoneyPickupDelay == nil then
+		S.CrimMoneyPickupDelay = 1000
+	end
 	if S.CrimGunESP == nil then
 		S.CrimGunESP = false
 	end

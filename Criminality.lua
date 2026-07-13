@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.51
+-- Criminality.lua  v2.43.52
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1113,6 +1113,102 @@ local function tickCratePickup(S)
 	end
 end
 
+-- ── AUTO PICKUP MONEY (SpawnedBread + CZDPZUS) ───────────────────────────────
+
+local moneyRemote = nil
+local lastMoneyPickupAt = 0
+
+local function getMoneyPickupRemote()
+	if moneyRemote and moneyRemote.Parent then
+		return moneyRemote
+	end
+	local events = RepSt:FindFirstChild("Events")
+	if not events then
+		return nil
+	end
+	local ev = events:FindFirstChild("CZDPZUS")
+	if ev and ev:IsA("RemoteEvent") then
+		moneyRemote = ev
+		return ev
+	end
+	return nil
+end
+
+local function getSpawnedBread()
+	local filter = workspace:FindFirstChild("Filter")
+	if not filter then
+		return nil
+	end
+	return filter:FindFirstChild("SpawnedBread")
+end
+
+local function getMoneyItemPosition(item)
+	if not item then
+		return nil
+	end
+	if item:IsA("BasePart") then
+		return item.Position
+	end
+	if item:IsA("Model") then
+		local part = getModelPart(item)
+		return part and part.Position
+	end
+	return nil
+end
+
+local function tickMoneyPickup(S)
+	if not S.CrimMoneyPickup then
+		return
+	end
+
+	local hum = getHum()
+	if not hum or hum.Health <= 0 then
+		return
+	end
+	local hrp = getHRP()
+	if not hrp then
+		return
+	end
+
+	local now = tick()
+	local delay = math.max(0.5, (tonumber(S.CrimMoneyPickupDelay) or 1000) / 1000)
+	if now - lastMoneyPickupAt < delay then
+		return
+	end
+
+	local folder = getSpawnedBread()
+	local remote = getMoneyPickupRemote()
+	if not folder or not remote then
+		return
+	end
+
+	local maxDist = math.clamp(tonumber(S.CrimMoneyPickupDist) or 5, 2, 25)
+	local rootPos = hrp.Position
+	local best, bestDist = nil, maxDist
+
+	for _, item in ipairs(folder:GetChildren()) do
+		if alive(item) then
+			local itemPos = getMoneyItemPosition(item)
+			if itemPos then
+				local dist = (rootPos - itemPos).Magnitude
+				if dist <= maxDist and dist < bestDist then
+					bestDist = dist
+					best = item
+				end
+			end
+		end
+	end
+
+	if best then
+		local ok = pcall(function()
+			remote:FireServer(best)
+		end)
+		if ok then
+			lastMoneyPickupAt = now
+		end
+	end
+end
+
 -- ── NO RECOIL ────────────────────────────────────────────────────────────────
 local noRecoilConns = {}
 local weaponCache   = {}
@@ -1693,6 +1789,10 @@ local function startMaster(S)
 
 		if S.CrimCratePickup and crimFrame % 3 == 0 then
 			pcall(tickCratePickup, S)
+		end
+
+		if S.CrimMoneyPickup and crimFrame % 3 == 0 then
+			pcall(tickMoneyPickup, S)
 		end
 
 		if (S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP)

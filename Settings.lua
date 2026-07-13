@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.51",
+	Version = "2.43.52",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -217,7 +217,9 @@ local Settings = {
 	CrimAutoUnlockDoors = false,
 	CrimInfStamina = false,
 	CrimFullBright = false,
-	CrimCratePickupFx = true,
+	CrimMoneyPickup = false,
+	CrimMoneyPickupDist = 5,
+	CrimMoneyPickupDelay = 1000,
 	CrimGunESP = false,
 	CrimGunESPGuns = true,
 	CrimGunESPMelee = true,

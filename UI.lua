@@ -2282,6 +2282,38 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			flat = true,
 			requires = "CrimCratePickup",
 		})
+		MakeTog(CCrate, "Auto Pickup Money", "CrimMoneyPickup", 10, {
+			flat = true,
+			onChange = function(on)
+				for _, key in ipairs({ "CrimMoneyPickupDist", "CrimMoneyPickupDelay" }) do
+					local reg = sliderRegistry[key]
+					if reg and reg.setEnabled then
+						reg.setEnabled(on)
+					end
+				end
+			end,
+		})
+		MakeSlider(CCrate, "Money Pickup Distance", "CrimMoneyPickupDist", 2, 25, 11, {
+			suffix = " st",
+			step = 1,
+			fmt = function(v) return string.format("%d st", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimMoneyPickup == true)
+				end
+			end,
+		})
+		MakeSlider(CCrate, "Money Pickup Delay", "CrimMoneyPickupDelay", 500, 2500, 12, {
+			suffix = "ms",
+			step = 100,
+			fmt = function(v) return string.format("%d ms", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimMoneyPickup == true)
+				end
+			end,
+		})
+		MakeHint(CCrate, "hint_crim_money", 13)
 
 		local CVIS = MakeCard(TCrim, "VISUAL", nil, 6)
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
