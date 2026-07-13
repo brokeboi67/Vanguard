@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.47
+-- Criminality.lua  v2.43.48
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -179,9 +179,27 @@ local function getGui()
 	return (lp and lp:FindFirstChild("PlayerGui")) or game:GetService("CoreGui")
 end
 
+local function getModelPart(model)
+	if not model then
+		return nil
+	end
+	local pp = model.PrimaryPart
+	if pp and pp:IsA("BasePart") then
+		return pp
+	end
+	local mesh = model:FindFirstChild("MeshPart", true)
+	if mesh and mesh:IsA("BasePart") then
+		return mesh
+	end
+	local main = model:FindFirstChild("MainPart", true)
+	if main and main:IsA("BasePart") then
+		return main
+	end
+	return model:FindFirstChildWhichIsA("BasePart", true)
+end
+
 local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal)
-	local part = model:FindFirstChildOfClass("BasePart")
-	           or model:FindFirstChildWhichIsA("BasePart")
+	local part = getModelPart(model)
 	if not part then return nil end
 
 	local h = Instance.new("Highlight")
@@ -282,8 +300,12 @@ local function isCrateModel(model)
 	return model.Name == "C1"
 end
 
+local function getCrateRarityValue(model)
+	return model:GetAttribute("cot_") or model:GetAttribute("col_")
+end
+
 local function isRareCrate(model)
-	local cot = model:GetAttribute("cot_")
+	local cot = getCrateRarityValue(model)
 	return cot == 7 or cot == "7"
 end
 
@@ -464,8 +486,16 @@ local function tickESP(S)
 	local showCrate = S.CrimCrateESP
 	for _, e in ipairs(ESP.crates) do
 		local vis = false
-		if showCrate and alive(e.part) then
-			vis = (camPos - e.part.Position).Magnitude <= crateDist
+		if showCrate and alive(e.model) then
+			if not alive(e.part) then
+				e.part = getModelPart(e.model)
+			end
+			if alive(e.part) then
+				if alive(e.bg) and e.bg.Adornee ~= e.part then
+					e.bg.Adornee = e.part
+				end
+				vis = (camPos - e.part.Position).Magnitude <= crateDist
+			end
 		end
 		if alive(e.h) then
 			if vis then
@@ -514,15 +544,7 @@ local function getCrateId(model)
 end
 
 local function getCratePart(model)
-	if not model then
-		return nil
-	end
-	local part = model.PrimaryPart
-	if part and part:IsA("BasePart") then
-		return part
-	end
-	return model:FindFirstChild("MeshPart")
-		or model:FindFirstChildWhichIsA("BasePart")
+	return getModelPart(model)
 end
 
 local function getCrateDist(model)
