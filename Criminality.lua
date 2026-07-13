@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.50
+-- Criminality.lua  v2.43.51
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -528,7 +528,7 @@ local function identifySpawnedTool(model)
 	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then return "WRENCH", "melee" end
 	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") then return "GRENADE", "grenade" end
 	if hasDeepChild(model, "Chain1") or (hasDeepChild(model, "Blade") and hasDeepChild(model, "Cord")) then
-		return "FLAIL", "melee"
+		return "CHAINSAW", "melee"
 	end
 	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then return "RIFLE", "gun" end
 	if hasDeepChild(model, "Barrel") and hasDeepChild(model, "MagPart") then return "PISTOL", "gun" end

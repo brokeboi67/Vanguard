@@ -2205,7 +2205,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 800, 10, {
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 10, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
