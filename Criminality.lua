@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.71
+-- Criminality.lua  v2.43.72
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -204,6 +204,7 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highl
 	if not part then return nil end
 
 	local h = Instance.new("Highlight")
+	h.Name              = "VG_CrimESP"
 	h.FillColor           = fillCol
 	h.OutlineColor        = outlineCol
 	h.FillTransparency    = 0.55
@@ -214,6 +215,7 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highl
 	h.Parent              = getGui()
 
 	local bg  = Instance.new("BillboardGui")
+	bg.Name        = "VG_CrimESP"
 	bg.Size        = UDim2.new(0, 64, 0, 16)
 	bg.StudsOffset = Vector3.new(0, 4, 0)
 	bg.AlwaysOnTop = true
@@ -2425,13 +2427,42 @@ local function startMaster(S)
 		end
 
 		if crimFrame % 3 == 0 then
-			if S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP then
+			if anyObjectESPOn(S) or hasCachedObjectESP() then
 				tickESP(S)
-			elseif #ESP.guns > 0 then
+			end
+			if not S.CrimCrateESP and #ESP.crates > 0 then
+				pcall(clearCrateESP)
+			end
+			if not S.CrimGunESP and #ESP.guns > 0 then
 				pcall(clearGunESP)
+			end
+			if not anyObjectESPOn(S) then
+				pcall(sweepAllCrimESPGui)
 			end
 		end
 	end))
+end
+
+local function hasCachedObjectESP()
+	return #ESP.safes > 0 or #ESP.dealers > 0 or #ESP.crates > 0 or #ESP.guns > 0
+end
+
+local function anyObjectESPOn(S)
+	return S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
+end
+
+local function sweepAllCrimESPGui()
+	local gui = getGui()
+	if not gui then
+		return
+	end
+	for _, ch in ipairs(gui:GetChildren()) do
+		if ch.Name == "VG_CrimESP" or ch.Name == "VG_CratePickupFx" then
+			ch:Destroy()
+		elseif ch:IsA("Highlight") and ch.Parent == gui and not ch.Name:find("^VG_") then
+			ch:Destroy()
+		end
+	end
 end
 
 local function stopMaster()
