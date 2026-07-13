@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.64
+-- Criminality.lua  v2.43.65
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1279,6 +1279,8 @@ local featureRunning = {
 	fullBright = false,
 }
 local gunModConns = {}
+local gunModCharConns = {}
+local gunModScanToken = 0
 local weaponCache = {}
 local weaponOrig  = {}
 local lastGunModApplyAt = 0
@@ -1329,6 +1331,40 @@ local function cacheWeapons(deep)
 	pruneWeaponOrig(active)
 end
 
+local function clearGunModCharConns()
+	for _, conn in ipairs(gunModCharConns) do
+		pcall(conn.Disconnect, conn)
+	end
+	table.clear(gunModCharConns)
+end
+
+local function refreshGunMods(S, preferDeep)
+	if not S or not S.CrimNoRecoil then
+		return
+	end
+	cacheWeapons(preferDeep == true)
+	if #weaponCache == 0 and preferDeep ~= false then
+		cacheWeapons(true)
+	end
+	applyGunMods(S)
+	lastGunModApplyAt = tick()
+end
+
+local function scheduleGunModRefresh(preferDeep, delaySec)
+	gunModScanToken += 1
+	local token = gunModScanToken
+	task.delay(delaySec or 0.4, function()
+		if token ~= gunModScanToken then
+			return
+		end
+		local S = _G.__VG_S
+		if not S or not S.CrimNoRecoil then
+			return
+		end
+		refreshGunMods(S, preferDeep)
+	end)
+end
+
 local function applyGunMods(S)
 	if not S.CrimNoRecoil then
 		return
@@ -1359,45 +1395,35 @@ local function resetGunMods()
 	lastGunModApplyAt = 0
 end
 
-local function onGunModWeapon(tool)
-	task.wait(0.1)
-	cacheWeapons(true)
-	if _G.__VG_S then
-		applyGunMods(_G.__VG_S)
-		lastGunModApplyAt = tick()
-	end
-end
-
 local function onGunModCharacter(character)
-	for _, child in ipairs(character:GetChildren()) do
-		if child:IsA("Tool") then task.spawn(onGunModWeapon, child) end
-	end
-	table.insert(gunModConns, character.ChildAdded:Connect(function(child)
-		if child:IsA("Tool") then task.spawn(onGunModWeapon, child) end
+	clearGunModCharConns()
+	scheduleGunModRefresh(false, 0.55)
+	table.insert(gunModCharConns, character.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(false, 0.35)
+		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
-		table.insert(gunModConns, humanoid.Died:Connect(function()
-			task.wait(1.5)
-			cacheWeapons(true)
-			if _G.__VG_S then
-				applyGunMods(_G.__VG_S)
-				lastGunModApplyAt = tick()
-			end
+		table.insert(gunModCharConns, humanoid.Died:Connect(function()
+			scheduleGunModRefresh(false, 2)
 		end))
 	end
 end
 
 local function startGunMods(S)
-	cacheWeapons(true)
-	applyGunMods(S)
-	lastGunModApplyAt = tick()
+	clearGunModCharConns()
+	refreshGunMods(S, false)
 	local lp = getLP()
 	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
-	if lp.Character then onGunModCharacter(lp.Character) end
+	if lp.Character then
+		onGunModCharacter(lp.Character)
+	end
 end
 
 local function stopGunMods()
+	gunModScanToken += 1
+	clearGunModCharConns()
 	resetGunMods()
 	for _, conn in ipairs(gunModConns) do pcall(conn.Disconnect, conn) end
 	gunModConns = {}
