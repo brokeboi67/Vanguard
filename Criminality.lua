@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.69
+-- Criminality.lua  v2.43.70
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1299,6 +1299,139 @@ local function tickMoneyPickup(S)
 	end
 end
 
+-- ── AUTO CLAIM ALLOWANCE (CLMZALOW + PlayerbaseData2.NextAllowance.Claim) ───
+
+local allowanceRemote = nil
+local lastAllowanceClaimAt = 0
+
+local function getAllowanceRemote()
+	if allowanceRemote and allowanceRemote.Parent then
+		return allowanceRemote
+	end
+	local events = RepSt:FindFirstChild("Events")
+	if not events then
+		return nil
+	end
+	local ev = events:FindFirstChild("CLMZALOW")
+	if ev and (ev:IsA("RemoteFunction") or ev:IsA("RemoteEvent")) then
+		allowanceRemote = ev
+		return ev
+	end
+	return nil
+end
+
+local function getAllowanceClaimFlag()
+	local lp = getLP()
+	if not lp then
+		return false
+	end
+	local data = RepSt:FindFirstChild("PlayerbaseData2")
+	if not data then
+		return false
+	end
+	local folder = data:FindFirstChild(lp.Name)
+	if not folder then
+		return false
+	end
+	local nextAllow = folder:FindFirstChild("NextAllowance")
+	if not nextAllow then
+		return false
+	end
+	local claim = nextAllow:FindFirstChild("Claim")
+	return claim and claim:IsA("BoolValue") and claim.Value == true
+end
+
+local function getAtmzFolder()
+	local map = workspace:FindFirstChild("Map")
+	if not map then
+		return nil
+	end
+	return map:FindFirstChild("ATMz")
+end
+
+local function getAtmMainPart(atm)
+	if not atm then
+		return nil
+	end
+	local main = atm:FindFirstChild("MainPart", true)
+	if main and main:IsA("BasePart") then
+		return main
+	end
+	return getModelPart(atm)
+end
+
+local function findNearestAtmPart(rootPos, maxDist)
+	local folder = getAtmzFolder()
+	if not folder then
+		return nil
+	end
+	local best, bestDist = nil, maxDist
+	for _, atm in ipairs(folder:GetChildren()) do
+		if alive(atm) then
+			local part = getAtmMainPart(atm)
+			if part then
+				local dist = (rootPos - part.Position).Magnitude
+				if dist <= maxDist and dist < bestDist then
+					bestDist = dist
+					best = part
+				end
+			end
+		end
+	end
+	return best
+end
+
+local function invokeAllowanceClaim(remote, mainPart)
+	if remote:IsA("RemoteFunction") then
+		return pcall(function()
+			remote:InvokeServer(mainPart, nil)
+		end)
+	end
+	return pcall(function()
+		remote:FireServer(mainPart, nil)
+	end)
+end
+
+local function tickAllowanceClaim(S)
+	if not S.CrimAllowanceClaim then
+		return
+	end
+	if not getAllowanceClaimFlag() then
+		return
+	end
+
+	local hum = getHum()
+	if not hum or hum.Health <= 0 then
+		return
+	end
+	local hrp = getHRP()
+	if not hrp then
+		return
+	end
+
+	local now = tick()
+	local delay = math.max(1, (tonumber(S.CrimAllowanceClaimDelay) or 3000) / 1000)
+	if now - lastAllowanceClaimAt < delay then
+		return
+	end
+
+	local remote = getAllowanceRemote()
+	if not remote then
+		return
+	end
+
+	local maxDist = math.clamp(tonumber(S.CrimAllowanceClaimDist) or 12, 4, 30)
+	local atmPart = findNearestAtmPart(hrp.Position, maxDist)
+	if not atmPart then
+		return
+	end
+
+	local ok = invokeAllowanceClaim(remote, atmPart)
+	if ok then
+		lastAllowanceClaimAt = now
+	end
+end
+
 -- ── FAST PICKUP (PIC_TLO — guns/melee on ground) ─────────────────────────────
 -- Cobalt dump uses getnilinstances + WeaponHandle; we resolve dynamically.
 
@@ -2240,6 +2373,10 @@ local function startMaster(S)
 
 		if S.CrimMoneyPickup and crimFrame % 3 == 0 then
 			pcall(tickMoneyPickup, S)
+		end
+
+		if S.CrimAllowanceClaim and crimFrame % 15 == 0 then
+			pcall(tickAllowanceClaim, S)
 		end
 
 		if S.CrimFastPickup and crimFrame % 4 == 0 then

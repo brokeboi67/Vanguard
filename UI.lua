@@ -2430,6 +2430,30 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d ms", v) end,
 		})
 		MakeHint(CCrate, "hint_crim_money", 19)
+		MakeSubHeader(CCrate, nil, 20, { labelKey = "crim_sub_pickup_allowance", accent = Color3.fromRGB(120, 200, 255) })
+		MakeTog(CCrate, "Auto Claim Allowance", "CrimAllowanceClaim", 21, {
+			onChange = function(on)
+				for _, key in ipairs({ "CrimAllowanceClaimDist", "CrimAllowanceClaimDelay" }) do
+					local reg = sliderRegistry[key]
+					if reg and reg.setEnabled then
+						reg.setEnabled(on)
+					end
+				end
+			end,
+		})
+		MakeSlider(CCrate, "ATM Distance", "CrimAllowanceClaimDist", 4, 30, 22, {
+			suffix = " st",
+			step = 1,
+			requires = "CrimAllowanceClaim",
+			fmt = function(v) return string.format("%d st", v) end,
+		})
+		MakeSlider(CCrate, "Claim Delay", "CrimAllowanceClaimDelay", 1000, 10000, 23, {
+			suffix = "ms",
+			step = 500,
+			requires = "CrimAllowanceClaim",
+			fmt = function(v) return string.format("%d ms", v) end,
+		})
+		MakeHint(CCrate, "hint_crim_allowance", 24)
 
 		local CESP = MakeCard(TCrim, "OBJECT ESP", "card_crim_esp_desc", 4, { accent = CRIM_ESP })
 		MakeSubHeader(CESP, nil, 1, { labelKey = "crim_sub_world", accent = Color3.fromRGB(255, 220, 90) })
