@@ -2,6 +2,8 @@
 
 local Aim = {}
 
+local CRIM_GAME_ID = 1494262959
+
 function Aim.Init(S, ParentGUI, TF, Util)
 	local Players = game:GetService("Players")
 	local RS = game:GetService("RunService")
@@ -425,6 +427,30 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		Cam.CFrame = Cam.CFrame:Lerp(goal, alpha)
 	end
 
+	local function applyCrimAimPrediction(char, part, pos)
+		if not pos or not S.CrimAimPrediction or game.GameId ~= CRIM_GAME_ID then
+			return pos
+		end
+		local bp = part
+		if not bp or not bp:IsA("BasePart") then
+			bp = char and (Util.resolveAimPart(char, "Head") or Util.resolveAimPart(char, "HumanoidRootPart"))
+		end
+		if not bp or not bp:IsA("BasePart") then
+			return pos
+		end
+		local vel = bp.AssemblyLinearVelocity
+		if not vel or vel.Magnitude < 0.5 then
+			return pos
+		end
+		local lead = tonumber(S.CrimAimPredictionLead) or 0.12
+		local ping = 0
+		pcall(function()
+			ping = LP:GetNetworkPing()
+		end)
+		-- Hybrid: Kogo ping term (ping * 0.1) + Kutak fixed lead
+		return pos + vel * ((ping * 0.1) + lead)
+	end
+
 	local function finishTriggerShot()
 		triggerNextShotAt = tick() + math.max(S.TriggerDelay or 1, 1) / 1000
 		triggerFiring = false
@@ -763,6 +789,7 @@ function Aim.Init(S, ParentGUI, TF, Util)
 				if tgt and tgt.part and tgt.char then
 					local pos = Util.getFirePosition(tgt.char, tgt.part)
 					if pos then
+						pos = applyCrimAimPrediction(tgt.char, tgt.part, pos)
 						aimCamera(pos)
 					end
 				end

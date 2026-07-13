@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.52
+-- Criminality.lua  v2.43.53
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -306,7 +306,17 @@ end
 
 local function isRareCrate(model)
 	local cot = getCrateRarityValue(model)
-	return cot == 7 or cot == "7"
+	if cot == 7 or cot == "7" then
+		return true
+	end
+	local msh = model:IsA("MeshPart") and model or model:FindFirstChildWhichIsA("MeshPart", true)
+	if msh then
+		local tid = tostring(msh.TextureID)
+		if tid:find("11157915894", 1, true) then
+			return true
+		end
+	end
+	return false
 end
 
 local colCrateNorm = Color3.fromRGB(255, 190, 60)

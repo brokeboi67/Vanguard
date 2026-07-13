@@ -2151,6 +2151,26 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d st", v) end,
 		})
 		MakeHint(CCombat, "hint_crim_norecoil", 4)
+		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 5, {
+			flat = true,
+			onChange = function(on)
+				local reg = sliderRegistry.CrimAimPredictionLead
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+			end,
+		})
+		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 6, {
+			suffix = "",
+			step = 1,
+			fmt = function(v) return string.format("%.2f", v / 100) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimAimPrediction == true)
+				end
+			end,
+		})
+		MakeHint(CCombat, "hint_crim_prediction", 7)
 
 		local CSurv = MakeCard(TCrim, "SURVIVAL", nil, 2)
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })

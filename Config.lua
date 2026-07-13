@@ -399,6 +399,12 @@ function Config.EnforceRules(S)
 	if S.CrimNoRecoil == nil then
 		S.CrimNoRecoil = false
 	end
+	if S.CrimAimPrediction == nil then
+		S.CrimAimPrediction = false
+	end
+	if S.CrimAimPredictionLead == nil then
+		S.CrimAimPredictionLead = 12
+	end
 	if S.CrimStaffDetect == nil then
 		S.CrimStaffDetect = false
 	end
