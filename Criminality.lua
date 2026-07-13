@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.44
+-- Criminality.lua  v2.43.45
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -612,6 +612,411 @@ local function tickCratePickup(S)
 	end
 end
 
+-- ── NO RECOIL ────────────────────────────────────────────────────────────────
+local noRecoilConns = {}
+local weaponCache   = {}
+local weaponOrig    = {}
+
+local function cacheWeapons()
+	if typeof(getgc) ~= "function" then return end
+	weaponCache = {}
+	for _, v in getgc(true) do
+		if type(v) == "table" and rawget(v, "EquipTime") then
+			table.insert(weaponCache, v)
+			if not weaponOrig[v] then
+				weaponOrig[v] = {
+					Recoil = v.Recoil,
+					CameraRecoilingEnabled = v.CameraRecoilingEnabled,
+					AngleX_Min = v.AngleX_Min, AngleX_Max = v.AngleX_Max,
+					AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
+					AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
+					Spread = v.Spread,
+				}
+			end
+		end
+	end
+end
+
+local function applyNoRecoil()
+	for _, weapon in ipairs(weaponCache) do
+		weapon.Recoil = 0
+		weapon.CameraRecoilingEnabled = false
+		weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
+		weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
+		weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
+		weapon.Spread = 0
+	end
+end
+
+local function resetNoRecoil()
+	for weapon, values in pairs(weaponOrig) do
+		if type(weapon) == "table" then
+			weapon.Recoil = values.Recoil
+			weapon.CameraRecoilingEnabled = values.CameraRecoilingEnabled
+			weapon.AngleX_Min = values.AngleX_Min; weapon.AngleX_Max = values.AngleX_Max
+			weapon.AngleY_Min = values.AngleY_Min; weapon.AngleY_Max = values.AngleY_Max
+			weapon.AngleZ_Min = values.AngleZ_Min; weapon.AngleZ_Max = values.AngleZ_Max
+			weapon.Spread = values.Spread
+		end
+	end
+end
+
+local function onNoRecoilWeapon(tool)
+	task.wait(0.1)
+	cacheWeapons()
+	applyNoRecoil()
+end
+
+local function onNoRecoilCharacter(character)
+	for _, child in ipairs(character:GetChildren()) do
+		if child:IsA("Tool") then task.spawn(onNoRecoilWeapon, child) end
+	end
+	table.insert(noRecoilConns, character.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then task.spawn(onNoRecoilWeapon, child) end
+	end))
+	local humanoid = character:WaitForChild("Humanoid", 2)
+	if humanoid then
+		table.insert(noRecoilConns, humanoid.Died:Connect(function()
+			task.wait(1.5)
+			cacheWeapons()
+			applyNoRecoil()
+		end))
+	end
+end
+
+local function startNoRecoil()
+	cacheWeapons()
+	applyNoRecoil()
+	local lp = getLP()
+	table.insert(noRecoilConns, lp.CharacterAdded:Connect(onNoRecoilCharacter))
+	if lp.Character then onNoRecoilCharacter(lp.Character) end
+end
+
+local function stopNoRecoil()
+	resetNoRecoil()
+	for _, conn in ipairs(noRecoilConns) do pcall(conn.Disconnect, conn) end
+	noRecoilConns = {}
+end
+
+-- ── STAFF DETECTOR ───────────────────────────────────────────────────────────
+local staffConn = nil
+
+local STAFF_GROUPS = {
+	[4165692] = {
+		["Tester"] = true, ["Contributor"] = true, ["Tester+"] = true, ["Developer"] = true,
+		["Developer+"] = true, ["Community Manager"] = true, ["Manager"] = true, ["Owner"] = true,
+	},
+	[32406137] = {
+		["Junior"] = true, ["Moderator"] = true, ["Senior"] = true, ["Administrator"] = true,
+		["Manager"] = true, ["Holder"] = true,
+	},
+	[8024440] = {
+		["zzzz"] = true, ["reshape enjoyer"] = true, ["i heart reshape"] = true, ["reshape superfan"] = true,
+	},
+	[14927228] = {
+		["\226\153\158"] = true, -- War Room
+	},
+}
+
+local STAFF_USERS = {
+	3294804378, 93676120, 54087314, 81275825, 140837601, 1229486091, 46567801, 418086275, 29706395,
+	3717066084, 1424338327, 5046662686, 5046661126, 5046659439, 418199326, 1024216621, 1810535041,
+	63238912, 111250044, 63315426, 730176906, 141193516, 194512073, 193945439, 412741116, 195538733,
+	102045519, 955294, 957835150, 25689921, 366613818, 281593651, 455275714, 208929505, 96783330,
+	156152502, 93281166, 959606619, 142821118, 632886139, 175931803, 122209625, 278097946, 142989311,
+	1517131734, 446849296, 87189764, 67180844, 9212846, 47352513, 48058122, 155413858, 10497435,
+	513615792, 55893752, 55476024, 151691292, 136584758, 16983447, 3111449, 94693025, 271400893,
+	5005262660, 295331237, 64489098, 244844600, 114332275, 25048901, 69262878, 50801509, 92504899,
+	42066711, 50585425, 31365111, 166406495, 2457253857, 29761878, 21831137, 948293345, 439942262,
+	38578487, 1163048, 7713309208, 3659305297, 15598614, 34616594, 626833004, 198610386, 153835477,
+	3923114296, 3937697838, 102146039, 119861460, 371665775, 1206543842, 93428604, 1863173316, 90814576,
+	374665997, 423005063, 140172831, 42662179, 9066859, 438805620, 14855669, 727189337, 1871290386,
+	608073286,
+}
+
+local function crimNotify(title, text, duration)
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = title or "Vanguard",
+			Text = text or "",
+			Duration = duration or 5,
+		})
+	end)
+end
+
+local function hasStaffTracker(player)
+	if not player or not player:IsA("Player") then return false, nil end
+	for _, child in ipairs(player:GetChildren()) do
+		if typeof(child.Name) == "string" and child.Name:sub(-8) == "Tracker$" then
+			local trackedName = child.Name:sub(1, -9)
+			if Plrs:FindFirstChild(trackedName) then
+				return true, trackedName
+			end
+		end
+	end
+	return false, nil
+end
+
+local function isStaffPlayer(player)
+	if not player or not player:IsA("Player") then return false end
+	for groupId, roles in pairs(STAFF_GROUPS) do
+		local okRank, rank = pcall(function() return player:GetRankInGroup(groupId) end)
+		if okRank and rank and rank > 0 then
+			local okRole, roleName = pcall(function() return player:GetRoleInGroup(groupId) end)
+			if okRole and roleName and roles[roleName] then
+				return true, roleName, groupId
+			end
+		end
+	end
+	for _, userId in ipairs(STAFF_USERS) do
+		if player.UserId == userId then
+			return true, "UserID", userId
+		end
+	end
+	return false
+end
+
+local function formatStaffKick(staffList)
+	local msg = "Staff detected:\n"
+	for i, staff in ipairs(staffList) do
+		local idType = "Role"
+		local idValue = staff.Role or "Unknown"
+		if staff.Role == "UserID" then
+			idType = "UserID"
+			idValue = tostring(staff.GroupId or "Unknown")
+		elseif staff.Role == "Tracker User" then
+			idType = "Tracker"
+			idValue = "Active"
+		end
+		msg = msg .. string.format(
+			"- %s (%s: %s)%s",
+			staff.Name or "Unknown",
+			idType,
+			idValue,
+			staff.TrackedPlayer and (" - Tracking: " .. staff.TrackedPlayer) or ""
+		)
+		if i < #staffList then msg = msg .. "\n" end
+	end
+	return msg
+end
+
+local function kickForStaff(staffList)
+	local lp = getLP()
+	if not lp then return end
+	local body = formatStaffKick(staffList)
+	crimNotify("Staff Detected", body, 8)
+	task.delay(1.5, function()
+		local S = _G.__VG_S
+		if not S or not S.CrimStaffDetect then return end
+		pcall(function() lp:Kick("Staff joined\n\n" .. body) end)
+	end)
+end
+
+local function collectStaffInfo(player)
+	local isStaff, role, groupId = isStaffPlayer(player)
+	local hasTrack, tracked = hasStaffTracker(player)
+	if not isStaff and not hasTrack then return nil end
+	return {
+		Name = player.Name,
+		Role = hasTrack and "Tracker User" or role,
+		GroupId = groupId,
+		TrackedPlayer = tracked,
+	}
+end
+
+local function onStaffPlayerAdded(player)
+	local S = _G.__VG_S
+	if not S or not S.CrimStaffDetect then return end
+	if player == getLP() then return end
+	local info = collectStaffInfo(player)
+	if info then
+		kickForStaff({ info })
+	end
+end
+
+local function checkExistingStaff()
+	local found = {}
+	local lp = getLP()
+	for _, player in ipairs(Plrs:GetPlayers()) do
+		if player ~= lp then
+			local info = collectStaffInfo(player)
+			if info then table.insert(found, info) end
+		end
+	end
+	if #found > 0 then
+		kickForStaff(found)
+		return true
+	end
+	return false
+end
+
+local function startStaffDetect()
+	if staffConn then staffConn:Disconnect() end
+	staffConn = Plrs.PlayerAdded:Connect(onStaffPlayerAdded)
+	crimNotify("Staff Detection", "Monitoring active", 5)
+	task.spawn(function()
+		if checkExistingStaff() and staffConn then
+			staffConn:Disconnect()
+			staffConn = nil
+		end
+	end)
+end
+
+local function stopStaffDetect()
+	if staffConn then staffConn:Disconnect(); staffConn = nil end
+end
+
+-- ── NO FAIL LOCKPICK ─────────────────────────────────────────────────────────
+local lockpickConn = nil
+
+local function scaleLockpickBars(frames, scale)
+	if not frames then return end
+	for _, key in ipairs({ "B1", "B2", "B3" }) do
+		local bar = frames:FindFirstChild(key)
+		if bar and bar:FindFirstChild("Bar") then
+			local uiScale = bar.Bar:FindFirstChild("UIScale")
+			if uiScale then uiScale.Scale = scale end
+		end
+	end
+end
+
+local function applyNoFailLockpick(item)
+	if item.Name ~= "LockpickGUI" then return end
+	local mf = item:WaitForChild("MF", 10); if not mf then return end
+	local lpFrame = mf:WaitForChild("LP_Frame", 10); if not lpFrame then return end
+	local frames = lpFrame:WaitForChild("Frames", 10)
+	scaleLockpickBars(frames, 10)
+end
+
+local function startNoFailLockpick()
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChild("PlayerGui")
+	if not pg then return end
+	if lockpickConn then lockpickConn:Disconnect() end
+	lockpickConn = pg.ChildAdded:Connect(applyNoFailLockpick)
+end
+
+local function stopNoFailLockpick()
+	if lockpickConn then lockpickConn:Disconnect(); lockpickConn = nil end
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChild("PlayerGui")
+	local gui = pg and pg:FindFirstChild("LockpickGUI")
+	if gui then
+		local mf = gui:FindFirstChild("MF")
+		local lpFrame = mf and mf:FindFirstChild("LP_Frame")
+		local frames = lpFrame and lpFrame:FindFirstChild("Frames")
+		scaleLockpickBars(frames, 1)
+	end
+end
+
+-- ── AUTO OPEN / UNLOCK DOORS ─────────────────────────────────────────────────
+local DOOR_RADIUS  = 6
+local DOOR_INTERVAL = 0.25
+local lastDoorTick = 0
+
+local function tickDoors(S)
+	if not S.CrimAutoOpenDoors and not S.CrimAutoUnlockDoors then return end
+	local now = tick()
+	if now - lastDoorTick < DOOR_INTERVAL then return end
+	lastDoorTick = now
+
+	local hrp = getHRP()
+	local hum = getHum()
+	if not hrp or not hum or hum.Health <= 0 then return end
+
+	local map = workspace:FindFirstChild("Map")
+	if not map then return end
+	local doorsFolder = map:FindFirstChild("Doors")
+	if not doorsFolder then return end
+
+	local playerPos = hrp.Position
+	for _, doorInstance in ipairs(doorsFolder:GetChildren()) do
+		local doorBase = doorInstance:FindFirstChild("DoorBase")
+		local valuesFolder = doorInstance:FindFirstChild("Values")
+		local eventsFolder = doorInstance:FindFirstChild("Events")
+		if doorBase and valuesFolder and eventsFolder then
+			if (playerPos - doorBase.Position).Magnitude <= DOOR_RADIUS then
+				local toggleEvent = eventsFolder:FindFirstChild("Toggle")
+				if toggleEvent then
+					if S.CrimAutoUnlockDoors then
+						local lockedValue = valuesFolder:FindFirstChild("Locked")
+						local lockArg = doorInstance:FindFirstChild("Lock")
+						if lockedValue and lockArg and typeof(lockedValue.Value) == "boolean" and lockedValue.Value == true then
+							pcall(function() toggleEvent:FireServer("Unlock", lockArg) end)
+						end
+					end
+					if S.CrimAutoOpenDoors then
+						local openValue = valuesFolder:FindFirstChild("Open")
+						local knobArg = doorInstance:FindFirstChild("Knob2") or doorInstance:FindFirstChild("Knob")
+						if openValue and knobArg and typeof(openValue.Value) == "boolean" and openValue.Value == false then
+							local lockedVal = valuesFolder:FindFirstChild("Locked")
+							if not lockedVal or lockedVal.Value == false or not S.CrimAutoUnlockDoors then
+								pcall(function() toggleEvent:FireServer("Open", knobArg) end)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- ── INFINITE STAMINA (Criminality) ───────────────────────────────────────────
+local crimStaminaHooked = false
+local crimStaminaActive = false
+local crimOldStaminaFn  = nil
+
+local function setupCrimStaminaHook()
+	if crimStaminaHooked or typeof(hookfunction) ~= "function" or typeof(getupvalue) ~= "function" then
+		return
+	end
+	pcall(function()
+		local env
+		if typeof(getrenv) == "function" then
+			local ok, renv = pcall(getrenv)
+			if ok then env = renv end
+		end
+		if not env and typeof(getfenv) == "function" then
+			local ok, fenv = pcall(getfenv)
+			if ok then env = fenv end
+		end
+		if not env or not env._G or not env._G.S_Take then return end
+
+		local okUp, targetFn = pcall(getupvalue, env._G.S_Take, 2)
+		if not okUp or type(targetFn) ~= "function" then return end
+
+		crimOldStaminaFn = hookfunction(targetFn, function(v1, ...)
+			if crimStaminaActive and crimOldStaminaFn then
+				return crimOldStaminaFn(0, ...)
+			end
+			return crimOldStaminaFn(v1, ...)
+		end)
+		if crimOldStaminaFn then crimStaminaHooked = true end
+	end)
+end
+
+local function refillCrimStamina()
+	local lp = getLP()
+	local char = getChar()
+	if not lp or not char then return end
+	for _, key in ipairs({ "Stamina", "stamina", "STAMINA", "Sprint", "Energy" }) do
+		local ok, val = pcall(function() return lp:GetAttribute(key) end)
+		if ok and type(val) == "number" and val < 100 then
+			pcall(function() lp:SetAttribute(key, 100) end)
+		end
+		local ok2, val2 = pcall(function() return char:GetAttribute(key) end)
+		if ok2 and type(val2) == "number" and val2 < 100 then
+			pcall(function() char:SetAttribute(key, 100) end)
+		end
+	end
+	for _, key in ipairs({ "Stamina", "Sprint", "Energy", "Stam" }) do
+		local nv = char:FindFirstChild(key) or lp:FindFirstChild(key)
+		if nv and nv:IsA("NumberValue") and nv.Value < nv.MaxValue then
+			pcall(function() nv.Value = nv.MaxValue end)
+		end
+	end
+end
+
 -- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
@@ -622,7 +1027,10 @@ local function startMaster(S)
 	if masterConn then return end
 
 	local espInitTick = false
-	local running = { noFall = false, noSpike = false }
+	local running = {
+		noFall = false, noSpike = false,
+		noRecoil = false, staffDetect = false, noFailLockpick = false,
+	}
 
 	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
@@ -636,6 +1044,27 @@ local function startMaster(S)
 		if S.CrimNoSpike ~= running.noSpike then
 			running.noSpike = S.CrimNoSpike
 			if running.noSpike then pcall(startNoSpike) else pcall(stopNoSpike) end
+		end
+		if S.CrimNoRecoil ~= running.noRecoil then
+			running.noRecoil = S.CrimNoRecoil
+			if running.noRecoil then pcall(startNoRecoil) else pcall(stopNoRecoil) end
+		end
+		if S.CrimStaffDetect ~= running.staffDetect then
+			running.staffDetect = S.CrimStaffDetect
+			if running.staffDetect then pcall(startStaffDetect) else pcall(stopStaffDetect) end
+		end
+		if S.CrimNoFailLockpick ~= running.noFailLockpick then
+			running.noFailLockpick = S.CrimNoFailLockpick
+			if running.noFailLockpick then pcall(startNoFailLockpick) else pcall(stopNoFailLockpick) end
+		end
+
+		crimStaminaActive = S.CrimInfStamina == true
+		if S.CrimInfStamina then
+			refillCrimStamina()
+		end
+
+		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then
+			pcall(tickDoors, S)
 		end
 		if S.CrimSafeESP and not espBuilt.safes and workspace:FindFirstChild("Map") then
 			pcall(buildSafeESP, S)
@@ -686,6 +1115,11 @@ local function stopMaster()
 	if crateFolderConn then crateFolderConn:Disconnect(); crateFolderConn=nil end
 	if crateRemoveConn then crateRemoveConn:Disconnect(); crateRemoveConn=nil end
 	if crateFolderWatch then crateFolderWatch:Disconnect(); crateFolderWatch=nil end
+	pcall(stopNoRecoil)
+	pcall(stopStaffDetect)
+	pcall(stopNoFailLockpick)
+	crimStaminaActive = false
+	lastDoorTick = 0
 	clearCrateESP()
 end
 
@@ -694,10 +1128,14 @@ function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
 
+	setupCrimStaminaHook()
 	startMaster(S)
 
 	if S.CrimNoFall then pcall(startNoFall) end
 	if S.CrimNoSpike then pcall(startNoSpike) end
+	if S.CrimNoRecoil then pcall(startNoRecoil) end
+	if S.CrimStaffDetect then pcall(startStaffDetect) end
+	if S.CrimNoFailLockpick then pcall(startNoFailLockpick) end
 end
 
 return Criminality

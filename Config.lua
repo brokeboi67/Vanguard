@@ -390,6 +390,24 @@ function Config.EnforceRules(S)
 	if S.CrimCratePickupDelay == nil then
 		S.CrimCratePickupDelay = 200
 	end
+	if S.CrimNoRecoil == nil then
+		S.CrimNoRecoil = false
+	end
+	if S.CrimStaffDetect == nil then
+		S.CrimStaffDetect = false
+	end
+	if S.CrimNoFailLockpick == nil then
+		S.CrimNoFailLockpick = false
+	end
+	if S.CrimAutoOpenDoors == nil then
+		S.CrimAutoOpenDoors = false
+	end
+	if S.CrimAutoUnlockDoors == nil then
+		S.CrimAutoUnlockDoors = false
+	end
+	if S.CrimInfStamina == nil then
+		S.CrimInfStamina = false
+	end
 	if S.LOSIgnoreSelf == nil then
 		S.LOSIgnoreSelf = true
 	end

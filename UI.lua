@@ -2144,15 +2144,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	if TCrim then
 		local CCombat = MakeCard(TCrim, "COMBAT", nil, 1)
 		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1, { flat = true })
-		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 3, 15, 2, {
+		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 2, { flat = true })
+		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 3, 15, 3, {
 			suffix = " st",
 			step = 1,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
+		MakeHint(CCombat, "hint_crim_norecoil", 4)
 
 		local CSurv = MakeCard(TCrim, "SURVIVAL", nil, 2)
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
+		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 3, { flat = true })
+		MakeHint(CSurv, "hint_crim_stamina", 4)
 
 		local CESP = MakeCard(TCrim, "OBJECT ESP", nil, 4)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 1, { flat = true })
@@ -2232,6 +2236,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeHint(CCrate, "hint_crim_pickup", 6)
+
+		local CUtil = MakeCard(TCrim, "UTILITY", nil, 5)
+		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
+		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
+		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
+		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4, { flat = true })
+		MakeHint(CUtil, "hint_crim_util", 5)
 	end
 
 	local function refreshWorld()
