@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.63
+-- Criminality.lua  v2.43.64
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -209,8 +209,8 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal)
 	h.OutlineTransparency = 0
 	h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
 	h.Adornee             = model
-	h.Enabled             = false   -- start hidden; visibility loop enables
-	h.Parent              = getGui()
+	h.Enabled             = false
+	h.Parent              = model
 
 	local bg  = Instance.new("BillboardGui")
 	bg.Size        = UDim2.new(0, 64, 0, 16)
@@ -488,6 +488,22 @@ local function ensureCrateWatch(S)
 	if crateFolderWatch then
 		return
 	end
+	local filter = workspace:FindFirstChild("Filter")
+	if filter then
+		crateFolderWatch = filter.ChildAdded:Connect(function(ch)
+			if ch.Name ~= "SpawnedPiles" then
+				return
+			end
+			task.defer(function()
+				local curS = _G.__VG_S
+				if curS and curS.CrimCrateESP then
+					syncCrateESP(curS)
+					ensureCrateWatch(curS)
+				end
+			end)
+		end)
+		return
+	end
 	crateFolderWatch = workspace.ChildAdded:Connect(function(ch)
 		if ch.Name ~= "Filter" then
 			return
@@ -555,7 +571,9 @@ local function identifySpawnedTool(model)
 		return rememberToolId(model, "CHAINSAW", "melee")
 	end
 	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then return rememberToolId(model, "RIFLE", "gun") end
-	if hasDeepChild(model, "Barrel") and hasDeepChild(model, "MagPart") then return rememberToolId(model, "PISTOL", "gun") end
+	if hasDeepChild(model, "MagPart") and (hasDeepChild(model, "Barrel") or hasDeepChild(model, "SlidePart") or hasDeepChild(model, "Slide")) then
+		return rememberToolId(model, "PISTOL", "gun")
+	end
 	if hasDeepChild(model, "MagPart") and hasDeepChild(model, "Bullets") then return rememberToolId(model, "GUN", "gun") end
 	if hasDeepChild(model, "MagPart") then return rememberToolId(model, "GUN", "gun") end
 	if hasDeepChild(model, "WeaponHandle") then return rememberToolId(model, "WEAPON", "melee") end
@@ -594,12 +612,32 @@ local function isSpawnedToolModel(model)
 	return model and model:IsA("Model")
 end
 
+local function getFilterFolder()
+	return workspace:FindFirstChild("Filter")
+end
+
 local function getSpawnedTools()
-	local filter = workspace:FindFirstChild("Filter")
+	local filter = getFilterFolder()
 	if not filter then
 		return nil
 	end
 	return filter:FindFirstChild("SpawnedTools")
+end
+
+local function iterSpawnedToolModels(folder)
+	local models = {}
+	for _, ch in ipairs(folder:GetChildren()) do
+		if ch:IsA("Model") then
+			table.insert(models, ch)
+		elseif ch:IsA("Folder") then
+			for _, sub in ipairs(ch:GetChildren()) do
+				if sub:IsA("Model") then
+					table.insert(models, sub)
+				end
+			end
+		end
+	end
+	return models
 end
 
 local function destroyGunEntry(model)
@@ -706,34 +744,72 @@ local function syncGunESP(S)
 		end
 	end
 
-	for _, model in ipairs(folder:GetChildren()) do
+	for _, model in ipairs(iterSpawnedToolModels(folder)) do
 		addGunESP(model, S, false)
 	end
+end
+
+local function bindGunFolder(folder)
+	if gunFolderWatch then
+		gunFolderWatch:Disconnect()
+		gunFolderWatch = nil
+	end
+	if gunFolderConn then
+		gunFolderConn:Disconnect()
+		gunFolderConn = nil
+	end
+	if gunRemoveConn then
+		gunRemoveConn:Disconnect()
+		gunRemoveConn = nil
+	end
+	gunFolderConn = folder.ChildAdded:Connect(function(ch)
+			task.defer(function()
+				local curS = _G.__VG_S
+				if not curS or not curS.CrimGunESP then
+					return
+				end
+				RS.Heartbeat:Wait()
+				local targets = ch:IsA("Model") and { ch } or iterSpawnedToolModels(ch)
+				for _, model in ipairs(targets) do
+					local added = addGunESP(model, curS, true)
+					if added then
+						pcall(tickESP, curS)
+					end
+				end
+		end)
+	end)
+	gunRemoveConn = folder.ChildRemoved:Connect(function(ch)
+		if ch:IsA("Model") then
+			destroyGunEntry(ch)
+		else
+			for _, model in ipairs(iterSpawnedToolModels(ch)) do
+				destroyGunEntry(model)
+			end
+		end
+	end)
 end
 
 local function ensureGunWatch(S)
 	local folder = getSpawnedTools()
 	if folder then
-		if gunFolderWatch then
-			gunFolderWatch:Disconnect()
-			gunFolderWatch = nil
-		end
-		if not gunFolderConn then
-			gunFolderConn = folder.ChildAdded:Connect(function(ch)
+		bindGunFolder(folder)
+		return
+	end
+
+	local filter = getFilterFolder()
+	if filter then
+		if not gunFolderWatch then
+			gunFolderWatch = filter.ChildAdded:Connect(function(ch)
+				if ch.Name ~= "SpawnedTools" then
+					return
+				end
 				task.defer(function()
 					local curS = _G.__VG_S
-					if not curS or not curS.CrimGunESP then
-						return
-					end
-					RS.Heartbeat:Wait()
-					local added = addGunESP(ch, curS, true)
-					if added then
-						pcall(tickESP, curS)
+					if curS and curS.CrimGunESP then
+						bindGunFolder(ch)
+						syncGunESP(curS)
 					end
 				end)
-			end)
-			gunRemoveConn = folder.ChildRemoved:Connect(function(ch)
-				destroyGunEntry(ch)
 			end)
 		end
 		return
@@ -749,8 +825,8 @@ local function ensureGunWatch(S)
 		task.defer(function()
 			local curS = _G.__VG_S
 			if curS and curS.CrimGunESP then
-				syncGunESP(curS)
 				ensureGunWatch(curS)
+				syncGunESP(curS)
 			end
 		end)
 	end)
@@ -1850,7 +1926,7 @@ local function startMaster(S)
 
 		if S.CrimGunESP then
 			pcall(ensureGunWatch, S)
-			if crimFrame % 30 == 0 or tick() - gunScanAt > 1.2 then
+			if crimFrame % 15 == 0 or tick() - gunScanAt > 0.6 then
 				gunScanAt = tick()
 				pcall(syncGunESP, S)
 			end
