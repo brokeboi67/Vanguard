@@ -2273,17 +2273,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCrate, "Search Range", "CrimCratePickupSearch", 10, 80, 5, {
-			suffix = " st",
-			step = 5,
-			fmt = function(v) return string.format("%d st", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimCratePickup == true)
-				end
-			end,
-		})
-		MakeSlider(CCrate, "Pickup Delay", "CrimCratePickupDelay", 80, 800, 6, {
+		MakeSlider(CCrate, "Pickup Delay", "CrimCratePickupDelay", 80, 800, 5, {
 			suffix = "ms",
 			step = 20,
 			fmt = function(v) return string.format("%d ms", v) end,
@@ -2293,12 +2283,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CCrate, "Auto Walk To Crate", "CrimCrateAutoWalk", 7, {
-			flat = true,
-			requires = "CrimCratePickup",
-		})
-		MakeHint(CCrate, "hint_crim_pickup", 8)
-		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 9, {
+		MakeHint(CCrate, "hint_crim_pickup", 6)
+		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 7, {
 			flat = true,
 			requires = "CrimCratePickup",
 		})
