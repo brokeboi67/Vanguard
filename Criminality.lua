@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.83
+-- Criminality.lua  v2.43.84
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1809,7 +1809,9 @@ local gunModScanToken = 0
 local weaponCache = {}
 local weaponOrig  = {}
 local lastGunModApplyAt = 0
+local lastGunModDeepAt = 0
 local GUNMOD_REAPPLY_INTERVAL = 8
+local GUNMOD_DEEP_COOLDOWN = 4
 
 local function isWeaponTable(v)
 	return type(v) == "table" and rawget(v, "EquipTime") ~= nil
@@ -1827,7 +1829,8 @@ local function cacheWeapons(deep)
 	if typeof(getgc) ~= "function" then return end
 	local active = {}
 	local found = {}
-	local scans = deep and { true } or { false, true }
+	-- shallow first; deep only when requested or shallow empty
+	local scans = deep and { false, true } or { false }
 	for _, useDeep in ipairs(scans) do
 		local ok, gc = pcall(getgc, useDeep)
 		if ok and type(gc) == "table" then
@@ -1848,12 +1851,14 @@ local function cacheWeapons(deep)
 				end
 			end
 		end
-		if #found > 0 and not useDeep then
+		if #found > 0 then
 			break
 		end
 	end
-	weaponCache = found
-	pruneWeaponOrig(active)
+	if #found > 0 then
+		weaponCache = found
+		pruneWeaponOrig(active)
+	end
 end
 
 local function clearGunModCharConns()
@@ -1863,16 +1868,32 @@ local function clearGunModCharConns()
 	table.clear(gunModCharConns)
 end
 
+local function applyGunMods(S)
+	if not S or not S.CrimNoRecoil then
+		return
+	end
+	for _, weapon in ipairs(weaponCache) do
+		weapon.Recoil = 0
+		weapon.CameraRecoilingEnabled = false
+		weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
+		weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
+		weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
+		weapon.Spread = 0
+	end
+end
+
 local function refreshGunMods(S, preferDeep)
 	if not S or not S.CrimNoRecoil then
 		return
 	end
-	cacheWeapons(preferDeep == true)
-	if #weaponCache == 0 then
-		cacheWeapons(true)
+	local now = tick()
+	local wantDeep = preferDeep == true and (now - lastGunModDeepAt >= GUNMOD_DEEP_COOLDOWN)
+	cacheWeapons(wantDeep)
+	if wantDeep then
+		lastGunModDeepAt = now
 	end
 	applyGunMods(S)
-	lastGunModApplyAt = tick()
+	lastGunModApplyAt = now
 end
 
 local function scheduleGunModRefresh(preferDeep, delaySec)
@@ -1890,20 +1911,6 @@ local function scheduleGunModRefresh(preferDeep, delaySec)
 	end)
 end
 
-local function applyGunMods(S)
-	if not S.CrimNoRecoil then
-		return
-	end
-	for _, weapon in ipairs(weaponCache) do
-		weapon.Recoil = 0
-		weapon.CameraRecoilingEnabled = false
-		weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
-		weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
-		weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
-		weapon.Spread = 0
-	end
-end
-
 local function resetGunMods()
 	for weapon, values in pairs(weaponOrig) do
 		if type(weapon) == "table" then
@@ -1918,33 +1925,31 @@ local function resetGunMods()
 	weaponCache = {}
 	table.clear(weaponOrig)
 	lastGunModApplyAt = 0
+	lastGunModDeepAt = 0
 end
 
 local function onGunModCharacter(character)
 	clearGunModCharConns()
-	weaponCache = {}
-	table.clear(weaponOrig)
-	scheduleGunModRefresh(true, 0.75)
+	-- one delayed deep rescan after respawn (new weapon tables), no cache wipe on start
+	scheduleGunModRefresh(true, 1.0)
 	table.insert(gunModCharConns, character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(true, 0.35)
+			scheduleGunModRefresh(false, 0.25)
 		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
 		table.insert(gunModCharConns, humanoid.Died:Connect(function()
-			gunModScanToken += 1
-			weaponCache = {}
-			table.clear(weaponOrig)
-			scheduleGunModRefresh(true, 2.5)
+			-- keep applying old tables until respawn scan; force deep after death settle
+			lastGunModDeepAt = 0
+			scheduleGunModRefresh(true, 2.0)
 		end))
 	end
 end
 
 local function startGunMods(S)
 	clearGunModCharConns()
-	weaponCache = {}
-	table.clear(weaponOrig)
+	lastGunModDeepAt = 0
 	refreshGunMods(S, true)
 	local lp = getLP()
 	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
@@ -2457,7 +2462,9 @@ local function startMaster(S)
 		if featureRunning.gunMods and S.CrimNoRecoil then
 			local now = tick()
 			if now - lastGunModApplyAt >= GUNMOD_REAPPLY_INTERVAL then
-				refreshGunMods(S, true)
+				lastGunModApplyAt = now
+				-- cheap: only re-zero cached tables (no getgc every few seconds)
+				applyGunMods(S)
 			end
 		end
 
