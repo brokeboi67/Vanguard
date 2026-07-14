@@ -1,4 +1,4 @@
--- Criminality.lua  v2.44.2
+-- Criminality.lua  v2.44.3
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2485,10 +2485,12 @@ local function tickDoors(S)
 end
 
 -- ── REMOTE ELEVATOR ─────────────────────────────────────────────────────────
--- Server checks distance to Knob — plain FireServer from far fails.
--- Fix: briefly spoof HRP next to knob, FireServer("Do", Knob), restore CFrame.
+-- Server distance-checks Knob. Far FireServer fails unless we spoof HRP nearby.
+-- Spoof = mini-teleport → may trip internal AC (same class as noclip). Prefer
+-- no-spoof when already close; Position Spoof toggle OFF by default.
 -- Cobalt: Elevator_N.Events.Toggle:FireServer("Do", Elevator_N.Knob1)
 local elev = { conn = nil, lastAt = 0, busy = false }
+local ELEV_NEAR = 11 -- studs: normal interact → fire without spoof
 
 local function tryRemoteElevator(S)
 	if not S or S.CrimRemoteElevator ~= true or elev.busy then
@@ -2511,6 +2513,7 @@ local function tryRemoteElevator(S)
 	local maxDist = math.clamp(tonumber(S.CrimRemoteElevatorMaxDist) or 400, 50, 1000)
 	local origin = cam.CFrame.Position
 	local look = cam.CFrame.LookVector
+	local playerPos = hrp.Position
 	local bestToggle, bestKnob, bestName, bestScore, bestDist = nil, nil, nil, nil, nil
 
 	for _, ch in ipairs(doors:GetChildren()) do
@@ -2531,7 +2534,7 @@ local function tryRemoteElevator(S)
 						bestToggle = toggle
 						bestKnob = knob
 						bestName = n
-						bestDist = dist
+						bestDist = (playerPos - part.Position).Magnitude
 					end
 				end
 			end
@@ -2540,6 +2543,12 @@ local function tryRemoteElevator(S)
 
 	if not bestToggle or not bestKnob then
 		crimNotify("Elevator", "Brak windy w zasięgu", 2)
+		return
+	end
+
+	local needSpoof = (bestDist or 999) > ELEV_NEAR
+	if needSpoof and S.CrimRemoteElevatorSpoof ~= true then
+		crimNotify("Elevator", "Za daleko — włącz Position Spoof (ryzyko AC) albo podejdź", 3)
 		return
 	end
 
@@ -2552,29 +2561,34 @@ local function tryRemoteElevator(S)
 			return
 		end
 		local saved = root.CFrame
-		-- Stand slightly in front of / on the knob so server distance check passes
-		local near = bestKnob.CFrame * CFrame.new(0, 1.5, -2.2)
-		pcall(function()
-			root.AssemblyLinearVelocity = Vector3.zero
-			root.AssemblyAngularVelocity = Vector3.zero
-			root.CFrame = near
-		end)
-		-- Let character position replicate before the remote
-		RS.Heartbeat:Wait()
-		RS.Heartbeat:Wait()
+		local spoofed = false
+		if needSpoof then
+			local near = bestKnob.CFrame * CFrame.new(0, 1.2, -1.8)
+			pcall(function()
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				root.CFrame = near
+			end)
+			spoofed = true
+			-- 1 frame only — shorter blink than 2 waits
+			RS.Heartbeat:Wait()
+		end
 		local ok = pcall(function()
 			bestToggle:FireServer("Do", bestKnob)
 		end)
-		pcall(function()
-			local r2 = getHRP()
-			if r2 then
-				r2.CFrame = saved
-				r2.AssemblyLinearVelocity = Vector3.zero
-			end
-		end)
+		if spoofed then
+			pcall(function()
+				local r2 = getHRP()
+				if r2 then
+					r2.CFrame = saved
+					r2.AssemblyLinearVelocity = Vector3.zero
+				end
+			end)
+		end
 		elev.busy = false
 		if ok then
-			crimNotify("Elevator", tostring(bestName) .. string.format("  %.0fm", bestDist or 0), 2)
+			local tag = spoofed and " [spoof]" or " [near]"
+			crimNotify("Elevator", tostring(bestName) .. string.format("  %.0fm", bestDist or 0) .. tag, 2)
 		else
 			crimNotify("Elevator", "Fire failed", 2)
 		end

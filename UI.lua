@@ -2667,14 +2667,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
 		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4, { flat = true })
 		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 5, { flat = true })
-		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 6)
-		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 7, {
+		MakeTog(CUtil, "Elevator Pos Spoof", "CrimRemoteElevatorSpoof", 6, {
+			flat = true,
+			requires = "CrimRemoteElevator",
+		})
+		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 7)
+		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 8, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CUtil, "hint_crim_elevator", 8)
-		MakeHint(CUtil, "hint_crim_util", 9)
+		MakeHint(CUtil, "hint_crim_elevator", 9)
+		MakeHint(CUtil, "hint_crim_util", 10)
 	end
 
 	local function refreshWorld()

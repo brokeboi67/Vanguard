@@ -481,6 +481,9 @@ function Config.EnforceRules(S)
 	if S.CrimRemoteElevatorMaxDist == nil then
 		S.CrimRemoteElevatorMaxDist = 400
 	end
+	if S.CrimRemoteElevatorSpoof == nil then
+		S.CrimRemoteElevatorSpoof = false
+	end
 	if S.CrimInfStamina == nil then
 		S.CrimInfStamina = false
 	end
