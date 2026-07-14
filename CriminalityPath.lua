@@ -1,4 +1,4 @@
--- CriminalityPath.lua  v2.43.95
+-- CriminalityPath.lua  v2.43.96
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
 -- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
@@ -673,27 +673,33 @@ local function computePath(S)
 				wps, mode = tryPathfinding(startPos, part.Position)
 			end
 
-			-- Probe only for same floor. Cross-floor (needStairs) = navmesh only.
-			-- probe-partial is NOT shown — partial paths through walls are misleading.
-			if not wps and not needStairs then
+			-- Probe fallback for ALL cases — with fixed canTraverse (multi-ray, no Map.Doors exclusion)
+			-- it now properly stops at walls instead of clipping through them.
+			if not wps then
 				local side = (hrp.Position - part.Position)
 				if side.Magnitude < 0.1 then
 					side = Vector3.new(0, 0, 1)
 				end
-				local goal = snapFloor(part.Position + side.Unit * 2.5, model, hrp.Position.Y)
-				goalPos = goal
-				wps, mode = probePath(startPos, goal, model)
-				-- Discard partial probes — they often clip walls
-				if mode == "probe-partial" or mode == "probe-fail" then
+				local probeGoal
+				if needStairs then
+					-- Cross-floor: probe toward target at our floor level (guides to stairs/ladder)
+					probeGoal = snapFloor(part.Position, model, hrp.Position.Y)
+				else
+					probeGoal = snapFloor(part.Position + side.Unit * 2.5, model, hrp.Position.Y)
+				end
+				goalPos = probeGoal
+				wps, mode = probePath(startPos, probeGoal, model)
+				-- probe-fail (< 3 points) = truly stuck, don't show
+				if mode == "probe-fail" then
 					wps = nil
 				end
+				-- probe-partial = valid up to wall — show as partial guide
 			end
-			-- needStairs + navmesh failed → just tell user to find stairs, no probe
 
 			if not wps or #wps < 2 then
 				local why = needStairs
-					and "navmesh blocked — find stairs/ladder"
-					or "blocked — open/reposition"
+					and "navmesh + probe blocked — find stairs/ladder manually"
+					or "blocked — try different angle"
 				local params = makeExcludeParams(model)
 				local from = startPos + Vector3.new(0, 1.5, 0)
 				local to = (goalPos or part.Position) + Vector3.new(0, 1.5, 0)
@@ -712,12 +718,20 @@ local function computePath(S)
 				return
 			end
 
-			lastGoalPos = goalPos or part.Position
+			-- For partial probe, goal = last waypoint (not the safe itself)
+			local arrivePos = (mode == "probe-partial")
+				and wps[#wps].Position
+				or (goalPos or part.Position)
+			lastGoalPos = arrivePos
 			drawWaypoints(wps)
 			local tag = mode == "nav" and "navmesh"
-				or mode == "need-stairs" and "same floor — find stairs"
+				or (needStairs and (mode == "probe" or mode == "probe-partial")) and "partial — find stairs"
+				or mode == "probe-partial" and "partial — reposition"
 				or tostring(mode or "probe")
-			flashStatus("Path → " .. labelOf(model) .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150), 3.5)
+			local col = (mode == "probe-partial")
+				and Color3.fromRGB(255, 200, 80)
+				or Color3.fromRGB(90, 255, 150)
+			flashStatus("Path → " .. labelOf(model) .. "  [" .. tag .. "]", col, 3.5)
 		end)
 		computing = false
 		if not okOuter then
