@@ -1,4 +1,4 @@
--- CriminalityPath.lua  v2.43.96
+-- CriminalityPath.lua  v2.43.97
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
 -- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
@@ -385,8 +385,8 @@ local function canTraverse(a, b, exclude)
 	local flatDir = flat.Unit
 	-- perpendicular (left/right of travel)
 	local perp = Vector3.new(-flatDir.Z, 0, flatDir.X)
-	local OFFSETS = { -0.45, 0, 0.45 }
-	local HEIGHTS = { 0.55, 1.1, 1.6, 2.1, 2.6 }
+	local OFFSETS = { 0, -0.45, 0.45 } -- center first: cheap early-reject when centrally blocked
+	local HEIGHTS = { 0.55, 1.1, 1.6, 2.1 }
 
 	for _, h in ipairs(HEIGHTS) do
 		local allClear = true
@@ -397,7 +397,7 @@ local function canTraverse(a, b, exclude)
 			local hit = workspace:Raycast(from, to - from, params)
 			if hit and isSolidHit(hit) then
 				allClear = false
-				break
+				break -- center (or a side) blocked — skip remaining offsets at this height
 			end
 		end
 		if allClear then
@@ -413,86 +413,141 @@ local function headroomOk(pos, exclude)
 	return not hit or not isSolidHit(hit)
 end
 
--- Same-floor / stair-step probe only. Cross-story = PathfindingService (stairs).
+local STEP_DOWN_PROBE = 1.6 -- tighter than MAX_STEP_DOWN: avoid dipping into gaps/holes unnecessarily
+
+local function quantizeKey(pos, cell)
+	local qx = math.floor(pos.X / cell + 0.5)
+	local qz = math.floor(pos.Z / cell + 0.5)
+	return qx .. ":" .. qz
+end
+
+-- True A* over a lazily-built grid graph (not a greedy walk).
+-- Explores multiple directions from EVERY visited node so it can route AROUND
+-- buildings/walls to find doors/gaps, instead of getting stuck at the first wall.
+-- Node budget keeps it lightweight (one-shot on keypress, not per-frame).
 local function probePath(startPos, goalPos, exclude)
-	local cur = snapFloor(startPos, exclude, startPos.Y)
-	local crossStory = math.abs(goalPos.Y - cur.Y) > 4.0
-	local goal = crossStory and snapFloor(goalPos, exclude, cur.Y) or snapFloor(goalPos, exclude, goalPos.Y)
-	if math.abs(goal.Y - cur.Y) > 10 then
-		goal = snapFloor(goalPos, exclude, cur.Y)
-		crossStory = true
+	local STEP = 1.6
+	local CELL = STEP * 0.8
+	local ITER_LIMIT = 220
+	local ARRIVE = 2.4
+	local DIR_ANGLES = { 0, 30, -30, 60, -60, 90, -90, 120, -120, 150, -150, 180 }
+
+	local start = snapFloor(startPos, exclude, startPos.Y)
+	local crossStory = math.abs(goalPos.Y - start.Y) > 4.0
+	local goal = snapFloor(goalPos, exclude, start.Y)
+
+	local function heuristic(pos)
+		return Vector3.new(goal.X - pos.X, 0, goal.Z - pos.Z).Magnitude
 	end
 
-	local points = { { Position = cur, Action = Enum.PathWaypointAction.Walk } }
-	local angles = { 0, 22, -22, 45, -45, 70, -70, 95, -95, 125, -125 }
-	local stuck = 0
+	local nodes = { { pos = start, g = 0, f = heuristic(start), parent = nil } }
+	local keyToIndex = { [quantizeKey(start, CELL)] = 1 }
+	local open = { 1 }
+	local closed = {}
 
-	for _ = 1, 80 do
-		local flat = Vector3.new(goal.X - cur.X, 0, goal.Z - cur.Z)
-		local rem = flat.Magnitude
-		if rem < 2.6 then
-			if not crossStory then
-				table.insert(points, { Position = goal, Action = Enum.PathWaypointAction.Walk })
-			end
-			return points, crossStory and "probe-samefloor" or "probe"
+	local goalIndex = nil
+	local bestPartialIdx, bestPartialH = 1, heuristic(start)
+	local iterations = 0
+
+	while #open > 0 and iterations < ITER_LIMIT do
+		iterations += 1
+		if iterations % 40 == 0 then
+			task.wait()
 		end
 
-		local dir = flat.Unit
-		local stepLen = math.clamp(rem, 1.2, 1.8) -- small steps: can't skip through thin walls
-		local found, foundH = nil, 0
-
-		for _, ang in ipairs(angles) do
-			local guess = cur + rotY(dir, ang) * stepLen
-			local floored = snapFloor(guess, exclude, cur.Y)
-			local dy = floored.Y - cur.Y
-			if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
-				local okTrav, h = canTraverse(cur, floored, exclude)
-				if okTrav and headroomOk(floored, exclude) then
-					found, foundH = floored, h
-					break
-				end
+		-- pop lowest f
+		local bestPos, curIdx = 1, open[1]
+		for i = 2, #open do
+			if nodes[open[i]].f < nodes[curIdx].f then
+				bestPos, curIdx = i, open[i]
 			end
 		end
+		table.remove(open, bestPos)
+		if not closed[curIdx] then
+			closed[curIdx] = true
+			local curNode = nodes[curIdx]
 
-		if not found then
-			for _, ang in ipairs({ 0, 40, -40, 80, -80 }) do
-				local guess = cur + rotY(dir, ang) * 1.25
-				local floored = snapFloor(guess, exclude, cur.Y)
-				local dy = floored.Y - cur.Y
-				if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
-					local okTrav, h = canTraverse(cur, floored, exclude)
+			local h = heuristic(curNode.pos)
+			if h < bestPartialH then
+				bestPartialH = h
+				bestPartialIdx = curIdx
+			end
+			if h <= ARRIVE then
+				goalIndex = curIdx
+				break
+			end
+
+			local toGoalFlat = Vector3.new(goal.X - curNode.pos.X, 0, goal.Z - curNode.pos.Z)
+			local baseDir = toGoalFlat.Magnitude > 0.05 and toGoalFlat.Unit or Vector3.new(0, 0, 1)
+
+			for _, ang in ipairs(DIR_ANGLES) do
+				local dir = rotY(baseDir, ang)
+				local guess = curNode.pos + dir * STEP
+				local floored = snapFloor(guess, exclude, curNode.pos.Y)
+				local dy = floored.Y - curNode.pos.Y
+				if dy <= MAX_STEP_UP and dy >= -STEP_DOWN_PROBE then
+					local okTrav, hgt = canTraverse(curNode.pos, floored, exclude)
 					if okTrav and headroomOk(floored, exclude) then
-						found, foundH = floored, h
-						break
+						local key = quantizeKey(floored, CELL)
+						local moveCost = (floored - curNode.pos).Magnitude + math.abs(dy) * 1.5
+						local g2 = curNode.g + moveCost
+						local existingIdx = keyToIndex[key]
+						if not existingIdx then
+							table.insert(nodes, {
+								pos = floored,
+								g = g2,
+								f = g2 + heuristic(floored),
+								parent = curIdx,
+								h = hgt,
+							})
+							local newIdx = #nodes
+							keyToIndex[key] = newIdx
+							table.insert(open, newIdx)
+						elseif not closed[existingIdx] and g2 < nodes[existingIdx].g - 0.01 then
+							nodes[existingIdx].g = g2
+							nodes[existingIdx].f = g2 + heuristic(floored)
+							nodes[existingIdx].parent = curIdx
+						end
 					end
 				end
 			end
 		end
+	end
 
-		if not found then
-			stuck += 1
-			if stuck >= 4 then
-				break
-			end
-		else
-			stuck = 0
-			local doorHit = nearestDoorInfo(found)
-			local action = Enum.PathWaypointAction.Walk
-			if not doorHit and (math.abs(found.Y - cur.Y) > 0.85 or (foundH > 0 and foundH < 1.5)) then
+	local finalIdx = goalIndex or bestPartialIdx
+	if finalIdx == 1 and not goalIndex then
+		return nil, "probe-fail" -- couldn't even take one step — truly boxed in
+	end
+
+	-- reconstruct path by walking parents
+	local chain = {}
+	local walk = finalIdx
+	while walk do
+		table.insert(chain, 1, walk)
+		walk = nodes[walk].parent
+	end
+
+	local points = {}
+	for i, idx in ipairs(chain) do
+		local node = nodes[idx]
+		local doorHit = nearestDoorInfo(node.pos)
+		local action = Enum.PathWaypointAction.Walk
+		if i > 1 then
+			local prevNode = nodes[chain[i - 1]]
+			if not doorHit and (math.abs(node.pos.Y - prevNode.pos.Y) > 0.85 or (node.h and node.h > 0 and node.h < 1.5)) then
 				action = Enum.PathWaypointAction.Jump
 			end
-			table.insert(points, { Position = found, Action = action, IsDoor = doorHit ~= nil })
-			cur = found
-			if #points > 70 then
-				break
-			end
 		end
+		table.insert(points, { Position = node.pos, Action = action, IsDoor = doorHit ~= nil })
 	end
 
-	if #points >= 3 then
-		return points, crossStory and "probe-samefloor" or "probe-partial"
+	if #points < 2 then
+		return nil, "probe-fail"
 	end
-	return nil, "probe-fail"
+	if goalIndex then
+		return points, crossStory and "probe-samefloor" or "probe"
+	end
+	return points, "probe-partial"
 end
 
 local function drawWaypoints(waypoints)
