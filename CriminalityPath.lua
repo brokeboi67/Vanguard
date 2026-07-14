@@ -1,4 +1,4 @@
--- CriminalityPath.lua  v2.43.91
+-- CriminalityPath.lua  v2.43.92
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
 -- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
@@ -46,7 +46,7 @@ local function ensureFolder()
 	return f
 end
 
-local function flashStatus(text, col)
+local function flashStatus(text, col, secs)
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	if not pg then
@@ -65,18 +65,87 @@ local function flashStatus(text, col)
 	local lbl = Instance.new("TextLabel")
 	lbl.AnchorPoint = Vector2.new(0.5, 0)
 	lbl.Position = UDim2.new(0.5, 0, 0.12, 0)
-	lbl.Size = UDim2.new(0, 420, 0, 26)
+	lbl.Size = UDim2.new(0, 520, 0, 28)
 	lbl.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 	lbl.BackgroundTransparency = 0.25
 	lbl.Text = text
 	lbl.TextColor3 = col or Color3.fromRGB(120, 255, 160)
 	lbl.Font = Enum.Font.GothamBold
 	lbl.TextSize = 12
+	lbl.TextWrapped = true
 	lbl.Parent = gui
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 6)
 	corner.Parent = lbl
-	Debris:AddItem(gui, 2.6)
+	Debris:AddItem(gui, secs or 3.5)
+end
+
+local function makeMarker(parent, name, pos, color, size, shape)
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Material = Enum.Material.Neon
+	p.Shape = shape or Enum.PartType.Ball
+	p.Size = size or Vector3.new(0.7, 0.7, 0.7)
+	p.Color = color
+	p.Transparency = 0.1
+	p.CFrame = CFrame.new(pos)
+	p.Parent = parent
+	return p
+end
+
+local function makeBeam(parent, a, b, color)
+	local mid = (a + b) * 0.5
+	local dist = (b - a).Magnitude
+	if dist < 0.05 or dist > 80 then
+		return
+	end
+	local beam = Instance.new("Part")
+	beam.Name = "DbgSeg"
+	beam.Anchored = true
+	beam.CanCollide = false
+	beam.CanQuery = false
+	beam.CanTouch = false
+	beam.CastShadow = false
+	beam.Material = Enum.Material.Neon
+	beam.Color = color
+	beam.Transparency = 0.35
+	beam.Size = Vector3.new(0.14, 0.14, dist)
+	beam.CFrame = CFrame.lookAt(mid, b)
+	beam.Parent = parent
+end
+
+-- Draw start (green), goal (yellow), blocked ray (red) so user sees what failed.
+local function drawDebugFail(startPos, goalPos, reason, blockHit)
+	local f = ensureFolder()
+	makeMarker(f, "DbgStart", startPos + Vector3.new(0, 0.4, 0), Color3.fromRGB(80, 255, 140), Vector3.new(0.9, 0.9, 0.9))
+	if goalPos then
+		makeMarker(f, "DbgGoal", goalPos + Vector3.new(0, 0.4, 0), Color3.fromRGB(255, 220, 60), Vector3.new(1.1, 1.1, 1.1))
+		makeBeam(f, startPos + Vector3.new(0, 0.3, 0), goalPos + Vector3.new(0, 0.3, 0), Color3.fromRGB(255, 90, 90))
+	end
+	if blockHit and blockHit.Position then
+		makeMarker(f, "DbgBlock", blockHit.Position, Color3.fromRGB(255, 60, 60), Vector3.new(0.55, 0.55, 0.55))
+	end
+	local bill = Instance.new("BillboardGui")
+	bill.Name = "DbgLabel"
+	bill.Size = UDim2.new(0, 220, 0, 36)
+	bill.StudsOffset = Vector3.new(0, 2.2, 0)
+	bill.AlwaysOnTop = true
+	bill.Adornee = f:FindFirstChild("DbgStart")
+	bill.Parent = f
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.new(1, 0, 1, 0)
+	t.BackgroundTransparency = 1
+	t.Text = tostring(reason or "blocked")
+	t.TextColor3 = Color3.fromRGB(255, 140, 140)
+	t.Font = Enum.Font.GothamBold
+	t.TextSize = 13
+	t.TextStrokeTransparency = 0.4
+	t.Parent = bill
 end
 
 local function isSafeOrRegister(model)
@@ -231,6 +300,24 @@ local function rotY(v, deg)
 	return Vector3.new(v.X * c - v.Z * s, 0, v.X * s + v.Z * c)
 end
 
+-- MUST be above snapFloor/canTraverse (Lua local scoping — otherwise nil call → "Path error")
+local function isSolidHit(hit)
+	if not hit then
+		return false
+	end
+	local inst = hit.Instance
+	if not inst or not inst:IsA("BasePart") then
+		return false
+	end
+	if not inst.CanCollide then
+		return false -- decorative / passable mesh
+	end
+	if inst.Transparency >= 0.85 then
+		return false -- nearly invisible = glass/transparent panel
+	end
+	return true
+end
+
 -- Prefer current story floor. Never start ray above next story.
 local function snapFloor(pos, exclude, preferY)
 	local params = makeExcludeParams(exclude)
@@ -252,24 +339,6 @@ local function snapFloor(pos, exclude, preferY)
 		end
 	end
 	return Vector3.new(pos.X, py, pos.Z)
-end
-
--- Returns true if hit part is solid wall (CanCollide and not thin window/glass/transparent).
-local function isSolidHit(hit)
-	if not hit then
-		return false
-	end
-	local inst = hit.Instance
-	if not inst or not inst:IsA("BasePart") then
-		return false
-	end
-	if not inst.CanCollide then
-		return false -- decorative / passable mesh
-	end
-	if inst.Transparency >= 0.85 then
-		return false -- nearly invisible = glass/transparent panel
-	end
-	return true
 end
 
 local function canTraverse(a, b, exclude)
@@ -544,11 +613,13 @@ local function computePath(S)
 	end
 
 	computing = true
-	flashStatus("Path: computing…", Color3.fromRGB(180, 200, 255))
+	flashStatus("Path: computing…", Color3.fromRGB(180, 200, 255), 2)
 
 	task.spawn(function()
-		local okOuter = pcall(function()
-			local start = snapFloor(hrp.Position, model, hrp.Position.Y)
+		local startPos, goalPos
+		local okOuter, errOuter = pcall(function()
+			startPos = snapFloor(hrp.Position, model, hrp.Position.Y)
+			goalPos = part.Position
 			local goals = gatherGoals(hrp.Position, part)
 			local wps, mode = nil, nil
 			local needStairs = math.abs(part.Position.Y - hrp.Position.Y) > 4.0
@@ -556,13 +627,14 @@ local function computePath(S)
 			-- Stairs / floors: PathfindingService first (uses navmesh, not part names)
 			for _, g in ipairs(goals) do
 				local goal = snapFloor(g, model, part.Position.Y)
-				wps, mode = tryPathfinding(start, goal)
+				wps, mode = tryPathfinding(startPos, goal)
 				if wps then
+					goalPos = goal
 					break
 				end
 			end
 			if not wps then
-				wps, mode = tryPathfinding(start, part.Position)
+				wps, mode = tryPathfinding(startPos, part.Position)
 			end
 
 			-- Probe only for same-ish floor (won't punch through slabs)
@@ -572,22 +644,32 @@ local function computePath(S)
 					side = Vector3.new(0, 0, 1)
 				end
 				local goal = snapFloor(part.Position + side.Unit * 2.5, model, hrp.Position.Y)
-				wps, mode = probePath(start, goal, model)
+				goalPos = goal
+				wps, mode = probePath(startPos, goal, model)
 			elseif not wps and needStairs then
 				-- Still try probe only for horizontal approach on this floor (shows way toward stairwell), no vertical clip
-				wps, mode = probePath(start, part.Position, model)
+				wps, mode = probePath(startPos, part.Position, model)
 				if wps then
 					mode = "need-stairs"
 				end
 			end
 
 			if not wps or #wps < 2 then
-				clearPathFolder()
-				if needStairs then
-					flashStatus("Path: use stairs — navmesh blocked", Color3.fromRGB(255, 140, 90))
-				else
-					flashStatus("Path: blocked — peek door/hole", Color3.fromRGB(255, 120, 120))
+				local why = needStairs and "use stairs / navmesh blocked" or "blocked — door or wall"
+				-- Ray toward goal to show what solid part blocks
+				local params = makeExcludeParams(model)
+				local from = startPos + Vector3.new(0, 1.5, 0)
+				local to = (goalPos or part.Position) + Vector3.new(0, 1.5, 0)
+				local blockHit = workspace:Raycast(from, to - from, params)
+				local hitName = ""
+				if blockHit and blockHit.Instance then
+					hitName = " | hit: " .. tostring(blockHit.Instance.Name)
+					if not blockHit.Instance.CanCollide then
+						hitName = hitName .. " (nocollide)"
+					end
 				end
+				drawDebugFail(startPos, goalPos or part.Position, why, blockHit)
+				flashStatus("Path FAIL: " .. why .. hitName, Color3.fromRGB(255, 120, 120), 5)
 				return
 			end
 
@@ -595,12 +677,18 @@ local function computePath(S)
 			local tag = mode == "nav" and "navmesh"
 				or mode == "need-stairs" and "same floor — find stairs"
 				or tostring(mode or "probe")
-			flashStatus("Path → " .. labelOf(model) .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150))
+			flashStatus("Path → " .. labelOf(model) .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150), 3.5)
 		end)
 		computing = false
 		if not okOuter then
-			clearPathFolder()
-			flashStatus("Path error", Color3.fromRGB(255, 100, 100))
+			local msg = tostring(errOuter or "unknown")
+			if #msg > 90 then
+				msg = string.sub(msg, 1, 87) .. "…"
+			end
+			if startPos then
+				drawDebugFail(startPos, goalPos or (part and part.Position), "crash", nil)
+			end
+			flashStatus("Path error: " .. msg, Color3.fromRGB(255, 100, 100), 6)
 		end
 	end)
 end
