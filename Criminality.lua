@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.85
+-- Criminality.lua  v2.43.86
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -162,7 +162,7 @@ end
 -- Safes/dealers: one build pass. Crates: dynamic (SpawnedPiles).
 -- Per-frame: only reads cached .part.Position and sets .Enabled.
 
-local ESP = { safes={}, dealers={}, crates={}, guns={} }
+local ESP = { safes={}, dealers={}, crates={}, guns={}, safeByModel={} }
 local espBuilt = { safes=false, dealers=false }
 local crateByModel = {}
 local crateScanAt = 0
@@ -289,31 +289,120 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highl
 	         fillCol=fillCol }
 end
 
-local function buildSafeESP(S)
-	if espBuilt.safes then return end
-	local map   = workspace:FindFirstChild("Map"); if not map then return end
-	local safes = map:FindFirstChild("BredMakurz"); if not safes then return end
-	local color = S.CrimSafeColor or Color3.fromRGB(255,220,50)
-	for _, safe in ipairs(safes:GetChildren()) do
-		local values = safe:FindFirstChild("Values")
-		local broken = (values and values:FindFirstChild("Broken"))
-			or safe:FindFirstChild("Broken", true)
-		local label = "SAFE"
-		local n = safe.Name
-		if type(n) == "string" then
-			if string.sub(n, 1, 8) == "Register" then
-				label = "REGISTER"
-			elseif string.sub(n, 1, 9) == "SmallSafe" then
-				label = "SMALL SAFE"
-			elseif string.sub(n, 1, 10) == "MediumSafe" then
-				label = "MED SAFE"
+local function clearSafeESP()
+	for _, e in ipairs(ESP.safes) do
+		if alive(e.h)  then e.h:Destroy()  end
+		if alive(e.bg) then e.bg:Destroy() end
+	end
+	table.clear(ESP.safes)
+	table.clear(ESP.safeByModel)
+	espBuilt.safes = false
+end
+
+local function syncSafeESP(S)
+	if not S.CrimSafeESP then
+		if #ESP.safes > 0 then
+			clearSafeESP()
+		end
+		return
+	end
+	local map = workspace:FindFirstChild("Map")
+	local folder = map and map:FindFirstChild("BredMakurz")
+	if not folder then
+		return
+	end
+
+	local maxDist = S.CrimESPMaxDist or 300
+	local showBroken = S.CrimSafeShowBroken == true
+	local color = S.CrimSafeColor or Color3.fromRGB(255, 220, 50)
+	local cam = workspace.CurrentCamera
+	local origin = cam and cam.CFrame.Position
+	if not origin then
+		local hrp = getHRP()
+		origin = hrp and hrp.Position
+	end
+	if not origin then
+		return
+	end
+
+	-- Roblox soft-caps Highlights (~31). Only keep nearby safes/registers.
+	local CAP = 28
+	local candidates = {}
+	for _, safe in ipairs(folder:GetChildren()) do
+		if safe:IsA("Model") or safe:IsA("Folder") or safe:IsA("BasePart") then
+			local values = safe:FindFirstChild("Values")
+			local broken = (values and values:FindFirstChild("Broken"))
+				or safe:FindFirstChild("Broken", true)
+			local open = broken and broken:IsA("BoolValue") and broken.Value == true
+			if open and not showBroken then
+				-- skip opened/destroyed unless Show Broken
+			else
+				local part = getModelPart(safe)
+				if part then
+					local dist = (origin - part.Position).Magnitude
+					if dist <= maxDist then
+						table.insert(candidates, {
+							model = safe,
+							part = part,
+							broken = broken,
+							dist = dist,
+						})
+					end
+				end
 			end
 		end
-		local ok, entry = pcall(makeEntry, safe, color, Color3.fromRGB(255,255,255),
-		                        label, broken)
-		if ok and entry then
-			entry.baseLabel = label
-			table.insert(ESP.safes, entry)
+	end
+	table.sort(candidates, function(a, b)
+		return a.dist < b.dist
+	end)
+
+	local keep = {}
+	local n = math.min(#candidates, CAP)
+	for i = 1, n do
+		keep[candidates[i].model] = candidates[i]
+	end
+
+	for i = #ESP.safes, 1, -1 do
+		local e = ESP.safes[i]
+		local model = e.model
+		if not keep[model] or not alive(model) then
+			ESP.safeByModel[model] = nil
+			if alive(e.h) then e.h:Destroy() end
+			if alive(e.bg) then e.bg:Destroy() end
+			table.remove(ESP.safes, i)
+		end
+	end
+
+	for model, info in pairs(keep) do
+		if not ESP.safeByModel[model] then
+			local label = "SAFE"
+			local nm = model.Name
+			if type(nm) == "string" then
+				if string.sub(nm, 1, 8) == "Register" then
+					label = "REGISTER"
+				elseif string.sub(nm, 1, 9) == "SmallSafe" then
+					label = "SMALL SAFE"
+				elseif string.sub(nm, 1, 10) == "MediumSafe" then
+					label = "MED SAFE"
+				end
+			end
+			local adornee = info.part
+			local main = model:FindFirstChild("MainPart", true)
+			if main and main:IsA("BasePart") then
+				adornee = main
+			end
+			local ok, entry = pcall(makeEntry, model, color, Color3.fromRGB(255, 255, 255),
+				label, info.broken, adornee)
+			if ok and entry then
+				entry.baseLabel = label
+				entry.part = adornee
+				if alive(entry.bg) then entry.bg.Adornee = adornee end
+				ESP.safeByModel[model] = entry
+				table.insert(ESP.safes, entry)
+			end
+		else
+			local e = ESP.safeByModel[model]
+			e.broken = info.broken
 		end
 	end
 	espBuilt.safes = true
@@ -2449,6 +2538,11 @@ local function syncFromConfig(S)
 	elseif #ESP.crates > 0 then
 		pcall(clearCrateESP)
 	end
+	if crimFlag(S.CrimSafeESP) then
+		pcall(syncSafeESP, S)
+	elseif #ESP.safes > 0 then
+		pcall(clearSafeESP)
+	end
 	if crimFlag(S.CrimGunESP) then
 		pcall(ensureGunWatch, S)
 		pcall(syncGunESP, S)
@@ -2494,8 +2588,12 @@ local function startMaster(S)
 		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then
 			pcall(tickDoors, S)
 		end
-		if S.CrimSafeESP and not espBuilt.safes and workspace:FindFirstChild("Map") then
-			pcall(buildSafeESP, S)
+		if S.CrimSafeESP then
+			if crimFrame % 20 == 0 then
+				pcall(syncSafeESP, S)
+			end
+		elseif #ESP.safes > 0 then
+			pcall(clearSafeESP)
 		end
 		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
 			pcall(buildDealerESP, S)
@@ -2529,7 +2627,7 @@ local function startMaster(S)
 					if workspace:FindFirstChild("Map") then break end
 					task.wait(0.5)
 				end
-				if S.CrimSafeESP   then pcall(buildSafeESP,   S) end
+				if S.CrimSafeESP   then pcall(syncSafeESP,   S) end
 				if S.CrimDealerESP then pcall(buildDealerESP,  S) end
 			end)
 		end
@@ -2604,6 +2702,7 @@ local function stopMaster()
 	lastDoorTick = 0
 	clearCrateESP()
 	clearGunESP()
+	clearSafeESP()
 	if allow.atm then
 		if alive(allow.atm.h) then allow.atm.h:Destroy() end
 		if alive(allow.atm.bg) then allow.atm.bg:Destroy() end
