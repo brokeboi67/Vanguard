@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.44.4",
+	Version = "2.44.5",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -140,6 +140,9 @@ local Settings = {
 	Fly = false,
 	FlySpeed = 40,
 	FlyKey = "E",
+	-- Client-local Truss climb (Minecraft spider-like). Not noclip / not fly BV.
+	Spider = false,
+	SpiderSpeed = 16,
 	Noclip = false,
 	InfStamina = false,
 	NoFallDmg = false,

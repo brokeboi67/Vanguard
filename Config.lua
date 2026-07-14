@@ -235,6 +235,12 @@ function Config.EnforceRules(S)
 	if S.FullBright == nil then
 		S.FullBright = false
 	end
+	if S.Spider == nil then
+		S.Spider = false
+	end
+	if S.SpiderSpeed == nil then
+		S.SpiderSpeed = 16
+	end
 	if S.NoFog == nil then
 		S.NoFog = false
 	end

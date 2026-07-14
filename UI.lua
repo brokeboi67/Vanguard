@@ -3737,8 +3737,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		fmt = function(v) return string.format("%d", v) end,
 	})
 	MakeTog(MMove, "Noclip", "Noclip", 9, { flat = true })
-	MakeTog(MMove, "Infinite Stamina", "InfStamina", 10, { flat = true })
-	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 11, { flat = true })
+	MakeTog(MMove, "Spider", "Spider", 10, { flat = true })
+	MakeSlider(MMove, "Spider Climb Speed", "SpiderSpeed", 8, 28, 11, {
+		suffix = "",
+		step = 1,
+		fmt = function(v) return string.format("%d", v) end,
+	})
+	MakeHint(MMove, "hint_spider", 12)
+	MakeTog(MMove, "Infinite Stamina", "InfStamina", 13, { flat = true })
+	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 14, { flat = true })
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })

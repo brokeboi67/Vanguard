@@ -113,6 +113,144 @@ function Movement.Init(S)
 		noclipConn = RS.Stepped:Connect(perfWrap("Movement.Noclip", applyNoclip))
 	end
 
+	-- ── Spider (local Truss — climb walls without character noclip) ─────────
+	-- Minecraft-style: walk into a wall and climb. Uses invisible client-only
+	-- TrussParts so Humanoid uses Climbing (not freefall fly / CanCollide off).
+	-- Server still sees you go up — safer than noclip, not AC-proof if they
+	-- sanity-check wall climbs without map ladders.
+	local spiderFolder = nil
+	local spiderTruss = nil
+
+	local function clearSpider()
+		if spiderTruss then
+			pcall(function()
+				spiderTruss:Destroy()
+			end)
+			spiderTruss = nil
+		end
+		if spiderFolder then
+			pcall(function()
+				spiderFolder:Destroy()
+			end)
+			spiderFolder = nil
+		end
+	end
+
+	local function ensureSpiderFolder()
+		if spiderFolder and spiderFolder.Parent then
+			return spiderFolder
+		end
+		local f = Instance.new("Folder")
+		f.Name = "VG_Spider"
+		f.Parent = workspace
+		spiderFolder = f
+		return f
+	end
+
+	local function ensureSpiderTruss()
+		if spiderTruss and spiderTruss.Parent then
+			return spiderTruss
+		end
+		local t = Instance.new("TrussPart")
+		t.Name = "VG_SpiderTruss"
+		t.Anchored = true
+		t.CanCollide = true
+		t.CanTouch = true
+		t.CanQuery = false
+		t.CastShadow = false
+		t.Transparency = 1
+		t.Size = Vector3.new(2, 10, 2)
+		t.Parent = ensureSpiderFolder()
+		spiderTruss = t
+		return t
+	end
+
+	local function updateSpider()
+		if not S.Spider then
+			clearSpider()
+			return
+		end
+		local hrp, char = getHRP()
+		local hum = getHum()
+		if not hrp or not hum or hum.Health <= 0 then
+			return
+		end
+
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local filter = { char, ensureSpiderFolder() }
+		local clientBuild = workspace:FindFirstChild("VG_ClientBuild")
+		if clientBuild then
+			table.insert(filter, clientBuild)
+		end
+		params.FilterDescendantsInstances = filter
+
+		local origin = hrp.Position
+		local candidates = {
+			hrp.CFrame.LookVector,
+			-hrp.CFrame.LookVector,
+			hrp.CFrame.RightVector,
+			-hrp.CFrame.RightVector,
+		}
+		local best = nil
+		local bestDot = -1
+		local move = hum.MoveDirection
+		for _, dir in ipairs(candidates) do
+			local flat = Vector3.new(dir.X, 0, dir.Z)
+			if flat.Magnitude > 0.05 then
+				flat = flat.Unit
+				local hit = workspace:Raycast(origin, flat * 2.5, params)
+				if hit and hit.Normal.Y < 0.35 and hit.Instance and hit.Instance.CanCollide then
+					local into = 0
+					if move.Magnitude > 0.08 then
+						local away = Vector3.new(hit.Normal.X, 0, hit.Normal.Z)
+						if away.Magnitude > 0.05 then
+							into = move:Dot(-away.Unit)
+						end
+					end
+					local score = into
+					if into > 0.05 and flat:Dot(hrp.CFrame.LookVector) > 0.5 then
+						score += 0.2
+					end
+					if score > bestDot then
+						bestDot = score
+						best = hit
+					end
+				end
+			end
+		end
+
+		-- Require walking into the wall (or already climbing)
+		local climbing = hum:GetState() == Enum.HumanoidStateType.Climbing
+		if not best or (not climbing and bestDot < 0.2) then
+			if spiderTruss then
+				spiderTruss.CFrame = CFrame.new(0, -500, 0) -- park off-map, don't Destroy every frame
+			end
+			return
+		end
+
+		local n = best.Normal
+		local flatN = Vector3.new(n.X, 0, n.Z)
+		if flatN.Magnitude < 0.05 then
+			return
+		end
+		flatN = flatN.Unit
+		local pos = Vector3.new(best.Position.X, origin.Y + 2, best.Position.Z) + flatN * 0.7
+		local truss = ensureSpiderTruss()
+		truss.Size = Vector3.new(2.2, 14, 2.2)
+		truss.CFrame = CFrame.lookAt(pos, pos + flatN)
+
+		-- Soft upward assist at humanoid-like climb speed (not fly)
+		local climbSpd = math.clamp(tonumber(S.SpiderSpeed) or 16, 8, 28)
+		if climbing or bestDot > 0.25 then
+			local v = hrp.AssemblyLinearVelocity
+			if v.Y < climbSpd * 0.85 then
+				hrp.AssemblyLinearVelocity = Vector3.new(v.X * 0.85, math.max(v.Y, climbSpd * 0.55), v.Z * 0.85)
+					- flatN * 2
+			end
+		end
+	end
+
 	-- ── Infinite Stamina ────────────────────────────────────────────────────
 	-- Criminality stores stamina in player attributes OR as a NumberValue.
 	-- We max it every frame by checking common locations.
@@ -223,6 +361,7 @@ function Movement.Init(S)
 		origWalkSpeed, origJumpPow, origJumpHeight = nil, nil, nil
 		if noclipConn then noclipConn:Disconnect(); noclipConn = nil end
 		if fallDmgConn then fallDmgConn:Disconnect(); fallDmgConn = nil end
+		clearSpider()
 
 		task.wait(0.5)
 
@@ -243,8 +382,9 @@ function Movement.Init(S)
 		local needStamina = S.InfStamina
 		local needFallDmg = S.NoFallDmg
 		local needSpeed   = S.Speed or S.JumpPower
+		local needSpider  = S.Spider
 
-		if not (needBHop or needStrafe or needFly or needNoclip or needStamina or needFallDmg or needSpeed) then
+		if not (needBHop or needStrafe or needFly or needNoclip or needStamina or needFallDmg or needSpeed or needSpider) then
 			return
 		end
 
@@ -264,6 +404,13 @@ function Movement.Init(S)
 			if not noclipConn then startNoclip() end
 		else
 			stopNoclip()
+		end
+
+		-- ── spider (local truss climb)
+		if needSpider then
+			updateSpider()
+		else
+			clearSpider()
 		end
 
 		if not hum or hum.Health <= 0 then return end
