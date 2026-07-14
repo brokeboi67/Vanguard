@@ -418,12 +418,6 @@ function Config.EnforceRules(S)
 	if S.CrimSafeShowBroken == nil then
 		S.CrimSafeShowBroken = false
 	end
-	if S.CrimSafePath == nil then
-		S.CrimSafePath = true
-	end
-	if S.CrimSafePathKey == nil or S.CrimSafePathKey == "" then
-		S.CrimSafePathKey = "Home"
-	end
 	if S.CrimCrateBasic == nil then
 		S.CrimCrateBasic = true
 	end
@@ -456,6 +450,9 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimNoRecoil == nil then
 		S.CrimNoRecoil = false
+	end
+	if S.CrimQuickEquip == nil then
+		S.CrimQuickEquip = false
 	end
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false
@@ -510,6 +507,9 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimFastPickupMelee == nil then
 		S.CrimFastPickupMelee = true
+	end
+	if S.CrimFastPickupArmor == nil then
+		S.CrimFastPickupArmor = true
 	end
 	if S.CrimFastPickupRange == nil then
 		S.CrimFastPickupRange = 6

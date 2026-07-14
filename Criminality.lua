@@ -756,6 +756,16 @@ local function identifySpawnedTool(model)
 	if hasDeepChild(model, "WeaponHandle") then return rememberToolId(model, "WEAPON", "melee") end
 	if hasDeepChild(model, "Handle") and hasDeepChild(model, "Pin") then return rememberToolId(model, "GRENADE", "grenade") end
 
+	-- Helmet / vest / armor often expose OriginPart (PIC_TLO) instead of WeaponHandle
+	local n = string.upper(tostring(model.Name or ""))
+	if n:find("HELMET", 1, true) or n:find("VEST", 1, true) or n:find("ARMOR", 1, true)
+		or n:find("KEVLAR", 1, true) or n:find("BALACLAVA", 1, true) then
+		return rememberToolId(model, n, "armor")
+	end
+	if hasDeepChild(model, "OriginPart") and not hasDeepChild(model, "MagPart") and not hasDeepChild(model, "WeaponHandle") then
+		return rememberToolId(model, "ARMOR", "armor")
+	end
+
 	return rememberToolId(model, "ITEM", "other")
 end
 
@@ -1704,6 +1714,7 @@ local function getPicTloRemote()
 	return nil
 end
 
+-- Guns use WeaponHandle; helmet/vest use OriginPart (often in getnilinstances).
 local function resolvePickupHandle(model)
 	if not model then
 		return nil
@@ -1711,6 +1722,10 @@ local function resolvePickupHandle(model)
 	local wh = model:FindFirstChild("WeaponHandle", true)
 	if wh and wh:IsA("BasePart") then
 		return wh
+	end
+	local origin = model:FindFirstChild("OriginPart", true)
+	if origin and origin:IsA("BasePart") then
+		return origin
 	end
 	local handle = model:FindFirstChild("Handle", true)
 	if handle and handle:IsA("BasePart") then
@@ -1720,9 +1735,9 @@ local function resolvePickupHandle(model)
 		local anchor = getModelPart(model)
 		if anchor then
 			local pos = anchor.Position
-			local best, bestDist = nil, 10
+			local best, bestDist = nil, 12
 			for _, obj in ipairs(getnilinstances()) do
-				if obj.Name == "WeaponHandle" and obj:IsA("BasePart") then
+				if obj:IsA("BasePart") and (obj.Name == "WeaponHandle" or obj.Name == "OriginPart") then
 					local d = (obj.Position - pos).Magnitude
 					if d < bestDist then
 						bestDist = d
@@ -1734,6 +1749,32 @@ local function resolvePickupHandle(model)
 		end
 	end
 	return nil
+end
+
+-- Nearest helmet/vest OriginPart sitting in nil (Cobalt dumps). No hardcoded DebugId.
+local function findNearestNilArmorOrigin(maxDist)
+	if typeof(getnilinstances) ~= "function" then
+		return nil, math.huge
+	end
+	local hrp = getHRP()
+	if not hrp then
+		return nil, math.huge
+	end
+	local best, bestDist = nil, maxDist
+	local ok, list = pcall(getnilinstances)
+	if not ok or type(list) ~= "table" then
+		return nil, math.huge
+	end
+	for _, obj in ipairs(list) do
+		if obj and obj.Name == "OriginPart" and obj:IsA("BasePart") then
+			local d = (obj.Position - hrp.Position).Magnitude
+			if d < bestDist then
+				bestDist = d
+				best = obj
+			end
+		end
+	end
+	return best, bestDist
 end
 
 local function getToolPickupDist(model)
@@ -1758,6 +1799,9 @@ local function shouldFastPickupItem(S, model)
 	end
 	if kind == "melee" then
 		return S.CrimFastPickupMelee ~= false
+	end
+	if kind == "armor" then
+		return S.CrimFastPickupArmor ~= false
 	end
 	return true
 end
@@ -1794,47 +1838,70 @@ local function ensureFastPickupPrompt()
 	fastPickupPromptBg = bg
 end
 
-local function showFastPickupPrompt(model)
+-- target = { handle, model?, adornee, kind }
+local function showFastPickupPrompt(target)
 	ensureFastPickupPrompt()
-	local part = getModelPart(model)
+	local part = target and (target.adornee or target.handle)
 	if not part or not fastPickupPromptBg then
 		hideFastPickupPrompt()
 		return
 	end
-	fastPickupTarget = model
+	fastPickupTarget = target
 	fastPickupPromptBg.Adornee = part
 	fastPickupPromptBg.Enabled = true
 end
 
 local function findNearestFastPickup(S)
-	local folder = getSpawnedTools()
-	if not folder then
-		return nil
-	end
 	local maxDist = math.clamp(tonumber(S.CrimFastPickupRange) or 6, 2, 15)
 	local best, bestDist = nil, maxDist
-	for _, model in ipairs(iterSpawnedToolModels(folder)) do
-		if shouldFastPickupItem(S, model) then
-			local dist = getToolPickupDist(model)
-			if dist <= maxDist and dist < bestDist then
-				bestDist = dist
-				best = model
+
+	local folder = getSpawnedTools()
+	if folder then
+		for _, model in ipairs(iterSpawnedToolModels(folder)) do
+			if shouldFastPickupItem(S, model) then
+				local dist = getToolPickupDist(model)
+				if dist <= maxDist and dist < bestDist then
+					local handle = resolvePickupHandle(model)
+					if handle then
+						bestDist = dist
+						best = {
+							handle = handle,
+							model = model,
+							adornee = getModelPart(model) or handle,
+							kind = select(2, identifySpawnedTool(model)),
+						}
+					end
+				end
 			end
 		end
 	end
+
+	-- Helmet / vest: OriginPart often lives in nil, not under SpawnedTools
+	if S.CrimFastPickupArmor ~= false then
+		local origin, od = findNearestNilArmorOrigin(maxDist)
+		if origin and od < bestDist then
+			bestDist = od
+			best = { handle = origin, adornee = origin, kind = "armor" }
+		end
+	end
+
 	return best
 end
 
-local function tryFastPickup(model)
-	if not model or not alive(model) then
+local function tryFastPickup(target)
+	if type(target) ~= "table" or not target.handle then
 		return false
 	end
 	local S = _G.__VG_S
 	if not S or not S.CrimFastPickup then
 		return false
 	end
+	local hrp = getHRP()
+	if not hrp then
+		return false
+	end
 	local maxDist = math.clamp(tonumber(S.CrimFastPickupRange) or 6, 2, 15)
-	if getToolPickupDist(model) > maxDist then
+	if (hrp.Position - target.handle.Position).Magnitude > maxDist + 1 then
 		return false
 	end
 	local now = tick()
@@ -1842,16 +1909,17 @@ local function tryFastPickup(model)
 		return false
 	end
 	local remote = getPicTloRemote()
-	local handle = resolvePickupHandle(model)
-	if not remote or not handle then
+	if not remote then
 		return false
 	end
 	local ok = pcall(function()
-		remote:FireServer(handle, nil, nil)
+		remote:FireServer(target.handle, nil, nil)
 	end)
 	if ok then
 		lastFastPickupAt = now
-		destroyGunEntry(model)
+		if target.model then
+			destroyGunEntry(target.model)
+		end
 		hideFastPickupPrompt()
 	end
 	return ok
@@ -1958,7 +2026,10 @@ local function cacheWeapons(deep)
 							AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
 							AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
 							Spread = v.Spread,
+							EquipTime = v.EquipTime,
 						}
+					elseif weaponOrig[v].EquipTime == nil then
+						weaponOrig[v].EquipTime = v.EquipTime
 					end
 				end
 			end
@@ -1980,22 +2051,41 @@ local function clearGunModCharConns()
 	table.clear(gunModCharConns)
 end
 
+local function gunModsWant(S)
+	return S and (S.CrimNoRecoil == true or S.CrimQuickEquip == true)
+end
+
 local function applyGunMods(S)
-	if not S or not S.CrimNoRecoil then
+	if not gunModsWant(S) then
 		return
 	end
 	for _, weapon in ipairs(weaponCache) do
-		weapon.Recoil = 0
-		weapon.CameraRecoilingEnabled = false
-		weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
-		weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
-		weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
-		weapon.Spread = 0
+		local orig = weaponOrig[weapon]
+		if S.CrimNoRecoil then
+			weapon.Recoil = 0
+			weapon.CameraRecoilingEnabled = false
+			weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
+			weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
+			weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
+			weapon.Spread = 0
+		elseif orig then
+			weapon.Recoil = orig.Recoil
+			weapon.CameraRecoilingEnabled = orig.CameraRecoilingEnabled
+			weapon.AngleX_Min = orig.AngleX_Min; weapon.AngleX_Max = orig.AngleX_Max
+			weapon.AngleY_Min = orig.AngleY_Min; weapon.AngleY_Max = orig.AngleY_Max
+			weapon.AngleZ_Min = orig.AngleZ_Min; weapon.AngleZ_Max = orig.AngleZ_Max
+			weapon.Spread = orig.Spread
+		end
+		if S.CrimQuickEquip then
+			weapon.EquipTime = 0
+		elseif orig and orig.EquipTime ~= nil then
+			weapon.EquipTime = orig.EquipTime
+		end
 	end
 end
 
 local function refreshGunMods(S, preferDeep)
-	if not S or not S.CrimNoRecoil then
+	if not gunModsWant(S) then
 		return
 	end
 	local now = tick()
@@ -2016,7 +2106,7 @@ local function scheduleGunModRefresh(preferDeep, delaySec)
 			return
 		end
 		local S = _G.__VG_S
-		if not S or not S.CrimNoRecoil then
+		if not gunModsWant(S) then
 			return
 		end
 		refreshGunMods(S, preferDeep)
@@ -2032,6 +2122,9 @@ local function resetGunMods()
 			weapon.AngleY_Min = values.AngleY_Min; weapon.AngleY_Max = values.AngleY_Max
 			weapon.AngleZ_Min = values.AngleZ_Min; weapon.AngleZ_Max = values.AngleZ_Max
 			weapon.Spread = values.Spread
+			if values.EquipTime ~= nil then
+				weapon.EquipTime = values.EquipTime
+			end
 		end
 	end
 	weaponCache = {}
@@ -2040,23 +2133,44 @@ local function resetGunMods()
 	lastGunModDeepAt = 0
 end
 
+local function watchBackpackForGuns(backpack)
+	if not backpack then
+		return
+	end
+	table.insert(gunModCharConns, backpack.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(true, 0.35)
+		end
+	end))
+	table.insert(gunModCharConns, backpack.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(true, 0.35)
+		end
+	end))
+end
+
 local function onGunModCharacter(character)
 	clearGunModCharConns()
-	-- one delayed deep rescan after respawn (new weapon tables), no cache wipe on start
 	scheduleGunModRefresh(true, 1.0)
 	table.insert(gunModCharConns, character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(false, 0.25)
+			scheduleGunModRefresh(true, 0.25)
+		end
+	end))
+	table.insert(gunModCharConns, character.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(true, 0.35)
 		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
 		table.insert(gunModCharConns, humanoid.Died:Connect(function()
-			-- keep applying old tables until respawn scan; force deep after death settle
 			lastGunModDeepAt = 0
 			scheduleGunModRefresh(true, 2.0)
 		end))
 	end
+	local lp = getLP()
+	watchBackpackForGuns(lp and lp:FindFirstChildOfClass("Backpack"))
 end
 
 local function startGunMods(S)
@@ -2065,6 +2179,14 @@ local function startGunMods(S)
 	refreshGunMods(S, true)
 	local lp = getLP()
 	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
+	-- Backpack can respawn; keep a live watch on player children
+	table.insert(gunModConns, lp.ChildAdded:Connect(function(ch)
+		if ch:IsA("Backpack") then
+			watchBackpackForGuns(ch)
+			scheduleGunModRefresh(true, 0.4)
+		end
+	end))
+	watchBackpackForGuns(lp:FindFirstChildOfClass("Backpack"))
 	if lp.Character then
 		onGunModCharacter(lp.Character)
 	end
@@ -2078,13 +2200,13 @@ local function stopGunMods()
 	gunModConns = {}
 end
 
-local function gunModsWant(S)
-	return S.CrimNoRecoil == true
-end
-
 local function syncGunMods(S)
 	local want = gunModsWant(S)
 	if featureRunning.gunMods == want then
+		-- already running — still re-apply when toggles change combination
+		if want then
+			pcall(function() applyGunMods(S) end)
+		end
 		return
 	end
 	featureRunning.gunMods = want
@@ -2576,7 +2698,7 @@ local function startMaster(S)
 			refillCrimStamina()
 		end
 
-		if featureRunning.gunMods and S.CrimNoRecoil then
+		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
 			if now - lastGunModApplyAt >= GUNMOD_REAPPLY_INTERVAL then
 				lastGunModApplyAt = now
@@ -2724,8 +2846,13 @@ function Criminality.Init(S)
 	end
 
 	S._crimRefreshGunMods = function()
-		if crimFlag(S.CrimNoRecoil) then
-			pcall(function() refreshGunMods(S, true) end)
+		if gunModsWant(S) then
+			pcall(function()
+				syncGunMods(S)
+				refreshGunMods(S, true)
+			end)
+		else
+			pcall(syncGunMods, S)
 		end
 	end
 

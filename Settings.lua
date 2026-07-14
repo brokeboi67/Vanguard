@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.43.98",
+	Version = "2.43.99",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -194,8 +194,6 @@ local Settings = {
 	CrimMeleeRange = 5,
 	CrimSafeESP = false,
 	CrimSafeShowBroken = false,
-	CrimSafePath = true,
-	CrimSafePathKey = "Home",
 	CrimSafeColor = Color3.fromRGB(255, 220, 50),
 	CrimDealerESP = false,
 	CrimDealerColor = Color3.fromRGB(100, 200, 255),
@@ -215,6 +213,7 @@ local Settings = {
 	CrimAimPrediction = false,
 	CrimAimPredictionLead = 12,
 	CrimNoRecoil = false,
+	CrimQuickEquip = false,
 	CrimStaffDetect = false,
 	CrimNoFailLockpick = false,
 	CrimAutoOpenDoors = false,
@@ -230,6 +229,7 @@ local Settings = {
 	CrimFastPickup = false,
 	CrimFastPickupGuns = true,
 	CrimFastPickupMelee = true,
+	CrimFastPickupArmor = true,
 	CrimFastPickupRange = 6,
 	CrimGunESP = false,
 	CrimGunESPGuns = true,
