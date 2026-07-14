@@ -1,4 +1,6 @@
--- CriminalityPath.lua  v2.43.88
+-- CriminalityPath.lua  v2.43.89
+-- Safe/register path overlay. PathfindingService + probe fallback.
+-- Openable Map.Doors (DoorMain/DoorBase) are treated as passable for the overlay.
 
 local CriminalityPath = {}
 
@@ -107,6 +109,25 @@ local function getSafePart(model)
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
+local function getDoorsFolder()
+	local map = workspace:FindFirstChild("Map")
+	return map and map:FindFirstChild("Doors")
+end
+
+local function isOpenableDoorModel(inst)
+	if not inst or not inst:IsA("Model") then
+		return false
+	end
+	if inst:FindFirstChild("DoorMain") then
+		return true
+	end
+	if inst:FindFirstChild("DoorBase") or inst:FindFirstChild("DoorBase2") then
+		return true
+	end
+	local n = inst.Name
+	return typeof(n) == "string" and string.find(n, "Door", 1, true) ~= nil
+end
+
 local function makeExcludeParams(extra)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
@@ -119,11 +140,44 @@ local function makeExcludeParams(extra)
 	if pathF then
 		table.insert(list, pathF)
 	end
+	-- Treat openable Criminality doors as passable for path overlay
+	local doors = getDoorsFolder()
+	if doors then
+		table.insert(list, doors)
+	end
 	if extra then
-		table.insert(list, extra)
+		if typeof(extra) == "table" then
+			for _, e in ipairs(extra) do
+				table.insert(list, e)
+			end
+		else
+			table.insert(list, extra)
+		end
 	end
 	params.FilterDescendantsInstances = list
 	return params
+end
+
+local function nearestDoorInfo(pos)
+	local doors = getDoorsFolder()
+	if not doors then
+		return nil, math.huge
+	end
+	local best, bestDist = nil, 6.5
+	for _, door in ipairs(doors:GetChildren()) do
+		if isOpenableDoorModel(door) then
+			local base = door:FindFirstChild("DoorBase") or door:FindFirstChild("DoorBase2")
+			local p = base and base:IsA("BasePart") and base or door:FindFirstChildWhichIsA("BasePart", true)
+			if p then
+				local d = (Vector3.new(pos.X, p.Position.Y, pos.Z) - p.Position).Magnitude
+				if d < bestDist then
+					bestDist = d
+					best = door
+				end
+			end
+		end
+	end
+	return best, bestDist
 end
 
 local function resolveLookTarget(maxDist)
@@ -286,13 +340,20 @@ local function probePath(startPos, goalPos, exclude)
 			end
 		else
 			stuck = 0
+			local doorHit = nearestDoorInfo(found)
 			local action = Enum.PathWaypointAction.Walk
-			if foundH > 0 and foundH < 1.6 then
-				action = Enum.PathWaypointAction.Jump -- mark low crawl / shutter
-			elseif math.abs(found.Y - cur.Y) > 2.2 then
-				action = Enum.PathWaypointAction.Jump
+			if not doorHit then
+				if foundH > 0 and foundH < 1.6 then
+					action = Enum.PathWaypointAction.Jump
+				elseif math.abs(found.Y - cur.Y) > 2.2 then
+					action = Enum.PathWaypointAction.Jump
+				end
 			end
-			table.insert(points, { Position = found, Action = action })
+			table.insert(points, {
+				Position = found,
+				Action = action,
+				IsDoor = doorHit ~= nil,
+			})
 			cur = found
 			if #points > 64 then
 				break
@@ -331,9 +392,20 @@ local function drawWaypoints(waypoints)
 		p.CastShadow = false
 		p.Material = Enum.Material.Neon
 		p.Shape = Enum.PartType.Ball
-		local isJump = wp.Action == Enum.PathWaypointAction.Jump
-		p.Size = isJump and Vector3.new(0.55, 0.55, 0.55) or Vector3.new(0.35, 0.35, 0.35)
-		p.Color = isJump and Color3.fromRGB(255, 210, 70) or Color3.fromRGB(80, 255, 140)
+		local isDoor = wp.IsDoor == true
+		if not isDoor then
+			local dNear = nearestDoorInfo(wp.Position)
+			isDoor = dNear ~= nil
+		end
+		local isJump = (not isDoor) and wp.Action == Enum.PathWaypointAction.Jump
+		p.Size = (isDoor or isJump) and Vector3.new(0.55, 0.55, 0.55) or Vector3.new(0.35, 0.35, 0.35)
+		if isDoor then
+			p.Color = Color3.fromRGB(90, 190, 255) -- openable door
+		elseif isJump then
+			p.Color = Color3.fromRGB(255, 210, 70)
+		else
+			p.Color = Color3.fromRGB(80, 255, 140)
+		end
 		p.Transparency = 0.15
 		p.CFrame = CFrame.new(pos)
 		p.Parent = f
@@ -458,7 +530,7 @@ local function computePath(S)
 				end
 			end
 
-			-- PathfindingService can't see smashed wall holes / many client doors
+			-- Navmesh often fails on closed doors; probe ignores Map.Doors as passable
 			if not wps then
 				local goal = snapFloor(part.Position + (hrp.Position - part.Position).Unit * 2.5, model, 8)
 				wps, mode = probePath(start, goal, model)
