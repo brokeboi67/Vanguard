@@ -418,6 +418,12 @@ function Config.EnforceRules(S)
 	if S.CrimSafeShowBroken == nil then
 		S.CrimSafeShowBroken = false
 	end
+	if S.CrimSafePath == nil then
+		S.CrimSafePath = true
+	end
+	if S.CrimSafePathKey == nil or S.CrimSafePathKey == "" then
+		S.CrimSafePathKey = "Home"
+	end
 	if S.CrimCrateBasic == nil then
 		S.CrimCrateBasic = true
 	end

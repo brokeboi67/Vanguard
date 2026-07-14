@@ -795,6 +795,12 @@ phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
 phase("Movement.Init",   Movement.Init,   Settings)
 if game.GameId == 1494262959 then   -- Criminality universe (lobby + Casual + sub-places)
 	phase("Criminality.Init", Criminality.Init, Settings)
+	phase("CriminalityPath.Init", function(S)
+		local mod = Get("CriminalityPath.lua")
+		if mod and mod.Init then
+			mod.Init(S)
+		end
+	end, Settings)
 end
 phase("Misc.Init",       Misc.Init,       Settings, TeamFriends, Util)
 phase("Features.Init",   Features.Init,   Settings, GUI, AntiBypass)
