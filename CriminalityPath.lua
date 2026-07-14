@@ -1,5 +1,4 @@
--- CriminalityPath.lua  v2.43.87
--- Lightweight PathfindingService overlay to safes/registers (Home by default).
+-- CriminalityPath.lua  v2.43.88
 
 local CriminalityPath = {}
 
@@ -12,7 +11,7 @@ local folderName = "VG_SafePath"
 local conn = nil
 local computing = false
 local lastComputeAt = 0
-local COOLDOWN = 0.6
+local COOLDOWN = 0.55
 
 local function getLP()
 	return Plrs.LocalPlayer
@@ -26,10 +25,6 @@ end
 local function getHRP()
 	local c = getChar()
 	return c and c:FindFirstChild("HumanoidRootPart")
-end
-
-local function alive(inst)
-	return inst and typeof(inst) == "Instance" and inst.Parent ~= nil
 end
 
 local function clearPathFolder()
@@ -66,7 +61,7 @@ local function flashStatus(text, col)
 	local lbl = Instance.new("TextLabel")
 	lbl.AnchorPoint = Vector2.new(0.5, 0)
 	lbl.Position = UDim2.new(0.5, 0, 0.12, 0)
-	lbl.Size = UDim2.new(0, 320, 0, 26)
+	lbl.Size = UDim2.new(0, 360, 0, 26)
 	lbl.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 	lbl.BackgroundTransparency = 0.25
 	lbl.Text = text
@@ -77,7 +72,7 @@ local function flashStatus(text, col)
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 6)
 	corner.Parent = lbl
-	Debris:AddItem(gui, 2.2)
+	Debris:AddItem(gui, 2.4)
 end
 
 local function isSafeOrRegister(model)
@@ -112,6 +107,25 @@ local function getSafePart(model)
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
+local function makeExcludeParams(extra)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local list = {}
+	local char = getChar()
+	if char then
+		table.insert(list, char)
+	end
+	local pathF = workspace:FindFirstChild(folderName)
+	if pathF then
+		table.insert(list, pathF)
+	end
+	if extra then
+		table.insert(list, extra)
+	end
+	params.FilterDescendantsInstances = list
+	return params
+end
+
 local function resolveLookTarget(maxDist)
 	local cam = workspace.CurrentCamera
 	local hrp = getHRP()
@@ -125,21 +139,10 @@ local function resolveLookTarget(maxDist)
 
 	local origin = cam.CFrame.Position
 	local dir = cam.CFrame.LookVector
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	local char = getChar()
-	params.FilterDescendantsInstances = char and { char } or {}
+	local params = makeExcludeParams(nil)
 
 	local hit = workspace:Raycast(origin, dir * maxDist, params)
 	if hit and hit.Instance then
-		local model = hit.Instance:FindFirstAncestorOfClass("Model")
-		while model and model ~= folder do
-			if isSafeOrRegister(model) and model:IsDescendantOf(folder) then
-				return model, getSafePart(model)
-			end
-			model = model.Parent and model.Parent:FindFirstAncestorOfClass("Model")
-		end
-		-- ancestor walk
 		local anc = hit.Instance
 		while anc and anc ~= folder do
 			if isSafeOrRegister(anc) then
@@ -149,7 +152,6 @@ local function resolveLookTarget(maxDist)
 		end
 	end
 
-	-- cone fallback: nearest safe roughly in front of camera
 	local best, bestScore = nil, nil
 	for _, ch in ipairs(folder:GetChildren()) do
 		if isSafeOrRegister(ch) then
@@ -160,7 +162,7 @@ local function resolveLookTarget(maxDist)
 				if dist <= maxDist and dist > 1 then
 					local nd = to.Unit
 					local dot = nd:Dot(dir)
-					if dot > 0.88 then
+					if dot > 0.82 then
 						local score = dist / math.max(dot, 0.01)
 						if not bestScore or score < bestScore then
 							bestScore = score
@@ -177,10 +179,142 @@ local function resolveLookTarget(maxDist)
 	return nil
 end
 
+local function snapFloor(pos, exclude, fromH)
+	local params = makeExcludeParams(exclude)
+	local origin = pos + Vector3.new(0, fromH or 8, 0)
+	local hit = workspace:Raycast(origin, Vector3.new(0, -40, 0), params)
+	if hit then
+		return hit.Position + Vector3.new(0, 0.15, 0)
+	end
+	return Vector3.new(pos.X, pos.Y, pos.Z)
+end
+
+local function rotY(v, deg)
+	local r = math.rad(deg)
+	local c, s = math.cos(r), math.sin(r)
+	return Vector3.new(v.X * c - v.Z * s, 0, v.X * s + v.Z * c)
+end
+
+-- true if any "player slot" height can traverse (low shutters + mid wall holes)
+local function canTraverse(a, b, exclude)
+	local params = makeExcludeParams(exclude)
+	local delta = b - a
+	local flat = Vector3.new(delta.X, 0, delta.Z)
+	if flat.Magnitude < 0.05 then
+		return true, 0
+	end
+	local heights = { 1.0, 1.4, 1.8, 2.2, 2.8, 3.4, 4.0 }
+	for _, h in ipairs(heights) do
+		local from = Vector3.new(a.X, a.Y + h, a.Z)
+		local to = Vector3.new(b.X, b.Y + h, b.Z)
+		local hit = workspace:Raycast(from, to - from, params)
+		if not hit then
+			return true, h
+		end
+		-- allow if we nearly reached the end (edge of collider)
+		local remain = (to - hit.Position).Magnitude
+		if remain < 1.1 then
+			return true, h
+		end
+	end
+	return false, 0
+end
+
+local function headroomOk(pos, exclude)
+	local params = makeExcludeParams(exclude)
+	-- need ~2 studs free above feet so player can stand/crouch through
+	local hit = workspace:Raycast(pos + Vector3.new(0, 0.3, 0), Vector3.new(0, 2.2, 0), params)
+	return hit == nil
+end
+
+local function probePath(startPos, goalPos, exclude)
+	local cur = snapFloor(startPos, exclude, 6)
+	local goal = snapFloor(goalPos, exclude, 8)
+	local points = { { Position = cur, Action = Enum.PathWaypointAction.Walk } }
+	local angles = { 0, 18, -18, 36, -36, 55, -55, 75, -75, 95, -95, 120, -120, 150, -150 }
+	local maxSteps = 70
+	local stuck = 0
+
+	for _ = 1, maxSteps do
+		local flat = Vector3.new(goal.X - cur.X, 0, goal.Z - cur.Z)
+		local rem = flat.Magnitude
+		if rem < 3.2 then
+			table.insert(points, { Position = goal, Action = Enum.PathWaypointAction.Walk })
+			return points, "probe"
+		end
+
+		local dir = flat.Unit
+		local stepLen = math.clamp(rem, 2.2, 4.0)
+		local found = nil
+		local foundH = 0
+
+		for _, ang in ipairs(angles) do
+			local d = rotY(dir, ang)
+			local guess = cur + d * stepLen
+			local floored = snapFloor(guess, exclude, 10)
+			-- reject insane vertical jumps
+			if math.abs(floored.Y - cur.Y) <= 7 then
+				local okTrav, h = canTraverse(cur, floored, exclude)
+				if okTrav and headroomOk(floored, exclude) then
+					found = floored
+					foundH = h
+					break
+				end
+			end
+		end
+
+		if not found then
+			-- shorter step retry
+			for _, ang in ipairs({ 0, 30, -30, 60, -60, 90, -90 }) do
+				local d = rotY(dir, ang)
+				local guess = cur + d * 1.6
+				local floored = snapFloor(guess, exclude, 10)
+				if math.abs(floored.Y - cur.Y) <= 7 then
+					local okTrav = canTraverse(cur, floored, exclude)
+					if okTrav and headroomOk(floored, exclude) then
+						found = floored
+						break
+					end
+				end
+			end
+		end
+
+		if not found then
+			stuck += 1
+			if stuck >= 3 then
+				break
+			end
+		else
+			stuck = 0
+			local action = Enum.PathWaypointAction.Walk
+			if foundH > 0 and foundH < 1.6 then
+				action = Enum.PathWaypointAction.Jump -- mark low crawl / shutter
+			elseif math.abs(found.Y - cur.Y) > 2.2 then
+				action = Enum.PathWaypointAction.Jump
+			end
+			table.insert(points, { Position = found, Action = action })
+			cur = found
+			if #points > 64 then
+				break
+			end
+		end
+	end
+
+	-- accept partial path if we got meaningfully closer
+	local last = points[#points]
+	if last and (last.Position - goal).Magnitude < (startPos - goal).Magnitude * 0.55 then
+		table.insert(points, { Position = goal, Action = Enum.PathWaypointAction.Walk })
+		return points, "probe-partial"
+	end
+	if #points >= 3 then
+		return points, "probe-partial"
+	end
+	return nil, "probe-fail"
+end
+
 local function drawWaypoints(waypoints)
 	local f = ensureFolder()
 	local count = #waypoints
-	-- subsample if long path — keep it light
 	local step = 1
 	if count > 48 then
 		step = math.ceil(count / 40)
@@ -225,7 +359,6 @@ local function drawWaypoints(waypoints)
 			end
 		end
 	end
-	-- mark destination
 	local last = waypoints[count]
 	if last then
 		local mark = Instance.new("Part")
@@ -243,6 +376,45 @@ local function drawWaypoints(waypoints)
 		mark.CFrame = CFrame.new(last.Position + Vector3.new(0, 0.15, 0)) * CFrame.Angles(0, 0, math.rad(90))
 		mark.Parent = f
 	end
+end
+
+local AGENT_PROFILES = {
+	{ AgentRadius = 1.5, AgentHeight = 5.0, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 3.5 },
+	{ AgentRadius = 1.2, AgentHeight = 3.0, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 3.0 },
+	{ AgentRadius = 1.0, AgentHeight = 2.2, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 2.5 },
+}
+
+local function tryPathfinding(from, goal)
+	for _, profile in ipairs(AGENT_PROFILES) do
+		local path = PathS:CreatePath(profile)
+		local ok = pcall(function()
+			path:ComputeAsync(from, goal)
+		end)
+		if ok and path.Status == Enum.PathStatus.Success then
+			local wps = path:GetWaypoints()
+			if wps and #wps >= 2 then
+				return wps, "nav"
+			end
+		end
+	end
+	return nil
+end
+
+local function gatherGoals(hrpPos, part)
+	local base = part.Position
+	local goals = {}
+	local flat = Vector3.new(hrpPos.X - base.X, 0, hrpPos.Z - base.Z)
+	local toward = flat.Magnitude > 0.1 and flat.Unit or Vector3.new(0, 0, 1)
+	-- stand in front of safe (toward player), then ring around
+	table.insert(goals, base + toward * 3.0)
+	table.insert(goals, base + toward * 2.0)
+	table.insert(goals, base - toward * 2.5)
+	for ang = 0, 315, 45 do
+		local r = rotY(toward, ang)
+		table.insert(goals, base + r * 3.5)
+	end
+	table.insert(goals, base + Vector3.new(0, 1.5, 0))
+	return goals
 end
 
 local function computePath(S)
@@ -273,42 +445,28 @@ local function computePath(S)
 	flashStatus("Path: computing…", Color3.fromRGB(180, 200, 255))
 
 	task.spawn(function()
-		local ok, err = pcall(function()
-			local path = PathS:CreatePath({
-				AgentRadius = 1.6,
-				AgentHeight = 5,
-				AgentCanJump = true,
-				AgentCanClimb = true,
-				WaypointSpacing = 3.5,
-				Costs = {
-					Climb = 1,
-					Jump = 2,
-				},
-			})
-			local goal = part.Position
-			-- stand next to object if center is inside solid
-			local offset = (hrp.Position - goal)
-			if offset.Magnitude > 0.1 then
-				goal = goal + offset.Unit * 2.5
-			end
-			goal = Vector3.new(goal.X, part.Position.Y, goal.Z)
+		local okOuter = pcall(function()
+			local start = snapFloor(hrp.Position, model, 6)
+			local goals = gatherGoals(hrp.Position, part)
+			local wps, mode = nil, nil
 
-			path:ComputeAsync(hrp.Position, goal)
-			if path.Status ~= Enum.PathStatus.Success then
-				-- retry slightly above in case of roof/gap navmesh issues
-				path:ComputeAsync(hrp.Position, goal + Vector3.new(0, 2, 0))
+			for _, g in ipairs(goals) do
+				local goal = snapFloor(g, model, 8)
+				wps, mode = tryPathfinding(start, goal)
+				if wps then
+					break
+				end
 			end
 
-			if path.Status ~= Enum.PathStatus.Success then
-				clearPathFolder()
-				flashStatus("Path: no route (blocked)", Color3.fromRGB(255, 120, 120))
-				return
+			-- PathfindingService can't see smashed wall holes / many client doors
+			if not wps then
+				local goal = snapFloor(part.Position + (hrp.Position - part.Position).Unit * 2.5, model, 8)
+				wps, mode = probePath(start, goal, model)
 			end
 
-			local wps = path:GetWaypoints()
 			if not wps or #wps < 2 then
 				clearPathFolder()
-				flashStatus("Path: empty", Color3.fromRGB(255, 120, 120))
+				flashStatus("Path: still blocked — move / peek opening", Color3.fromRGB(255, 120, 120))
 				return
 			end
 
@@ -321,10 +479,11 @@ local function computePath(S)
 			elseif string.sub(label, 1, 10) == "MediumSafe" then
 				label = "MED SAFE"
 			end
-			flashStatus("Path → " .. label .. "  (" .. tostring(#wps) .. " pts)", Color3.fromRGB(90, 255, 150))
+			local tag = mode == "nav" and "navmesh" or tostring(mode or "probe")
+			flashStatus("Path → " .. label .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150))
 		end)
 		computing = false
-		if not ok then
+		if not okOuter then
 			clearPathFolder()
 			flashStatus("Path error", Color3.fromRGB(255, 100, 100))
 		end
@@ -391,7 +550,6 @@ function CriminalityPath.Init(S)
 		end
 	end)
 
-	-- clear path on death/respawn
 	local lp = getLP()
 	if lp then
 		lp.CharacterAdded:Connect(function()
