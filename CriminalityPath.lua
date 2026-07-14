@@ -1,6 +1,6 @@
--- CriminalityPath.lua  v2.43.97
--- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
--- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
+-- CriminalityPath.lua  v2.43.98
+-- Safe/register path. Navmesh first (stairs); A* probe for same-floor routing around walls.
+-- Map mesh names are obfuscated — geometry only. solidRaycast pierces CanCollide=false parts.
 
 local CriminalityPath = {}
 
@@ -347,21 +347,66 @@ local function isSolidHit(hit)
 	return true
 end
 
+-- Raycast that SKIPS CanCollide=false / transparent parts and keeps going.
+-- Without this: decorative shell in front of a brick wall makes the path think
+-- the wall is open air → path drives straight into bricks.
+local function solidRaycast(origin, direction, baseParams, extraExclude)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local filter = {}
+	if baseParams and baseParams.FilterDescendantsInstances then
+		for _, inst in ipairs(baseParams.FilterDescendantsInstances) do
+			table.insert(filter, inst)
+		end
+	end
+	if extraExclude then
+		for _, inst in ipairs(extraExclude) do
+			table.insert(filter, inst)
+		end
+	end
+	params.FilterDescendantsInstances = filter
+
+	local remaining = direction
+	local from = origin
+	for _ = 1, 12 do
+		if remaining.Magnitude < 0.05 then
+			return nil
+		end
+		params.FilterDescendantsInstances = filter
+		local hit = workspace:Raycast(from, remaining, params)
+		if not hit then
+			return nil
+		end
+		if isSolidHit(hit) then
+			return hit
+		end
+		-- pierce non-solid: exclude it and continue from just past the hit
+		table.insert(filter, hit.Instance)
+		local traveled = (hit.Position - from).Magnitude + 0.05
+		if traveled >= remaining.Magnitude then
+			return nil
+		end
+		from = from + remaining.Unit * traveled
+		remaining = remaining - remaining.Unit * traveled
+	end
+	return nil
+end
+
 -- Prefer current story floor. Never start ray above next story.
 local function snapFloor(pos, exclude, preferY)
 	local params = makeExcludeParams(exclude)
 	local py = preferY or pos.Y
 	local origin = Vector3.new(pos.X, py + 2.5, pos.Z)
-	local hit = workspace:Raycast(origin, Vector3.new(0, -9, 0), params)
-	if hit and isSolidHit(hit) and hit.Normal.Y >= 0.55 then
+	local hit = solidRaycast(origin, Vector3.new(0, -9, 0), params)
+	if hit and hit.Normal.Y >= 0.55 then
 		local dy = hit.Position.Y - py
 		if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
 			return hit.Position + Vector3.new(0, 0.12, 0)
 		end
 	end
 	origin = Vector3.new(pos.X, py + 3.8, pos.Z)
-	hit = workspace:Raycast(origin, Vector3.new(0, -7, 0), params)
-	if hit and isSolidHit(hit) and hit.Normal.Y >= 0.55 then
+	hit = solidRaycast(origin, Vector3.new(0, -7, 0), params)
+	if hit and hit.Normal.Y >= 0.55 then
 		local dy = hit.Position.Y - py
 		if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
 			return hit.Position + Vector3.new(0, 0.12, 0)
@@ -370,9 +415,31 @@ local function snapFloor(pos, exclude, preferY)
 	return Vector3.new(pos.X, py, pos.Z)
 end
 
--- Shoots 3 parallel rays (left/center/right of travel direction) at several heights.
--- A segment is traversable only if ALL 3 lateral offsets are clear at SOME height.
--- This prevents thin walls from slipping between single-ray checks.
+-- Node is invalid if a solid wall is within ~0.55 studs horizontally at torso height
+-- (means we're inside / pressed into a wall).
+local function isInsideWall(pos, exclude)
+	local params = makeExcludeParams(exclude)
+	local origin = pos + Vector3.new(0, 1.4, 0)
+	local dirs = {
+		Vector3.new(1, 0, 0),
+		Vector3.new(-1, 0, 0),
+		Vector3.new(0, 0, 1),
+		Vector3.new(0, 0, -1),
+	}
+	for _, d in ipairs(dirs) do
+		local hit = solidRaycast(origin, d * 0.55, params)
+		if hit then
+			-- if solid is extremely close AND we're effectively embedded
+			local hit2 = solidRaycast(origin, -d * 0.55, params)
+			if hit2 then
+				return true -- solid on both sides of a sub-stud axis → inside wall
+			end
+		end
+	end
+	return false
+end
+
+-- Shoots 3 parallel SOLID rays (pierce decor) at several heights.
 local function canTraverse(a, b, exclude)
 	local params = makeExcludeParams(exclude)
 	if math.abs(b.Y - a.Y) > MAX_STEP_UP + 0.5 then
@@ -383,21 +450,26 @@ local function canTraverse(a, b, exclude)
 		return true, 1.8
 	end
 	local flatDir = flat.Unit
-	-- perpendicular (left/right of travel)
 	local perp = Vector3.new(-flatDir.Z, 0, flatDir.X)
-	local OFFSETS = { 0, -0.45, 0.45 } -- center first: cheap early-reject when centrally blocked
-	local HEIGHTS = { 0.55, 1.1, 1.6, 2.1 }
+	local OFFSETS = { 0, -0.5, 0.5 }
+	local HEIGHTS = { 0.5, 1.0, 1.5, 2.0, 2.5 }
 
+	-- Require clear path at AT LEAST one full torso band (all 3 laterals clear)
+	-- AND require the foot-level ray also clear (prevents under-wall clipping).
 	for _, h in ipairs(HEIGHTS) do
 		local allClear = true
 		for _, off in ipairs(OFFSETS) do
 			local nudge = perp * off
 			local from = Vector3.new(a.X, a.Y + h, a.Z) + nudge
-			local to   = Vector3.new(b.X, b.Y + h, b.Z) + nudge
-			local hit = workspace:Raycast(from, to - from, params)
-			if hit and isSolidHit(hit) then
-				allClear = false
-				break -- center (or a side) blocked — skip remaining offsets at this height
+			local to = Vector3.new(b.X, b.Y + h, b.Z) + nudge
+			local hit = solidRaycast(from, to - from, params)
+			if hit then
+				-- Allow if we're already past the hit (endpoint beyond wall by <0.4 = wrong node)
+				local rem = (to - hit.Position).Magnitude
+				if rem > 0.35 then
+					allClear = false
+					break
+				end
 			end
 		end
 		if allClear then
@@ -409,8 +481,8 @@ end
 
 local function headroomOk(pos, exclude)
 	local params = makeExcludeParams(exclude)
-	local hit = workspace:Raycast(pos + Vector3.new(0, 0.25, 0), Vector3.new(0, 2.4, 0), params)
-	return not hit or not isSolidHit(hit)
+	local hit = solidRaycast(pos + Vector3.new(0, 0.25, 0), Vector3.new(0, 2.4, 0), params)
+	return hit == nil
 end
 
 local STEP_DOWN_PROBE = 1.6 -- tighter than MAX_STEP_DOWN: avoid dipping into gaps/holes unnecessarily
@@ -486,27 +558,29 @@ local function probePath(startPos, goalPos, exclude)
 				local floored = snapFloor(guess, exclude, curNode.pos.Y)
 				local dy = floored.Y - curNode.pos.Y
 				if dy <= MAX_STEP_UP and dy >= -STEP_DOWN_PROBE then
-					local okTrav, hgt = canTraverse(curNode.pos, floored, exclude)
-					if okTrav and headroomOk(floored, exclude) then
-						local key = quantizeKey(floored, CELL)
-						local moveCost = (floored - curNode.pos).Magnitude + math.abs(dy) * 1.5
-						local g2 = curNode.g + moveCost
-						local existingIdx = keyToIndex[key]
-						if not existingIdx then
-							table.insert(nodes, {
-								pos = floored,
-								g = g2,
-								f = g2 + heuristic(floored),
-								parent = curIdx,
-								h = hgt,
-							})
-							local newIdx = #nodes
-							keyToIndex[key] = newIdx
-							table.insert(open, newIdx)
-						elseif not closed[existingIdx] and g2 < nodes[existingIdx].g - 0.01 then
-							nodes[existingIdx].g = g2
-							nodes[existingIdx].f = g2 + heuristic(floored)
-							nodes[existingIdx].parent = curIdx
+					if not isInsideWall(floored, exclude) then
+						local okTrav, hgt = canTraverse(curNode.pos, floored, exclude)
+						if okTrav and headroomOk(floored, exclude) then
+							local key = quantizeKey(floored, CELL)
+							local moveCost = (floored - curNode.pos).Magnitude + math.abs(dy) * 1.5
+							local g2 = curNode.g + moveCost
+							local existingIdx = keyToIndex[key]
+							if not existingIdx then
+								table.insert(nodes, {
+									pos = floored,
+									g = g2,
+									f = g2 + heuristic(floored),
+									parent = curIdx,
+									h = hgt,
+								})
+								local newIdx = #nodes
+								keyToIndex[key] = newIdx
+								table.insert(open, newIdx)
+							elseif not closed[existingIdx] and g2 < nodes[existingIdx].g - 0.01 then
+								nodes[existingIdx].g = g2
+								nodes[existingIdx].f = g2 + heuristic(floored)
+								nodes[existingIdx].parent = curIdx
+							end
 						end
 					end
 				end
@@ -544,6 +618,21 @@ local function probePath(startPos, goalPos, exclude)
 	if #points < 2 then
 		return nil, "probe-fail"
 	end
+
+	-- Final sanity: drop any trailing nodes that clip into solid (belt+suspenders)
+	while #points >= 2 do
+		local a = points[#points - 1].Position
+		local b = points[#points].Position
+		local ok = canTraverse(a, b, exclude)
+		if ok and not isInsideWall(b, exclude) then
+			break
+		end
+		table.remove(points)
+	end
+	if #points < 2 then
+		return nil, "probe-fail"
+	end
+
 	if goalIndex then
 		return points, crossStory and "probe-samefloor" or "probe"
 	end
@@ -758,7 +847,7 @@ local function computePath(S)
 				local params = makeExcludeParams(model)
 				local from = startPos + Vector3.new(0, 1.5, 0)
 				local to = (goalPos or part.Position) + Vector3.new(0, 1.5, 0)
-				local blockHit = workspace:Raycast(from, to - from, params)
+				local blockHit = solidRaycast(from, to - from, params)
 				local hitName = ""
 				if blockHit and blockHit.Instance then
 					hitName = " | " .. tostring(blockHit.Instance.Name)
