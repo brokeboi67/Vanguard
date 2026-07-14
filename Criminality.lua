@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.76
+-- Criminality.lua  v2.43.79
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1375,6 +1375,7 @@ end
 
 local allowanceRemote = nil
 local lastAllowanceClaimAt = 0
+local allowanceAtmEntry = nil
 
 local function getAllowanceRemote()
 	if allowanceRemote and allowanceRemote.Parent then
@@ -1437,13 +1438,13 @@ local function findNearestAtmPart(rootPos, maxDist)
 	if not folder then
 		return nil
 	end
-	local best, bestDist = nil, maxDist
+	local best, bestDist = nil, maxDist or math.huge
 	for _, atm in ipairs(folder:GetChildren()) do
 		if alive(atm) then
 			local part = getAtmMainPart(atm)
 			if part then
 				local dist = (rootPos - part.Position).Magnitude
-				if dist <= maxDist and dist < bestDist then
+				if dist < bestDist then
 					bestDist = dist
 					best = part
 				end
@@ -1452,6 +1453,52 @@ local function findNearestAtmPart(rootPos, maxDist)
 	end
 	return best
 end
+
+local function clearAllowanceAtmESP()
+	if not allowanceAtmEntry then
+		return
+	end
+	if alive(allowanceAtmEntry.h) then allowanceAtmEntry.h:Destroy() end
+	if alive(allowanceAtmEntry.bg) then allowanceAtmEntry.bg:Destroy() end
+	allowanceAtmEntry = nil
+end
+
+local function syncAllowanceAtmESP(S)
+	if not S.CrimAllowanceClaim or not getAllowanceClaimFlag() then
+		clearAllowanceAtmESP()
+		return
+	end
+	local hrp = getHRP()
+	if not hrp then
+		clearAllowanceAtmESP()
+		return
+	end
+	local part = findNearestAtmPart(hrp.Position, nil)
+	if not part then
+		clearAllowanceAtmESP()
+		return
+	end
+	if allowanceAtmEntry and allowanceAtmEntry.part == part then
+		if alive(allowanceAtmEntry.h) and not allowanceAtmEntry.h.Enabled then
+			allowanceAtmEntry.h.Enabled = true
+		end
+		if alive(allowanceAtmEntry.bg) and not allowanceAtmEntry.bg.Enabled then
+			allowanceAtmEntry.bg.Enabled = true
+		end
+		return
+	end
+	clearAllowanceAtmESP()
+	local model = part:FindFirstAncestorOfClass("Model") or part.Parent
+	local ok, entry = pcall(makeEntry, model, Color3.fromRGB(90, 210, 255),
+		Color3.fromRGB(255, 255, 255), "ATM", nil, part)
+	if not ok or not entry then
+		return
+	end
+	entry.h.Name = "VG_AllowanceAtm"
+	entry.bg.Name = "VG_AllowanceAtm"
+	entry.h.Enabled = true
+	entry.bg.Enabled = true
+	allowanceAtmEntry = entry
 
 local function invokeAllowanceClaim(remote, mainPart)
 	if remote:IsA("RemoteFunction") then
@@ -1466,8 +1513,10 @@ end
 
 local function tickAllowanceClaim(S)
 	if not S.CrimAllowanceClaim then
+		clearAllowanceAtmESP()
 		return
 	end
+	syncAllowanceAtmESP(S)
 	if not getAllowanceClaimFlag() then
 		return
 	end
@@ -2447,6 +2496,10 @@ local function startMaster(S)
 			pcall(tickMoneyPickup, S)
 		end
 
+		if crimFrame % 3 == 0 then
+			pcall(syncAllowanceAtmESP, S)
+		end
+
 		if S.CrimAllowanceClaim and crimFrame % 15 == 0 then
 			pcall(tickAllowanceClaim, S)
 		end
@@ -2501,6 +2554,7 @@ local function stopMaster()
 	lastDoorTick = 0
 	clearCrateESP()
 	clearGunESP()
+	clearAllowanceAtmESP()
 	table.clear(toolIdCache)
 end
 
