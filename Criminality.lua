@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.86
+-- Criminality.lua  v2.44.0
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1692,15 +1692,12 @@ end
 -- ── FAST PICKUP (PIC_TLO — guns/melee on ground) ─────────────────────────────
 -- Cobalt dump uses getnilinstances + WeaponHandle; we resolve dynamically.
 
-local picTloRemote = nil
-local fastPickupPromptBg = nil
-local fastPickupTarget = nil
-local lastFastPickupAt = 0
-local fastPickupInputConn = nil
+-- Packed to stay under Luau's 200-local limit
+local fastPu = { remote = nil, prompt = nil, target = nil, lastAt = 0, inputConn = nil }
 
 local function getPicTloRemote()
-	if picTloRemote and picTloRemote.Parent then
-		return picTloRemote
+	if fastPu.remote and fastPu.remote.Parent then
+		return fastPu.remote
 	end
 	local events = RepSt:FindFirstChild("Events")
 	if not events then
@@ -1708,7 +1705,7 @@ local function getPicTloRemote()
 	end
 	local ev = events:FindFirstChild("PIC_TLO")
 	if ev and ev:IsA("RemoteEvent") then
-		picTloRemote = ev
+		fastPu.remote = ev
 		return ev
 	end
 	return nil
@@ -1807,14 +1804,14 @@ local function shouldFastPickupItem(S, model)
 end
 
 local function hideFastPickupPrompt()
-	fastPickupTarget = nil
-	if fastPickupPromptBg and alive(fastPickupPromptBg) then
-		fastPickupPromptBg.Enabled = false
+	fastPu.target = nil
+	if fastPu.prompt and alive(fastPu.prompt) then
+		fastPu.prompt.Enabled = false
 	end
 end
 
 local function ensureFastPickupPrompt()
-	if fastPickupPromptBg and alive(fastPickupPromptBg) then
+	if fastPu.prompt and alive(fastPu.prompt) then
 		return
 	end
 	local bg = Instance.new("BillboardGui")
@@ -1835,20 +1832,20 @@ local function ensureFastPickupPrompt()
 	lbl.TextStrokeTransparency = 0.15
 	lbl.Parent = bg
 
-	fastPickupPromptBg = bg
+	fastPu.prompt = bg
 end
 
 -- target = { handle, model?, adornee, kind }
 local function showFastPickupPrompt(target)
 	ensureFastPickupPrompt()
 	local part = target and (target.adornee or target.handle)
-	if not part or not fastPickupPromptBg then
+	if not part or not fastPu.prompt then
 		hideFastPickupPrompt()
 		return
 	end
-	fastPickupTarget = target
-	fastPickupPromptBg.Adornee = part
-	fastPickupPromptBg.Enabled = true
+	fastPu.target = target
+	fastPu.prompt.Adornee = part
+	fastPu.prompt.Enabled = true
 end
 
 local function findNearestFastPickup(S)
@@ -1905,7 +1902,7 @@ local function tryFastPickup(target)
 		return false
 	end
 	local now = tick()
-	if now - lastFastPickupAt < 0.35 then
+	if now - fastPu.lastAt < 0.35 then
 		return false
 	end
 	local remote = getPicTloRemote()
@@ -1916,7 +1913,7 @@ local function tryFastPickup(target)
 		remote:FireServer(target.handle, nil, nil)
 	end)
 	if ok then
-		lastFastPickupAt = now
+		fastPu.lastAt = now
 		if target.model then
 			destroyGunEntry(target.model)
 		end
@@ -1944,10 +1941,10 @@ local function tickFastPickup(S)
 end
 
 local function startFastPickupInput()
-	if fastPickupInputConn or not UIS then
+	if fastPu.inputConn or not UIS then
 		return
 	end
-	fastPickupInputConn = UIS.InputBegan:Connect(function(input, processed)
+	fastPu.inputConn = UIS.InputBegan:Connect(function(input, processed)
 		if processed then
 			return
 		end
@@ -1955,22 +1952,22 @@ local function startFastPickupInput()
 			return
 		end
 		local S = _G.__VG_S
-		if not S or not S.CrimFastPickup or not fastPickupTarget then
+		if not S or not S.CrimFastPickup or not fastPu.target then
 			return
 		end
-		tryFastPickup(fastPickupTarget)
+		tryFastPickup(fastPu.target)
 	end)
 end
 
 local function stopFastPickupInput()
-	if fastPickupInputConn then
-		fastPickupInputConn:Disconnect()
-		fastPickupInputConn = nil
+	if fastPu.inputConn then
+		fastPu.inputConn:Disconnect()
+		fastPu.inputConn = nil
 	end
 	hideFastPickupPrompt()
-	if fastPickupPromptBg and alive(fastPickupPromptBg) then
-		fastPickupPromptBg:Destroy()
-		fastPickupPromptBg = nil
+	if fastPu.prompt and alive(fastPu.prompt) then
+		fastPu.prompt:Destroy()
+		fastPu.prompt = nil
 	end
 end
 
@@ -1983,24 +1980,26 @@ local featureRunning = {
 	noFailLockpick = false,
 	fullBright = false,
 }
-local gunModConns = {}
-local gunModCharConns = {}
-local gunModScanToken = 0
-local weaponCache = {}
-local weaponOrig  = {}
-local lastGunModApplyAt = 0
-local lastGunModDeepAt = 0
-local GUNMOD_REAPPLY_INTERVAL = 8
-local GUNMOD_DEEP_COOLDOWN = 4
+local gunMod = {
+	conns = {},
+	charConns = {},
+	scanToken = 0,
+	cache = {},
+	orig = {},
+	lastApplyAt = 0,
+	lastDeepAt = 0,
+	reapplyInterval = 8,
+	deepCooldown = 4,
+}
 
 local function isWeaponTable(v)
 	return type(v) == "table" and rawget(v, "EquipTime") ~= nil
 end
 
 local function pruneWeaponOrig(active)
-	for weapon in pairs(weaponOrig) do
+	for weapon in pairs(gunMod.orig) do
 		if not active[weapon] then
-			weaponOrig[weapon] = nil
+			gunMod.orig[weapon] = nil
 		end
 	end
 end
@@ -2018,8 +2017,8 @@ local function cacheWeapons(deep)
 				if isWeaponTable(v) and not active[v] then
 					active[v] = true
 					table.insert(found, v)
-					if not weaponOrig[v] then
-						weaponOrig[v] = {
+					if not gunMod.orig[v] then
+						gunMod.orig[v] = {
 							Recoil = v.Recoil,
 							CameraRecoilingEnabled = v.CameraRecoilingEnabled,
 							AngleX_Min = v.AngleX_Min, AngleX_Max = v.AngleX_Max,
@@ -2028,8 +2027,8 @@ local function cacheWeapons(deep)
 							Spread = v.Spread,
 							EquipTime = v.EquipTime,
 						}
-					elseif weaponOrig[v].EquipTime == nil then
-						weaponOrig[v].EquipTime = v.EquipTime
+					elseif gunMod.orig[v].EquipTime == nil then
+						gunMod.orig[v].EquipTime = v.EquipTime
 					end
 				end
 			end
@@ -2039,16 +2038,16 @@ local function cacheWeapons(deep)
 		end
 	end
 	if #found > 0 then
-		weaponCache = found
+		gunMod.cache = found
 		pruneWeaponOrig(active)
 	end
 end
 
 local function clearGunModCharConns()
-	for _, conn in ipairs(gunModCharConns) do
+	for _, conn in ipairs(gunMod.charConns) do
 		pcall(conn.Disconnect, conn)
 	end
-	table.clear(gunModCharConns)
+	table.clear(gunMod.charConns)
 end
 
 local function gunModsWant(S)
@@ -2059,8 +2058,8 @@ local function applyGunMods(S)
 	if not gunModsWant(S) then
 		return
 	end
-	for _, weapon in ipairs(weaponCache) do
-		local orig = weaponOrig[weapon]
+	for _, weapon in ipairs(gunMod.cache) do
+		local orig = gunMod.orig[weapon]
 		if S.CrimNoRecoil then
 			weapon.Recoil = 0
 			weapon.CameraRecoilingEnabled = false
@@ -2089,20 +2088,20 @@ local function refreshGunMods(S, preferDeep)
 		return
 	end
 	local now = tick()
-	local wantDeep = preferDeep == true and (now - lastGunModDeepAt >= GUNMOD_DEEP_COOLDOWN)
+	local wantDeep = preferDeep == true and (now - gunMod.lastDeepAt >= gunMod.deepCooldown)
 	cacheWeapons(wantDeep)
 	if wantDeep then
-		lastGunModDeepAt = now
+		gunMod.lastDeepAt = now
 	end
 	applyGunMods(S)
-	lastGunModApplyAt = now
+	gunMod.lastApplyAt = now
 end
 
 local function scheduleGunModRefresh(preferDeep, delaySec)
-	gunModScanToken += 1
-	local token = gunModScanToken
+	gunMod.scanToken += 1
+	local token = gunMod.scanToken
 	task.delay(delaySec or 0.4, function()
-		if token ~= gunModScanToken then
+		if token ~= gunMod.scanToken then
 			return
 		end
 		local S = _G.__VG_S
@@ -2114,7 +2113,7 @@ local function scheduleGunModRefresh(preferDeep, delaySec)
 end
 
 local function resetGunMods()
-	for weapon, values in pairs(weaponOrig) do
+	for weapon, values in pairs(gunMod.orig) do
 		if type(weapon) == "table" then
 			weapon.Recoil = values.Recoil
 			weapon.CameraRecoilingEnabled = values.CameraRecoilingEnabled
@@ -2127,22 +2126,22 @@ local function resetGunMods()
 			end
 		end
 	end
-	weaponCache = {}
-	table.clear(weaponOrig)
-	lastGunModApplyAt = 0
-	lastGunModDeepAt = 0
+	gunMod.cache = {}
+	table.clear(gunMod.orig)
+	gunMod.lastApplyAt = 0
+	gunMod.lastDeepAt = 0
 end
 
 local function watchBackpackForGuns(backpack)
 	if not backpack then
 		return
 	end
-	table.insert(gunModCharConns, backpack.ChildAdded:Connect(function(child)
+	table.insert(gunMod.charConns, backpack.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
 			scheduleGunModRefresh(true, 0.35)
 		end
 	end))
-	table.insert(gunModCharConns, backpack.ChildRemoved:Connect(function(child)
+	table.insert(gunMod.charConns, backpack.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
 			scheduleGunModRefresh(true, 0.35)
 		end
@@ -2152,20 +2151,20 @@ end
 local function onGunModCharacter(character)
 	clearGunModCharConns()
 	scheduleGunModRefresh(true, 1.0)
-	table.insert(gunModCharConns, character.ChildAdded:Connect(function(child)
+	table.insert(gunMod.charConns, character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
 			scheduleGunModRefresh(true, 0.25)
 		end
 	end))
-	table.insert(gunModCharConns, character.ChildRemoved:Connect(function(child)
+	table.insert(gunMod.charConns, character.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
 			scheduleGunModRefresh(true, 0.35)
 		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
-		table.insert(gunModCharConns, humanoid.Died:Connect(function()
-			lastGunModDeepAt = 0
+		table.insert(gunMod.charConns, humanoid.Died:Connect(function()
+			gunMod.lastDeepAt = 0
 			scheduleGunModRefresh(true, 2.0)
 		end))
 	end
@@ -2175,12 +2174,12 @@ end
 
 local function startGunMods(S)
 	clearGunModCharConns()
-	lastGunModDeepAt = 0
+	gunMod.lastDeepAt = 0
 	refreshGunMods(S, true)
 	local lp = getLP()
-	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
+	table.insert(gunMod.conns, lp.CharacterAdded:Connect(onGunModCharacter))
 	-- Backpack can respawn; keep a live watch on player children
-	table.insert(gunModConns, lp.ChildAdded:Connect(function(ch)
+	table.insert(gunMod.conns, lp.ChildAdded:Connect(function(ch)
 		if ch:IsA("Backpack") then
 			watchBackpackForGuns(ch)
 			scheduleGunModRefresh(true, 0.4)
@@ -2193,11 +2192,11 @@ local function startGunMods(S)
 end
 
 local function stopGunMods()
-	gunModScanToken += 1
+	gunMod.scanToken += 1
 	clearGunModCharConns()
 	resetGunMods()
-	for _, conn in ipairs(gunModConns) do pcall(conn.Disconnect, conn) end
-	gunModConns = {}
+	for _, conn in ipairs(gunMod.conns) do pcall(conn.Disconnect, conn) end
+	gunMod.conns = {}
 end
 
 local function syncGunMods(S)
@@ -2700,8 +2699,8 @@ local function startMaster(S)
 
 		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
-			if now - lastGunModApplyAt >= GUNMOD_REAPPLY_INTERVAL then
-				lastGunModApplyAt = now
+			if now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
+				gunMod.lastApplyAt = now
 				-- cheap: only re-zero cached tables (no getgc every few seconds)
 				applyGunMods(S)
 			end
