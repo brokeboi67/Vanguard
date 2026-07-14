@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.81
+-- Criminality.lua  v2.43.82
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -791,11 +791,16 @@ local function addGunESP(model, S, withSpawnFx)
 		return false
 	end
 	local fill = kindColor(kind, S)
-	local gunPart = getModelPart(model)
-	if not gunPart then return false end
-	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil, gunPart)
+	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
 	if not ok or not entry then
 		return false
+	end
+	local wh = model:FindFirstChild("WeaponHandle", true)
+	if wh and wh:IsA("BasePart") then
+		entry.part = wh
+		if alive(entry.bg) then entry.bg.Adornee = wh end
+	elseif alive(entry.part) and alive(entry.bg) then
+		entry.bg.Adornee = entry.part
 	end
 	if alive(entry.bg) then
 		entry.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 18, 64, 110), 0, 16)
@@ -1017,14 +1022,22 @@ local function tickESP(S)
 	for _, e in ipairs(ESP.guns) do
 		local vis = false
 		if showGun and alive(e.model) and isInSpawnedTools(e.model) then
+			if not shouldShowGun(S, e.kind or "other") then
+				vis = false
+			else
 			if not alive(e.part) then
-				e.part = getModelPart(e.model)
+				local wh = e.model:FindFirstChild("WeaponHandle", true)
+				e.part = (wh and wh:IsA("BasePart")) and wh or getModelPart(e.model)
 			end
 			if alive(e.part) then
 				if alive(e.bg) and e.bg.Adornee ~= e.part then
 					e.bg.Adornee = e.part
 				end
+				if alive(e.h) and e.h.Adornee ~= e.model then
+					e.h.Adornee = e.model
+				end
 				vis = (camPos - e.part.Position).Magnitude <= gunDist
+			end
 			end
 		end
 		if alive(e.h) then
@@ -2567,6 +2580,13 @@ end
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
+
+	S._crimSyncGunESP = function()
+		if crimFlag(S.CrimGunESP) then
+			pcall(syncGunESP, S)
+			pcall(tickESP, S)
+		end
+	end
 
 	S._configApplyHooks = S._configApplyHooks or {}
 	table.insert(S._configApplyHooks, function()

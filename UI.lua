@@ -2585,10 +2585,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 7, {
 			flat = true,
 			requires = "CrimGunESP",
+			onChange = function()
+				if S._crimSyncGunESP then S._crimSyncGunESP() end
+			end,
 		})
 		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 8, {
 			flat = true,
 			requires = "CrimGunESP",
+			onChange = function()
+				if S._crimSyncGunESP then S._crimSyncGunESP() end
+			end,
 		})
 		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 9, {
 			suffix = " st",
