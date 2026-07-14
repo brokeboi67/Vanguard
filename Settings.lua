@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.44.0",
+	Version = "2.44.1",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -218,6 +218,9 @@ local Settings = {
 	CrimNoFailLockpick = false,
 	CrimAutoOpenDoors = false,
 	CrimAutoUnlockDoors = false,
+	CrimRemoteElevator = false,
+	CrimRemoteElevatorKey = "T",
+	CrimRemoteElevatorMaxDist = 400,
 	CrimInfStamina = false,
 	CrimFullBright = false,
 	CrimMoneyPickup = false,

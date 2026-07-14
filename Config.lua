@@ -472,6 +472,15 @@ function Config.EnforceRules(S)
 	if S.CrimAutoUnlockDoors == nil then
 		S.CrimAutoUnlockDoors = false
 	end
+	if S.CrimRemoteElevator == nil then
+		S.CrimRemoteElevator = false
+	end
+	if S.CrimRemoteElevatorKey == nil or S.CrimRemoteElevatorKey == "" then
+		S.CrimRemoteElevatorKey = "T"
+	end
+	if S.CrimRemoteElevatorMaxDist == nil then
+		S.CrimRemoteElevatorMaxDist = 400
+	end
 	if S.CrimInfStamina == nil then
 		S.CrimInfStamina = false
 	end

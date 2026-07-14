@@ -1,4 +1,4 @@
--- Criminality.lua  v2.44.0
+-- Criminality.lua  v2.44.1
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2484,6 +2484,98 @@ local function tickDoors(S)
 	end
 end
 
+-- ── REMOTE ELEVATOR (no proximity — FireServer from anywhere in range) ───────
+-- Cobalt: Elevator_N.Events.Toggle:FireServer("Do", Elevator_N.Knob1)
+local elev = { conn = nil, lastAt = 0 }
+
+local function tryRemoteElevator(S)
+	if not S or S.CrimRemoteElevator ~= true then
+		return
+	end
+	local now = tick()
+	if now - elev.lastAt < 0.45 then
+		return
+	end
+	local cam = workspace.CurrentCamera
+	if not cam then
+		return
+	end
+	local map = workspace:FindFirstChild("Map")
+	local doors = map and map:FindFirstChild("Doors")
+	if not doors then
+		return
+	end
+	local maxDist = math.clamp(tonumber(S.CrimRemoteElevatorMaxDist) or 400, 50, 1000)
+	local origin = cam.CFrame.Position
+	local look = cam.CFrame.LookVector
+	local bestToggle, bestKnob, bestName, bestScore, bestDist = nil, nil, nil, nil, nil
+
+	for _, ch in ipairs(doors:GetChildren()) do
+		local n = ch.Name
+		if typeof(n) == "string" and string.sub(n, 1, 8) == "Elevator" then
+			local knob = ch:FindFirstChild("Knob1") or ch:FindFirstChild("Knob2") or ch:FindFirstChild("Knob")
+			local evFolder = ch:FindFirstChild("Events")
+			local toggle = evFolder and evFolder:FindFirstChild("Toggle")
+			local part = knob or ch:FindFirstChild("DoorBase") or ch:FindFirstChildWhichIsA("BasePart", true)
+			if knob and toggle and part then
+				local to = part.Position - origin
+				local dist = to.Magnitude
+				if dist <= maxDist and dist > 0.5 then
+					local dot = to.Unit:Dot(look)
+					-- Prefer elevator you're looking at (through walls OK); else nearest
+					local score = (dot > 0.72) and (dist / math.max(dot, 0.01)) or (dist + 800)
+					if not bestScore or score < bestScore then
+						bestScore = score
+						bestToggle = toggle
+						bestKnob = knob
+						bestName = n
+						bestDist = dist
+					end
+				end
+			end
+		end
+	end
+
+	if not bestToggle then
+		crimNotify("Elevator", "Brak windy w zasięgu", 2)
+		return
+	end
+	local ok = pcall(function()
+		bestToggle:FireServer("Do", bestKnob)
+	end)
+	if ok then
+		elev.lastAt = now
+		crimNotify("Elevator", tostring(bestName) .. string.format("  %.0fm", bestDist or 0), 2)
+	else
+		crimNotify("Elevator", "Fire failed", 2)
+	end
+end
+
+local function syncRemoteElevator(S)
+	local want = S and S.CrimRemoteElevator == true
+	if want and not elev.conn and UIS then
+		elev.conn = UIS.InputBegan:Connect(function(input, gp)
+			if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then
+				return
+			end
+			local cur = _G.__VG_S
+			if not cur or cur.CrimRemoteElevator ~= true then
+				return
+			end
+			local keyName = cur.CrimRemoteElevatorKey or "T"
+			local ok, key = pcall(function()
+				return Enum.KeyCode[keyName]
+			end)
+			if ok and key and input.KeyCode == key then
+				pcall(tryRemoteElevator, cur)
+			end
+		end)
+	elseif not want and elev.conn then
+		elev.conn:Disconnect()
+		elev.conn = nil
+	end
+end
+
 -- ── INFINITE STAMINA (Criminality) ───────────────────────────────────────────
 local crimStaminaHooked = false
 local crimStaminaActive = false
@@ -2688,6 +2780,7 @@ local function startMaster(S)
 		syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 		syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 		syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+		pcall(syncRemoteElevator, S)
 
 		if crimFlag(S.CrimInfStamina) and not crimStaminaHooked then
 			setupCrimStaminaHook()
@@ -2819,6 +2912,10 @@ local function stopMaster()
 	pcall(stopFullBright)
 	clearAllPickupFx()
 	stopFastPickupInput()
+	if elev.conn then
+		elev.conn:Disconnect()
+		elev.conn = nil
+	end
 	crimStaminaActive = false
 	lastDoorTick = 0
 	clearCrateESP()
