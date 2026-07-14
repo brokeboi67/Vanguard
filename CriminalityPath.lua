@@ -1,6 +1,6 @@
--- CriminalityPath.lua  v2.43.89
--- Safe/register path overlay. PathfindingService + probe fallback.
--- Openable Map.Doors (DoorMain/DoorBase) are treated as passable for the overlay.
+-- CriminalityPath.lua  v2.43.90
+-- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
+-- Map mesh names are obfuscated — we never rely on names, only collidable geometry + Map.Doors.
 
 local CriminalityPath = {}
 
@@ -14,6 +14,8 @@ local conn = nil
 local computing = false
 local lastComputeAt = 0
 local COOLDOWN = 0.55
+local MAX_STEP_UP = 1.9
+local MAX_STEP_DOWN = 2.4
 
 local function getLP()
 	return Plrs.LocalPlayer
@@ -63,18 +65,18 @@ local function flashStatus(text, col)
 	local lbl = Instance.new("TextLabel")
 	lbl.AnchorPoint = Vector2.new(0.5, 0)
 	lbl.Position = UDim2.new(0.5, 0, 0.12, 0)
-	lbl.Size = UDim2.new(0, 360, 0, 26)
+	lbl.Size = UDim2.new(0, 420, 0, 26)
 	lbl.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 	lbl.BackgroundTransparency = 0.25
 	lbl.Text = text
 	lbl.TextColor3 = col or Color3.fromRGB(120, 255, 160)
 	lbl.Font = Enum.Font.GothamBold
-	lbl.TextSize = 13
+	lbl.TextSize = 12
 	lbl.Parent = gui
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 6)
 	corner.Parent = lbl
-	Debris:AddItem(gui, 2.4)
+	Debris:AddItem(gui, 2.6)
 end
 
 local function isSafeOrRegister(model)
@@ -95,6 +97,11 @@ local function getBredFolder()
 	return map and map:FindFirstChild("BredMakurz")
 end
 
+local function getDoorsFolder()
+	local map = workspace:FindFirstChild("Map")
+	return map and map:FindFirstChild("Doors")
+end
+
 local function getSafePart(model)
 	if not model then
 		return nil
@@ -109,19 +116,11 @@ local function getSafePart(model)
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local function getDoorsFolder()
-	local map = workspace:FindFirstChild("Map")
-	return map and map:FindFirstChild("Doors")
-end
-
 local function isOpenableDoorModel(inst)
 	if not inst or not inst:IsA("Model") then
 		return false
 	end
-	if inst:FindFirstChild("DoorMain") then
-		return true
-	end
-	if inst:FindFirstChild("DoorBase") or inst:FindFirstChild("DoorBase2") then
+	if inst:FindFirstChild("DoorMain") or inst:FindFirstChild("DoorBase") or inst:FindFirstChild("DoorBase2") then
 		return true
 	end
 	local n = inst.Name
@@ -131,6 +130,7 @@ end
 local function makeExcludeParams(extra)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.RespectCanCollide = true
 	local list = {}
 	local char = getChar()
 	if char then
@@ -140,19 +140,12 @@ local function makeExcludeParams(extra)
 	if pathF then
 		table.insert(list, pathF)
 	end
-	-- Treat openable Criminality doors as passable for path overlay
 	local doors = getDoorsFolder()
 	if doors then
 		table.insert(list, doors)
 	end
 	if extra then
-		if typeof(extra) == "table" then
-			for _, e in ipairs(extra) do
-				table.insert(list, e)
-			end
-		else
-			table.insert(list, extra)
-		end
+		table.insert(list, extra)
 	end
 	params.FilterDescendantsInstances = list
 	return params
@@ -161,7 +154,7 @@ end
 local function nearestDoorInfo(pos)
 	local doors = getDoorsFolder()
 	if not doors then
-		return nil, math.huge
+		return nil
 	end
 	local best, bestDist = nil, 6.5
 	for _, door in ipairs(doors:GetChildren()) do
@@ -177,7 +170,7 @@ local function nearestDoorInfo(pos)
 			end
 		end
 	end
-	return best, bestDist
+	return best
 end
 
 local function resolveLookTarget(maxDist)
@@ -194,7 +187,6 @@ local function resolveLookTarget(maxDist)
 	local origin = cam.CFrame.Position
 	local dir = cam.CFrame.LookVector
 	local params = makeExcludeParams(nil)
-
 	local hit = workspace:Raycast(origin, dir * maxDist, params)
 	if hit and hit.Instance then
 		local anc = hit.Instance
@@ -233,41 +225,61 @@ local function resolveLookTarget(maxDist)
 	return nil
 end
 
-local function snapFloor(pos, exclude, fromH)
-	local params = makeExcludeParams(exclude)
-	local origin = pos + Vector3.new(0, fromH or 8, 0)
-	local hit = workspace:Raycast(origin, Vector3.new(0, -40, 0), params)
-	if hit then
-		return hit.Position + Vector3.new(0, 0.15, 0)
-	end
-	return Vector3.new(pos.X, pos.Y, pos.Z)
-end
-
 local function rotY(v, deg)
 	local r = math.rad(deg)
 	local c, s = math.cos(r), math.sin(r)
 	return Vector3.new(v.X * c - v.Z * s, 0, v.X * s + v.Z * c)
 end
 
--- true if any "player slot" height can traverse (low shutters + mid wall holes)
+-- Prefer current story floor. Never start ray above next story.
+local function snapFloor(pos, exclude, preferY)
+	local params = makeExcludeParams(exclude)
+	local py = preferY or pos.Y
+	local origin = Vector3.new(pos.X, py + 2.5, pos.Z)
+	local hit = workspace:Raycast(origin, Vector3.new(0, -9, 0), params)
+	if hit and hit.Normal.Y >= 0.55 then
+		local dy = hit.Position.Y - py
+		if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
+			return hit.Position + Vector3.new(0, 0.12, 0)
+		end
+	end
+	origin = Vector3.new(pos.X, py + 3.8, pos.Z)
+	hit = workspace:Raycast(origin, Vector3.new(0, -7, 0), params)
+	if hit and hit.Normal.Y >= 0.55 then
+		local dy = hit.Position.Y - py
+		if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
+			return hit.Position + Vector3.new(0, 0.12, 0)
+		end
+	end
+	return Vector3.new(pos.X, py, pos.Z)
+end
+
 local function canTraverse(a, b, exclude)
 	local params = makeExcludeParams(exclude)
-	local delta = b - a
-	local flat = Vector3.new(delta.X, 0, delta.Z)
-	if flat.Magnitude < 0.05 then
-		return true, 0
+	if math.abs(b.Y - a.Y) > MAX_STEP_UP + 0.4 then
+		return false, 0
 	end
-	local heights = { 1.0, 1.4, 1.8, 2.2, 2.8, 3.4, 4.0 }
-	for _, h in ipairs(heights) do
+	local flat = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+	if flat.Magnitude < 0.05 then
+		return true, 1.8
+	end
+	for _, h in ipairs({ 1.15, 1.65, 2.15, 2.7, 3.2 }) do
 		local from = Vector3.new(a.X, a.Y + h, a.Z)
 		local to = Vector3.new(b.X, b.Y + h, b.Z)
 		local hit = workspace:Raycast(from, to - from, params)
 		if not hit then
-			return true, h
-		end
-		-- allow if we nearly reached the end (edge of collider)
-		local remain = (to - hit.Position).Magnitude
-		if remain < 1.1 then
+			local hitLow = workspace:Raycast(
+				Vector3.new(a.X, a.Y + 0.95, a.Z),
+				Vector3.new(b.X - a.X, 0, b.Z - a.Z),
+				params
+			)
+			if not hitLow then
+				return true, h
+			end
+			if (Vector3.new(b.X, a.Y + 0.95, b.Z) - hitLow.Position).Magnitude < 1.0 then
+				return true, h
+			end
+		elseif (to - hit.Position).Magnitude < 1.0 then
 			return true, h
 		end
 	end
@@ -276,57 +288,59 @@ end
 
 local function headroomOk(pos, exclude)
 	local params = makeExcludeParams(exclude)
-	-- need ~2 studs free above feet so player can stand/crouch through
-	local hit = workspace:Raycast(pos + Vector3.new(0, 0.3, 0), Vector3.new(0, 2.2, 0), params)
-	return hit == nil
+	return workspace:Raycast(pos + Vector3.new(0, 0.25, 0), Vector3.new(0, 2.4, 0), params) == nil
 end
 
+-- Same-floor / stair-step probe only. Cross-story = PathfindingService (stairs).
 local function probePath(startPos, goalPos, exclude)
-	local cur = snapFloor(startPos, exclude, 6)
-	local goal = snapFloor(goalPos, exclude, 8)
+	local cur = snapFloor(startPos, exclude, startPos.Y)
+	local crossStory = math.abs(goalPos.Y - cur.Y) > 4.0
+	local goal = crossStory and snapFloor(goalPos, exclude, cur.Y) or snapFloor(goalPos, exclude, goalPos.Y)
+	if math.abs(goal.Y - cur.Y) > 10 then
+		goal = snapFloor(goalPos, exclude, cur.Y)
+		crossStory = true
+	end
+
 	local points = { { Position = cur, Action = Enum.PathWaypointAction.Walk } }
-	local angles = { 0, 18, -18, 36, -36, 55, -55, 75, -75, 95, -95, 120, -120, 150, -150 }
-	local maxSteps = 70
+	local angles = { 0, 22, -22, 45, -45, 70, -70, 95, -95, 125, -125 }
 	local stuck = 0
 
-	for _ = 1, maxSteps do
+	for _ = 1, 80 do
 		local flat = Vector3.new(goal.X - cur.X, 0, goal.Z - cur.Z)
 		local rem = flat.Magnitude
-		if rem < 3.2 then
-			table.insert(points, { Position = goal, Action = Enum.PathWaypointAction.Walk })
-			return points, "probe"
+		if rem < 2.6 then
+			if not crossStory then
+				table.insert(points, { Position = goal, Action = Enum.PathWaypointAction.Walk })
+			end
+			return points, crossStory and "probe-samefloor" or "probe"
 		end
 
 		local dir = flat.Unit
-		local stepLen = math.clamp(rem, 2.2, 4.0)
-		local found = nil
-		local foundH = 0
+		local stepLen = math.clamp(rem, 1.6, 2.8)
+		local found, foundH = nil, 0
 
 		for _, ang in ipairs(angles) do
-			local d = rotY(dir, ang)
-			local guess = cur + d * stepLen
-			local floored = snapFloor(guess, exclude, 10)
-			-- reject insane vertical jumps
-			if math.abs(floored.Y - cur.Y) <= 7 then
+			local guess = cur + rotY(dir, ang) * stepLen
+			local floored = snapFloor(guess, exclude, cur.Y)
+			local dy = floored.Y - cur.Y
+			if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
 				local okTrav, h = canTraverse(cur, floored, exclude)
 				if okTrav and headroomOk(floored, exclude) then
-					found = floored
-					foundH = h
+					found, foundH = floored, h
 					break
 				end
 			end
 		end
 
 		if not found then
-			-- shorter step retry
-			for _, ang in ipairs({ 0, 30, -30, 60, -60, 90, -90 }) do
-				local d = rotY(dir, ang)
-				local guess = cur + d * 1.6
-				local floored = snapFloor(guess, exclude, 10)
-				if math.abs(floored.Y - cur.Y) <= 7 then
-					local okTrav = canTraverse(cur, floored, exclude)
+			for _, ang in ipairs({ 0, 40, -40, 80, -80 }) do
+				local guess = cur + rotY(dir, ang) * 1.25
+				local floored = snapFloor(guess, exclude, cur.Y)
+				local dy = floored.Y - cur.Y
+				if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
+					local okTrav, h = canTraverse(cur, floored, exclude)
 					if okTrav and headroomOk(floored, exclude) then
-						found = floored
+						found, foundH = floored, h
 						break
 					end
 				end
@@ -335,40 +349,26 @@ local function probePath(startPos, goalPos, exclude)
 
 		if not found then
 			stuck += 1
-			if stuck >= 3 then
+			if stuck >= 4 then
 				break
 			end
 		else
 			stuck = 0
 			local doorHit = nearestDoorInfo(found)
 			local action = Enum.PathWaypointAction.Walk
-			if not doorHit then
-				if foundH > 0 and foundH < 1.6 then
-					action = Enum.PathWaypointAction.Jump
-				elseif math.abs(found.Y - cur.Y) > 2.2 then
-					action = Enum.PathWaypointAction.Jump
-				end
+			if not doorHit and (math.abs(found.Y - cur.Y) > 0.85 or (foundH > 0 and foundH < 1.5)) then
+				action = Enum.PathWaypointAction.Jump
 			end
-			table.insert(points, {
-				Position = found,
-				Action = action,
-				IsDoor = doorHit ~= nil,
-			})
+			table.insert(points, { Position = found, Action = action, IsDoor = doorHit ~= nil })
 			cur = found
-			if #points > 64 then
+			if #points > 70 then
 				break
 			end
 		end
 	end
 
-	-- accept partial path if we got meaningfully closer
-	local last = points[#points]
-	if last and (last.Position - goal).Magnitude < (startPos - goal).Magnitude * 0.55 then
-		table.insert(points, { Position = goal, Action = Enum.PathWaypointAction.Walk })
-		return points, "probe-partial"
-	end
 	if #points >= 3 then
-		return points, "probe-partial"
+		return points, crossStory and "probe-samefloor" or "probe-partial"
 	end
 	return nil, "probe-fail"
 end
@@ -376,10 +376,7 @@ end
 local function drawWaypoints(waypoints)
 	local f = ensureFolder()
 	local count = #waypoints
-	local step = 1
-	if count > 48 then
-		step = math.ceil(count / 40)
-	end
+	local step = count > 48 and math.ceil(count / 40) or 1
 	for i = 1, count, step do
 		local wp = waypoints[i]
 		local pos = wp.Position + Vector3.new(0, 0.2, 0)
@@ -392,42 +389,36 @@ local function drawWaypoints(waypoints)
 		p.CastShadow = false
 		p.Material = Enum.Material.Neon
 		p.Shape = Enum.PartType.Ball
-		local isDoor = wp.IsDoor == true
-		if not isDoor then
-			local dNear = nearestDoorInfo(wp.Position)
-			isDoor = dNear ~= nil
-		end
+		local isDoor = wp.IsDoor == true or nearestDoorInfo(wp.Position) ~= nil
 		local isJump = (not isDoor) and wp.Action == Enum.PathWaypointAction.Jump
 		p.Size = (isDoor or isJump) and Vector3.new(0.55, 0.55, 0.55) or Vector3.new(0.35, 0.35, 0.35)
-		if isDoor then
-			p.Color = Color3.fromRGB(90, 190, 255) -- openable door
-		elseif isJump then
-			p.Color = Color3.fromRGB(255, 210, 70)
-		else
-			p.Color = Color3.fromRGB(80, 255, 140)
-		end
+		p.Color = isDoor and Color3.fromRGB(90, 190, 255)
+			or (isJump and Color3.fromRGB(255, 210, 70) or Color3.fromRGB(80, 255, 140))
 		p.Transparency = 0.15
 		p.CFrame = CFrame.new(pos)
 		p.Parent = f
 
 		if i > 1 then
 			local prev = waypoints[math.max(1, i - step)].Position + Vector3.new(0, 0.15, 0)
-			local mid = (prev + pos) * 0.5
-			local dist = (pos - prev).Magnitude
-			if dist > 0.05 and dist < 40 then
-				local beam = Instance.new("Part")
-				beam.Name = "Seg"
-				beam.Anchored = true
-				beam.CanCollide = false
-				beam.CanQuery = false
-				beam.CanTouch = false
-				beam.CastShadow = false
-				beam.Material = Enum.Material.Neon
-				beam.Color = Color3.fromRGB(60, 220, 120)
-				beam.Transparency = 0.45
-				beam.Size = Vector3.new(0.12, 0.12, dist)
-				beam.CFrame = CFrame.lookAt(mid, pos)
-				beam.Parent = f
+			-- Skip drawing segments that clip stories (safety)
+			if math.abs(prev.Y - pos.Y) <= 6 then
+				local mid = (prev + pos) * 0.5
+				local dist = (pos - prev).Magnitude
+				if dist > 0.05 and dist < 28 then
+					local beam = Instance.new("Part")
+					beam.Name = "Seg"
+					beam.Anchored = true
+					beam.CanCollide = false
+					beam.CanQuery = false
+					beam.CanTouch = false
+					beam.CastShadow = false
+					beam.Material = Enum.Material.Neon
+					beam.Color = Color3.fromRGB(60, 220, 120)
+					beam.Transparency = 0.45
+					beam.Size = Vector3.new(0.12, 0.12, dist)
+					beam.CFrame = CFrame.lookAt(mid, pos)
+					beam.Parent = f
+				end
 			end
 		end
 	end
@@ -451,9 +442,9 @@ local function drawWaypoints(waypoints)
 end
 
 local AGENT_PROFILES = {
-	{ AgentRadius = 1.5, AgentHeight = 5.0, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 3.5 },
-	{ AgentRadius = 1.2, AgentHeight = 3.0, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 3.0 },
-	{ AgentRadius = 1.0, AgentHeight = 2.2, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 2.5 },
+	{ AgentRadius = 1.5, AgentHeight = 5.0, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 3.0 },
+	{ AgentRadius = 1.2, AgentHeight = 3.2, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 2.8 },
+	{ AgentRadius = 1.0, AgentHeight = 2.3, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = 2.4 },
 }
 
 local function tryPathfinding(from, goal)
@@ -465,7 +456,17 @@ local function tryPathfinding(from, goal)
 		if ok and path.Status == Enum.PathStatus.Success then
 			local wps = path:GetWaypoints()
 			if wps and #wps >= 2 then
-				return wps, "nav"
+				-- Reject insane navmesh results that teleport vertically through floors
+				local bad = false
+				for i = 2, #wps do
+					if math.abs(wps[i].Position.Y - wps[i - 1].Position.Y) > 10 then
+						bad = true
+						break
+					end
+				end
+				if not bad then
+					return wps, "nav"
+				end
 			end
 		end
 	end
@@ -477,16 +478,25 @@ local function gatherGoals(hrpPos, part)
 	local goals = {}
 	local flat = Vector3.new(hrpPos.X - base.X, 0, hrpPos.Z - base.Z)
 	local toward = flat.Magnitude > 0.1 and flat.Unit or Vector3.new(0, 0, 1)
-	-- stand in front of safe (toward player), then ring around
 	table.insert(goals, base + toward * 3.0)
 	table.insert(goals, base + toward * 2.0)
 	table.insert(goals, base - toward * 2.5)
 	for ang = 0, 315, 45 do
-		local r = rotY(toward, ang)
-		table.insert(goals, base + r * 3.5)
+		table.insert(goals, base + rotY(toward, ang) * 3.5)
 	end
-	table.insert(goals, base + Vector3.new(0, 1.5, 0))
 	return goals
+end
+
+local function labelOf(model)
+	local label = model.Name
+	if string.sub(label, 1, 8) == "Register" then
+		return "REGISTER"
+	elseif string.sub(label, 1, 9) == "SmallSafe" then
+		return "SMALL SAFE"
+	elseif string.sub(label, 1, 10) == "MediumSafe" then
+		return "MED SAFE"
+	end
+	return label
 end
 
 local function computePath(S)
@@ -518,41 +528,54 @@ local function computePath(S)
 
 	task.spawn(function()
 		local okOuter = pcall(function()
-			local start = snapFloor(hrp.Position, model, 6)
+			local start = snapFloor(hrp.Position, model, hrp.Position.Y)
 			local goals = gatherGoals(hrp.Position, part)
 			local wps, mode = nil, nil
+			local needStairs = math.abs(part.Position.Y - hrp.Position.Y) > 4.0
 
+			-- Stairs / floors: PathfindingService first (uses navmesh, not part names)
 			for _, g in ipairs(goals) do
-				local goal = snapFloor(g, model, 8)
+				local goal = snapFloor(g, model, part.Position.Y)
 				wps, mode = tryPathfinding(start, goal)
 				if wps then
 					break
 				end
 			end
-
-			-- Navmesh often fails on closed doors; probe ignores Map.Doors as passable
 			if not wps then
-				local goal = snapFloor(part.Position + (hrp.Position - part.Position).Unit * 2.5, model, 8)
+				wps, mode = tryPathfinding(start, part.Position)
+			end
+
+			-- Probe only for same-ish floor (won't punch through slabs)
+			if not wps and not needStairs then
+				local side = (hrp.Position - part.Position)
+				if side.Magnitude < 0.1 then
+					side = Vector3.new(0, 0, 1)
+				end
+				local goal = snapFloor(part.Position + side.Unit * 2.5, model, hrp.Position.Y)
 				wps, mode = probePath(start, goal, model)
+			elseif not wps and needStairs then
+				-- Still try probe only for horizontal approach on this floor (shows way toward stairwell), no vertical clip
+				wps, mode = probePath(start, part.Position, model)
+				if wps then
+					mode = "need-stairs"
+				end
 			end
 
 			if not wps or #wps < 2 then
 				clearPathFolder()
-				flashStatus("Path: still blocked — move / peek opening", Color3.fromRGB(255, 120, 120))
+				if needStairs then
+					flashStatus("Path: use stairs — navmesh blocked", Color3.fromRGB(255, 140, 90))
+				else
+					flashStatus("Path: blocked — peek door/hole", Color3.fromRGB(255, 120, 120))
+				end
 				return
 			end
 
 			drawWaypoints(wps)
-			local label = model.Name
-			if string.sub(label, 1, 8) == "Register" then
-				label = "REGISTER"
-			elseif string.sub(label, 1, 9) == "SmallSafe" then
-				label = "SMALL SAFE"
-			elseif string.sub(label, 1, 10) == "MediumSafe" then
-				label = "MED SAFE"
-			end
-			local tag = mode == "nav" and "navmesh" or tostring(mode or "probe")
-			flashStatus("Path → " .. label .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150))
+			local tag = mode == "nav" and "navmesh (stairs ok)"
+				or mode == "need-stairs" and "same floor only — take stairs"
+				or tostring(mode or "probe")
+			flashStatus("Path → " .. labelOf(model) .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150))
 		end)
 		computing = false
 		if not okOuter then
@@ -612,8 +635,7 @@ function CriminalityPath.Init(S)
 		end
 		local want = bindNameToKeyCode(cur.CrimSafePathKey or "Home")
 		if input.KeyCode == want then
-			local existing = workspace:FindFirstChild(folderName)
-			if existing then
+			if workspace:FindFirstChild(folderName) then
 				clearPathFolder()
 				flashStatus("Path cleared", Color3.fromRGB(180, 180, 190))
 				return
