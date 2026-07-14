@@ -1,4 +1,4 @@
--- CriminalityPath.lua  v2.43.93
+-- CriminalityPath.lua  v2.43.94
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
 -- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
@@ -6,11 +6,15 @@ local CriminalityPath = {}
 
 local PathS = game:GetService("PathfindingService")
 local UIS = game:GetService("UserInputService")
+local RunS = game:GetService("RunService")
 local Plrs = game:GetService("Players")
 local Debris = game:GetService("Debris")
 
 local folderName = "VG_SafePath"
 local conn = nil
+local connLook = nil  -- RenderStepped for look indicator
+local lookHighlight = nil
+local lastLookModel = nil
 local computing = false
 local lastComputeAt = 0
 local COOLDOWN = 0.55
@@ -484,7 +488,9 @@ local function drawWaypoints(waypoints)
 		p.CastShadow = false
 		p.Material = Enum.Material.Neon
 		p.Shape = Enum.PartType.Ball
-		local isDoor = wp.IsDoor == true or nearestDoorInfo(wp.Position) ~= nil
+		-- PathWaypoint (navmesh) is Roblox userdata, not a Lua table — accessing .IsDoor crashes.
+		-- Use type check: probe returns plain tables, navmesh returns PathWaypoint userdata.
+		local isDoor = (type(wp) == "table" and wp.IsDoor == true) or nearestDoorInfo(wp.Position) ~= nil
 		local isJump = (not isDoor) and wp.Action == Enum.PathWaypointAction.Jump
 		p.Size = (isDoor or isJump) and Vector3.new(0.55, 0.55, 0.55) or Vector3.new(0.35, 0.35, 0.35)
 		p.Color = isDoor and Color3.fromRGB(90, 190, 255)
@@ -712,11 +718,46 @@ local function bindNameToKeyCode(name)
 	return Enum.KeyCode.Home
 end
 
+local function clearLookIndicator()
+	if lookHighlight then
+		pcall(function()
+			lookHighlight:Destroy()
+		end)
+		lookHighlight = nil
+	end
+	lastLookModel = nil
+end
+
+local function updateLookIndicator(maxDist)
+	local model = resolveLookTarget(maxDist)
+	if model == lastLookModel then
+		return
+	end
+	clearLookIndicator()
+	lastLookModel = model
+	if not model then
+		return
+	end
+	local h = Instance.new("Highlight")
+	h.Name = "VG_LookHL"
+	h.FillTransparency = 1
+	h.OutlineColor = Color3.fromRGB(80, 180, 255)
+	h.OutlineTransparency = 0
+	h.Adornee = model
+	h.Parent = model
+	lookHighlight = h
+end
+
 function CriminalityPath.Stop()
 	if conn then
 		conn:Disconnect()
 		conn = nil
 	end
+	if connLook then
+		connLook:Disconnect()
+		connLook = nil
+	end
+	clearLookIndicator()
 	computing = false
 	clearPathFolder()
 	local lp = getLP()
@@ -762,8 +803,20 @@ function CriminalityPath.Init(S)
 	if lp then
 		lp.CharacterAdded:Connect(function()
 			clearPathFolder()
+			clearLookIndicator()
 		end)
 	end
+
+	-- Highlight safe/register you're currently looking at (blue outline)
+	connLook = RunS.Heartbeat:Connect(function()
+		local cur = _G.__VG_S or S
+		if not cur or cur.CrimSafePath ~= true then
+			clearLookIndicator()
+			return
+		end
+		local maxDist = math.clamp(tonumber(cur.CrimESPMaxDist) or 300, 50, 800)
+		pcall(updateLookIndicator, maxDist)
+	end)
 end
 
 return CriminalityPath
