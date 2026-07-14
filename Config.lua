@@ -415,6 +415,9 @@ function Config.EnforceRules(S)
 	if S.CrimCrateESP == nil then
 		S.CrimCrateESP = false
 	end
+	if S.CrimSafeShowBroken == nil then
+		S.CrimSafeShowBroken = false
+	end
 	if S.CrimCrateBasic == nil then
 		S.CrimCrateBasic = true
 	end

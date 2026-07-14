@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.84
+-- Criminality.lua  v2.43.85
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -295,9 +295,26 @@ local function buildSafeESP(S)
 	local safes = map:FindFirstChild("BredMakurz"); if not safes then return end
 	local color = S.CrimSafeColor or Color3.fromRGB(255,220,50)
 	for _, safe in ipairs(safes:GetChildren()) do
+		local values = safe:FindFirstChild("Values")
+		local broken = (values and values:FindFirstChild("Broken"))
+			or safe:FindFirstChild("Broken", true)
+		local label = "SAFE"
+		local n = safe.Name
+		if type(n) == "string" then
+			if string.sub(n, 1, 8) == "Register" then
+				label = "REGISTER"
+			elseif string.sub(n, 1, 9) == "SmallSafe" then
+				label = "SMALL SAFE"
+			elseif string.sub(n, 1, 10) == "MediumSafe" then
+				label = "MED SAFE"
+			end
+		end
 		local ok, entry = pcall(makeEntry, safe, color, Color3.fromRGB(255,255,255),
-		                        "SAFE", safe:FindFirstChild("Broken"))
-		if ok and entry then table.insert(ESP.safes, entry) end
+		                        label, broken)
+		if ok and entry then
+			entry.baseLabel = label
+			table.insert(ESP.safes, entry)
+		end
 	end
 	espBuilt.safes = true
 end
@@ -949,20 +966,26 @@ local function tickESP(S)
 	local gunDist = S.CrimGunESPMaxDist or maxDist
 	local camPos  = workspace.CurrentCamera.CFrame.Position
 
-	-- Safes
+	-- Safes / registers (BredMakurz → Values.Broken)
 	local showSafe = S.CrimSafeESP
+	local showBroken = S.CrimSafeShowBroken == true
 	for _, e in ipairs(ESP.safes) do
 		local vis = false
 		if showSafe and alive(e.part) then
-			vis = (camPos - e.part.Position).Magnitude <= maxDist
+			local open = e.broken and e.broken.Value == true
+			if open and not showBroken then
+				vis = false
+			else
+				vis = (camPos - e.part.Position).Magnitude <= maxDist
+			end
 		end
 		if alive(e.h) then
 			if vis then
-				-- Update colour for open/closed state (direct, no pcall)
-				local open   = e.broken and e.broken.Value
+				local open   = e.broken and e.broken.Value == true
 				local newCol = open and colOpen or (S.CrimSafeColor or colSafeD)
 				if e.h.FillColor ~= newCol then e.h.FillColor = newCol end
-				local newTxt = open and "OPEN" or "SAFE"
+				local base = e.baseLabel or "SAFE"
+				local newTxt = open and ("OPEN " .. base) or base
 				if e.lbl.Text ~= newTxt then e.lbl.Text = newTxt end
 				if not e.h.Enabled  then e.h.Enabled  = true end
 				if not e.bg.Enabled then e.bg.Enabled = true end

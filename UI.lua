@@ -2571,15 +2571,25 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CCrate, "hint_crim_allowance", 24)
 
 		MakeSection(CESP, L("crim_sub_world"), 1)
-		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 2, { flat = true })
-		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 3, { flat = true })
-		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 4, {
+		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 2, {
+			flat = true,
+			onChange = function()
+				refreshNestedToggles("CrimSafeESP")
+			end,
+		})
+		MakeTog(CESP, "Show Broken", "CrimSafeShowBroken", 3, {
+			flat = true,
+			requires = "CrimSafeESP",
+		})
+		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 4, { flat = true })
+		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 5, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSection(CESP, L("crim_sub_guns"), 5)
-		MakeTog(CESP, "Gun ESP", "CrimGunESP", 6, {
+		MakeHint(CESP, "hint_crim_safe_broken", 6)
+		MakeSection(CESP, L("crim_sub_guns"), 7)
+		MakeTog(CESP, "Gun ESP", "CrimGunESP", 8, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimGunESPMaxDist
@@ -2589,28 +2599,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				refreshNestedToggles("CrimGunESP")
 			end,
 		})
-		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 7, {
+		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 9, {
 			flat = true,
 			requires = "CrimGunESP",
 			onChange = function()
 				if S._crimSyncGunESP then S._crimSyncGunESP() end
 			end,
 		})
-		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 8, {
+		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 10, {
 			flat = true,
 			requires = "CrimGunESP",
 			onChange = function()
 				if S._crimSyncGunESP then S._crimSyncGunESP() end
 			end,
 		})
-		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 9, {
+		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 11, {
 			suffix = " st",
 			step = 10,
 			requires = "CrimGunESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSection(CESP, L("crim_sub_crates"), 10)
-		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 11, {
+		MakeSection(CESP, L("crim_sub_crates"), 12)
+		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 13, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimCrateMaxDist
@@ -2619,22 +2629,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 12, {
+		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 14, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 13, {
+		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 15, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 14, {
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 16, {
 			suffix = " st",
 			step = 25,
 			requires = "CrimCrateESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CESP, "hint_crim_crate", 15)
-		MakeHint(CESP, "hint_crim_gun", 16)
+		MakeHint(CESP, "hint_crim_crate", 17)
+		MakeHint(CESP, "hint_crim_gun", 18)
 
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
