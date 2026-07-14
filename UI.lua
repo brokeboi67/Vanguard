@@ -2678,7 +2678,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d st", v) end,
 		})
 		MakeHint(CUtil, "hint_crim_elevator", 9)
-		MakeHint(CUtil, "hint_crim_util", 10)
+		MakeSection(CUtil, L("crim_sub_clientbuild"), 10)
+		MakeButton(CUtil, nil, 11, function()
+			if S._clientBridgeStart then
+				S._clientBridgeStart()
+			end
+		end, "btn_crim_bridge")
+		MakeButton(CUtil, nil, 12, function()
+			if S._clientBridgeClear then
+				S._clientBridgeClear()
+			end
+		end, "btn_crim_bridge_clear")
+		MakeButton(CUtil, nil, 13, function()
+			if S._clientDeleteStart then
+				S._clientDeleteStart()
+			end
+		end, "btn_crim_delete")
+		MakeButton(CUtil, nil, 14, function()
+			if S._clientDeleteRestore then
+				S._clientDeleteRestore()
+			end
+		end, "btn_crim_delete_restore")
+		MakeHint(CUtil, "hint_crim_clientbuild", 15)
+		MakeHint(CUtil, "hint_crim_util", 16)
 	end
 
 	local function refreshWorld()
