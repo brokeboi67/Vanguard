@@ -1,6 +1,6 @@
--- CriminalityPath.lua  v2.43.90
+-- CriminalityPath.lua  v2.43.91
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
--- Map mesh names are obfuscated — we never rely on names, only collidable geometry + Map.Doors.
+-- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
 local CriminalityPath = {}
 
@@ -130,7 +130,7 @@ end
 local function makeExcludeParams(extra)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.RespectCanCollide = true
+	-- NOTE: do NOT set RespectCanCollide — not supported by most executors, causes crash
 	local list = {}
 	local char = getChar()
 	if char then
@@ -237,7 +237,7 @@ local function snapFloor(pos, exclude, preferY)
 	local py = preferY or pos.Y
 	local origin = Vector3.new(pos.X, py + 2.5, pos.Z)
 	local hit = workspace:Raycast(origin, Vector3.new(0, -9, 0), params)
-	if hit and hit.Normal.Y >= 0.55 then
+	if hit and isSolidHit(hit) and hit.Normal.Y >= 0.55 then
 		local dy = hit.Position.Y - py
 		if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
 			return hit.Position + Vector3.new(0, 0.12, 0)
@@ -245,13 +245,31 @@ local function snapFloor(pos, exclude, preferY)
 	end
 	origin = Vector3.new(pos.X, py + 3.8, pos.Z)
 	hit = workspace:Raycast(origin, Vector3.new(0, -7, 0), params)
-	if hit and hit.Normal.Y >= 0.55 then
+	if hit and isSolidHit(hit) and hit.Normal.Y >= 0.55 then
 		local dy = hit.Position.Y - py
 		if dy <= MAX_STEP_UP and dy >= -MAX_STEP_DOWN then
 			return hit.Position + Vector3.new(0, 0.12, 0)
 		end
 	end
 	return Vector3.new(pos.X, py, pos.Z)
+end
+
+-- Returns true if hit part is solid wall (CanCollide and not thin window/glass/transparent).
+local function isSolidHit(hit)
+	if not hit then
+		return false
+	end
+	local inst = hit.Instance
+	if not inst or not inst:IsA("BasePart") then
+		return false
+	end
+	if not inst.CanCollide then
+		return false -- decorative / passable mesh
+	end
+	if inst.Transparency >= 0.85 then
+		return false -- nearly invisible = glass/transparent panel
+	end
+	return true
 end
 
 local function canTraverse(a, b, exclude)
@@ -267,13 +285,14 @@ local function canTraverse(a, b, exclude)
 		local from = Vector3.new(a.X, a.Y + h, a.Z)
 		local to = Vector3.new(b.X, b.Y + h, b.Z)
 		local hit = workspace:Raycast(from, to - from, params)
-		if not hit then
+		if not hit or not isSolidHit(hit) then
+			-- also verify foot level clearance
 			local hitLow = workspace:Raycast(
 				Vector3.new(a.X, a.Y + 0.95, a.Z),
 				Vector3.new(b.X - a.X, 0, b.Z - a.Z),
 				params
 			)
-			if not hitLow then
+			if not hitLow or not isSolidHit(hitLow) then
 				return true, h
 			end
 			if (Vector3.new(b.X, a.Y + 0.95, b.Z) - hitLow.Position).Magnitude < 1.0 then
@@ -288,7 +307,8 @@ end
 
 local function headroomOk(pos, exclude)
 	local params = makeExcludeParams(exclude)
-	return workspace:Raycast(pos + Vector3.new(0, 0.25, 0), Vector3.new(0, 2.4, 0), params) == nil
+	local hit = workspace:Raycast(pos + Vector3.new(0, 0.25, 0), Vector3.new(0, 2.4, 0), params)
+	return not hit or not isSolidHit(hit)
 end
 
 -- Same-floor / stair-step probe only. Cross-story = PathfindingService (stairs).
@@ -572,8 +592,8 @@ local function computePath(S)
 			end
 
 			drawWaypoints(wps)
-			local tag = mode == "nav" and "navmesh (stairs ok)"
-				or mode == "need-stairs" and "same floor only — take stairs"
+			local tag = mode == "nav" and "navmesh"
+				or mode == "need-stairs" and "same floor — find stairs"
 				or tostring(mode or "probe")
 			flashStatus("Path → " .. labelOf(model) .. "  [" .. tag .. "]", Color3.fromRGB(90, 255, 150))
 		end)
