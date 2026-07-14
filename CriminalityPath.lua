@@ -1,4 +1,4 @@
--- CriminalityPath.lua  v2.43.94
+-- CriminalityPath.lua  v2.43.95
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
 -- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
@@ -12,11 +12,13 @@ local Debris = game:GetService("Debris")
 
 local folderName = "VG_SafePath"
 local conn = nil
-local connLook = nil  -- RenderStepped for look indicator
+local connLook = nil
 local lookHighlight = nil
 local lastLookModel = nil
 local computing = false
 local lastComputeAt = 0
+local lastGoalPos = nil   -- for auto-clear on arrival
+local ARRIVE_DIST = 6     -- studs from goal → clear path
 local COOLDOWN = 0.55
 local MAX_STEP_UP = 1.9
 local MAX_STEP_DOWN = 2.4
@@ -40,6 +42,7 @@ local function clearPathFolder()
 	if f then
 		f:Destroy()
 	end
+	lastGoalPos = nil
 end
 
 local function ensureFolder()
@@ -248,7 +251,17 @@ local function nearestDoorInfo(pos)
 	return best
 end
 
-local function resolveLookTarget(maxDist)
+-- Returns true if the safe/register model is broken/open.
+local function isBrokenSafe(model)
+	local vals = model:FindFirstChild("Values")
+	local brk = vals and vals:FindFirstChild("Broken")
+		or model:FindFirstChild("Broken")
+	return brk and brk.Value == true
+end
+
+-- showBroken=true → include broken safes (matches "Show Broken" ESP toggle)
+-- showBroken=false → only unbroken (default safe ESP)
+local function resolveLookTarget(maxDist, showBroken)
 	local cam = workspace.CurrentCamera
 	local hrp = getHRP()
 	if not cam or not hrp then
@@ -259,6 +272,16 @@ local function resolveLookTarget(maxDist)
 		return nil
 	end
 
+	local function allowed(model)
+		if not isSafeOrRegister(model) then
+			return false
+		end
+		if not showBroken and isBrokenSafe(model) then
+			return false
+		end
+		return true
+	end
+
 	local origin = cam.CFrame.Position
 	local dir = cam.CFrame.LookVector
 	local params = makeExcludeParams(nil)
@@ -266,7 +289,7 @@ local function resolveLookTarget(maxDist)
 	if hit and hit.Instance then
 		local anc = hit.Instance
 		while anc and anc ~= folder do
-			if isSafeOrRegister(anc) then
+			if allowed(anc) then
 				return anc, getSafePart(anc)
 			end
 			anc = anc.Parent
@@ -275,7 +298,7 @@ local function resolveLookTarget(maxDist)
 
 	local best, bestScore = nil, nil
 	for _, ch in ipairs(folder:GetChildren()) do
-		if isSafeOrRegister(ch) then
+		if allowed(ch) then
 			local part = getSafePart(ch)
 			if part then
 				local to = part.Position - origin
@@ -617,7 +640,8 @@ local function computePath(S)
 	end
 
 	local maxDist = math.clamp(tonumber(S.CrimESPMaxDist) or 300, 50, 800)
-	local model, part = resolveLookTarget(maxDist)
+	local showBroken = S.CrimSafeShowBroken == true
+	local model, part = resolveLookTarget(maxDist, showBroken)
 	if not model or not part then
 		flashStatus("Path: look at a safe/register", Color3.fromRGB(255, 180, 90))
 		clearPathFolder()
@@ -649,7 +673,8 @@ local function computePath(S)
 				wps, mode = tryPathfinding(startPos, part.Position)
 			end
 
-			-- Probe only for same-ish floor (won't punch through slabs)
+			-- Probe only for same floor. Cross-floor (needStairs) = navmesh only.
+			-- probe-partial is NOT shown — partial paths through walls are misleading.
 			if not wps and not needStairs then
 				local side = (hrp.Position - part.Position)
 				if side.Magnitude < 0.1 then
@@ -658,33 +683,36 @@ local function computePath(S)
 				local goal = snapFloor(part.Position + side.Unit * 2.5, model, hrp.Position.Y)
 				goalPos = goal
 				wps, mode = probePath(startPos, goal, model)
-			elseif not wps and needStairs then
-				-- Still try probe only for horizontal approach on this floor (shows way toward stairwell), no vertical clip
-				wps, mode = probePath(startPos, part.Position, model)
-				if wps then
-					mode = "need-stairs"
+				-- Discard partial probes — they often clip walls
+				if mode == "probe-partial" or mode == "probe-fail" then
+					wps = nil
 				end
 			end
+			-- needStairs + navmesh failed → just tell user to find stairs, no probe
 
 			if not wps or #wps < 2 then
-				local why = needStairs and "use stairs / navmesh blocked" or "blocked — door or wall"
-				-- Ray toward goal to show what solid part blocks
+				local why = needStairs
+					and "navmesh blocked — find stairs/ladder"
+					or "blocked — open/reposition"
 				local params = makeExcludeParams(model)
 				local from = startPos + Vector3.new(0, 1.5, 0)
 				local to = (goalPos or part.Position) + Vector3.new(0, 1.5, 0)
 				local blockHit = workspace:Raycast(from, to - from, params)
 				local hitName = ""
 				if blockHit and blockHit.Instance then
-					hitName = " | hit: " .. tostring(blockHit.Instance.Name)
+					hitName = " | " .. tostring(blockHit.Instance.Name)
 					if not blockHit.Instance.CanCollide then
-						hitName = hitName .. " (nocollide)"
+						hitName = hitName .. "(nocol)"
 					end
 				end
+				clearPathFolder()
 				drawDebugFail(startPos, goalPos or part.Position, why, blockHit)
-				flashStatus("Path FAIL: " .. why .. hitName, Color3.fromRGB(255, 120, 120), 5)
+				flashStatus("Path: " .. why .. hitName, Color3.fromRGB(255, 140, 90), 5)
+				lastGoalPos = nil
 				return
 			end
 
+			lastGoalPos = goalPos or part.Position
 			drawWaypoints(wps)
 			local tag = mode == "nav" and "navmesh"
 				or mode == "need-stairs" and "same floor — find stairs"
@@ -728,8 +756,8 @@ local function clearLookIndicator()
 	lastLookModel = nil
 end
 
-local function updateLookIndicator(maxDist)
-	local model = resolveLookTarget(maxDist)
+local function updateLookIndicator(maxDist, showBroken)
+	local model = resolveLookTarget(maxDist, showBroken)
 	if model == lastLookModel then
 		return
 	end
@@ -807,15 +835,26 @@ function CriminalityPath.Init(S)
 		end)
 	end
 
-	-- Highlight safe/register you're currently looking at (blue outline)
+	-- Heartbeat: look indicator + auto-clear on arrival
 	connLook = RunS.Heartbeat:Connect(function()
 		local cur = _G.__VG_S or S
 		if not cur or cur.CrimSafePath ~= true then
 			clearLookIndicator()
 			return
 		end
+
+		-- Auto-clear when player reaches goal
+		if lastGoalPos and workspace:FindFirstChild(folderName) then
+			local hrp2 = getHRP()
+			if hrp2 and (hrp2.Position - lastGoalPos).Magnitude <= ARRIVE_DIST then
+				clearPathFolder()
+				flashStatus("Arrived!", Color3.fromRGB(90, 255, 150), 2)
+			end
+		end
+
 		local maxDist = math.clamp(tonumber(cur.CrimESPMaxDist) or 300, 50, 800)
-		pcall(updateLookIndicator, maxDist)
+		local showBroken = cur.CrimSafeShowBroken == true
+		pcall(updateLookIndicator, maxDist, showBroken)
 	end)
 end
 
