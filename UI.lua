@@ -1084,33 +1084,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local subtitle = subtitleKey and L(subtitleKey) or nil
 		local displayTitle = titleKey and L(titleKey) or (title or "")
 		local tabCol = pageThemes[page] or ACC
-		local accent = cardOpts.accent or tabCol
-		local bgTint = Color3.new(
-			math.clamp(0.052 + accent.R * 0.034, 0, 1),
-			math.clamp(0.052 + accent.G * 0.034, 0, 1),
-			math.clamp(0.058 + accent.B * 0.038, 0, 1)
-		)
 		local Card = C("Frame", {
 			Size = UDim2.new(1, -2, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundColor3 = bgTint,
+			BackgroundColor3 = Color3.fromRGB(16, 16, 20),
 			BorderSizePixel = 0,
 			LayoutOrder = order,
 			ZIndex = 5,
 			Parent = page,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = Card })
-		local strokeCol = cardOpts.accent and accent or Color3.new(
+		local strokeCol = Color3.new(
 			math.clamp(tabCol.R * 0.35 + 0.12, 0, 1),
 			math.clamp(tabCol.G * 0.35 + 0.12, 0, 1),
 			math.clamp(tabCol.B * 0.35 + 0.12, 0, 1)
 		)
-		C("UIStroke", {
-			Color = strokeCol,
-			Thickness = cardOpts.accent and 1 or 1,
-			Transparency = cardOpts.accent and 0.28 or 0.45,
-			Parent = Card,
-		})
+		C("UIStroke", { Color = strokeCol, Thickness = 1, Transparency = 0.45, Parent = Card })
 		C("UIPadding", {
 			PaddingTop = UDim.new(0, 10),
 			PaddingBottom = UDim.new(0, 10),
@@ -1120,23 +1109,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		C("UIListLayout", { Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Card })
 
-		C("Frame", {
-			Size = UDim2.new(1, 0, 0, 2),
-			BackgroundColor3 = accent,
-			BackgroundTransparency = 0.12,
-			BorderSizePixel = 0,
-			LayoutOrder = 0,
-			ZIndex = 6,
-			Parent = Card,
-		})
-
 		local titleLbl = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 12),
 			BackgroundTransparency = 1,
-			Text = string.upper(displayTitle),
+			Text = displayTitle,
 			Font = Enum.Font.GothamBold,
 			TextSize = 10,
-			TextColor3 = accent,
+			TextColor3 = tabCol,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			LayoutOrder = 1,
 			ZIndex = 6,
@@ -1176,54 +1155,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		C("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Body })
 		return Body
-	end
-
-	local function MakeSubHeader(page, label, order, opts)
-		opts = opts or {}
-		local accent = opts.accent or Color3.fromRGB(100, 100, 115)
-		local labelKey = opts.labelKey
-		local text = labelKey and L(labelKey) or (label or "")
-		local host = C("Frame", {
-			Size = UDim2.new(1, 0, 0, 20),
-			BackgroundTransparency = 1,
-			LayoutOrder = order,
-			ZIndex = 6,
-			Parent = page,
-		})
-		C("Frame", {
-			Size = UDim2.new(0, 3, 0, 11),
-			Position = UDim2.new(0, 0, 0.5, -5),
-			BackgroundColor3 = accent,
-			BackgroundTransparency = 0.1,
-			BorderSizePixel = 0,
-			ZIndex = 6,
-			Parent = host,
-		})
-		local subLbl = C("TextLabel", {
-			Size = UDim2.new(1, -12, 1, 0),
-			Position = UDim2.new(0, 10, 0, 0),
-			BackgroundTransparency = 1,
-			Text = text,
-			Font = Enum.Font.GothamBold,
-			TextSize = 9,
-			TextColor3 = accent,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 6,
-			Parent = host,
-		})
-		if labelKey and I18n and I18n.registerText then
-			I18n.registerText(subLbl, labelKey)
-		end
-		C("Frame", {
-			Size = UDim2.new(1, -10, 0, 1),
-			Position = UDim2.new(0, 10, 1, -2),
-			BackgroundColor3 = accent,
-			BackgroundTransparency = 0.78,
-			BorderSizePixel = 0,
-			ZIndex = 6,
-			Parent = host,
-		})
-		return host
 	end
 
 	local function MakeSection(page, title, order)
@@ -2271,7 +2202,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	-- Uses game.GameId (Universe ID = 1494262959) so it works after any in-game teleport.
 	local TCrim = nil
 	if game.GameId == 1494262959 then
-		TCrim = MakeTab("criminality", false, false, 12)
+		TCrim = MakeTab("criminality", false, false, 12, { fixed = true })
 	end
 
 	if UIMusicModule and MusicModule then
@@ -2300,25 +2231,189 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 	end
 
+	local function MakeCriminalitySubTabs(host)
+		local crimCol = TAB_THEMES.criminality or ACC
+		local crimSoft = tabSoft(crimCol)
+
+		local Root = C("Frame", {
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Parent = host,
+		})
+
+		local TabBar = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = Color3.fromRGB(13, 13, 17),
+			BorderSizePixel = 0,
+			Parent = Root,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = TabBar })
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 4),
+			PaddingBottom = UDim.new(0, 4),
+			PaddingLeft = UDim.new(0, 4),
+			PaddingRight = UDim.new(0, 4),
+			Parent = TabBar,
+		})
+
+		local TabRow = C("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundTransparency = 1,
+			ScrollBarThickness = 0,
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			BorderSizePixel = 0,
+			Parent = TabBar,
+		})
+		C("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			Padding = UDim.new(0, 4),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			Parent = TabRow,
+		})
+
+		local Scroll = C("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 1, -40),
+			Position = UDim2.new(0, 0, 0, 40),
+			BackgroundTransparency = 1,
+			ScrollBarThickness = 2,
+			ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			BorderSizePixel = 0,
+			Parent = Root,
+		})
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 6),
+			PaddingBottom = UDim.new(0, 10),
+			PaddingLeft = UDim.new(0, 2),
+			PaddingRight = UDim.new(0, 4),
+			Parent = Scroll,
+		})
+
+		local panels = {}
+		local tabBtns = {}
+		local activeKey = nil
+		local tabDefs = {
+			{ key = "combat", labelKey = "crim_tab_combat" },
+			{ key = "survival", labelKey = "crim_tab_survival" },
+			{ key = "pickup", labelKey = "crim_tab_pickup" },
+			{ key = "esp", labelKey = "crim_tab_esp" },
+			{ key = "visual", labelKey = "crim_tab_visual" },
+			{ key = "utility", labelKey = "crim_tab_utility" },
+		}
+
+		local function styleCrimTab(btn, on)
+			TweenPlay(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quart), {
+				BackgroundColor3 = on and crimSoft or Color3.fromRGB(20, 20, 25),
+				TextColor3 = on and Color3.fromRGB(245, 245, 250) or Color3.fromRGB(115, 115, 125),
+			})
+			local ind = btn:FindFirstChild("Indicator")
+			if ind then
+				ind.BackgroundTransparency = on and 0 or 1
+			end
+		end
+
+		local function switchCrimTab(key)
+			if activeKey == key then
+				return
+			end
+			if tabBtns[activeKey] then
+				styleCrimTab(tabBtns[activeKey], false)
+			end
+			if panels[activeKey] then
+				panels[activeKey].Visible = false
+			end
+			activeKey = key
+			if tabBtns[key] then
+				styleCrimTab(tabBtns[key], true)
+			end
+			if panels[key] then
+				panels[key].Visible = true
+				Scroll.CanvasPosition = Vector2.new(0, 0)
+			end
+		end
+
+		for i, def in ipairs(tabDefs) do
+			local label = L(def.labelKey)
+			local btn = C("TextButton", {
+				Size = UDim2.new(0, 0, 0, 24),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundColor3 = Color3.fromRGB(20, 20, 25),
+				Text = label,
+				Font = Enum.Font.GothamSemibold,
+				TextSize = 9,
+				TextColor3 = Color3.fromRGB(115, 115, 125),
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+				Parent = TabRow,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = btn })
+			C("UIPadding", {
+				PaddingLeft = UDim.new(0, 8),
+				PaddingRight = UDim.new(0, 8),
+				Parent = btn,
+			})
+			C("Frame", {
+				Name = "Indicator",
+				Size = UDim2.new(1, -4, 0, 2),
+				Position = UDim2.new(0, 2, 1, -3),
+				BackgroundColor3 = crimCol,
+				BackgroundTransparency = 1,
+				BorderSizePixel = 0,
+				ZIndex = 2,
+				Parent = btn,
+			})
+			if I18n and I18n.registerText then
+				I18n.registerText(btn, def.labelKey)
+			end
+			btn.MouseButton1Click:Connect(function()
+				switchCrimTab(def.key)
+			end)
+			tabBtns[def.key] = btn
+
+			local panel = C("Frame", {
+				Size = UDim2.new(1, -2, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+				Visible = false,
+				Parent = Scroll,
+			})
+			C("UIListLayout", {
+				Padding = UDim.new(0, 5),
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Parent = panel,
+			})
+			panels[def.key] = panel
+		end
+
+		switchCrimTab("combat")
+		return panels
+	end
+
 	-- ── Criminality tab content ────────────────────────────────────────────────
 	if TCrim then
-		local CRIM_COMBAT = Color3.fromRGB(255, 98, 82)
-		local CRIM_SURV = Color3.fromRGB(72, 224, 155)
-		local CRIM_PICKUP = Color3.fromRGB(255, 196, 72)
-		local CRIM_ESP = Color3.fromRGB(82, 198, 255)
-		local CRIM_VIS = Color3.fromRGB(255, 224, 118)
-		local CRIM_UTIL = Color3.fromRGB(178, 138, 255)
+		local CP = MakeCriminalitySubTabs(TCrim)
+		local CCombat = CP.combat
+		local CSurv = CP.survival
+		local CCrate = CP.pickup
+		local CESP = CP.esp
+		local CVIS = CP.visual
+		local CUtil = CP.utility
 
-		local CCombat = MakeCard(TCrim, "COMBAT", "card_crim_combat_desc", 1, { accent = CRIM_COMBAT })
-		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1)
-		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 3, 15, 2, {
+		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1, { flat = true })
+		MakeSlider(CCombat, "Aura Range", "CrimMeleeRange", 2, 15, 3, {
 			suffix = " st",
 			step = 1,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3)
+		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3, { flat = true })
 		MakeHint(CCombat, "hint_crim_norecoil", 4)
 		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 5, {
+			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimAimPredictionLead
 				if reg and reg.setEnabled then
@@ -2339,15 +2434,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		MakeHint(CCombat, "hint_crim_prediction", 7)
 
-		local CSurv = MakeCard(TCrim, "SURVIVAL", "card_crim_surv_desc", 2, { accent = CRIM_SURV })
-		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1)
-		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2)
-		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 3)
+		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
+		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
+		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 3, { flat = true })
 		MakeHint(CSurv, "hint_crim_stamina", 4)
 
-		local CCrate = MakeCard(TCrim, "AUTO PICKUP", "card_crim_pickup_desc", 3, { accent = CRIM_PICKUP })
-		MakeSubHeader(CCrate, nil, 1, { labelKey = "crim_sub_pickup_crates", accent = CRIM_PICKUP })
+		MakeSection(CCrate, L("crim_sub_pickup_crates"), 1)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 2, {
+			flat = true,
 			onChange = function(on)
 				for _, key in ipairs({ "CrimCratePickupDist", "CrimCratePickupDelay" }) do
 					local reg = sliderRegistry[key]
@@ -2357,8 +2451,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CCrate, "Pickup Basic Crates", "CrimCratePickupBasic", 3, { requires = "CrimCratePickup" })
-		MakeTog(CCrate, "Pickup Rare Crates", "CrimCratePickupRare", 4, { requires = "CrimCratePickup" })
+		MakeTog(CCrate, "Pickup Basic Crates", "CrimCratePickupBasic", 3, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
+		MakeTog(CCrate, "Pickup Rare Crates", "CrimCratePickupRare", 4, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
 		MakeSlider(CCrate, "Pickup Range", "CrimCratePickupDist", 2, 8, 5, {
 			suffix = " st",
 			step = 0.5,
@@ -2381,10 +2481,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 7, { requires = "CrimCratePickup" })
+		MakeTog(CCrate, "Pickup Animation", "CrimCratePickupFx", 7, {
+			flat = true,
+			requires = "CrimCratePickup",
+		})
 		MakeHint(CCrate, "hint_crim_pickup", 8)
-		MakeSubHeader(CCrate, nil, 9, { labelKey = "crim_sub_pickup_guns", accent = Color3.fromRGB(120, 220, 255) })
+		MakeSection(CCrate, L("crim_sub_pickup_guns"), 9)
 		MakeTog(CCrate, "Fast Pickup", "CrimFastPickup", 10, {
+			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimFastPickupRange
 				if reg and reg.setEnabled then
@@ -2392,8 +2496,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CCrate, "Pickup Guns", "CrimFastPickupGuns", 11, { requires = "CrimFastPickup" })
-		MakeTog(CCrate, "Pickup Melee", "CrimFastPickupMelee", 12, { requires = "CrimFastPickup" })
+		MakeTog(CCrate, "Pickup Guns", "CrimFastPickupGuns", 11, {
+			flat = true,
+			requires = "CrimFastPickup",
+		})
+		MakeTog(CCrate, "Pickup Melee", "CrimFastPickupMelee", 12, {
+			flat = true,
+			requires = "CrimFastPickup",
+		})
 		MakeSlider(CCrate, "Pickup Range", "CrimFastPickupRange", 2, 12, 13, {
 			suffix = " st",
 			step = 0.5,
@@ -2406,8 +2516,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeHint(CCrate, "hint_crim_fastpickup", 14)
-		MakeSubHeader(CCrate, nil, 15, { labelKey = "crim_sub_pickup_money", accent = Color3.fromRGB(255, 220, 120) })
+		MakeSection(CCrate, L("crim_sub_pickup_money"), 15)
 		MakeTog(CCrate, "Auto Pickup Money", "CrimMoneyPickup", 16, {
+			flat = true,
 			onChange = function(on)
 				for _, key in ipairs({ "CrimMoneyPickupDist", "CrimMoneyPickupDelay" }) do
 					local reg = sliderRegistry[key]
@@ -2430,8 +2541,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d ms", v) end,
 		})
 		MakeHint(CCrate, "hint_crim_money", 19)
-		MakeSubHeader(CCrate, nil, 20, { labelKey = "crim_sub_pickup_allowance", accent = Color3.fromRGB(120, 200, 255) })
+		MakeSection(CCrate, L("crim_sub_pickup_allowance"), 20)
 		MakeTog(CCrate, "Auto Claim Allowance", "CrimAllowanceClaim", 21, {
+			flat = true,
 			onChange = function(on)
 				for _, key in ipairs({ "CrimAllowanceClaimDist", "CrimAllowanceClaimDelay" }) do
 					local reg = sliderRegistry[key]
@@ -2455,17 +2567,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		MakeHint(CCrate, "hint_crim_allowance", 24)
 
-		local CESP = MakeCard(TCrim, "OBJECT ESP", "card_crim_esp_desc", 4, { accent = CRIM_ESP })
-		MakeSubHeader(CESP, nil, 1, { labelKey = "crim_sub_world", accent = Color3.fromRGB(255, 220, 90) })
-		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 2)
-		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 3)
+		MakeSection(CESP, L("crim_sub_world"), 1)
+		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 2, { flat = true })
+		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 3, { flat = true })
 		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 4, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSubHeader(CESP, nil, 5, { labelKey = "crim_sub_guns", accent = Color3.fromRGB(90, 255, 150) })
+		MakeSection(CESP, L("crim_sub_guns"), 5)
 		MakeTog(CESP, "Gun ESP", "CrimGunESP", 6, {
+			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimGunESPMaxDist
 				if dist and dist.setEnabled then
@@ -2474,16 +2586,23 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				refreshNestedToggles("CrimGunESP")
 			end,
 		})
-		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 7, { requires = "CrimGunESP" })
-		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 8, { requires = "CrimGunESP" })
+		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 7, {
+			flat = true,
+			requires = "CrimGunESP",
+		})
+		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 8, {
+			flat = true,
+			requires = "CrimGunESP",
+		})
 		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 9, {
 			suffix = " st",
 			step = 10,
 			requires = "CrimGunESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSubHeader(CESP, nil, 10, { labelKey = "crim_sub_crates", accent = Color3.fromRGB(255, 150, 80) })
+		MakeSection(CESP, L("crim_sub_crates"), 10)
 		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 11, {
+			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimCrateMaxDist
 				if dist and dist.setEnabled then
@@ -2491,8 +2610,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 12, { requires = "CrimCrateESP" })
-		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 13, { requires = "CrimCrateESP" })
+		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 12, {
+			flat = true,
+			requires = "CrimCrateESP",
+		})
+		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 13, {
+			flat = true,
+			requires = "CrimCrateESP",
+		})
 		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 14, {
 			suffix = " st",
 			step = 25,
@@ -2502,15 +2627,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CESP, "hint_crim_crate", 15)
 		MakeHint(CESP, "hint_crim_gun", 16)
 
-		local CVIS = MakeCard(TCrim, "VISUAL", "card_crim_vis_desc", 5, { accent = CRIM_VIS })
-		MakeTog(CVIS, "FullBright", "CrimFullBright", 1)
+		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
 
-		local CUtil = MakeCard(TCrim, "UTILITY", "card_crim_util_desc", 6, { accent = CRIM_UTIL })
-		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1)
-		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2)
-		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3)
-		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4)
+		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
+		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
+		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
+		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4, { flat = true })
 		MakeHint(CUtil, "hint_crim_util", 5)
 	end
 
