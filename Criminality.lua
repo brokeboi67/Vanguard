@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.79
+-- Criminality.lua  v2.43.80
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1499,6 +1499,7 @@ local function syncAllowanceAtmESP(S)
 	entry.h.Enabled = true
 	entry.bg.Enabled = true
 	allowanceAtmEntry = entry
+end
 
 local function invokeAllowanceClaim(remote, mainPart)
 	if remote:IsA("RemoteFunction") then
