@@ -1,4 +1,4 @@
--- Criminality.lua  v2.44.1
+-- Criminality.lua  v2.44.2
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2484,20 +2484,23 @@ local function tickDoors(S)
 	end
 end
 
--- ── REMOTE ELEVATOR (no proximity — FireServer from anywhere in range) ───────
+-- ── REMOTE ELEVATOR ─────────────────────────────────────────────────────────
+-- Server checks distance to Knob — plain FireServer from far fails.
+-- Fix: briefly spoof HRP next to knob, FireServer("Do", Knob), restore CFrame.
 -- Cobalt: Elevator_N.Events.Toggle:FireServer("Do", Elevator_N.Knob1)
-local elev = { conn = nil, lastAt = 0 }
+local elev = { conn = nil, lastAt = 0, busy = false }
 
 local function tryRemoteElevator(S)
-	if not S or S.CrimRemoteElevator ~= true then
+	if not S or S.CrimRemoteElevator ~= true or elev.busy then
 		return
 	end
 	local now = tick()
-	if now - elev.lastAt < 0.45 then
+	if now - elev.lastAt < 0.55 then
 		return
 	end
 	local cam = workspace.CurrentCamera
-	if not cam then
+	local hrp = getHRP()
+	if not cam or not hrp then
 		return
 	end
 	local map = workspace:FindFirstChild("Map")
@@ -2522,7 +2525,6 @@ local function tryRemoteElevator(S)
 				local dist = to.Magnitude
 				if dist <= maxDist and dist > 0.5 then
 					local dot = to.Unit:Dot(look)
-					-- Prefer elevator you're looking at (through walls OK); else nearest
 					local score = (dot > 0.72) and (dist / math.max(dot, 0.01)) or (dist + 800)
 					if not bestScore or score < bestScore then
 						bestScore = score
@@ -2536,19 +2538,47 @@ local function tryRemoteElevator(S)
 		end
 	end
 
-	if not bestToggle then
+	if not bestToggle or not bestKnob then
 		crimNotify("Elevator", "Brak windy w zasięgu", 2)
 		return
 	end
-	local ok = pcall(function()
-		bestToggle:FireServer("Do", bestKnob)
+
+	elev.busy = true
+	elev.lastAt = now
+	task.spawn(function()
+		local root = getHRP()
+		if not root or not alive(bestKnob) or not alive(bestToggle) then
+			elev.busy = false
+			return
+		end
+		local saved = root.CFrame
+		-- Stand slightly in front of / on the knob so server distance check passes
+		local near = bestKnob.CFrame * CFrame.new(0, 1.5, -2.2)
+		pcall(function()
+			root.AssemblyLinearVelocity = Vector3.zero
+			root.AssemblyAngularVelocity = Vector3.zero
+			root.CFrame = near
+		end)
+		-- Let character position replicate before the remote
+		RS.Heartbeat:Wait()
+		RS.Heartbeat:Wait()
+		local ok = pcall(function()
+			bestToggle:FireServer("Do", bestKnob)
+		end)
+		pcall(function()
+			local r2 = getHRP()
+			if r2 then
+				r2.CFrame = saved
+				r2.AssemblyLinearVelocity = Vector3.zero
+			end
+		end)
+		elev.busy = false
+		if ok then
+			crimNotify("Elevator", tostring(bestName) .. string.format("  %.0fm", bestDist or 0), 2)
+		else
+			crimNotify("Elevator", "Fire failed", 2)
+		end
 	end)
-	if ok then
-		elev.lastAt = now
-		crimNotify("Elevator", tostring(bestName) .. string.format("  %.0fm", bestDist or 0), 2)
-	else
-		crimNotify("Elevator", "Fire failed", 2)
-	end
 end
 
 local function syncRemoteElevator(S)
