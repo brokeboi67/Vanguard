@@ -2257,18 +2257,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = TabBar,
 		})
 
-		local TabRow = C("ScrollingFrame", {
+		local tabCount = 6
+		local tabGap = 4
+
+		local TabRow = C("Frame", {
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
-			ScrollBarThickness = 0,
-			AutomaticCanvasSize = Enum.AutomaticSize.X,
-			CanvasSize = UDim2.new(0, 0, 0, 0),
 			BorderSizePixel = 0,
 			Parent = TabBar,
 		})
 		C("UIListLayout", {
 			FillDirection = Enum.FillDirection.Horizontal,
-			Padding = UDim.new(0, 4),
+			Padding = UDim.new(0, tabGap),
 			SortOrder = Enum.SortOrder.LayoutOrder,
 			VerticalAlignment = Enum.VerticalAlignment.Center,
 			Parent = TabRow,
@@ -2339,24 +2339,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		for i, def in ipairs(tabDefs) do
 			local label = L(def.labelKey)
 			local btn = C("TextButton", {
-				Size = UDim2.new(0, 0, 0, 24),
-				AutomaticSize = Enum.AutomaticSize.X,
+				Size = UDim2.new(1 / tabCount, -(tabGap * (tabCount - 1) / tabCount), 1, 0),
 				BackgroundColor3 = Color3.fromRGB(20, 20, 25),
 				Text = label,
 				Font = Enum.Font.GothamSemibold,
 				TextSize = 9,
 				TextColor3 = Color3.fromRGB(115, 115, 125),
+				TextXAlignment = Enum.TextXAlignment.Center,
+				TextTruncate = Enum.TextTruncate.AtEnd,
 				AutoButtonColor = false,
 				BorderSizePixel = 0,
 				LayoutOrder = i,
 				Parent = TabRow,
 			})
 			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = btn })
-			C("UIPadding", {
-				PaddingLeft = UDim.new(0, 8),
-				PaddingRight = UDim.new(0, 8),
-				Parent = btn,
-			})
 			C("Frame", {
 				Name = "Indicator",
 				Size = UDim2.new(1, -4, 0, 2),
