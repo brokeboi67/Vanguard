@@ -1,4 +1,4 @@
--- Criminality.lua  v2.43.82
+-- Criminality.lua  v2.43.83
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1868,7 +1868,7 @@ local function refreshGunMods(S, preferDeep)
 		return
 	end
 	cacheWeapons(preferDeep == true)
-	if #weaponCache == 0 and preferDeep ~= false then
+	if #weaponCache == 0 then
 		cacheWeapons(true)
 	end
 	applyGunMods(S)
@@ -1922,23 +1922,30 @@ end
 
 local function onGunModCharacter(character)
 	clearGunModCharConns()
-	scheduleGunModRefresh(false, 0.55)
+	weaponCache = {}
+	table.clear(weaponOrig)
+	scheduleGunModRefresh(true, 0.75)
 	table.insert(gunModCharConns, character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(false, 0.35)
+			scheduleGunModRefresh(true, 0.35)
 		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
 		table.insert(gunModCharConns, humanoid.Died:Connect(function()
-			scheduleGunModRefresh(false, 2)
+			gunModScanToken += 1
+			weaponCache = {}
+			table.clear(weaponOrig)
+			scheduleGunModRefresh(true, 2.5)
 		end))
 	end
 end
 
 local function startGunMods(S)
 	clearGunModCharConns()
-	refreshGunMods(S, false)
+	weaponCache = {}
+	table.clear(weaponOrig)
+	refreshGunMods(S, true)
 	local lp = getLP()
 	table.insert(gunModConns, lp.CharacterAdded:Connect(onGunModCharacter))
 	if lp.Character then
@@ -2450,8 +2457,7 @@ local function startMaster(S)
 		if featureRunning.gunMods and S.CrimNoRecoil then
 			local now = tick()
 			if now - lastGunModApplyAt >= GUNMOD_REAPPLY_INTERVAL then
-				lastGunModApplyAt = now
-				applyGunMods(S)
+				refreshGunMods(S, true)
 			end
 		end
 
@@ -2585,6 +2591,12 @@ function Criminality.Init(S)
 		if crimFlag(S.CrimGunESP) then
 			pcall(syncGunESP, S)
 			pcall(tickESP, S)
+		end
+	end
+
+	S._crimRefreshGunMods = function()
+		if crimFlag(S.CrimNoRecoil) then
+			pcall(function() refreshGunMods(S, true) end)
 		end
 	end
 

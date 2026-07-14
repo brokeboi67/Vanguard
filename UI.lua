@@ -2406,7 +2406,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			step = 1,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3, { flat = true })
+		MakeTog(CCombat, "No Recoil", "CrimNoRecoil", 3, {
+			flat = true,
+			onChange = function(on)
+				if on and S._crimRefreshGunMods then
+					task.delay(0.2, S._crimRefreshGunMods)
+				end
+			end,
+		})
 		MakeHint(CCombat, "hint_crim_norecoil", 4)
 		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 5, {
 			flat = true,
