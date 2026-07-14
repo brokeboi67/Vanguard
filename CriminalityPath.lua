@@ -1,4 +1,4 @@
--- CriminalityPath.lua  v2.43.92
+-- CriminalityPath.lua  v2.43.93
 -- Safe/register path. Navmesh first (stairs); probe only same-floor with hard Y clamps.
 -- Map mesh names are obfuscated — we never rely on names, only geometry + Map.Doors.
 
@@ -196,10 +196,15 @@ local function isOpenableDoorModel(inst)
 	return typeof(n) == "string" and string.find(n, "Door", 1, true) ~= nil
 end
 
+-- Returns params that only exclude player + path folder (+ one optional model).
+-- IMPORTANT: we do NOT exclude Map.Doors — in the obfuscated map, walls/fences
+-- can be parented there. Excluding the whole folder makes every wall invisible
+-- to raycasts, so the probe goes straight through them.
+-- Open doors have CanCollide=false → isSolidHit returns false → path passes through.
+-- Closed doors have CanCollide=true → isSolidHit returns true → blocked correctly.
 local function makeExcludeParams(extra)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	-- NOTE: do NOT set RespectCanCollide — not supported by most executors, causes crash
 	local list = {}
 	local char = getChar()
 	if char then
@@ -209,11 +214,8 @@ local function makeExcludeParams(extra)
 	if pathF then
 		table.insert(list, pathF)
 	end
-	local doors = getDoorsFolder()
-	if doors then
-		table.insert(list, doors)
-	end
-	if extra then
+	-- extra = the target safe/register model so we can stand next to it
+	if extra and typeof(extra) == "Instance" then
 		table.insert(list, extra)
 	end
 	params.FilterDescendantsInstances = list
@@ -341,33 +343,37 @@ local function snapFloor(pos, exclude, preferY)
 	return Vector3.new(pos.X, py, pos.Z)
 end
 
+-- Shoots 3 parallel rays (left/center/right of travel direction) at several heights.
+-- A segment is traversable only if ALL 3 lateral offsets are clear at SOME height.
+-- This prevents thin walls from slipping between single-ray checks.
 local function canTraverse(a, b, exclude)
 	local params = makeExcludeParams(exclude)
-	if math.abs(b.Y - a.Y) > MAX_STEP_UP + 0.4 then
+	if math.abs(b.Y - a.Y) > MAX_STEP_UP + 0.5 then
 		return false, 0
 	end
 	local flat = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
 	if flat.Magnitude < 0.05 then
 		return true, 1.8
 	end
-	for _, h in ipairs({ 1.15, 1.65, 2.15, 2.7, 3.2 }) do
-		local from = Vector3.new(a.X, a.Y + h, a.Z)
-		local to = Vector3.new(b.X, b.Y + h, b.Z)
-		local hit = workspace:Raycast(from, to - from, params)
-		if not hit or not isSolidHit(hit) then
-			-- also verify foot level clearance
-			local hitLow = workspace:Raycast(
-				Vector3.new(a.X, a.Y + 0.95, a.Z),
-				Vector3.new(b.X - a.X, 0, b.Z - a.Z),
-				params
-			)
-			if not hitLow or not isSolidHit(hitLow) then
-				return true, h
+	local flatDir = flat.Unit
+	-- perpendicular (left/right of travel)
+	local perp = Vector3.new(-flatDir.Z, 0, flatDir.X)
+	local OFFSETS = { -0.45, 0, 0.45 }
+	local HEIGHTS = { 0.55, 1.1, 1.6, 2.1, 2.6 }
+
+	for _, h in ipairs(HEIGHTS) do
+		local allClear = true
+		for _, off in ipairs(OFFSETS) do
+			local nudge = perp * off
+			local from = Vector3.new(a.X, a.Y + h, a.Z) + nudge
+			local to   = Vector3.new(b.X, b.Y + h, b.Z) + nudge
+			local hit = workspace:Raycast(from, to - from, params)
+			if hit and isSolidHit(hit) then
+				allClear = false
+				break
 			end
-			if (Vector3.new(b.X, a.Y + 0.95, b.Z) - hitLow.Position).Magnitude < 1.0 then
-				return true, h
-			end
-		elseif (to - hit.Position).Magnitude < 1.0 then
+		end
+		if allClear then
 			return true, h
 		end
 	end
@@ -405,7 +411,7 @@ local function probePath(startPos, goalPos, exclude)
 		end
 
 		local dir = flat.Unit
-		local stepLen = math.clamp(rem, 1.6, 2.8)
+		local stepLen = math.clamp(rem, 1.2, 1.8) -- small steps: can't skip through thin walls
 		local found, foundH = nil, 0
 
 		for _, ang in ipairs(angles) do
