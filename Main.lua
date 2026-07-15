@@ -522,7 +522,12 @@ end
 
 _G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
 
-local LOAD_TOTAL = 27
+-- Criminality-only modules are skipped outside that universe (faster boot elsewhere).
+local CRIM_GAME_ID = 1494262959
+local isCriminality = game.GameId == CRIM_GAME_ID
+
+-- Base modules always fetched (Core → GameSupport). +Criminality +ClientBuild when needed.
+local LOAD_TOTAL = 28 + (isCriminality and 2 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -711,7 +716,12 @@ local UIMusic = Get("UIMusic.lua")
 local UI = Get("UI.lua")
 local Menus = Get("Menus.lua")
 local GameSupport = Get("GameSupport.lua")
-local Criminality = Get("Criminality.lua")
+
+-- Heavy game-specific module: don't HttpGet/compile outside Criminality
+local Criminality = nil
+if isCriminality then
+	Criminality = Get("Criminality.lua")
+end
 
 _G.__VG_LOADING = false
 if AntiBypass.onLoadComplete then
@@ -793,7 +803,7 @@ phase("ESP.Init",        ESP.Init,        Settings, GUI, TeamFriends, Util)
 phase("Aim.Init",        Aim.Init,        Settings, GUI, TeamFriends, Util)
 phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
 phase("Movement.Init",   Movement.Init,   Settings)
-if game.GameId == 1494262959 then   -- Criminality universe (lobby + Casual + sub-places)
+if isCriminality and Criminality then
 	phase("Criminality.Init", Criminality.Init, Settings)
 	phase("ClientBuild.Init", function(S)
 		local mod = Get("ClientBuild.lua")
