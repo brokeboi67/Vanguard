@@ -16,13 +16,21 @@ function Rage.Init(S, ParentGUI, TF, Util)
 	local rageToggled = false
 	local rageLock = nil
 	local rageLockUntil = 0
+	local lockPartRefreshAt = 0
+	local nextRescanAt = 0
 	local botList = {}
 	local botScanAt = 0
 	local savedAutoRotate = true
 	local aaActive = false
 	local rageShootingUntil = 0
+	local losCache = {}
+	local losCacheSweepAt = 0
 
 	local AIM_PARTS = { "Head", "UpperTorso", "Torso", "HumanoidRootPart", "LowerTorso" }
+	local LOS_CACHE_TTL = 0.1
+	local LOCK_PART_REFRESH = 0.12
+	local RESCAN_INTERVAL = 0.08
+	local LOCK_HOLD = 0.4
 
 	local function C(class, props)
 		local i = Instance.new(class)
@@ -32,6 +40,18 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		return i
 	end
 
+	local function sweepLosCache(now)
+		if now - losCacheSweepAt < 1 then
+			return
+		end
+		losCacheSweepAt = now
+		for part, entry in pairs(losCache) do
+			if not part.Parent or now - entry.at > 1 then
+				losCache[part] = nil
+			end
+		end
+	end
+
 	local function isPartVisibleFromCamera(part, char)
 		if not part or not char then
 			return false
@@ -39,11 +59,20 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		if not S.RageVisibleCheck then
 			return true
 		end
+		local now = tick()
+		local cached = losCache[part]
+		if cached and now - cached.at < LOS_CACHE_TTL then
+			return cached.ok
+		end
 		local partPos = Util.getFirePosition(char, part)
 		if not partPos then
+			losCache[part] = { ok = false, at = now }
 			return false
 		end
-		return Util.rayHasLOS(Cam.CFrame.Position, partPos, char, LP.Character, S.LOSIgnoreSelf ~= false)
+		local ok = Util.rayHasLOS(Cam.CFrame.Position, partPos, char, LP.Character, S.LOSIgnoreSelf ~= false)
+		losCache[part] = { ok = ok, at = now }
+		sweepLosCache(now)
+		return ok
 	end
 
 	local RageHud = C("Frame", {
@@ -309,9 +338,22 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		end
 	end
 
+	local function roughDist(char)
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if not hrp then
+			return math.huge
+		end
+		return (Cam.CFrame.Position - hrp.Position).Magnitude
+	end
+
 	local function scoreRageTarget(entry)
 		local char = entry.char
 		if not Util.isValidTarget(char, entry.plr) then
+			return nil
+		end
+
+		local maxDist = S.RageMaxDist or S.MaxDist
+		if roughDist(char) > maxDist * 1.2 then
 			return nil
 		end
 
@@ -321,7 +363,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		end
 
 		local dist3d = worldDist(part, char)
-		if dist3d > (S.RageMaxDist or S.MaxDist) then
+		if dist3d > maxDist then
 			return nil
 		end
 
@@ -329,9 +371,28 @@ function Rage.Init(S, ParentGUI, TF, Util)
 	end
 
 	local function getBestRageTarget()
-		local best, bestScore = nil, math.huge
+		local maxDist = S.RageMaxDist or S.MaxDist
+		local rough = {}
 		for _, entry in ipairs(collectTargets()) do
-			local cand = scoreRageTarget(entry)
+			if Util.isValidTarget(entry.char, entry.plr) then
+				local d = roughDist(entry.char)
+				if d <= maxDist * 1.2 then
+					table.insert(rough, { entry = entry, d = d })
+				end
+			end
+		end
+		table.sort(rough, function(a, b)
+			return a.d < b.d
+		end)
+
+		local best, bestScore = nil, math.huge
+		local checked = 0
+		for i = 1, #rough do
+			if checked >= 4 and best then
+				break
+			end
+			checked += 1
+			local cand = scoreRageTarget(rough[i].entry)
 			if cand and cand.score < bestScore then
 				bestScore = cand.score
 				best = cand
@@ -340,27 +401,54 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		return best
 	end
 
-	local function getStableRageTarget()
-		if rageLock and tick() < rageLockUntil then
+	-- mode: "soft" = reuse lock (HUD/track), "shot" = validate before fire
+	local function getStableRageTarget(mode)
+		mode = mode or "soft"
+		local now = tick()
+
+		if rageLock and now < rageLockUntil then
 			local char = rageLock.char
-			if Util.isValidTarget(char, rageLock.plr) then
-				local part = getRageAimPart(char) or rageLock.part
-				if part and part.Parent and part:IsDescendantOf(char) then
-					if not S.RageVisibleCheck or isPartVisibleFromCamera(part, char) then
-						local dist3d = worldDist(part, char)
-						if dist3d <= (S.RageMaxDist or S.MaxDist) then
+			local part = rageLock.part
+			if Util.isValidTarget(char, rageLock.plr) and part and part.Parent and part:IsDescendantOf(char) then
+				local dist3d = worldDist(part, char)
+				local maxDist = S.RageMaxDist or S.MaxDist
+				if dist3d <= maxDist then
+					if mode == "soft" then
+						rageLock.score = dist3d
+						return rageLock
+					end
+
+					if now >= lockPartRefreshAt then
+						lockPartRefreshAt = now + LOCK_PART_REFRESH
+						local newPart = getRageAimPart(char)
+						if newPart then
+							part = newPart
 							rageLock.part = part
-							rageLock.char = char
-							rageLock.score = dist3d
-							return rageLock
+						elseif S.RageVisibleCheck and not isPartVisibleFromCamera(part, char) then
+							rageLock = nil
 						end
+					elseif S.RageVisibleCheck and not isPartVisibleFromCamera(part, char) then
+						rageLock = nil
+					end
+
+					if rageLock then
+						rageLock.char = char
+						rageLock.score = worldDist(rageLock.part, char)
+						return rageLock
 					end
 				end
 			end
 			rageLock = nil
 		end
+
+		if mode == "soft" and now < nextRescanAt then
+			return nil
+		end
+		nextRescanAt = now + RESCAN_INTERVAL
+
 		rageLock = getBestRageTarget()
-		rageLockUntil = tick() + 0.4
+		rageLockUntil = now + LOCK_HOLD
+		lockPartRefreshAt = now + LOCK_PART_REFRESH
 		return rageLock
 	end
 
@@ -384,7 +472,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		if tick() < rageShootingUntil then
 			return
 		end
-		local tgt = getStableRageTarget()
+		local tgt = getStableRageTarget("soft")
 		if not tgt or not tgt.part or not tgt.char then
 			return
 		end
@@ -413,7 +501,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 			return
 		end
 
-		local tgt = getStableRageTarget()
+		local tgt = getStableRageTarget("shot")
 		if not tgt or not tgt.part or not tgt.char then
 			rageLock = nil
 			return
@@ -561,7 +649,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 		if not S.MasterRage or not S.RageBot then
 			return nil
 		end
-		return getStableRageTarget()
+		return getStableRageTarget("soft")
 	end
 end
 

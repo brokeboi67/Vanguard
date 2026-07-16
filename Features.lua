@@ -902,11 +902,21 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end)
 	end
 
+	local targetInfoAt = 0
+	local targetVisAt = 0
+	local targetVisCached = true
+
 	local function updTargetInfo()
 		if not S.TargetInfo or S.MenuOpen then
 			TargetPanel.Visible = false
 			return
 		end
+
+		local now = tick()
+		if now - targetInfoAt < 0.08 then
+			return
+		end
+		targetInfoAt = now
 
 		local tgt = S.GetAimTarget and S.GetAimTarget()
 		if not tgt or not tgt.char or not tgt.part then
@@ -934,7 +944,12 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		TargetWpnLbl.Text = getWeaponFromChar(char)
 		TargetPartLbl.Text = string.upper(tgt.part.Name)
 
-		local visible = isCharVisibleFromCam(char, tgt.part)
+		local visible = targetVisCached
+		if now - targetVisAt >= 0.15 then
+			targetVisAt = now
+			visible = isCharVisibleFromCam(char, tgt.part)
+			targetVisCached = visible
+		end
 		if visible then
 			TargetVisBadge.Text = "VISIBLE"
 			TargetVisBadge.BackgroundColor3 = Color3.fromRGB(34, 70, 48)
