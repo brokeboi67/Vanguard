@@ -1,4 +1,4 @@
--- Criminality.lua  v2.44.3
+-- Criminality.lua  v2.49.1
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1410,11 +1410,34 @@ local function tickCratePickup(S)
 	end
 end
 
--- ── CRATE BRING (spoof near crate → PIC_PU → return) ─────────────────────────
--- Looks like "teleport crate to you": server distance-checks pickup, so we blink
--- HRP next to the crate for 1 frame (same pattern as Remote Elevator spoof).
+-- ── CRATE BRING (literal teleport crate → player, then PIC_PU) ───────────────
+-- Moves the crate model to you (PivotTo / part CFrames). No player spoof.
+-- Uses setsimulationradius when available so unanchored physics can replicate.
+-- Then fires PIC_PU while the crate is at your feet.
 local bringBusy = false
 local lastBringAt = 0
+local simRadiusBoosted = false
+
+local function boostSimRadius()
+	if simRadiusBoosted then
+		return
+	end
+	simRadiusBoosted = true
+	pcall(function()
+		if typeof(setsimulationradius) == "function" then
+			setsimulationradius(1e5)
+		end
+	end)
+	pcall(function()
+		if typeof(sethiddenproperty) == "function" then
+			local lp = getLP()
+			if lp then
+				sethiddenproperty(lp, "SimulationRadius", 1e5)
+				sethiddenproperty(lp, "MaxSimulationRadius", 1e5)
+			end
+		end
+	end)
+end
 
 local function shouldBringCrate(S, model)
 	if not S.CrimCrateBring then
@@ -1434,6 +1457,62 @@ local function getBringDist(S)
 	return math.clamp(tonumber(S.CrimCrateBringDist) or 80, 10, 250)
 end
 
+-- Literally move every BasePart / Pivot of the crate to in front of the player.
+local function teleportCrateModel(model, hrp)
+	if not model or not hrp or not alive(model) then
+		return false
+	end
+	boostSimRadius()
+	local dest = hrp.CFrame * CFrame.new(0, 1.5, -3.5)
+	local primary = model.PrimaryPart or getCratePart(model)
+	if not primary then
+		return false
+	end
+
+	-- unlock physics so ownership / Pivot can stick
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			pcall(function()
+				d.Anchored = false
+				d.CanCollide = false
+				d.AssemblyLinearVelocity = Vector3.zero
+				d.AssemblyAngularVelocity = Vector3.zero
+			end)
+		end
+	end
+
+	local okPivot = pcall(function()
+		model:PivotTo(dest)
+	end)
+	if not okPivot then
+		-- fallback: shift every part by the same delta
+		local delta = dest.Position - primary.Position
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("BasePart") then
+				pcall(function()
+					d.CFrame = d.CFrame + delta
+				end)
+			end
+		end
+	end
+
+	-- hard-set primary (some crates ignore PivotTo if welded weird)
+	pcall(function()
+		primary.CFrame = dest
+		primary.AssemblyLinearVelocity = Vector3.zero
+	end)
+
+	-- optional touch-interest help for pickup prompts
+	pcall(function()
+		if typeof(firetouchinterest) == "function" then
+			firetouchinterest(hrp, primary, 0)
+			firetouchinterest(hrp, primary, 1)
+		end
+	end)
+
+	return true
+end
+
 local function tryBringCrate(S, model)
 	if bringBusy or not model or not alive(model) then
 		return false
@@ -1442,7 +1521,7 @@ local function tryBringCrate(S, model)
 	local part = getCratePart(model)
 	local root = getHRP()
 	local remote = getPicPuRemote()
-	if not id or not part or not root or not remote then
+	if not id or not part or not root then
 		return false
 	end
 	local now = tick()
@@ -1454,28 +1533,25 @@ local function tryBringCrate(S, model)
 	lastBringAt = now
 	task.spawn(function()
 		local hrp = getHRP()
-		if not hrp or not alive(part) then
+		if not hrp or not alive(model) then
 			bringBusy = false
 			return
 		end
-		local saved = hrp.CFrame
-		local near = part.CFrame * CFrame.new(0, 2.2, -2.5)
-		pcall(function()
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			hrp.AssemblyAngularVelocity = Vector3.zero
-			hrp.CFrame = near
-		end)
+
+		-- 1) literally TP crate to player (what you saw the other guy do)
+		teleportCrateModel(model, hrp)
 		RS.Heartbeat:Wait()
-		local ok = pcall(function()
-			remote:FireServer(id)
-		end)
-		pcall(function()
-			local r2 = getHRP()
-			if r2 then
-				r2.CFrame = saved
-				r2.AssemblyLinearVelocity = Vector3.zero
-			end
-		end)
+		-- keep it glued for a couple frames (server may snap once)
+		teleportCrateModel(model, hrp)
+		RS.Heartbeat:Wait()
+
+		-- 2) fire pickup while crate is at your feet
+		local ok = false
+		if remote then
+			ok = pcall(function()
+				remote:FireServer(id)
+			end)
+		end
 		if ok then
 			pickupCooldownIds[id] = tick()
 			if S.CrimCratePickupFx ~= false then
@@ -1492,7 +1568,7 @@ local function tickCrateBring(S)
 		return
 	end
 	local now = tick()
-	local delay = math.max(0.15, (tonumber(S.CrimCrateBringDelay) or 350) / 1000)
+	local delay = math.max(0.12, (tonumber(S.CrimCrateBringDelay) or 350) / 1000)
 	if now - lastBringAt < delay then
 		return
 	end
@@ -1501,13 +1577,12 @@ local function tickCrateBring(S)
 		return
 	end
 	local fireDist = getBringDist(S)
-	-- leave close crates to normal Auto Pickup (no spoof needed)
-	local minDist = S.CrimCratePickup and (getCrateFireDist(S) + 0.5) or 3
 	local best, bestScore = nil, math.huge
 	for _, model in ipairs(piles:GetChildren()) do
 		if alive(model) and shouldBringCrate(S, model) then
 			local dist = getCrateDist(model)
-			if dist <= fireDist and dist > minDist then
+			-- skip already-at-feet crates (normal pickup can take those)
+			if dist <= fireDist and dist > 2.5 then
 				local rare = isRareCrate(model)
 				local score = dist + (rare and 0 or 1000)
 				if score < bestScore then
