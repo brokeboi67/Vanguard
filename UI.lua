@@ -2502,29 +2502,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			requires = "CrimCratePickup",
 		})
 		MakeHint(CCrate, "hint_crim_pickup", 8)
-		MakeTog(CCrate, "Bring Crates", "CrimCrateBring", 9, {
-			flat = true,
-			onChange = function(on)
-				local dist = sliderRegistry.CrimCrateBringDist
-				if dist and dist.setEnabled then
-					dist.setEnabled(on)
-				end
-			end,
-		})
-		MakeSlider(CCrate, "Bring Range", "CrimCrateBringDist", 15, 200, 10, {
-			suffix = " st",
-			step = 5,
-			requires = "CrimCrateBring",
-			fmt = function(v) return string.format("%d st", v) end,
-			onRowCreated = function(_, __, setEnabled)
-				if setEnabled then
-					setEnabled(S.CrimCrateBring == true)
-				end
-			end,
-		})
-		MakeHint(CCrate, "hint_crim_bring", 11)
-		MakeSection(CCrate, L("crim_sub_pickup_guns"), 12)
-		MakeTog(CCrate, "Fast Pickup", "CrimFastPickup", 13, {
+		MakeSection(CCrate, L("crim_sub_pickup_guns"), 9)
+		MakeTog(CCrate, "Fast Pickup", "CrimFastPickup", 10, {
 			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimFastPickupRange
@@ -2533,19 +2512,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CCrate, "Pickup Guns", "CrimFastPickupGuns", 14, {
+		MakeTog(CCrate, "Pickup Guns", "CrimFastPickupGuns", 11, {
 			flat = true,
 			requires = "CrimFastPickup",
 		})
-		MakeTog(CCrate, "Pickup Melee", "CrimFastPickupMelee", 15, {
+		MakeTog(CCrate, "Pickup Melee", "CrimFastPickupMelee", 12, {
 			flat = true,
 			requires = "CrimFastPickup",
 		})
-		MakeTog(CCrate, "Pickup Armor", "CrimFastPickupArmor", 16, {
+		MakeTog(CCrate, "Pickup Armor", "CrimFastPickupArmor", 13, {
 			flat = true,
 			requires = "CrimFastPickup",
 		})
-		MakeSlider(CCrate, "Pickup Range", "CrimFastPickupRange", 2, 12, 17, {
+		MakeSlider(CCrate, "Pickup Range", "CrimFastPickupRange", 2, 12, 14, {
 			suffix = " st",
 			step = 0.5,
 			requires = "CrimFastPickup",
@@ -2556,9 +2535,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCrate, "hint_crim_fastpickup", 18)
-		MakeSection(CCrate, L("crim_sub_pickup_money"), 19)
-		MakeTog(CCrate, "Auto Pickup Money", "CrimMoneyPickup", 20, {
+		MakeHint(CCrate, "hint_crim_fastpickup", 15)
+		MakeSection(CCrate, L("crim_sub_pickup_money"), 16)
+		MakeTog(CCrate, "Auto Pickup Money", "CrimMoneyPickup", 17, {
 			flat = true,
 			onChange = function(on)
 				for _, key in ipairs({ "CrimMoneyPickupDist", "CrimMoneyPickupDelay" }) do
@@ -2569,21 +2548,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCrate, "Money Pickup Distance", "CrimMoneyPickupDist", 2, 25, 21, {
+		MakeSlider(CCrate, "Money Pickup Distance", "CrimMoneyPickupDist", 2, 25, 18, {
 			suffix = " st",
 			step = 1,
 			requires = "CrimMoneyPickup",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSlider(CCrate, "Money Pickup Delay", "CrimMoneyPickupDelay", 500, 2500, 22, {
+		MakeSlider(CCrate, "Money Pickup Delay", "CrimMoneyPickupDelay", 500, 2500, 19, {
 			suffix = "ms",
 			step = 100,
 			requires = "CrimMoneyPickup",
 			fmt = function(v) return string.format("%d ms", v) end,
 		})
-		MakeHint(CCrate, "hint_crim_money", 23)
-		MakeSection(CCrate, L("crim_sub_pickup_allowance"), 24)
-		MakeTog(CCrate, "Auto Claim Allowance", "CrimAllowanceClaim", 25, {
+		MakeHint(CCrate, "hint_crim_money", 20)
+		MakeSection(CCrate, L("crim_sub_pickup_allowance"), 21)
+		MakeTog(CCrate, "Auto Claim Allowance", "CrimAllowanceClaim", 22, {
 			flat = true,
 			onChange = function(on)
 				for _, key in ipairs({ "CrimAllowanceClaimDist", "CrimAllowanceClaimDelay" }) do
@@ -2594,19 +2573,19 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCrate, "ATM Distance", "CrimAllowanceClaimDist", 4, 30, 26, {
+		MakeSlider(CCrate, "ATM Distance", "CrimAllowanceClaimDist", 4, 30, 23, {
 			suffix = " st",
 			step = 1,
 			requires = "CrimAllowanceClaim",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSlider(CCrate, "Claim Delay", "CrimAllowanceClaimDelay", 1000, 10000, 27, {
+		MakeSlider(CCrate, "Claim Delay", "CrimAllowanceClaimDelay", 1000, 10000, 24, {
 			suffix = "ms",
 			step = 500,
 			requires = "CrimAllowanceClaim",
 			fmt = function(v) return string.format("%d ms", v) end,
 		})
-		MakeHint(CCrate, "hint_crim_allowance", 28)
+		MakeHint(CCrate, "hint_crim_allowance", 25)
 
 		MakeSection(CESP, L("crim_sub_world"), 1)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 2, {
@@ -2711,11 +2690,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		MakeSection(CBounty, L("crim_sub_bounty"), 1)
 		MakeTog(CBounty, "Bounty Tracker", "CrimBountyTracker", 2, { flat = true })
-		MakeTog(CBounty, "Show Zero Bounty", "CrimBountyShowZero", 3, {
-			flat = true,
-			requires = "CrimBountyTracker",
-		})
-		MakeHint(CBounty, "hint_crim_bounty", 4)
+		MakeHint(CBounty, "hint_crim_bounty", 3)
 
 		local BountyHeader = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 20),
@@ -2725,7 +2700,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextSize = 11,
 			TextColor3 = Color3.fromRGB(140, 140, 150),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = 5,
+			LayoutOrder = 4,
 			ZIndex = 5,
 			Parent = CBounty,
 		})
@@ -2734,7 +2709,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Size = UDim2.new(1, 0, 0, 300),
 			BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 			BorderSizePixel = 0,
-			LayoutOrder = 6,
+			LayoutOrder = 5,
 			ZIndex = 5,
 			Parent = CBounty,
 		})

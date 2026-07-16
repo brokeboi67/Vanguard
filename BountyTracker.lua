@@ -1,11 +1,8 @@
--- BountyTracker.lua v2.51.0
--- Scans players in the server and shows their bounty, sorted highest → lowest.
--- The remote/attribute names in Criminality are obfuscated, so instead of relying
--- on a fixed key this module auto-discovers the bounty source per player:
---   1) player / character attributes whose name looks like "bounty" / "wanted"
---   2) leaderstats + direct Value objects with a matching name
---   3) nametag BillboardGui text over the character head containing "$"
--- It renders its rows into a container the UI publishes at _G.__VG_BountyList.
+-- BountyTracker.lua v2.51.1
+-- Tracks live bounties by scraping Criminality's own popup UI:
+--   "Bounty Alert"   → "solo0141: $1078"          → add / update
+--   "Bounty Claimed" → "ethlandIXIX's $563 bounty was claimed." → remove
+-- Claimed = no longer active. Renders into _G.__VG_BountyList from the UI tab.
 
 local BountyTracker = {}
 
@@ -14,105 +11,188 @@ local RS = game:GetService("RunService")
 
 local LP = Players.LocalPlayer
 
-local function nameMatches(n)
-	if type(n) ~= "string" then return false end
-	n = string.lower(n)
-	return n:find("bounty") ~= nil or n:find("wanted") ~= nil or n == "bnty"
-end
+-- nameLower → { name, amount, at }
+local tracked = {}
+local seenNodes = setmetatable({}, { __mode = "k" })
+local rows = {}
+local ACC = Color3.fromRGB(235, 90, 90)
+local dirty = true
+local watchConn = nil
+local hbConn = nil
+local lastRender = 0
 
--- Turns "$2,201" / "2201" / 2201 into a number. Returns nil if nothing usable.
 local function parseAmount(v)
 	if type(v) == "number" then
 		return v
 	end
-	if type(v) == "string" then
-		local digits = (v:gsub("[^%d]", ""))
-		if #digits > 0 then
-			return tonumber(digits)
-		end
+	if type(v) ~= "string" then
+		return nil
 	end
-	return nil
+	local digits = (v:gsub("[^%d]", ""))
+	if #digits == 0 then
+		return nil
+	end
+	return tonumber(digits)
 end
 
-local function scanAttributes(inst, best)
-	if not inst then return best end
-	local ok, attrs = pcall(function() return inst:GetAttributes() end)
-	if ok and type(attrs) == "table" then
-		for k, v in pairs(attrs) do
-			if nameMatches(k) then
-				local a = parseAmount(v)
-				if a and a > (best or -1) then best = a end
+local function fmtMoney(n)
+	local s = tostring(math.floor(n))
+	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+	return "$" .. out
+end
+
+local function resolvePlayer(name)
+	if type(name) ~= "string" or name == "" then
+		return nil, name
+	end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Name:lower() == name:lower() or (p.DisplayName and p.DisplayName:lower() == name:lower()) then
+			return p, p.Name
+		end
+	end
+	return nil, name
+end
+
+local function setBounty(rawName, amount)
+	local p, canon = resolvePlayer(rawName)
+	local key = string.lower(canon or rawName)
+	tracked[key] = {
+		name = (p and p.Name) or canon or rawName,
+		display = (p and p.DisplayName) or canon or rawName,
+		amount = amount,
+		at = tick(),
+		userId = p and p.UserId or nil,
+		isLP = p == LP,
+	}
+	dirty = true
+end
+
+local function clearBounty(rawName)
+	local _, canon = resolvePlayer(rawName)
+	local key = string.lower(canon or rawName)
+	if tracked[key] then
+		tracked[key] = nil
+		dirty = true
+	end
+end
+
+-- Collect all TextLabel / TextButton text under an instance (shallow + deep).
+local function collectTexts(root)
+	local texts = {}
+	local function push(t)
+		if type(t) == "string" and t ~= "" then
+			texts[#texts + 1] = t
+		end
+	end
+	if root:IsA("TextLabel") or root:IsA("TextButton") then
+		push(root.Text)
+	end
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("TextLabel") or d:IsA("TextButton") then
+			push(d.Text)
+		end
+	end
+	return texts
+end
+
+-- Parse one popup's text blob.
+-- Alert:  title contains "Bounty Alert", body like "solo0141: $1078"
+-- Claim:  title contains "Bounty Claimed", body like "ethlandIXIX's $563 bounty was claimed."
+local function parsePopupTexts(texts)
+	local joined = table.concat(texts, "\n")
+	local lower = string.lower(joined)
+
+	local isAlert = lower:find("bounty alert", 1, true) ~= nil
+	local isClaim = lower:find("bounty claimed", 1, true) ~= nil
+	if not isAlert and not isClaim then
+		return
+	end
+
+	-- Alert line: Name: $1234  (or Name: 1234)
+	if isAlert then
+		for _, t in ipairs(texts) do
+			local name, amt = t:match("^%s*([%w_]+)%s*:%s*%$?([%d,]+)%s*$")
+			if name and amt then
+				local n = parseAmount(amt)
+				if n and n > 0 then
+					setBounty(name, n)
+					return
+				end
 			end
 		end
-	end
-	return best
-end
-
-local function scanValues(container, best, deep)
-	if not container then return best end
-	local list = deep and container:GetDescendants() or container:GetChildren()
-	for _, d in ipairs(list) do
-		if nameMatches(d.Name) then
-			local ok, val = pcall(function() return d.Value end)
-			if ok then
-				local a = parseAmount(val)
-				if a and a > (best or -1) then best = a end
+		-- Fallback across joined blob
+		local name, amt = joined:match("([%w_]+)%s*:%s*%$?([%d,]+)")
+		if name and amt and not string.lower(name):find("bounty") then
+			local n = parseAmount(amt)
+			if n and n > 0 then
+				setBounty(name, n)
 			end
 		end
+		return
 	end
-	return best
+
+	-- Claimed: Name's $123 bounty was claimed
+	if isClaim then
+		for _, t in ipairs(texts) do
+			local name = t:match("([%w_]+)'s%s*%$?[%d,]+%s*bounty%s+was%s+claimed")
+			if not name then
+				name = t:match("([%w_]+)'s%s+bounty%s+was%s+claimed")
+			end
+			if name then
+				clearBounty(name)
+				return
+			end
+		end
+		local name = joined:match("([%w_]+)'s%s*%$?[%d,]+%s*bounty%s+was%s+claimed")
+			or joined:match("([%w_]+)'s%s+bounty%s+was%s+claimed")
+		if name then
+			clearBounty(name)
+		end
+	end
 end
 
--- Best-effort read of a bounty number over the character head (nametag GUIs).
-local function scanNametag(char, best)
-	if not char then return best end
-	local head = char:FindFirstChild("Head")
-	local roots = { head, char }
-	for _, root in ipairs(roots) do
-		if root then
-			for _, gui in ipairs(root:GetChildren()) do
-				if gui:IsA("BillboardGui") then
-					for _, lbl in ipairs(gui:GetDescendants()) do
-						if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
-							local t = lbl.Text
-							if type(t) == "string" and t:find("%$") then
-								local a = parseAmount(t)
-								if a and a > (best or -1) then best = a end
-							end
-						end
-					end
+local function ingestNode(inst)
+	if not inst or seenNodes[inst] then
+		return
+	end
+	-- Only care about GUI text containers that might be the popup (or its parent frame)
+	local isGui = inst:IsA("GuiObject") or inst:IsA("ScreenGui") or inst:IsA("BillboardGui")
+	if not isGui and not inst:IsA("Folder") and not inst:IsA("Frame") then
+		return
+	end
+
+	-- Defer a frame so all labels inside the popup have Text set
+	task.defer(function()
+		if not inst or not inst.Parent then
+			return
+		end
+		seenNodes[inst] = true
+		local texts = collectTexts(inst)
+		if #texts == 0 then
+			return
+		end
+		parsePopupTexts(texts)
+	end)
+end
+
+local function scanExisting(pg)
+	if not pg then
+		return
+	end
+	for _, d in ipairs(pg:GetDescendants()) do
+		if d:IsA("TextLabel") or d:IsA("TextButton") then
+			local t = d.Text
+			if type(t) == "string" then
+				local low = string.lower(t)
+				if low:find("bounty alert", 1, true) or low:find("bounty claimed", 1, true) then
+					ingestNode(d.Parent or d)
+				elseif t:find(":%s*%$") or t:find("bounty was claimed") then
+					ingestNode(d.Parent or d)
 				end
 			end
 		end
 	end
-	return best
 end
-
-function BountyTracker.getBounty(p)
-	local best = nil
-	best = scanAttributes(p, best)
-	best = scanAttributes(p.Character, best)
-
-	local ls = p:FindFirstChild("leaderstats")
-	if ls then best = scanValues(ls, best, false) end
-	best = scanValues(p, best, false)
-
-	-- Common stat folders (obfuscated-safe: matched by name pattern anyway)
-	for _, fname in ipairs({ "Data", "Stats", "PlayerData", "Values", "stats" }) do
-		local f = p:FindFirstChild(fname)
-		if f then best = scanValues(f, best, false) end
-	end
-
-	if best == nil then
-		best = scanNametag(p.Character, best)
-	end
-	return best
-end
-
--- ── Rendering ────────────────────────────────────────────────────────────────
-
-local rows = {}
-local ACC = Color3.fromRGB(235, 90, 90)
 
 local function ensureRow(list, i)
 	if rows[i] and rows[i].Parent == list then
@@ -171,31 +251,38 @@ local function ensureRow(list, i)
 	return row
 end
 
-local function fmtMoney(n)
-	local s = tostring(math.floor(n))
-	local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-	out = out:gsub("^,", "")
-	return "$" .. out
-end
-
-local function render(S, list)
-	local data = {}
-	for _, p in ipairs(Players:GetPlayers()) do
-		local b = BountyTracker.getBounty(p)
-		if b == nil then b = 0 end
-		if b > 0 or S.CrimBountyShowZero then
-			table.insert(data, { name = p.DisplayName or p.Name, raw = p.Name, amount = b, isLP = (p == LP) })
+local function render(list, hdr)
+	-- Drop entries for players who left
+	for key, entry in pairs(tracked) do
+		if entry.userId then
+			local still = false
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.UserId == entry.userId then
+					still = true
+					break
+				end
+			end
+			if not still then
+				tracked[key] = nil
+			end
 		end
 	end
-	table.sort(data, function(a, b) return a.amount > b.amount end)
+
+	local data = {}
+	for _, entry in pairs(tracked) do
+		data[#data + 1] = entry
+	end
+	table.sort(data, function(a, b)
+		return a.amount > b.amount
+	end)
 
 	for i, entry in ipairs(data) do
 		local row = ensureRow(list, i)
 		row.Visible = true
 		row.Rank.Text = "#" .. i
-		local disp = entry.name
-		if entry.raw and entry.raw ~= entry.name then
-			disp = disp .. "  (@" .. entry.raw .. ")"
+		local disp = entry.display or entry.name
+		if entry.name and entry.display and entry.name ~= entry.display then
+			disp = entry.display .. "  (@" .. entry.name .. ")"
 		end
 		if entry.isLP then
 			disp = disp .. "  •"
@@ -206,29 +293,76 @@ local function render(S, list)
 		row.PName.Text = disp
 		row.Amount.Text = fmtMoney(entry.amount)
 	end
-
 	for i = #data + 1, #rows do
-		if rows[i] then rows[i].Visible = false end
+		if rows[i] then
+			rows[i].Visible = false
+		end
 	end
-	return #data
-end
-
-local function clearRows()
-	for _, r in ipairs(rows) do
-		if r then r.Visible = false end
+	if hdr then
+		if #data == 0 then
+			hdr.Text = "Brak aktywnych bounty (czekam na Alert…)"
+		else
+			hdr.Text = string.format("%d aktywnych bounty", #data)
+		end
 	end
+	dirty = false
 end
-
--- ── Loop ─────────────────────────────────────────────────────────────────────
-
-local conn = nil
-local lastScan = 0
-local knownBounties = {}
 
 function BountyTracker.Init(S)
-	if conn then return end
+	if hbConn then
+		return
+	end
 
-	conn = RS.Heartbeat:Connect(function()
+	local function attachWatch(pg)
+		if watchConn then
+			watchConn:Disconnect()
+			watchConn = nil
+		end
+		if not pg then
+			return
+		end
+		scanExisting(pg)
+		watchConn = pg.DescendantAdded:Connect(function(inst)
+			if not S.CrimBountyTracker then
+				return
+			end
+			if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("Frame") or inst:IsA("ImageLabel") then
+				-- Walk up a bit so we get the full popup frame, not a single label
+				local root = inst
+				for _ = 1, 4 do
+					if root.Parent and root.Parent ~= pg then
+						root = root.Parent
+					else
+						break
+					end
+				end
+				ingestNode(root)
+				ingestNode(inst)
+			end
+		end)
+	end
+
+	local pg = LP and LP:FindFirstChildOfClass("PlayerGui")
+	if pg then
+		attachWatch(pg)
+	end
+	if LP then
+		LP.ChildAdded:Connect(function(ch)
+			if ch:IsA("PlayerGui") then
+				attachWatch(ch)
+			end
+		end)
+	end
+
+	Players.PlayerRemoving:Connect(function(p)
+		local key = string.lower(p.Name)
+		if tracked[key] then
+			tracked[key] = nil
+			dirty = true
+		end
+	end)
+
+	hbConn = RS.Heartbeat:Connect(function()
 		if not S.CrimBountyTracker then
 			return
 		end
@@ -236,37 +370,29 @@ function BountyTracker.Init(S)
 		if not list or not list.Parent then
 			return
 		end
-		local hdr = _G.__VG_BountyHeader
-
 		local now = tick()
-		if now - lastScan < 1 then
-			return
-		end
-		lastScan = now
-
-		local ok, count = pcall(render, S, list)
-		if ok and hdr then
-			hdr.Text = string.format("%d gracz(y) z bounty", count)
-		end
-
-		-- Passive notify of newly appeared bounties (optional light signal)
-		if S.CrimBountyNotify then
-			for _, p in ipairs(Players:GetPlayers()) do
-				local b = BountyTracker.getBounty(p)
-				if b and b > 0 then
-					local prev = knownBounties[p.UserId]
-					if prev == nil or b > prev then
-						knownBounties[p.UserId] = b
-					end
-				end
-			end
+		if dirty or now - lastRender > 1.5 then
+			lastRender = now
+			pcall(render, list, _G.__VG_BountyHeader)
 		end
 	end)
 end
 
 function BountyTracker.Stop()
-	if conn then conn:Disconnect() conn = nil end
-	clearRows()
+	if watchConn then
+		watchConn:Disconnect()
+		watchConn = nil
+	end
+	if hbConn then
+		hbConn:Disconnect()
+		hbConn = nil
+	end
+	table.clear(tracked)
+	for _, r in ipairs(rows) do
+		if r then
+			r.Visible = false
+		end
+	end
 end
 
 return BountyTracker
