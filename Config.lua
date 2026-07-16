@@ -569,9 +569,6 @@ function Config.EnforceRules(S)
 	if S.CrimBountyTracker == nil then
 		S.CrimBountyTracker = false
 	end
-	if S.CrimBountyProtect == nil then
-		S.CrimBountyProtect = false
-	end
 	if S.CrimMoneyPickup == nil then
 		S.CrimMoneyPickup = false
 	end

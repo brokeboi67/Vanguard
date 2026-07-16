@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.5
+-- Criminality.lua  v2.52.6
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -3085,73 +3085,6 @@ local function stopFullBright()
 	end
 end
 
--- ── BOUNTY PROTECT (keep combat tag alive, preventing bounty drain) ──────────
--- Wiki: bounty drains $3/s once combat tag expires.
--- Approach: every ~4 s simulate a melee input — keeps the combat tag refreshed
--- server-side without needing to know the exact RemoteEvent name.
--- Also attempts to directly set known combat-tag attributes/values if present.
-local bountyProt = { lastAt = 0 }
-
-local function tickBountyProtect(S)
-	if not S.CrimBountyProtect then return end
-	local now = tick()
-	if now - bountyProt.lastAt < 4 then return end
-	bountyProt.lastAt = now
-
-	-- 1) Try attribute/Value approach on PlayerbaseData2
-	pcall(function()
-		local lp = getLP()
-		if not lp then return end
-		local data = RepSt:FindFirstChild("PlayerbaseData2")
-		if data then
-			local folder = data:FindFirstChild(lp.Name)
-			if folder then
-				for _, v in ipairs(folder:GetDescendants()) do
-					local low = string.lower(v.Name)
-					if (low:find("combat") or low:find("tag") or low:find("inbattle")) then
-						if v:IsA("BoolValue") then
-							v.Value = true
-						elseif v:IsA("NumberValue") or v:IsA("IntValue") then
-							if v.Value < 8 then v.Value = 10 end
-						end
-					end
-				end
-			end
-		end
-		-- Also scan character attributes
-		local char = getChar()
-		if char then
-			local attrs = { "CombatTag", "InCombat", "Tagged", "InBattle", "CombatTagTimer" }
-			for _, k in ipairs(attrs) do
-				local val = pcall(function() return char:GetAttribute(k) end)
-				if val == true then
-					pcall(function() char:SetAttribute(k, true) end)
-				elseif type(val) == "number" then
-					pcall(function() char:SetAttribute(k, math.max(val, 10)) end)
-				end
-				local pval = pcall(function() return lp:GetAttribute(k) end)
-				if pval == true then
-					pcall(function() lp:SetAttribute(k, true) end)
-				end
-			end
-		end
-	end)
-
-	-- 2) Fallback: simulate a melee swing to trigger combat tag server-side.
-	-- Only when no weapon is equipped (unarmed punch = no meaningful damage).
-	local char = getChar()
-	local hasTool = char and char:FindFirstChildOfClass("Tool") ~= nil
-	if not hasTool and VIM then
-		task.spawn(function()
-			pcall(function()
-				VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-				task.wait(0.05)
-				VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-			end)
-		end)
-	end
-end
-
 -- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
@@ -3322,10 +3255,6 @@ local function startMaster(S)
 
 		if S.CrimFastPickup and crimFrame % 4 == 0 then
 			pcall(tickFastPickup, S)
-		end
-
-		if S.CrimBountyProtect then
-			pcall(tickBountyProtect, S)
 		end
 
 		if crimFrame % 2 == 0 then

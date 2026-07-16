@@ -400,7 +400,6 @@ local STR = {
 		crim_tab_bounty = "Bounty",
 		crim_sub_bounty = "Bounty tracker",
 		hint_crim_bounty = "Reads Criminality's own popups: \"Bounty Alert\" + Name: $amount adds, \"Bounty Claimed\" removes. Scans only when GUI changes (not full PlayerGui every frame).",
-		hint_crim_bounty_protect = "Refreshes combat tag every ~4 s so bounty stops draining out of combat. Tries to set CombatTag attribute and performs a melee swing (no weapon = punch into air).",
 		hint_crim_fastpickup = "PIC_TLO + Q — guns/melee (WeaponHandle) and helmet/vest (OriginPart). Range similar to game E.",
 		hint_vtarget = "Type username or display name — pick from suggestions. Target clears on death or leave.",
 		esp_target_ph = "Search player...",
