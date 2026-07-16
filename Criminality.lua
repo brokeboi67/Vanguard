@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.0
+-- Criminality.lua  v2.52.1
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
