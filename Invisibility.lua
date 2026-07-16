@@ -1,4 +1,4 @@
--- Invisibility.lua  v2.45.0
+-- Invisibility.lua  v2.49.0
 -- R6 animation desync (EQR/kogo style) + "You are visible" when airborne.
 
 local Invisibility = {}
@@ -18,6 +18,8 @@ function Invisibility.Init(S, ParentGUI)
 	local track = nil
 	local lastToggle = 0
 	local char, hum, hrp = nil, nil, nil
+	-- original Transparency values we overwrote (so keybind-off restores correctly)
+	local savedTrans = {}
 
 	local Animation = Instance.new("Animation")
 	Animation.AnimationId = ANIM_ID
@@ -85,22 +87,36 @@ function Invisibility.Init(S, ParentGUI)
 	end
 
 	local function resetTransparency()
-		if not char then
-			return
+		for part, t in pairs(savedTrans) do
+			if part and part.Parent then
+				pcall(function()
+					part.Transparency = t
+				end)
+			end
+			savedTrans[part] = nil
 		end
-		for _, v in ipairs(char:GetDescendants()) do
-			if v:IsA("BasePart") and v.Transparency == 0.5 then
-				v.Transparency = 0
+		table.clear(savedTrans)
+		-- safety: clear leftover ghost if we lost the map (respawn mid-invis)
+		if char then
+			for _, v in ipairs(char:GetDescendants()) do
+				if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+					if v.Transparency == 0.5 then
+						v.Transparency = 0
+					end
+				end
 			end
 		end
 	end
 
 	local function applyLocalGhost()
-		if not char then
+		if not char or not active then
 			return
 		end
 		for _, v in ipairs(char:GetDescendants()) do
-			if v:IsA("BasePart") and v.Transparency ~= 1 then
+			if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency ~= 1 then
+				if savedTrans[v] == nil then
+					savedTrans[v] = v.Transparency
+				end
 				v.Transparency = 0.5
 			end
 		end
@@ -130,10 +146,6 @@ function Invisibility.Init(S, ParentGUI)
 	end
 
 	local function disable()
-		if not active then
-			WarnLabel.Visible = false
-			return
-		end
 		active = false
 		S.Invisibility = false
 		stopTrack()
@@ -168,6 +180,7 @@ function Invisibility.Init(S, ParentGUI)
 		if on then
 			if not enable() then
 				S.Invisibility = false
+				resetTransparency()
 			end
 		else
 			disable()
@@ -196,6 +209,7 @@ function Invisibility.Init(S, ParentGUI)
 	LP.CharacterAdded:Connect(function()
 		stopTrack()
 		track = nil
+		table.clear(savedTrans)
 		task.wait()
 		refreshRefs()
 		if not hum then
@@ -218,12 +232,15 @@ function Invisibility.Init(S, ParentGUI)
 		usable = true
 		if S.Invisibility then
 			enable()
+		else
+			resetTransparency()
 		end
 	end)
 
 	LP.CharacterRemoving:Connect(function()
 		stopTrack()
 		track = nil
+		resetTransparency()
 		WarnLabel.Visible = false
 	end)
 
@@ -250,6 +267,9 @@ function Invisibility.Init(S, ParentGUI)
 				end
 			elseif active then
 				disable()
+			else
+				-- config says off and we are off — still wipe leftover ghost
+				resetTransparency()
 			end
 		end)
 	end
@@ -270,6 +290,7 @@ function Invisibility.Init(S, ParentGUI)
 		if S.Invisibility and not active then
 			if not enable() then
 				S.Invisibility = false
+				resetTransparency()
 				return
 			end
 		elseif not S.Invisibility and active then
@@ -321,6 +342,19 @@ function Invisibility.Init(S, ParentGUI)
 
 		RS.RenderStepped:Wait()
 
+		-- Keybind may have disabled mid-wait — NEVER re-apply ghost after that
+		if not active or not S.Invisibility then
+			if hum and hum:IsDescendantOf(workspace) then
+				hum.CameraOffset = oldCamOff
+			end
+			if hrp and hrp:IsDescendantOf(workspace) then
+				hrp.CFrame = oldCF
+			end
+			stopTrack()
+			resetTransparency()
+			return
+		end
+
 		if hum and hum:IsDescendantOf(workspace) then
 			hum.CameraOffset = oldCamOff
 		end
@@ -339,7 +373,9 @@ function Invisibility.Init(S, ParentGUI)
 			end
 		end
 
-		applyLocalGhost()
+		if active and S.Invisibility then
+			applyLocalGhost()
+		end
 	end))
 
 	S.SetInvisibility = setEnabled

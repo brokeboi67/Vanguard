@@ -1410,6 +1410,118 @@ local function tickCratePickup(S)
 	end
 end
 
+-- ── CRATE BRING (spoof near crate → PIC_PU → return) ─────────────────────────
+-- Looks like "teleport crate to you": server distance-checks pickup, so we blink
+-- HRP next to the crate for 1 frame (same pattern as Remote Elevator spoof).
+local bringBusy = false
+local lastBringAt = 0
+
+local function shouldBringCrate(S, model)
+	if not S.CrimCrateBring then
+		return false
+	end
+	if not isCrateModel(model) then
+		return false
+	end
+	local rare = isRareCrate(model)
+	if rare then
+		return S.CrimCratePickupRare ~= false
+	end
+	return S.CrimCratePickupBasic ~= false
+end
+
+local function getBringDist(S)
+	return math.clamp(tonumber(S.CrimCrateBringDist) or 80, 10, 250)
+end
+
+local function tryBringCrate(S, model)
+	if bringBusy or not model or not alive(model) then
+		return false
+	end
+	local id = getCrateId(model)
+	local part = getCratePart(model)
+	local root = getHRP()
+	local remote = getPicPuRemote()
+	if not id or not part or not root or not remote then
+		return false
+	end
+	local now = tick()
+	if pickupCooldownIds[id] and now - pickupCooldownIds[id] < 2.5 then
+		return false
+	end
+
+	bringBusy = true
+	lastBringAt = now
+	task.spawn(function()
+		local hrp = getHRP()
+		if not hrp or not alive(part) then
+			bringBusy = false
+			return
+		end
+		local saved = hrp.CFrame
+		local near = part.CFrame * CFrame.new(0, 2.2, -2.5)
+		pcall(function()
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+			hrp.CFrame = near
+		end)
+		RS.Heartbeat:Wait()
+		local ok = pcall(function()
+			remote:FireServer(id)
+		end)
+		pcall(function()
+			local r2 = getHRP()
+			if r2 then
+				r2.CFrame = saved
+				r2.AssemblyLinearVelocity = Vector3.zero
+			end
+		end)
+		if ok then
+			pickupCooldownIds[id] = tick()
+			if S.CrimCratePickupFx ~= false then
+				startPickupFx(model, isRareCrate(model))
+			end
+		end
+		bringBusy = false
+	end)
+	return true
+end
+
+local function tickCrateBring(S)
+	if not S.CrimCrateBring or bringBusy then
+		return
+	end
+	local now = tick()
+	local delay = math.max(0.15, (tonumber(S.CrimCrateBringDelay) or 350) / 1000)
+	if now - lastBringAt < delay then
+		return
+	end
+	local piles = getSpawnedPiles()
+	if not piles then
+		return
+	end
+	local fireDist = getBringDist(S)
+	-- leave close crates to normal Auto Pickup (no spoof needed)
+	local minDist = S.CrimCratePickup and (getCrateFireDist(S) + 0.5) or 3
+	local best, bestScore = nil, math.huge
+	for _, model in ipairs(piles:GetChildren()) do
+		if alive(model) and shouldBringCrate(S, model) then
+			local dist = getCrateDist(model)
+			if dist <= fireDist and dist > minDist then
+				local rare = isRareCrate(model)
+				local score = dist + (rare and 0 or 1000)
+				if score < bestScore then
+					bestScore = score
+					best = model
+				end
+			end
+		end
+	end
+	if best then
+		tryBringCrate(S, best)
+	end
+end
+
 -- ── AUTO PICKUP MONEY (SpawnedBread + CZDPZUS) ───────────────────────────────
 
 local moneyRemote = nil
@@ -2896,6 +3008,9 @@ local function startMaster(S)
 
 		if S.CrimCratePickup and crimFrame % 3 == 0 then
 			pcall(tickCratePickup, S)
+		end
+		if S.CrimCrateBring and crimFrame % 4 == 0 then
+			pcall(tickCrateBring, S)
 		end
 
 		if S.CrimMoneyPickup and crimFrame % 3 == 0 then

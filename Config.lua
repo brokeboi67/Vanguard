@@ -548,6 +548,15 @@ function Config.EnforceRules(S)
 	if S.CrimCratePickupFx == nil then
 		S.CrimCratePickupFx = true
 	end
+	if S.CrimCrateBring == nil then
+		S.CrimCrateBring = false
+	end
+	if S.CrimCrateBringDist == nil then
+		S.CrimCrateBringDist = 80
+	end
+	if S.CrimCrateBringDelay == nil then
+		S.CrimCrateBringDelay = 350
+	end
 	if S.CrimMoneyPickup == nil then
 		S.CrimMoneyPickup = false
 	end
