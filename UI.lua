@@ -2710,6 +2710,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSection(CBounty, L("crim_sub_bounty"), 1)
 		MakeTog(CBounty, "Bounty Tracker", "CrimBountyTracker", 2, { flat = true })
 		MakeHint(CBounty, "hint_crim_bounty", 3)
+		MakeTog(CBounty, "Bounty Protect", "CrimBountyProtect", 4, { flat = true })
+		MakeHint(CBounty, "hint_crim_bounty_protect", 5)
 
 		local BountyHeader = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 20),
@@ -2719,7 +2721,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextSize = 11,
 			TextColor3 = Color3.fromRGB(140, 140, 150),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = 4,
+			LayoutOrder = 6,
 			ZIndex = 5,
 			Parent = CBounty,
 		})

@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.3
+-- Criminality.lua  v2.52.5
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2954,12 +2954,11 @@ local function syncRemoteElevator(S)
 end
 
 -- ── INFINITE STAMINA (Criminality) ───────────────────────────────────────────
-local crimStaminaHooked = false
-local crimStaminaActive = false
-local crimOldStaminaFn  = nil
+-- Packed into one table to stay under Luau's 200-local limit.
+local crimStamina = { hooked=false, active=false, oldFn=nil }
 
 local function setupCrimStaminaHook()
-	if crimStaminaHooked or typeof(hookfunction) ~= "function" or typeof(getupvalue) ~= "function" then
+	if crimStamina.hooked or typeof(hookfunction) ~= "function" or typeof(getupvalue) ~= "function" then
 		return
 	end
 	pcall(function()
@@ -2977,13 +2976,13 @@ local function setupCrimStaminaHook()
 		local okUp, targetFn = pcall(getupvalue, env._G.S_Take, 2)
 		if not okUp or type(targetFn) ~= "function" then return end
 
-		crimOldStaminaFn = hookfunction(targetFn, function(v1, ...)
-			if crimStaminaActive and crimOldStaminaFn then
-				return crimOldStaminaFn(0, ...)
+		crimStamina.oldFn = hookfunction(targetFn, function(v1, ...)
+			if crimStamina.active and crimStamina.oldFn then
+				return crimStamina.oldFn(0, ...)
 			end
-			return crimOldStaminaFn(v1, ...)
+			return crimStamina.oldFn(v1, ...)
 		end)
-		if crimOldStaminaFn then crimStaminaHooked = true end
+		if crimStamina.oldFn then crimStamina.hooked = true end
 	end)
 end
 
@@ -3010,24 +3009,26 @@ local function refillCrimStamina()
 end
 
 -- ── FULLBRIGHT (Criminality) ─────────────────────────────────────────────────
-local fbConn = nil
-local fbSaved = nil
-
-local FB_TARGET = {
-	Brightness = 5,
-	ClockTime = 14,
-	Ambient = Color3.new(1, 1, 1),
-	OutdoorAmbient = Color3.new(1, 1, 1),
-	ColorShift_Top = Color3.new(0, 0, 0),
-	FogStart = 100000,
-	FogEnd = 100000,
+-- Packed into one table to stay under Luau's 200-local limit.
+local fb = {
+	conn  = nil,
+	saved = nil,
+	target = {
+		Brightness = 5,
+		ClockTime = 14,
+		Ambient = Color3.new(1, 1, 1),
+		OutdoorAmbient = Color3.new(1, 1, 1),
+		ColorShift_Top = Color3.new(0, 0, 0),
+		FogStart = 100000,
+		FogEnd = 100000,
+	},
 }
 
 local function captureFbLighting()
-	if fbSaved then
+	if fb.saved then
 		return
 	end
-	fbSaved = {
+	fb.saved = {
 		Brightness = Lighting.Brightness,
 		ClockTime = Lighting.ClockTime,
 		Ambient = Lighting.Ambient,
@@ -3040,23 +3041,23 @@ local function captureFbLighting()
 end
 
 local function applyFbTarget()
-	for k, v in pairs(FB_TARGET) do
+	for k, v in pairs(fb.target) do
 		Lighting[k] = v
 	end
 	Lighting.GlobalShadows = false
 end
 
 local function startFullBright()
-	if fbConn then
+	if fb.conn then
 		return
 	end
 	captureFbLighting()
 	applyFbTarget()
-	fbConn = RS.RenderStepped:Connect(function()
+	fb.conn = RS.RenderStepped:Connect(function()
 		if not _G.__VG_S or not _G.__VG_S.CrimFullBright then
 			return
 		end
-		for k, v in pairs(FB_TARGET) do
+		for k, v in pairs(fb.target) do
 			if Lighting[k] ~= v then
 				Lighting[k] = v
 			end
@@ -3068,19 +3069,86 @@ local function startFullBright()
 end
 
 local function stopFullBright()
-	if fbConn then
-		fbConn:Disconnect()
-		fbConn = nil
+	if fb.conn then
+		fb.conn:Disconnect()
+		fb.conn = nil
 	end
-	if fbSaved then
-		Lighting.Brightness = fbSaved.Brightness
-		Lighting.ClockTime = fbSaved.ClockTime
-		Lighting.Ambient = fbSaved.Ambient
-		Lighting.OutdoorAmbient = fbSaved.OutdoorAmbient
-		Lighting.ColorShift_Top = fbSaved.ColorShift_Top
-		Lighting.FogStart = fbSaved.FogStart
-		Lighting.FogEnd = fbSaved.FogEnd
-		Lighting.GlobalShadows = fbSaved.GlobalShadows
+	if fb.saved then
+		Lighting.Brightness = fb.saved.Brightness
+		Lighting.ClockTime = fb.saved.ClockTime
+		Lighting.Ambient = fb.saved.Ambient
+		Lighting.OutdoorAmbient = fb.saved.OutdoorAmbient
+		Lighting.ColorShift_Top = fb.saved.ColorShift_Top
+		Lighting.FogStart = fb.saved.FogStart
+		Lighting.FogEnd = fb.saved.FogEnd
+		Lighting.GlobalShadows = fb.saved.GlobalShadows
+	end
+end
+
+-- ── BOUNTY PROTECT (keep combat tag alive, preventing bounty drain) ──────────
+-- Wiki: bounty drains $3/s once combat tag expires.
+-- Approach: every ~4 s simulate a melee input — keeps the combat tag refreshed
+-- server-side without needing to know the exact RemoteEvent name.
+-- Also attempts to directly set known combat-tag attributes/values if present.
+local bountyProt = { lastAt = 0 }
+
+local function tickBountyProtect(S)
+	if not S.CrimBountyProtect then return end
+	local now = tick()
+	if now - bountyProt.lastAt < 4 then return end
+	bountyProt.lastAt = now
+
+	-- 1) Try attribute/Value approach on PlayerbaseData2
+	pcall(function()
+		local lp = getLP()
+		if not lp then return end
+		local data = RepSt:FindFirstChild("PlayerbaseData2")
+		if data then
+			local folder = data:FindFirstChild(lp.Name)
+			if folder then
+				for _, v in ipairs(folder:GetDescendants()) do
+					local low = string.lower(v.Name)
+					if (low:find("combat") or low:find("tag") or low:find("inbattle")) then
+						if v:IsA("BoolValue") then
+							v.Value = true
+						elseif v:IsA("NumberValue") or v:IsA("IntValue") then
+							if v.Value < 8 then v.Value = 10 end
+						end
+					end
+				end
+			end
+		end
+		-- Also scan character attributes
+		local char = getChar()
+		if char then
+			local attrs = { "CombatTag", "InCombat", "Tagged", "InBattle", "CombatTagTimer" }
+			for _, k in ipairs(attrs) do
+				local val = pcall(function() return char:GetAttribute(k) end)
+				if val == true then
+					pcall(function() char:SetAttribute(k, true) end)
+				elseif type(val) == "number" then
+					pcall(function() char:SetAttribute(k, math.max(val, 10)) end)
+				end
+				local pval = pcall(function() return lp:GetAttribute(k) end)
+				if pval == true then
+					pcall(function() lp:SetAttribute(k, true) end)
+				end
+			end
+		end
+	end)
+
+	-- 2) Fallback: simulate a melee swing to trigger combat tag server-side.
+	-- Only when no weapon is equipped (unarmed punch = no meaningful damage).
+	local char = getChar()
+	local hasTool = char and char:FindFirstChildOfClass("Tool") ~= nil
+	if not hasTool and VIM then
+		task.spawn(function()
+			pcall(function()
+				VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+				task.wait(0.05)
+				VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+			end)
+		end)
 	end
 end
 
@@ -3112,7 +3180,7 @@ local function syncFromConfig(S)
 		return
 	end
 	setupCrimStaminaHook()
-	crimStaminaActive = crimFlag(S.CrimInfStamina)
+	crimStamina.active = crimFlag(S.CrimInfStamina)
 	syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 	syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 	syncGunMods(S)
@@ -3163,11 +3231,11 @@ local function startMaster(S)
 			pcall(syncRemoteElevator, S)
 		end
 
-		if crimFlag(S.CrimInfStamina) and not crimStaminaHooked then
+		if crimFlag(S.CrimInfStamina) and not crimStamina.hooked then
 			setupCrimStaminaHook()
 		end
-		crimStaminaActive = crimFlag(S.CrimInfStamina)
-		if crimStaminaActive and crimFrame % 8 == 0 then
+		crimStamina.active = crimFlag(S.CrimInfStamina)
+		if crimStamina.active and crimFrame % 8 == 0 then
 			refillCrimStamina()
 		end
 
@@ -3254,6 +3322,10 @@ local function startMaster(S)
 
 		if S.CrimFastPickup and crimFrame % 4 == 0 then
 			pcall(tickFastPickup, S)
+		end
+
+		if S.CrimBountyProtect then
+			pcall(tickBountyProtect, S)
 		end
 
 		if crimFrame % 2 == 0 then
