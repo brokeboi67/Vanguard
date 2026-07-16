@@ -1,4 +1,4 @@
--- Invisibility.lua  v2.49.0
+-- Invisibility.lua  v2.52.4
 -- R6 animation desync (EQR/kogo style) + "You are visible" when airborne.
 
 local Invisibility = {}
@@ -108,18 +108,30 @@ function Invisibility.Init(S, ParentGUI)
 		end
 	end
 
+	local ghostApplied = false  -- true once all current parts are 0.5
+
 	local function applyLocalGhost()
 		if not char or not active then
 			return
 		end
+		-- Fast path: if ghost already applied and no new parts appeared, skip the scan.
+		if ghostApplied then
+			return
+		end
+		local allSet = true
 		for _, v in ipairs(char:GetDescendants()) do
 			if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency ~= 1 then
 				if savedTrans[v] == nil then
 					savedTrans[v] = v.Transparency
+					allSet = false
 				end
-				v.Transparency = 0.5
+				if v.Transparency ~= 0.5 then
+					v.Transparency = 0.5
+					allSet = false
+				end
 			end
 		end
+		ghostApplied = allSet
 	end
 
 	local function stopTrack()
@@ -147,6 +159,7 @@ function Invisibility.Init(S, ParentGUI)
 
 	local function disable()
 		active = false
+		ghostApplied = false
 		S.Invisibility = false
 		stopTrack()
 		if hum then
@@ -209,6 +222,7 @@ function Invisibility.Init(S, ParentGUI)
 	LP.CharacterAdded:Connect(function()
 		stopTrack()
 		track = nil
+		ghostApplied = false
 		table.clear(savedTrans)
 		task.wait()
 		refreshRefs()
@@ -240,9 +254,26 @@ function Invisibility.Init(S, ParentGUI)
 	LP.CharacterRemoving:Connect(function()
 		stopTrack()
 		track = nil
+		ghostApplied = false
 		resetTransparency()
 		WarnLabel.Visible = false
 	end)
+
+	-- When a new child is added to character (e.g. equipped tool), force ghost re-apply on next frame.
+	LP.CharacterAdded:Connect(function(newChar)
+		newChar.ChildAdded:Connect(function()
+			if active then
+				ghostApplied = false
+			end
+		end)
+	end)
+	if LP.Character then
+		LP.Character.ChildAdded:Connect(function()
+			if active then
+				ghostApplied = false
+			end
+		end)
+	end
 
 	UIS.InputBegan:Connect(function(input, processed)
 		if processed or S.MenuOpen or S.Unloaded then

@@ -674,6 +674,11 @@ function ESP.Init(S, ParentGUI, TF, Util)
 	local DETAIL_SLOTS    = 2   -- full detail every 2 frames (~33ms lag) — was 4 (67ms lag)
 	local MAX_ESP_TARGETS = 28
 	local espTargets      = {}
+	-- Throttle expensive per-frame work.
+	local rebuildFrame    = -1  -- frame when espTargets was last rebuilt
+	local REBUILD_EVERY   = 3  -- rebuild player list every N render frames
+	local cleanupFrame    = -1
+	local CLEANUP_EVERY   = 4
 
 	local function rebuildPlayerTargets()
 		table.clear(espTargets)
@@ -977,8 +982,13 @@ function ESP.Init(S, ParentGUI, TF, Util)
 		espTick = espTick + 1
 		local detailSlot = espTick % DETAIL_SLOTS
 
+		-- Rebuild player target list every REBUILD_EVERY frames instead of every frame.
+		if espTick - rebuildFrame >= REBUILD_EVERY then
+			rebuildFrame = espTick
+			rebuildPlayerTargets()
+		end
+
 		local active = {}
-		rebuildPlayerTargets()
 
 		for _, t in ipairs(espTargets) do
 			active[t.key] = true
@@ -1008,12 +1018,16 @@ function ESP.Init(S, ParentGUI, TF, Util)
 			purgeBotCaches()
 		end
 
-		for key, ch in pairs(Cache) do
-			if not active[key] then
-				if typeof(key) == "Instance" and (key:IsA("Player") or isBotKey(key)) then
-					destroyCache(key)
-				else
-					hideAll(ch)
+		-- Cache cleanup: only run every CLEANUP_EVERY frames.
+		if espTick - cleanupFrame >= CLEANUP_EVERY then
+			cleanupFrame = espTick
+			for key, ch in pairs(Cache) do
+				if not active[key] then
+					if typeof(key) == "Instance" and (key:IsA("Player") or isBotKey(key)) then
+						destroyCache(key)
+					else
+						hideAll(ch)
+					end
 				end
 			end
 		end
@@ -1071,10 +1085,9 @@ function ESP.Init(S, ParentGUI, TF, Util)
 				end
 			end
 
-			for _, plr in pairs(P:GetPlayers()) do
-				if plr ~= LP then
-					trackOffscreen(plr, plr.Character, plr, false)
-				end
+			-- Reuse already-built espTargets instead of calling P:GetPlayers() again.
+			for _, t in ipairs(espTargets) do
+				trackOffscreen(t.plr, t.char, t.plr, false)
 			end
 			if S.RenderBots then
 				for _, model in ipairs(botList) do
