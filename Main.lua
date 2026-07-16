@@ -819,6 +819,12 @@ if isCriminality and Criminality then
 			mod.Init(S)
 		end
 	end, Settings)
+	phase("BountyTracker.Init", function(S)
+		local mod = Get("BountyTracker.lua")
+		if mod and mod.Init then
+			mod.Init(S)
+		end
+	end, Settings)
 end
 phase("Misc.Init",       Misc.Init,       Settings, TeamFriends, Util)
 phase("Features.Init",   Features.Init,   Settings, GUI, AntiBypass)

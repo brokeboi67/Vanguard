@@ -1,4 +1,4 @@
--- Criminality.lua  v2.50.2
+-- Criminality.lua  v2.51.0
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1493,13 +1493,17 @@ function bring.teleport(model, hrp)
 	if not primary then
 		return false
 	end
+	-- Pin every part in place (Anchored = true) instead of unanchoring it.
+	-- Unanchored + CanCollide=false made crates free-fall through the map before
+	-- the server processed the pickup. Anchored parts stay exactly where we place
+	-- them, so they hover at the player until PIC_PU claims them by Id.
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("BasePart") then
 			pcall(function()
-				d.Anchored = false
-				d.CanCollide = false
 				d.AssemblyLinearVelocity = Vector3.zero
 				d.AssemblyAngularVelocity = Vector3.zero
+				d.CanCollide = false
+				d.Anchored = true
 			end)
 		end
 	end
@@ -1518,7 +1522,6 @@ function bring.teleport(model, hrp)
 	end
 	pcall(function()
 		primary.CFrame = dest
-		primary.AssemblyLinearVelocity = Vector3.zero
 	end)
 	pcall(function()
 		if typeof(firetouchinterest) == "function" then
@@ -3014,13 +3017,17 @@ local function startMaster(S)
 	masterConn = RS.Heartbeat:Connect(perfWrap("Criminality.Main", function()
 		crimFrame = crimFrame + 1
 
-		syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
-		syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
-		syncGunMods(S)
-		syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
-		syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
-		syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
-		pcall(syncRemoteElevator, S)
+		-- Toggle-sync is cheap but not latency-sensitive: run every 6 frames (~0.1s)
+		-- to cut per-frame function-call overhead and reduce Criminality tab CPU cost.
+		if crimFrame % 6 == 0 then
+			syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
+			syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
+			syncGunMods(S)
+			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
+			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
+			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+			pcall(syncRemoteElevator, S)
+		end
 
 		if crimFlag(S.CrimInfStamina) and not crimStaminaHooked then
 			setupCrimStaminaHook()
@@ -3101,7 +3108,7 @@ local function startMaster(S)
 			pcall(tickMoneyPickup, S)
 		end
 
-		if crimFrame % 3 == 0 then
+		if S.CrimAllowanceClaim and crimFrame % 3 == 0 then
 			pcall(syncAllowanceAtmESP, S)
 		end
 

@@ -263,6 +263,9 @@ function Config.EnforceRules(S)
 	if S.InvisKey == nil then
 		S.InvisKey = "X"
 	end
+	if S.InvisKeybindEnabled == nil then
+		S.InvisKeybindEnabled = false
+	end
 	if S.NoFog == nil then
 		S.NoFog = false
 	end
@@ -559,6 +562,12 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimCrateBringDelay == nil then
 		S.CrimCrateBringDelay = 350
+	end
+	if S.CrimBountyTracker == nil then
+		S.CrimBountyTracker = false
+	end
+	if S.CrimBountyShowZero == nil then
+		S.CrimBountyShowZero = false
 	end
 	if S.CrimMoneyPickup == nil then
 		S.CrimMoneyPickup = false

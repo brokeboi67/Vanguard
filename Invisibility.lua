@@ -248,6 +248,12 @@ function Invisibility.Init(S, ParentGUI)
 		if processed or S.MenuOpen or S.Unloaded then
 			return
 		end
+		-- Keybind is opt-in: the hotkey does nothing unless the user explicitly
+		-- enables it. Prevents X (or any bound key) from toggling invisibility
+		-- when the feature isn't being used.
+		if not S.InvisKeybindEnabled then
+			return
+		end
 		local key = getInvisKey()
 		if not key or input.KeyCode ~= key then
 			return

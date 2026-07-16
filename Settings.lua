@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.50.2",
+	Version = "2.51.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -154,6 +154,7 @@ local Settings = {
 	InvisShowWarning = true,
 	InvisWalkSpeed = 12,
 	InvisKey = "X",
+	InvisKeybindEnabled = false,
 
 	-- ANIMATIONS
 	AnimSpeed = 1,
@@ -235,6 +236,8 @@ local Settings = {
 	CrimCrateBring = false,
 	CrimCrateBringDist = 80,
 	CrimCrateBringDelay = 350,
+	CrimBountyTracker = false,
+	CrimBountyShowZero = false,
 	CrimESPMaxDist = 300,
 	CrimAimPrediction = false,
 	CrimAimPredictionLead = 12,

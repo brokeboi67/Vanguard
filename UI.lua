@@ -2257,7 +2257,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = TabBar,
 		})
 
-		local tabCount = 7
+		local tabCount = 8
 		local tabGap = 4
 
 		local TabRow = C("Frame", {
@@ -2302,6 +2302,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			{ key = "pickup", labelKey = "crim_tab_pickup" },
 			{ key = "esp", labelKey = "crim_tab_esp" },
 			{ key = "path", labelKey = "crim_tab_path" },
+			{ key = "bounty", labelKey = "crim_tab_bounty" },
 			{ key = "visual", labelKey = "crim_tab_visual" },
 			{ key = "utility", labelKey = "crim_tab_utility" },
 		}
@@ -2399,6 +2400,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CCrate = CP.pickup
 		local CESP = CP.esp
 		local CPath = CP.path
+		local CBounty = CP.bounty
 		local CVIS = CP.visual
 		local CUtil = CP.utility
 
@@ -2707,6 +2709,58 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeColorPicker(CPath, "End Color", "CrimPathEndColor", 11)
 		MakeHint(CPath, "hint_crim_path", 12)
 
+		MakeSection(CBounty, L("crim_sub_bounty"), 1)
+		MakeTog(CBounty, "Bounty Tracker", "CrimBountyTracker", 2, { flat = true })
+		MakeTog(CBounty, "Show Zero Bounty", "CrimBountyShowZero", 3, {
+			flat = true,
+			requires = "CrimBountyTracker",
+		})
+		MakeHint(CBounty, "hint_crim_bounty", 4)
+
+		local BountyHeader = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 20),
+			BackgroundTransparency = 1,
+			Text = "—",
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(140, 140, 150),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 5,
+			ZIndex = 5,
+			Parent = CBounty,
+		})
+
+		local BountyBox = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 300),
+			BackgroundColor3 = Color3.fromRGB(15, 15, 19),
+			BorderSizePixel = 0,
+			LayoutOrder = 6,
+			ZIndex = 5,
+			Parent = CBounty,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = BountyBox })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = BountyBox })
+
+		local BountyList = C("ScrollingFrame", {
+			Size = UDim2.new(1, -8, 1, -8),
+			Position = UDim2.new(0, 4, 0, 4),
+			BackgroundTransparency = 1,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = BountyBox,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 4),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = BountyList,
+		})
+		_G.__VG_BountyList = BountyList
+		_G.__VG_BountyHeader = BountyHeader
+
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
 
@@ -2725,7 +2779,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			step = 1,
 			fmt = function(v) return string.format("%d", v) end,
 		})
-		MakeBind(CUtil, "Invis Key", "InvisKey", 9)
+		MakeTog(CUtil, "Enable Invis Keybind", "InvisKeybindEnabled", 8, { flat = true })
+		MakeBind(CUtil, "Invis Key", "InvisKey", 9, { requires = "InvisKeybindEnabled" })
 		MakeHint(CUtil, "hint_invis", 10)
 		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 11, { flat = true })
 		MakeTog(CUtil, "Elevator Pos Spoof", "CrimRemoteElevatorSpoof", 12, {
