@@ -1,4 +1,4 @@
--- Criminality.lua  v2.49.1
+-- Criminality.lua  v2.50.2
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -243,6 +243,18 @@ local function getCrateVisualPart(model)
 				if vol < bestVol then
 					bestVol = vol
 					best = ch
+				end
+			end
+		end
+	end
+	-- deep fallback — crates often stream nested MeshParts a frame late
+	if not best then
+		for _, d in ipairs(model:GetDescendants()) do
+			if d:IsA("BasePart") and isReasonableCratePart(d) then
+				local vol = d.Size.X * d.Size.Y * d.Size.Z
+				if vol < bestVol then
+					bestVol = vol
+					best = d
 				end
 			end
 		end
@@ -625,6 +637,13 @@ local function syncCrateESP(S)
 					e.lbl.Text = label
 				end
 			end
+			-- Rebind visual part if it streamed in late / got replaced
+			if not alive(e.part) or not isReasonableCratePart(e.part) then
+				e.part = getCrateVisualPart(model)
+				if alive(e.part) and alive(e.bg) then
+					e.bg.Adornee = e.part
+				end
+			end
 		end
 	end
 
@@ -642,16 +661,26 @@ local function ensureCrateWatch(S)
 		end
 		if not crateFolderConn then
 			crateFolderConn = piles.ChildAdded:Connect(function(ch)
-				task.defer(function()
+				-- Crates often spawn empty; retry until visual part exists (~1s)
+				task.spawn(function()
 					local curS = _G.__VG_S
 					if not curS or not curS.CrimCrateESP then
 						return
 					end
-					RS.Heartbeat:Wait()
-					local added = addCrateESP(ch, curS, true)
-					if added then
-						pcall(tickESP, curS)
+					for attempt = 1, 15 do
+						if not alive(ch) then
+							return
+						end
+						local withFx = (attempt == 1)
+						if addCrateESP(ch, curS, withFx) then
+							pcall(tickESP, curS)
+							return
+						end
+						task.wait(0.07)
 					end
+					-- last-chance full sync
+					pcall(syncCrateESP, curS)
+					pcall(tickESP, curS)
 				end)
 			end)
 			crateRemoveConn = piles.ChildRemoved:Connect(function(ch)
@@ -3026,7 +3055,7 @@ local function startMaster(S)
 
 		if S.CrimCrateESP then
 			pcall(ensureCrateWatch, S)
-			if crimFrame % 30 == 0 or tick() - ESP.crateScanAt > 1.2 then
+			if crimFrame % 8 == 0 or tick() - ESP.crateScanAt > 0.35 then
 				ESP.crateScanAt = tick()
 				pcall(syncCrateESP, S)
 			end
@@ -3084,7 +3113,7 @@ local function startMaster(S)
 			pcall(tickFastPickup, S)
 		end
 
-		if crimFrame % 3 == 0 then
+		if crimFrame % 2 == 0 then
 			local anyOn = S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
 			local hasCached = #ESP.safes > 0 or #ESP.dealers > 0 or #ESP.crates > 0 or #ESP.guns > 0
 			if anyOn or hasCached then
