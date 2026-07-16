@@ -1334,6 +1334,10 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			addKeyRow("Silent", bind, order)
 			order += 1
 		end
+		if S.Invisibility then
+			addKeyRow("Invis", (S.InvisKey or "X") .. " · Toggle", order)
+			order += 1
+		end
 		if S.FriendClick then
 			addKeyRow("Friend", "Ctrl+Click", order)
 		end

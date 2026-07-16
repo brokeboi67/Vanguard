@@ -565,7 +565,7 @@ function Rage.Init(S, ParentGUI, TF, Util)
 	end
 
 	local function applyAntiAim()
-		if not S.MasterRage or not S.AntiAim then
+		if not S.MasterRage or not S.AntiAim or S.Invisibility then
 			restoreAntiAim()
 			return
 		end

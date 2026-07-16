@@ -3760,6 +3760,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(MMove, "hint_spider", 15)
 	MakeTog(MMove, "Infinite Stamina", "InfStamina", 16, { flat = true })
 	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 17, { flat = true })
+	MakeTog(MMove, "Invisibility", "Invisibility", 18, { flat = true })
+	MakeTog(MMove, "Visible Warning", "InvisShowWarning", 19, {
+		flat = true,
+		requires = "Invisibility",
+	})
+	MakeSlider(MMove, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 20, {
+		suffix = "",
+		step = 1,
+		fmt = function(v) return string.format("%d", v) end,
+	})
+	MakeBind(MMove, "Invis Key", "InvisKey", 21)
+	MakeHint(MMove, "hint_invis", 22)
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })

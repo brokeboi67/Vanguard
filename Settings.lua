@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.44.8",
+	Version = "2.45.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -149,6 +149,11 @@ local Settings = {
 	Noclip = false,
 	InfStamina = false,
 	NoFallDmg = false,
+	-- R6 anim-desync invis (local ghost + "YOU ARE VISIBLE" when airborne)
+	Invisibility = false,
+	InvisShowWarning = true,
+	InvisWalkSpeed = 12,
+	InvisKey = "X",
 
 	-- ANIMATIONS
 	AnimSpeed = 1,

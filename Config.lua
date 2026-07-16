@@ -250,6 +250,18 @@ function Config.EnforceRules(S)
 	if S.SpiderCooldown == nil then
 		S.SpiderCooldown = 1.4
 	end
+	if S.Invisibility == nil then
+		S.Invisibility = false
+	end
+	if S.InvisShowWarning == nil then
+		S.InvisShowWarning = true
+	end
+	if S.InvisWalkSpeed == nil then
+		S.InvisWalkSpeed = 12
+	end
+	if S.InvisKey == nil then
+		S.InvisKey = "X"
+	end
 	if S.NoFog == nil then
 		S.NoFog = false
 	end

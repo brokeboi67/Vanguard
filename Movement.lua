@@ -434,14 +434,23 @@ function Movement.Init(S)
 	local perfWrap2 = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
 	RS.RenderStepped:Connect(perfWrap2("Movement.Main", function()
-		local needBHop    = S.BHop
-		local needStrafe  = S.AutoStrafe
-		local needFly     = S.Fly
-		local needNoclip  = S.Noclip
+		-- Invis anim-desync owns HRP/camera — don't fight it with fly/spider/noclip
+		local invisOn = S.Invisibility == true
+		local needBHop    = S.BHop and not invisOn
+		local needStrafe  = S.AutoStrafe and not invisOn
+		local needFly     = S.Fly and not invisOn
+		local needNoclip  = S.Noclip and not invisOn
 		local needStamina = S.InfStamina
 		local needFallDmg = S.NoFallDmg
-		local needSpeed   = S.Speed or S.JumpPower
-		local needSpider  = S.Spider
+		local needSpeed   = (S.Speed or S.JumpPower) and not invisOn
+		local needSpider  = S.Spider and not invisOn
+
+		if invisOn and flyActive then
+			stopFly()
+		end
+		if invisOn and noclipConn then
+			stopNoclip()
+		end
 
 		if not (needBHop or needStrafe or needFly or needNoclip or needStamina or needFallDmg or needSpeed or needSpider) then
 			return
