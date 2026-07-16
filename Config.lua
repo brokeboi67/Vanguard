@@ -467,6 +467,12 @@ function Config.EnforceRules(S)
 	if S.CrimPathEndColor == nil then
 		S.CrimPathEndColor = Color3.fromRGB(90, 255, 140)
 	end
+	if S.CrimPathCrateBasic == nil then
+		S.CrimPathCrateBasic = true
+	end
+	if S.CrimPathCrateRare == nil then
+		S.CrimPathCrateRare = true
+	end
 	if S.CrimCrateBasic == nil then
 		S.CrimCrateBasic = true
 	end

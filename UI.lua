@@ -2257,7 +2257,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = TabBar,
 		})
 
-		local tabCount = 6
+		local tabCount = 7
 		local tabGap = 4
 
 		local TabRow = C("Frame", {
@@ -2301,6 +2301,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			{ key = "survival", labelKey = "crim_tab_survival" },
 			{ key = "pickup", labelKey = "crim_tab_pickup" },
 			{ key = "esp", labelKey = "crim_tab_esp" },
+			{ key = "path", labelKey = "crim_tab_path" },
 			{ key = "visual", labelKey = "crim_tab_visual" },
 			{ key = "utility", labelKey = "crim_tab_utility" },
 		}
@@ -2397,6 +2398,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CSurv = CP.survival
 		local CCrate = CP.pickup
 		local CESP = CP.esp
+		local CPath = CP.path
 		local CVIS = CP.visual
 		local CUtil = CP.utility
 
@@ -2594,34 +2596,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			flat = true,
 			requires = "CrimSafeESP",
 		})
-		MakeTog(CESP, "Path Display", "CrimPathDisplay", 4, { flat = true })
-		MakeChoice(CESP, "Path Target", "CrimPathTarget", {
-			{ label = "Safe", value = "Safe" },
-			{ label = "Dealer", value = "Dealer" },
-			{ label = "Crate", value = "Crate" },
-		}, 5)
-		MakeSlider(CESP, "Path Max Distance", "CrimPathMaxDist", 50, 600, 6, {
+		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 4, { flat = true })
+		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 5, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSlider(CESP, "Path Refresh", "CrimPathRefresh", 0.3, 1.5, 7, {
-			suffix = "s",
-			step = 0.05,
-			fmt = function(v) return string.format("%.2fs", v) end,
-		})
-		MakeColorPicker(CESP, "Path Color", "CrimPathColor", 8)
-		MakeColorPicker(CESP, "Jump Color", "CrimPathJumpColor", 9)
-		MakeHint(CESP, "hint_crim_path", 10)
-		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 11, { flat = true })
-		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 12, {
-			suffix = " st",
-			step = 10,
-			fmt = function(v) return string.format("%d st", v) end,
-		})
-		MakeHint(CESP, "hint_crim_safe_broken", 13)
-		MakeSection(CESP, L("crim_sub_guns"), 14)
-		MakeTog(CESP, "Gun ESP", "CrimGunESP", 15, {
+		MakeHint(CESP, "hint_crim_safe_broken", 6)
+		MakeSection(CESP, L("crim_sub_guns"), 7)
+		MakeTog(CESP, "Gun ESP", "CrimGunESP", 8, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimGunESPMaxDist
@@ -2631,28 +2614,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				refreshNestedToggles("CrimGunESP")
 			end,
 		})
-		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 16, {
+		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 9, {
 			flat = true,
 			requires = "CrimGunESP",
 			onChange = function()
 				if S._crimSyncGunESP then S._crimSyncGunESP() end
 			end,
 		})
-		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 17, {
+		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 10, {
 			flat = true,
 			requires = "CrimGunESP",
 			onChange = function()
 				if S._crimSyncGunESP then S._crimSyncGunESP() end
 			end,
 		})
-		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 18, {
+		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 11, {
 			suffix = " st",
 			step = 10,
 			requires = "CrimGunESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSection(CESP, L("crim_sub_crates"), 19)
-		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 20, {
+		MakeSection(CESP, L("crim_sub_crates"), 12)
+		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 13, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimCrateMaxDist
@@ -2661,22 +2644,46 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 21, {
+		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 14, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 22, {
+		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 15, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 23, {
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 16, {
 			suffix = " st",
 			step = 25,
 			requires = "CrimCrateESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CESP, "hint_crim_crate", 24)
-		MakeHint(CESP, "hint_crim_gun", 25)
+		MakeHint(CESP, "hint_crim_crate", 17)
+		MakeHint(CESP, "hint_crim_gun", 18)
+
+		MakeSection(CPath, L("crim_sub_path"), 1)
+		MakeTog(CPath, "Path Display", "CrimPathDisplay", 2, { flat = true })
+		MakeChoice(CPath, "Path Target", "CrimPathTarget", {
+			{ label = "Safe", value = "Safe" },
+			{ label = "Dealer", value = "Dealer" },
+			{ label = "Crate", value = "Crate" },
+		}, 3)
+		MakeTog(CPath, "Basic Crates", "CrimPathCrateBasic", 4, { flat = true })
+		MakeTog(CPath, "Rare Crates", "CrimPathCrateRare", 5, { flat = true })
+		MakeSlider(CPath, "Path Max Distance", "CrimPathMaxDist", 50, 600, 6, {
+			suffix = " st",
+			step = 10,
+			fmt = function(v) return string.format("%d st", v) end,
+		})
+		MakeSlider(CPath, "Path Refresh", "CrimPathRefresh", 0.3, 1.5, 7, {
+			suffix = "s",
+			step = 0.05,
+			fmt = function(v) return string.format("%.2fs", v) end,
+		})
+		MakeColorPicker(CPath, "Path Color", "CrimPathColor", 8)
+		MakeColorPicker(CPath, "Jump Color", "CrimPathJumpColor", 9)
+		MakeColorPicker(CPath, "End Color", "CrimPathEndColor", 10)
+		MakeHint(CPath, "hint_crim_path", 11)
 
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
