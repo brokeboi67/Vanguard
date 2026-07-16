@@ -3738,14 +3738,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	})
 	MakeTog(MMove, "Noclip", "Noclip", 9, { flat = true })
 	MakeTog(MMove, "Spider", "Spider", 10, { flat = true })
-	MakeSlider(MMove, "Spider Climb Speed", "SpiderSpeed", 8, 28, 11, {
+	MakeTog(MMove, "Spider Stealth", "SpiderStealth", 11, {
+		flat = true,
+		requires = "Spider",
+	})
+	MakeSlider(MMove, "Spider Climb Speed", "SpiderSpeed", 8, 24, 12, {
 		suffix = "",
 		step = 1,
 		fmt = function(v) return string.format("%d", v) end,
 	})
-	MakeHint(MMove, "hint_spider", 12)
-	MakeTog(MMove, "Infinite Stamina", "InfStamina", 13, { flat = true })
-	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 14, { flat = true })
+	MakeSlider(MMove, "Spider Burst Height", "SpiderBurstHeight", 3, 14, 13, {
+		suffix = " st",
+		step = 1,
+		fmt = function(v) return string.format("%d st", v) end,
+	})
+	MakeSlider(MMove, "Spider Cooldown", "SpiderCooldown", 0.6, 4, 14, {
+		suffix = "s",
+		step = 0.1,
+		fmt = function(v) return string.format("%.1fs", v) end,
+	})
+	MakeHint(MMove, "hint_spider", 15)
+	MakeTog(MMove, "Infinite Stamina", "InfStamina", 16, { flat = true })
+	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 17, { flat = true })
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })

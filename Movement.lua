@@ -113,43 +113,53 @@ function Movement.Init(S)
 		noclipConn = RS.Stepped:Connect(perfWrap("Movement.Noclip", applyNoclip))
 	end
 
-	-- ── Spider (local Truss — climb walls without character noclip) ─────────
-	-- Minecraft-style: walk into a wall and climb. Uses invisible client-only
-	-- TrussParts so Humanoid uses Climbing (not freefall fly / CanCollide off).
-	-- Server still sees you go up — safer than noclip, not AC-proof if they
-	-- sanity-check wall climbs without map ladders.
-	local spiderFolder = nil
-	local spiderTruss = nil
+	-- ── Spider ──────────────────────────────────────────────────────────────
+	-- Continuous Truss climb gets rubberbanded (server has no climbable).
+	-- Stealth = short wall-hops + pause on rubberband. Cannot fully bypass
+	-- server position authority — only reduce corrections / ledge climbs.
+	local spider = {
+		folder = nil,
+		truss = nil,
+		lastPos = nil,
+		lastAt = 0,
+		cooldownUntil = 0,
+		burstUntil = 0,
+		burstStartY = nil,
+		hopAt = 0,
+	}
 
 	local function clearSpider()
-		if spiderTruss then
+		if spider.truss then
 			pcall(function()
-				spiderTruss:Destroy()
+				spider.truss:Destroy()
 			end)
-			spiderTruss = nil
+			spider.truss = nil
 		end
-		if spiderFolder then
+		if spider.folder then
 			pcall(function()
-				spiderFolder:Destroy()
+				spider.folder:Destroy()
 			end)
-			spiderFolder = nil
+			spider.folder = nil
 		end
+		spider.lastPos = nil
+		spider.burstUntil = 0
+		spider.burstStartY = nil
 	end
 
 	local function ensureSpiderFolder()
-		if spiderFolder and spiderFolder.Parent then
-			return spiderFolder
+		if spider.folder and spider.folder.Parent then
+			return spider.folder
 		end
 		local f = Instance.new("Folder")
 		f.Name = "VG_Spider"
 		f.Parent = workspace
-		spiderFolder = f
+		spider.folder = f
 		return f
 	end
 
 	local function ensureSpiderTruss()
-		if spiderTruss and spiderTruss.Parent then
-			return spiderTruss
+		if spider.truss and spider.truss.Parent then
+			return spider.truss
 		end
 		local t = Instance.new("TrussPart")
 		t.Name = "VG_SpiderTruss"
@@ -159,10 +169,16 @@ function Movement.Init(S)
 		t.CanQuery = false
 		t.CastShadow = false
 		t.Transparency = 1
-		t.Size = Vector3.new(2, 10, 2)
+		t.Size = Vector3.new(2, 6, 2)
 		t.Parent = ensureSpiderFolder()
-		spiderTruss = t
+		spider.truss = t
 		return t
+	end
+
+	local function parkSpiderTruss()
+		if spider.truss then
+			spider.truss.CFrame = CFrame.new(0, -500, 0)
+		end
 	end
 
 	local function updateSpider()
@@ -176,6 +192,30 @@ function Movement.Init(S)
 			return
 		end
 
+		local now = tick()
+		local pos = hrp.Position
+		local stealth = S.SpiderStealth ~= false
+
+		-- Rubberband detect: server snapped us down/back hard
+		if spider.lastPos then
+			local dy = pos.Y - spider.lastPos.Y
+			local flat = Vector3.new(pos.X - spider.lastPos.X, 0, pos.Z - spider.lastPos.Z).Magnitude
+			if dy < -2.2 and flat < 6 and (now - spider.hopAt) < 1.2 then
+				local cd = math.clamp(tonumber(S.SpiderCooldown) or 1.4, 0.6, 4)
+				spider.cooldownUntil = now + cd
+				spider.burstUntil = 0
+				spider.burstStartY = nil
+				parkSpiderTruss()
+			end
+		end
+		spider.lastPos = pos
+		spider.lastAt = now
+
+		if now < spider.cooldownUntil then
+			parkSpiderTruss()
+			return
+		end
+
 		local params = RaycastParams.new()
 		params.FilterType = Enum.RaycastFilterType.Exclude
 		local filter = { char, ensureSpiderFolder() }
@@ -185,21 +225,19 @@ function Movement.Init(S)
 		end
 		params.FilterDescendantsInstances = filter
 
-		local origin = hrp.Position
 		local candidates = {
 			hrp.CFrame.LookVector,
 			-hrp.CFrame.LookVector,
 			hrp.CFrame.RightVector,
 			-hrp.CFrame.RightVector,
 		}
-		local best = nil
-		local bestDot = -1
+		local best, bestDot = nil, -1
 		local move = hum.MoveDirection
 		for _, dir in ipairs(candidates) do
-			local flat = Vector3.new(dir.X, 0, dir.Z)
-			if flat.Magnitude > 0.05 then
-				flat = flat.Unit
-				local hit = workspace:Raycast(origin, flat * 2.5, params)
+			local flatD = Vector3.new(dir.X, 0, dir.Z)
+			if flatD.Magnitude > 0.05 then
+				flatD = flatD.Unit
+				local hit = workspace:Raycast(pos, flatD * 2.5, params)
 				if hit and hit.Normal.Y < 0.35 and hit.Instance and hit.Instance.CanCollide then
 					local into = 0
 					if move.Magnitude > 0.08 then
@@ -209,7 +247,7 @@ function Movement.Init(S)
 						end
 					end
 					local score = into
-					if into > 0.05 and flat:Dot(hrp.CFrame.LookVector) > 0.5 then
+					if into > 0.05 and flatD:Dot(hrp.CFrame.LookVector) > 0.5 then
 						score += 0.2
 					end
 					if score > bestDot then
@@ -220,34 +258,55 @@ function Movement.Init(S)
 			end
 		end
 
-		-- Require walking into the wall (or already climbing)
-		local climbing = hum:GetState() == Enum.HumanoidStateType.Climbing
-		if not best or (not climbing and bestDot < 0.2) then
-			if spiderTruss then
-				spiderTruss.CFrame = CFrame.new(0, -500, 0) -- park off-map, don't Destroy every frame
-			end
+		if not best or bestDot < 0.2 then
+			parkSpiderTruss()
+			spider.burstUntil = 0
+			spider.burstStartY = nil
 			return
 		end
 
-		local n = best.Normal
-		local flatN = Vector3.new(n.X, 0, n.Z)
+		local flatN = Vector3.new(best.Normal.X, 0, best.Normal.Z)
 		if flatN.Magnitude < 0.05 then
 			return
 		end
 		flatN = flatN.Unit
-		local pos = Vector3.new(best.Position.X, origin.Y + 2, best.Position.Z) + flatN * 0.7
-		local truss = ensureSpiderTruss()
-		truss.Size = Vector3.new(2.2, 14, 2.2)
-		truss.CFrame = CFrame.lookAt(pos, pos + flatN)
 
-		-- Soft upward assist at humanoid-like climb speed (not fly)
-		local climbSpd = math.clamp(tonumber(S.SpiderSpeed) or 16, 8, 28)
-		if climbing or bestDot > 0.25 then
-			local v = hrp.AssemblyLinearVelocity
-			if v.Y < climbSpd * 0.85 then
-				hrp.AssemblyLinearVelocity = Vector3.new(v.X * 0.85, math.max(v.Y, climbSpd * 0.55), v.Z * 0.85)
-					- flatN * 2
+		local climbSpd = math.clamp(tonumber(S.SpiderSpeed) or 14, 8, 24)
+		local maxBurstH = math.clamp(tonumber(S.SpiderBurstHeight) or 7, 3, 14)
+		local burstLen = stealth and 0.38 or 0.85
+
+		if now > spider.burstUntil then
+			if stealth and spider.burstStartY and (now - spider.hopAt) < 0.55 then
+				parkSpiderTruss()
+				return
 			end
+			spider.burstUntil = now + burstLen
+			spider.burstStartY = pos.Y
+			spider.hopAt = now
+		end
+
+		local climbed = pos.Y - (spider.burstStartY or pos.Y)
+		if climbed >= maxBurstH then
+			spider.burstUntil = 0
+			spider.cooldownUntil = now + (stealth and 0.55 or 0.2)
+			parkSpiderTruss()
+			return
+		end
+
+		local truss = ensureSpiderTruss()
+		truss.Size = Vector3.new(2, stealth and 5 or 10, 2)
+		local tpos = Vector3.new(best.Position.X, pos.Y + 1.2, best.Position.Z) + flatN * 0.65
+		truss.CFrame = CFrame.lookAt(tpos, tpos + flatN)
+
+		local v = hrp.AssemblyLinearVelocity
+		local pulse = stealth and (climbSpd * 0.9) or climbSpd
+		if v.Y < pulse then
+			hrp.AssemblyLinearVelocity = Vector3.new(v.X * 0.7, pulse, v.Z * 0.7) - flatN * 1.5
+		end
+		if stealth and (now - spider.hopAt) < 0.08 then
+			pcall(function()
+				hum.Jump = true
+			end)
 		end
 	end
 
@@ -372,9 +431,9 @@ function Movement.Init(S)
 
 	-- ── Main loop ────────────────────────────────────────────────────────────
 
-	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
+	local perfWrap2 = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
-	RS.RenderStepped:Connect(perfWrap("Movement.Main", function()
+	RS.RenderStepped:Connect(perfWrap2("Movement.Main", function()
 		local needBHop    = S.BHop
 		local needStrafe  = S.AutoStrafe
 		local needFly     = S.Fly
@@ -406,7 +465,7 @@ function Movement.Init(S)
 			stopNoclip()
 		end
 
-		-- ── spider (local truss climb)
+		-- ── spider (stealth wall hops)
 		if needSpider then
 			updateSpider()
 		else

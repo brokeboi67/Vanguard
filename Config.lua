@@ -239,7 +239,16 @@ function Config.EnforceRules(S)
 		S.Spider = false
 	end
 	if S.SpiderSpeed == nil then
-		S.SpiderSpeed = 16
+		S.SpiderSpeed = 14
+	end
+	if S.SpiderStealth == nil then
+		S.SpiderStealth = true
+	end
+	if S.SpiderBurstHeight == nil then
+		S.SpiderBurstHeight = 7
+	end
+	if S.SpiderCooldown == nil then
+		S.SpiderCooldown = 1.4
 	end
 	if S.NoFog == nil then
 		S.NoFog = false
