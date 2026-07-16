@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.2
+-- Criminality.lua  v2.52.3
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2018,6 +2018,8 @@ local gunMod = {
 	reapplyInterval = 8,
 	deepCooldown = 4,
 	baseWalk = nil,
+	lastReloadAt = 0,
+	reloadBusy = false,
 }
 
 -- Extra numeric fields that help 3rd-person kick / walk bloom when present.
@@ -2135,75 +2137,8 @@ local function gunModsWant(S)
 		S.CrimNoRecoil == true
 		or S.CrimNoSpread == true
 		or S.CrimQuickEquip == true
-		or S.CrimFastReload == true
 		or S.CrimNoGunSlow == true
-		or S.CrimRapidFire == true
 	)
-end
-
-local function applyFastReload(weapon, orig, on)
-	if on then
-		for k, val in pairs(orig or {}) do
-			if type(k) == "string" and type(val) == "number" then
-				local low = string.lower(k)
-				if low:find("reload", 1, true) or low:find("chamber", 1, true) or low:find("bolt", 1, true) then
-					-- Speed fields go high; Time/Delay/Duration go to 0
-					if low:find("speed", 1, true) or low:find("rate", 1, true) then
-						weapon[k] = math.max(val, 1) * 20
-					else
-						weapon[k] = 0
-					end
-				end
-			end
-		end
-		gunSet(weapon, "ReloadTime", 0)
-		gunSet(weapon, "ReloadDuration", 0)
-		gunSet(weapon, "ChamberTime", 0)
-		if rawget(weapon, "ReloadSpeed") ~= nil then
-			weapon.ReloadSpeed = 99
-		end
-	elseif orig then
-		for k, val in pairs(orig) do
-			if type(k) == "string" and type(val) == "number" then
-				local low = string.lower(k)
-				if low:find("reload", 1, true) or low:find("chamber", 1, true) or low:find("bolt", 1, true) then
-					weapon[k] = val
-				end
-			end
-		end
-	end
-end
-
-local function applyRapidFire(weapon, orig, on)
-	if on then
-		for k, val in pairs(orig or {}) do
-			if type(k) == "string" and type(val) == "number" then
-				local low = string.lower(k)
-				if low:find("firedelay", 1, true) or low:find("shootdelay", 1, true)
-					or low:find("cycletime", 1, true) or low == "delay" then
-					weapon[k] = 0
-				elseif low:find("firerate", 1, true) or low == "rpm" then
-					weapon[k] = math.max(val * 3, 1200)
-				end
-			end
-		end
-		gunSet(weapon, "FireDelay", 0)
-		gunSet(weapon, "ShootDelay", 0)
-		gunSet(weapon, "CycleTime", 0)
-		if rawget(weapon, "FireRate") ~= nil and type(weapon.FireRate) == "number" then
-			weapon.FireRate = math.max(weapon.FireRate * 3, 12)
-		end
-	elseif orig then
-		for k, val in pairs(orig) do
-			if type(k) == "string" and type(val) == "number" then
-				local low = string.lower(k)
-				if low:find("fire", 1, true) or low:find("shoot", 1, true) or low:find("cycle", 1, true)
-					or low == "rpm" or low == "delay" then
-					weapon[k] = val
-				end
-			end
-		end
-	end
 end
 
 local function applyNoGunSlow(weapon, orig, on)
@@ -2266,6 +2201,123 @@ local function tickNoGunSlow(S)
 			hum.WalkSpeed = gunMod.baseWalk
 		end)
 	end
+end
+
+-- Auto Reload: when mag is empty, press R (client input — server accepts normal reload).
+local function ammoNameMatch(n)
+	if type(n) ~= "string" then return false end
+	n = string.lower(n)
+	return n == "ammo" or n == "mag" or n == "magazine" or n == "clip"
+		or n == "bullets" or n == "rounds" or n == "chamber"
+		or n:find("ammo", 1, true) ~= nil or n:find("mag", 1, true) ~= nil
+end
+
+local function readNumberish(v)
+	if typeof(v) == "Instance" then
+		if v:IsA("IntValue") or v:IsA("NumberValue") or v:IsA("StringValue") then
+			return tonumber(v.Value)
+		end
+		return nil
+	end
+	if type(v) == "number" then return v end
+	if type(v) == "string" then return tonumber(v) end
+	return nil
+end
+
+local function getToolAmmo(tool)
+	if not tool then return nil end
+	-- Attributes first (cheap)
+	for _, key in ipairs({ "Ammo", "ammo", "Mag", "Magazine", "Clip" }) do
+		local ok, a = pcall(function() return tool:GetAttribute(key) end)
+		if ok then
+			local n = readNumberish(a)
+			if n ~= nil then return n end
+		end
+	end
+	-- Shallow children + one nested folder (Values / Stats)
+	local function scanContainer(cont)
+		if not cont then return nil end
+		for _, ch in ipairs(cont:GetChildren()) do
+			if ammoNameMatch(ch.Name) then
+				local n = readNumberish(ch)
+				if n ~= nil then return n end
+			end
+			if ch:IsA("Folder") or ch:IsA("Configuration") or ch.Name == "Values" or ch.Name == "Stats" then
+				for _, g in ipairs(ch:GetChildren()) do
+					if ammoNameMatch(g.Name) then
+						local n = readNumberish(g)
+						if n ~= nil then return n end
+					end
+				end
+			end
+		end
+		return nil
+	end
+	return scanContainer(tool)
+end
+
+local function isGunTool(tool)
+	if not tool or not tool:IsA("Tool") then return false end
+	-- Has ammo state → gun
+	if getToolAmmo(tool) ~= nil then return true end
+	-- Common gun parts / names
+	if tool:FindFirstChild("MagPart") or tool:FindFirstChild("Gun") or tool:FindFirstChild("Shoot") then
+		return true
+	end
+	local n = string.lower(tool.Name)
+	if n:find("knife") or n:find("crowbar") or n:find("bat") or n:find("sword")
+		or n:find("axe") or n:find("pipe") or n:find("wrench") or n:find("taser") then
+		return false
+	end
+	return false
+end
+
+local function pressReloadKey()
+	if VIM then
+		local ok = pcall(function()
+			VIM:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+		end)
+		task.defer(function()
+			pcall(function()
+				VIM:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+			end)
+		end)
+		if ok then return true end
+	end
+	if typeof(keypress) == "function" then
+		pcall(keypress, Enum.KeyCode.R)
+		task.defer(function()
+			if typeof(keyrelease) == "function" then
+				pcall(keyrelease, Enum.KeyCode.R)
+			end
+		end)
+		return true
+	end
+	return false
+end
+
+local function tickAutoReload(S)
+	if not S or not S.CrimAutoReload then return end
+	if gunMod.reloadBusy then return end
+	local now = tick()
+	if now - gunMod.lastReloadAt < 1.1 then return end
+
+	local char = getChar()
+	if not char then return end
+	local tool = char:FindFirstChildOfClass("Tool")
+	if not tool or not isGunTool(tool) then return end
+
+	local ammo = getToolAmmo(tool)
+	if ammo == nil then return end
+	if ammo > 0 then return end
+
+	gunMod.reloadBusy = true
+	gunMod.lastReloadAt = now
+	task.spawn(function()
+		pressReloadKey()
+		task.wait(0.35)
+		gunMod.reloadBusy = false
+	end)
 end
 
 local function applyNoRecoil(weapon, orig, on)
@@ -2364,8 +2416,6 @@ local function applyGunMods(S)
 		elseif orig and orig.EquipTime ~= nil then
 			weapon.EquipTime = orig.EquipTime
 		end
-		applyFastReload(weapon, orig, S.CrimFastReload == true)
-		applyRapidFire(weapon, orig, S.CrimRapidFire == true)
 		applyNoGunSlow(weapon, orig, S.CrimNoGunSlow == true)
 	end
 end
@@ -3131,6 +3181,9 @@ local function startMaster(S)
 		end
 		if S.CrimNoGunSlow and crimFrame % 2 == 0 then
 			pcall(tickNoGunSlow, S)
+		end
+		if S.CrimAutoReload and crimFrame % 4 == 0 then
+			pcall(tickAutoReload, S)
 		end
 
 		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then

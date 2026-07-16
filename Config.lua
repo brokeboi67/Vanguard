@@ -518,15 +518,15 @@ function Config.EnforceRules(S)
 	if S.CrimQuickEquip == nil then
 		S.CrimQuickEquip = false
 	end
-	if S.CrimFastReload == nil then
-		S.CrimFastReload = false
-	end
 	if S.CrimNoGunSlow == nil then
 		S.CrimNoGunSlow = false
 	end
-	if S.CrimRapidFire == nil then
-		S.CrimRapidFire = false
+	if S.CrimAutoReload == nil then
+		S.CrimAutoReload = false
 	end
+	-- Removed server-validated gun mods (kept for old configs, ignored)
+	S.CrimFastReload = nil
+	S.CrimRapidFire = nil
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false
 	end
