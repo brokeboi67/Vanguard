@@ -473,6 +473,9 @@ function Config.EnforceRules(S)
 	if S.CrimPathCrateRare == nil then
 		S.CrimPathCrateRare = true
 	end
+	if S.CrimPathFullOnly == nil then
+		S.CrimPathFullOnly = false
+	end
 	if S.CrimCrateBasic == nil then
 		S.CrimCrateBasic = true
 	end

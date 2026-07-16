@@ -1,4 +1,4 @@
--- PathDisplay.lua  v2.48.0
+-- PathDisplay.lua  v2.50.0
 -- Visual-only "maze solver" path (NPC navmesh + portal graph through DOORS & STAIRS).
 -- No walk / no farm. Never draws a straight line through a solid wall.
 --
@@ -29,6 +29,8 @@ function PathDisplay.Init(S)
 	local folder = nil
 	local computing = false
 	local lastCompute = 0
+	local nextRetry = 0   -- after a fail/partial reject, don't spam solves
+	local offCleared = false -- so an OFF Path Display does zero work per frame
 
 	-- cached solved route (locked while following)
 	local cur = nil -- { model, targetPos, pts = {{Position,Action,IsDoor,IsStair}}, builtAt, kind, name, dist, doors, stairs, status }
@@ -835,13 +837,18 @@ function PathDisplay.Init(S)
 	-- main tick
 	--------------------------------------------------------------------------
 	local function tickPath()
+		-- FULLY OFF: do the absolute minimum, exactly once, then nothing.
 		if S.Unloaded or not S.CrimPathDisplay then
-			if folder and folder.Parent then
+			if not offCleared then
 				clearVisual()
+				removeSearchIndicator()
+				cur = nil
+				S.CrimPathStatus = ""
+				offCleared = true
 			end
-			cur = nil
 			return
 		end
+		offCleared = false
 
 		local hrp = getHRP()
 		if not hrp then
@@ -852,12 +859,7 @@ function PathDisplay.Init(S)
 
 		-- keep search indicator animating while a solve runs
 		if computing then
-			updateSearchIndicator(hrp, S.CrimPathStatus or "Solving route…")
-			return
-		end
-
-		local refresh = math.clamp(tonumber(S.CrimPathRefresh) or 0.7, 0.35, 2.5)
-		if (tick() - lastCompute) < refresh then
+			updateSearchIndicator(hrp, "Solving route…")
 			return
 		end
 
@@ -872,12 +874,21 @@ function PathDisplay.Init(S)
 			return
 		end
 
-		if not needResolve(target, origin) then
-			-- following existing locked route → leave it be
+		-- following an existing locked route → leave it be (no re-solve churn)
+		if cur and cur.pts and not needResolve(target, origin) then
+			local rem = math.floor((origin - target.part.Position).Magnitude)
+			S.CrimPathStatus = string.format("On route · %s · %dm", cur.name or kind, rem)
 			return
 		end
 
-		lastCompute = tick()
+		-- throttle: normal refresh, plus a longer backoff after a failed/partial solve
+		local now = tick()
+		local refresh = math.clamp(tonumber(S.CrimPathRefresh) or 0.7, 0.35, 2.5)
+		if (now - lastCompute) < refresh or now < nextRetry then
+			return
+		end
+
+		lastCompute = now
 		computing = true
 		S.CrimPathStatus = "Solving route…"
 
@@ -899,7 +910,17 @@ function PathDisplay.Init(S)
 			if not ok or not route then
 				clearVisual()
 				cur = nil
+				nextRetry = tick() + 2.5
 				S.CrimPathStatus = "No path (walled off)"
+				return
+			end
+
+			-- "Full paths only": reject partial routes (couldn't reach target)
+			if S.CrimPathFullOnly and not route.success then
+				clearVisual()
+				cur = nil
+				nextRetry = tick() + 2.5
+				S.CrimPathStatus = "No full path"
 				return
 			end
 
@@ -917,6 +938,8 @@ function PathDisplay.Init(S)
 				stairs = route.stairs,
 				status = route.success and "OK" or "Partial",
 			}
+			-- partial routes: back off so we don't re-solve every frame while stuck
+			nextRetry = route.success and 0 or (tick() + 3)
 			S.CrimPathStatus = string.format(
 				"%s · %dm · %dpts · %dd/%ds · %s",
 				target.name or kind,

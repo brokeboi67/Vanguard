@@ -2691,20 +2691,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		}, 3)
 		MakeTog(CPath, "Basic Crates", "CrimPathCrateBasic", 4, { flat = true })
 		MakeTog(CPath, "Rare Crates", "CrimPathCrateRare", 5, { flat = true })
-		MakeSlider(CPath, "Path Max Distance", "CrimPathMaxDist", 50, 600, 6, {
+		MakeTog(CPath, "Full Paths Only", "CrimPathFullOnly", 6, { flat = true })
+		MakeSlider(CPath, "Path Max Distance", "CrimPathMaxDist", 50, 600, 7, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSlider(CPath, "Path Refresh", "CrimPathRefresh", 0.3, 1.5, 7, {
+		MakeSlider(CPath, "Path Refresh", "CrimPathRefresh", 0.3, 1.5, 8, {
 			suffix = "s",
 			step = 0.05,
 			fmt = function(v) return string.format("%.2fs", v) end,
 		})
-		MakeColorPicker(CPath, "Path Color", "CrimPathColor", 8)
-		MakeColorPicker(CPath, "Jump Color", "CrimPathJumpColor", 9)
-		MakeColorPicker(CPath, "End Color", "CrimPathEndColor", 10)
-		MakeHint(CPath, "hint_crim_path", 11)
+		MakeColorPicker(CPath, "Path Color", "CrimPathColor", 9)
+		MakeColorPicker(CPath, "Jump Color", "CrimPathJumpColor", 10)
+		MakeColorPicker(CPath, "End Color", "CrimPathEndColor", 11)
+		MakeHint(CPath, "hint_crim_path", 12)
 
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)

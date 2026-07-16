@@ -162,10 +162,9 @@ end
 -- Safes/dealers: one build pass. Crates: dynamic (SpawnedPiles).
 -- Per-frame: only reads cached .part.Position and sets .Enabled.
 
-local ESP = { safes={}, dealers={}, crates={}, guns={}, safeByModel={} }
+local ESP = { safes={}, dealers={}, crates={}, guns={}, safeByModel={}, crateScanAt=0, gunScanAt=0 }
 local espBuilt = { safes=false, dealers=false }
 local crateByModel = {}
-local crateScanAt = 0
 local crateFolderConn = nil
 local crateRemoveConn = nil
 local crateFolderWatch = nil
@@ -697,7 +696,6 @@ end
 
 -- ── SPAWNED TOOL / GUN ESP (SpawnedTools) ────────────────────────────────────
 local gunByModel = {}
-local gunScanAt = 0
 local gunFolderConn = nil
 local gunRemoveConn = nil
 local gunFolderWatch = nil
@@ -1412,17 +1410,15 @@ end
 
 -- ── CRATE BRING (literal teleport crate → player, then PIC_PU) ───────────────
 -- Moves the crate model to you (PivotTo / part CFrames). No player spoof.
--- Uses setsimulationradius when available so unanchored physics can replicate.
--- Then fires PIC_PU while the crate is at your feet.
-local bringBusy = false
-local lastBringAt = 0
-local simRadiusBoosted = false
+-- Grouped in ONE table (+ crateScanAt/gunScanAt moved to ESP table) to stay
+-- under Luau's 200 local-register limit for the module chunk.
+local bring = { busy = false, last = 0, boosted = false }
 
-local function boostSimRadius()
-	if simRadiusBoosted then
+function bring.boostSim()
+	if bring.boosted then
 		return
 	end
-	simRadiusBoosted = true
+	bring.boosted = true
 	pcall(function()
 		if typeof(setsimulationradius) == "function" then
 			setsimulationradius(1e5)
@@ -1439,7 +1435,7 @@ local function boostSimRadius()
 	end)
 end
 
-local function shouldBringCrate(S, model)
+function bring.should(S, model)
 	if not S.CrimCrateBring then
 		return false
 	end
@@ -1453,23 +1449,21 @@ local function shouldBringCrate(S, model)
 	return S.CrimCratePickupBasic ~= false
 end
 
-local function getBringDist(S)
+function bring.dist(S)
 	return math.clamp(tonumber(S.CrimCrateBringDist) or 80, 10, 250)
 end
 
 -- Literally move every BasePart / Pivot of the crate to in front of the player.
-local function teleportCrateModel(model, hrp)
+function bring.teleport(model, hrp)
 	if not model or not hrp or not alive(model) then
 		return false
 	end
-	boostSimRadius()
+	bring.boostSim()
 	local dest = hrp.CFrame * CFrame.new(0, 1.5, -3.5)
 	local primary = model.PrimaryPart or getCratePart(model)
 	if not primary then
 		return false
 	end
-
-	-- unlock physics so ownership / Pivot can stick
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("BasePart") then
 			pcall(function()
@@ -1480,12 +1474,10 @@ local function teleportCrateModel(model, hrp)
 			end)
 		end
 	end
-
 	local okPivot = pcall(function()
 		model:PivotTo(dest)
 	end)
 	if not okPivot then
-		-- fallback: shift every part by the same delta
 		local delta = dest.Position - primary.Position
 		for _, d in ipairs(model:GetDescendants()) do
 			if d:IsA("BasePart") then
@@ -1495,32 +1487,26 @@ local function teleportCrateModel(model, hrp)
 			end
 		end
 	end
-
-	-- hard-set primary (some crates ignore PivotTo if welded weird)
 	pcall(function()
 		primary.CFrame = dest
 		primary.AssemblyLinearVelocity = Vector3.zero
 	end)
-
-	-- optional touch-interest help for pickup prompts
 	pcall(function()
 		if typeof(firetouchinterest) == "function" then
 			firetouchinterest(hrp, primary, 0)
 			firetouchinterest(hrp, primary, 1)
 		end
 	end)
-
 	return true
 end
 
-local function tryBringCrate(S, model)
-	if bringBusy or not model or not alive(model) then
+function bring.try(S, model)
+	if bring.busy or not model or not alive(model) then
 		return false
 	end
 	local id = getCrateId(model)
 	local part = getCratePart(model)
 	local root = getHRP()
-	local remote = getPicPuRemote()
 	if not id or not part or not root then
 		return false
 	end
@@ -1528,24 +1514,19 @@ local function tryBringCrate(S, model)
 	if pickupCooldownIds[id] and now - pickupCooldownIds[id] < 2.5 then
 		return false
 	end
-
-	bringBusy = true
-	lastBringAt = now
+	local remote = getPicPuRemote()
+	bring.busy = true
+	bring.last = now
 	task.spawn(function()
 		local hrp = getHRP()
 		if not hrp or not alive(model) then
-			bringBusy = false
+			bring.busy = false
 			return
 		end
-
-		-- 1) literally TP crate to player (what you saw the other guy do)
-		teleportCrateModel(model, hrp)
+		bring.teleport(model, hrp)
 		RS.Heartbeat:Wait()
-		-- keep it glued for a couple frames (server may snap once)
-		teleportCrateModel(model, hrp)
+		bring.teleport(model, hrp)
 		RS.Heartbeat:Wait()
-
-		-- 2) fire pickup while crate is at your feet
 		local ok = false
 		if remote then
 			ok = pcall(function()
@@ -1558,30 +1539,29 @@ local function tryBringCrate(S, model)
 				startPickupFx(model, isRareCrate(model))
 			end
 		end
-		bringBusy = false
+		bring.busy = false
 	end)
 	return true
 end
 
-local function tickCrateBring(S)
-	if not S.CrimCrateBring or bringBusy then
+function bring.tick(S)
+	if not S.CrimCrateBring or bring.busy then
 		return
 	end
 	local now = tick()
 	local delay = math.max(0.12, (tonumber(S.CrimCrateBringDelay) or 350) / 1000)
-	if now - lastBringAt < delay then
+	if now - bring.last < delay then
 		return
 	end
 	local piles = getSpawnedPiles()
 	if not piles then
 		return
 	end
-	local fireDist = getBringDist(S)
+	local fireDist = bring.dist(S)
 	local best, bestScore = nil, math.huge
 	for _, model in ipairs(piles:GetChildren()) do
-		if alive(model) and shouldBringCrate(S, model) then
+		if alive(model) and bring.should(S, model) then
 			local dist = getCrateDist(model)
-			-- skip already-at-feet crates (normal pickup can take those)
 			if dist <= fireDist and dist > 2.5 then
 				local rare = isRareCrate(model)
 				local score = dist + (rare and 0 or 1000)
@@ -1593,7 +1573,7 @@ local function tickCrateBring(S)
 		end
 	end
 	if best then
-		tryBringCrate(S, best)
+		bring.try(S, best)
 	end
 end
 
@@ -3046,8 +3026,8 @@ local function startMaster(S)
 
 		if S.CrimCrateESP then
 			pcall(ensureCrateWatch, S)
-			if crimFrame % 30 == 0 or tick() - crateScanAt > 1.2 then
-				crateScanAt = tick()
+			if crimFrame % 30 == 0 or tick() - ESP.crateScanAt > 1.2 then
+				ESP.crateScanAt = tick()
 				pcall(syncCrateESP, S)
 			end
 		elseif #ESP.crates > 0 then
@@ -3056,8 +3036,8 @@ local function startMaster(S)
 
 		if S.CrimGunESP then
 			pcall(ensureGunWatch, S)
-			if crimFrame % 15 == 0 or tick() - gunScanAt > 0.6 then
-				gunScanAt = tick()
+			if crimFrame % 15 == 0 or tick() - ESP.gunScanAt > 0.6 then
+				ESP.gunScanAt = tick()
 				pcall(syncGunESP, S)
 			end
 		elseif #ESP.guns > 0 then
@@ -3085,7 +3065,7 @@ local function startMaster(S)
 			pcall(tickCratePickup, S)
 		end
 		if S.CrimCrateBring and crimFrame % 4 == 0 then
-			pcall(tickCrateBring, S)
+			pcall(bring.tick, S)
 		end
 
 		if S.CrimMoneyPickup and crimFrame % 3 == 0 then
