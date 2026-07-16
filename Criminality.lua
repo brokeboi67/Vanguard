@@ -1,7 +1,11 @@
--- Criminality.lua  v2.52.8
+-- Criminality.lua  v2.52.9
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
+-- NOTE: many small state vars are packed into shared tables (COLORS, misc,
+-- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
+-- stay under Luau's 200-local-register limit for the main chunk. No behavior
+-- change - just fewer top-level locals.
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -25,7 +29,8 @@ local VIM; pcall(function() VIM = game:GetService("VirtualInputManager") end)
 local UIS; pcall(function() UIS = game:GetService("UserInputService") end)
 
 -- ── NO FALL DAMAGE ───────────────────────────────────────────────────────────
-local noFallConns = {}
+-- Packed into one table to stay under Luau's 200-local limit.
+local misc = { noFallConns = {}, noSpikeConn = nil }
 
 local function addForceField(char)
 	if not char then return end
@@ -38,7 +43,7 @@ local function addForceField(char)
 			task.wait(0.1); if ch and ch.Parent then ch.Visible=false end
 		end
 	end)
-	table.insert(noFallConns, c)
+	table.insert(misc.noFallConns, c)
 end
 
 local function startNoFall()
@@ -47,11 +52,11 @@ local function startNoFall()
 		task.wait(0.5)
 		if _G.__VG_S and _G.__VG_S.CrimNoFall then addForceField(chr) end
 	end)
-	table.insert(noFallConns, cc)
+	table.insert(misc.noFallConns, cc)
 end
 
 local function stopNoFall()
-	for _, c in ipairs(noFallConns) do pcall(c.Disconnect,c) end; noFallConns={}
+	for _, c in ipairs(misc.noFallConns) do pcall(c.Disconnect,c) end; misc.noFallConns={}
 	local c=getChar()
 	if c then
 		for _,o in ipairs(c:GetChildren()) do
@@ -61,7 +66,6 @@ local function stopNoFall()
 end
 
 -- ── NO SPIKE DAMAGE ──────────────────────────────────────────────────────────
-local noSpikeConn = nil
 
 local function disableSpikeParts()
 	local ff=workspace:FindFirstChild("Filter"); if not ff then return end
@@ -70,8 +74,8 @@ local function disableSpikeParts()
 	for _,d in ipairs(fp:GetDescendants()) do
 		if d:IsA("BasePart") then pcall(function() d.CanTouch=false end) end
 	end
-	if noSpikeConn then noSpikeConn:Disconnect() end
-	noSpikeConn = fp.DescendantAdded:Connect(function(d)
+	if misc.noSpikeConn then misc.noSpikeConn:Disconnect() end
+	misc.noSpikeConn = fp.DescendantAdded:Connect(function(d)
 		if d:IsA("BasePart") then pcall(function() d.CanTouch=false end) end
 	end)
 end
@@ -86,7 +90,7 @@ local function startNoSpike()
 end
 
 local function stopNoSpike()
-	if noSpikeConn then noSpikeConn:Disconnect(); noSpikeConn=nil end
+	if misc.noSpikeConn then misc.noSpikeConn:Disconnect(); misc.noSpikeConn=nil end
 	local fp = workspace:FindFirstChild("Filter") and
 	           workspace.Filter:FindFirstChild("Parts") and
 	           workspace.Filter.Parts:FindFirstChild("F_Parts")
@@ -99,8 +103,8 @@ end
 
 
 -- ── MELEE AURA ───────────────────────────────────────────────────────────────
-local meleeCooldown = false
-local MELEE_CD      = 0.5
+-- Packed into one table to stay under Luau's 200-local limit.
+local melee = { cooldown = false, CD = 0.5 }
 
 local function getClosestInRange(range)
 	local hrp=getHRP(); if not hrp then return nil end
@@ -147,14 +151,14 @@ local function doMeleeAttack(target)
 end
 
 local function tickMelee(S)
-	if meleeCooldown then return end
+	if melee.cooldown then return end
 	local target=getClosestInRange(S.CrimMeleeRange or 5)
 	if not target then return end
-	meleeCooldown=true
+	melee.cooldown=true
 	task.spawn(function()
 		pcall(doMeleeAttack,target)
-		task.wait(MELEE_CD)
-		meleeCooldown=false
+		task.wait(melee.CD)
+		melee.cooldown=false
 	end)
 end
 
@@ -165,9 +169,8 @@ end
 local ESP = { safes={}, dealers={}, crates={}, guns={}, safeByModel={}, crateScanAt=0, gunScanAt=0 }
 local espBuilt = { safes=false, dealers=false }
 local crateByModel = {}
-local crateFolderConn = nil
-local crateRemoveConn = nil
-local crateFolderWatch = nil
+-- Packed into one table to stay under Luau's 200-local limit.
+local crateWatch = { folderConn = nil, removeConn = nil, folderWatch = nil }
 
 -- Is the instance still alive? Check Parent without pcall.
 local function alive(inst)
@@ -198,14 +201,14 @@ local function getModelPart(model)
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
-local CRATE_MAX_AXIS = 10
+crateWatch.MAX_AXIS = 10  -- folded into crateWatch table to save a register
 
 local function isReasonableCratePart(part)
 	if not part or not part:IsA("BasePart") then
 		return false
 	end
 	local sz = part.Size
-	return sz.X <= CRATE_MAX_AXIS and sz.Y <= CRATE_MAX_AXIS and sz.Z <= CRATE_MAX_AXIS
+	return sz.X <= crateWatch.MAX_AXIS and sz.Y <= crateWatch.MAX_AXIS and sz.Z <= crateWatch.MAX_AXIS
 end
 
 local function getCrateVisualPart(model)
@@ -320,7 +323,7 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highl
 end
 
 -- Animated show/hide — tween only on state transition (cheap; no per-frame cost).
-local ESP_FADE_IN = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+ESP.FADE_IN = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)  -- folded into ESP table to save a register
 
 local function espShow(e)
 	if e.visState then return end
@@ -329,24 +332,24 @@ local function espShow(e)
 		e.h.Enabled = true
 		e.h.FillTransparency = 1
 		e.h.OutlineTransparency = 1
-		TS:Create(e.h, ESP_FADE_IN, { FillTransparency = 0.55, OutlineTransparency = 0 }):Play()
+		TS:Create(e.h, ESP.FADE_IN, { FillTransparency = 0.55, OutlineTransparency = 0 }):Play()
 	end
 	if alive(e.bg) then
 		e.bg.Enabled = true
 		e.bg.StudsOffset = Vector3.new(0, 2.6, 0)
-		TS:Create(e.bg, ESP_FADE_IN, { StudsOffset = Vector3.new(0, 4, 0) }):Play()
+		TS:Create(e.bg, ESP.FADE_IN, { StudsOffset = Vector3.new(0, 4, 0) }):Play()
 	end
 	if alive(e.pill) then
 		e.pill.BackgroundTransparency = 1
-		TS:Create(e.pill, ESP_FADE_IN, { BackgroundTransparency = 0.25 }):Play()
+		TS:Create(e.pill, ESP.FADE_IN, { BackgroundTransparency = 0.25 }):Play()
 	end
 	if alive(e.lbl) then
 		e.lbl.TextTransparency = 1
-		TS:Create(e.lbl, ESP_FADE_IN, { TextTransparency = 0 }):Play()
+		TS:Create(e.lbl, ESP.FADE_IN, { TextTransparency = 0 }):Play()
 	end
 	if e.stroke and e.stroke.Parent then
 		e.stroke.Transparency = 1
-		TS:Create(e.stroke, ESP_FADE_IN, { Transparency = 0.35 }):Play()
+		TS:Create(e.stroke, ESP.FADE_IN, { Transparency = 0.35 }):Play()
 	end
 end
 
@@ -573,8 +576,17 @@ local function isRareCrate(model)
 	return cot == 7 or cot == "7"
 end
 
-local colCrateNorm = Color3.fromRGB(255, 190, 60)
-local colCrateRare = Color3.fromRGB(255, 55, 55)
+-- Packed into one table to stay under Luau's 200-local limit.
+local COLORS = {
+	crateNorm = Color3.fromRGB(255, 190, 60),
+	crateRare = Color3.fromRGB(255, 55, 55),
+	gun       = Color3.fromRGB(80, 255, 140),
+	melee     = Color3.fromRGB(255, 170, 60),
+	nade      = Color3.fromRGB(255, 90, 90),
+	tool      = Color3.fromRGB(170, 195, 255),
+	open      = Color3.fromRGB(100, 255, 100),
+	safeD     = Color3.fromRGB(255, 220, 50),
+}
 
 local function shouldShowCrate(S, rare)
 	if not S.CrimCrateESP then
@@ -590,7 +602,7 @@ local function playCrateSpawnFx(entry, rare)
 	if not entry or not alive(entry.h) then
 		return
 	end
-	local fill = rare and (colCrateRare) or (colCrateNorm)
+	local fill = rare and (COLORS.crateRare) or (COLORS.crateNorm)
 	entry.visState = true  -- mark visible so tickESP doesn't re-run fade-in over the fx
 	entry.h.Enabled = true
 	entry.h.FillColor = fill
@@ -649,7 +661,7 @@ local function addCrateESP(model, S, withSpawnFx)
 	if not shouldShowCrate(S, rare) then
 		return false
 	end
-	local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
+	local fill = rare and (S.CrimCrateRareColor or COLORS.crateRare) or (S.CrimCrateColor or COLORS.crateNorm)
 	local label = rare and "RARE CRATE" or "CRATE"
 	local part = getCrateVisualPart(model)
 	if not part then
@@ -697,7 +709,7 @@ local function syncCrateESP(S)
 			local rare = isRareCrate(model)
 			if e.rare ~= rare then
 				e.rare = rare
-				local fill = rare and (S.CrimCrateRareColor or colCrateRare) or (S.CrimCrateColor or colCrateNorm)
+				local fill = rare and (S.CrimCrateRareColor or COLORS.crateRare) or (S.CrimCrateColor or COLORS.crateNorm)
 				local label = rare and "RARE CRATE" or "CRATE"
 				if alive(e.h) then
 					e.h.FillColor = fill
@@ -725,12 +737,12 @@ end
 local function ensureCrateWatch(S)
 	local piles = getSpawnedPiles()
 	if piles then
-		if crateFolderWatch then
-			crateFolderWatch:Disconnect()
-			crateFolderWatch = nil
+		if crateWatch.folderWatch then
+			crateWatch.folderWatch:Disconnect()
+			crateWatch.folderWatch = nil
 		end
-		if not crateFolderConn then
-			crateFolderConn = piles.ChildAdded:Connect(function(ch)
+		if not crateWatch.folderConn then
+			crateWatch.folderConn = piles.ChildAdded:Connect(function(ch)
 				-- Crates often spawn empty; retry until visual part exists (~1s)
 				task.spawn(function()
 					local curS = _G.__VG_S
@@ -753,19 +765,19 @@ local function ensureCrateWatch(S)
 					pcall(tickESP, curS)
 				end)
 			end)
-			crateRemoveConn = piles.ChildRemoved:Connect(function(ch)
+			crateWatch.removeConn = piles.ChildRemoved:Connect(function(ch)
 				destroyCrateEntry(ch)
 			end)
 		end
 		return
 	end
 
-	if crateFolderWatch then
+	if crateWatch.folderWatch then
 		return
 	end
 	local filter = workspace:FindFirstChild("Filter")
 	if filter then
-		crateFolderWatch = filter.ChildAdded:Connect(function(ch)
+		crateWatch.folderWatch = filter.ChildAdded:Connect(function(ch)
 			if ch.Name ~= "SpawnedPiles" then
 				return
 			end
@@ -779,7 +791,7 @@ local function ensureCrateWatch(S)
 		end)
 		return
 	end
-	crateFolderWatch = workspace.ChildAdded:Connect(function(ch)
+	crateWatch.folderWatch = workspace.ChildAdded:Connect(function(ch)
 		if ch.Name ~= "Filter" then
 			return
 		end
@@ -795,14 +807,9 @@ end
 
 -- ── SPAWNED TOOL / GUN ESP (SpawnedTools) ────────────────────────────────────
 local gunByModel = {}
-local gunFolderConn = nil
-local gunRemoveConn = nil
-local gunFolderWatch = nil
+-- Packed into one table to stay under Luau's 200-local limit.
+local gunWatch = { folderConn = nil, removeConn = nil, folderWatch = nil }
 
-local colGun    = Color3.fromRGB(80, 255, 140)
-local colMelee  = Color3.fromRGB(255, 170, 60)
-local colNade   = Color3.fromRGB(255, 90, 90)
-local colTool   = Color3.fromRGB(170, 195, 255)
 
 local function hasDeepChild(model, name)
 	return model and model:FindFirstChild(name, true) ~= nil
@@ -868,15 +875,15 @@ end
 
 local function kindColor(kind, S)
 	if kind == "gun" then
-		return S.CrimGunESPGunColor or colGun
+		return S.CrimGunESPGunColor or COLORS.gun
 	end
 	if kind == "grenade" then
-		return colNade
+		return COLORS.nade
 	end
 	if kind == "melee" then
-		return S.CrimGunESPMeleeColor or colMelee
+		return S.CrimGunESPMeleeColor or COLORS.melee
 	end
-	return colTool
+	return COLORS.tool
 end
 
 local function shouldShowGun(S, kind)
@@ -1071,19 +1078,19 @@ local function syncGunESP(S)
 end
 
 local function bindGunFolder(folder)
-	if gunFolderWatch then
-		gunFolderWatch:Disconnect()
-		gunFolderWatch = nil
+	if gunWatch.folderWatch then
+		gunWatch.folderWatch:Disconnect()
+		gunWatch.folderWatch = nil
 	end
-	if gunFolderConn then
-		gunFolderConn:Disconnect()
-		gunFolderConn = nil
+	if gunWatch.folderConn then
+		gunWatch.folderConn:Disconnect()
+		gunWatch.folderConn = nil
 	end
-	if gunRemoveConn then
-		gunRemoveConn:Disconnect()
-		gunRemoveConn = nil
+	if gunWatch.removeConn then
+		gunWatch.removeConn:Disconnect()
+		gunWatch.removeConn = nil
 	end
-	gunFolderConn = folder.ChildAdded:Connect(function(ch)
+	gunWatch.folderConn = folder.ChildAdded:Connect(function(ch)
 			task.defer(function()
 				local curS = _G.__VG_S
 				if not curS or not curS.CrimGunESP then
@@ -1099,7 +1106,7 @@ local function bindGunFolder(folder)
 				end
 		end)
 	end)
-	gunRemoveConn = folder.ChildRemoved:Connect(function(ch)
+	gunWatch.removeConn = folder.ChildRemoved:Connect(function(ch)
 		if ch:IsA("Model") then
 			destroyGunEntry(ch)
 		else
@@ -1119,8 +1126,8 @@ local function ensureGunWatch(S)
 
 	local filter = getFilterFolder()
 	if filter then
-		if not gunFolderWatch then
-			gunFolderWatch = filter.ChildAdded:Connect(function(ch)
+		if not gunWatch.folderWatch then
+			gunWatch.folderWatch = filter.ChildAdded:Connect(function(ch)
 				if ch.Name ~= "SpawnedTools" then
 					return
 				end
@@ -1136,10 +1143,10 @@ local function ensureGunWatch(S)
 		return
 	end
 
-	if gunFolderWatch then
+	if gunWatch.folderWatch then
 		return
 	end
-	gunFolderWatch = workspace.ChildAdded:Connect(function(ch)
+	gunWatch.folderWatch = workspace.ChildAdded:Connect(function(ch)
 		if ch.Name ~= "Filter" then
 			return
 		end
@@ -1154,8 +1161,6 @@ local function ensureGunWatch(S)
 end
 
 -- Hot path: zero allocations, no pcall on happy path.
-local colOpen   = Color3.fromRGB(100,255,100)
-local colSafeD  = Color3.fromRGB(255,220,50)
 
 local function tickESP(S)
 	local maxDist = S.CrimESPMaxDist or 300
@@ -1179,7 +1184,7 @@ local function tickESP(S)
 		if alive(e.h) then
 			if vis then
 				local open   = e.broken and e.broken.Value == true
-				local newCol = open and colOpen or (S.CrimSafeColor or colSafeD)
+				local newCol = open and COLORS.open or (S.CrimSafeColor or COLORS.safeD)
 				if e.h.FillColor ~= newCol then
 					e.h.FillColor = newCol
 					if e.stroke and e.stroke.Parent then e.stroke.Color = newCol end
@@ -1258,13 +1263,12 @@ end
 -- ── CRATE AUTO PICKUP ────────────────────────────────────────────────────────
 -- ReplicatedStorage.Events.PIC_PU:FireServer(crateId)
 
-local picPuRemote = nil
-local lastPickupAt = 0
-local pickupCooldownIds = {}
+-- Packed into one table to stay under Luau's 200-local limit.
+local cratePu = { remote = nil, lastAt = 0, cooldownIds = {}, fxByModel = {}, FX_DURATION = 2.0 }
 
 local function getPicPuRemote()
-	if picPuRemote and picPuRemote.Parent then
-		return picPuRemote
+	if cratePu.remote and cratePu.remote.Parent then
+		return cratePu.remote
 	end
 	local events = RepSt:FindFirstChild("Events")
 	if not events then
@@ -1272,7 +1276,7 @@ local function getPicPuRemote()
 	end
 	local ev = events:FindFirstChild("PIC_PU")
 	if ev and ev:IsA("RemoteEvent") then
-		picPuRemote = ev
+		cratePu.remote = ev
 		return ev
 	end
 	return nil
@@ -1316,15 +1320,12 @@ local function shouldPickupCrate(S, model)
 	return S.CrimCratePickupBasic ~= false
 end
 
-local pickupFxByModel = {}
-local PICKUP_FX_DURATION = 2.0
-
 local function stopPickupFx(model)
-	local fx = pickupFxByModel[model]
+	local fx = cratePu.fxByModel[model]
 	if not fx then
 		return
 	end
-	pickupFxByModel[model] = nil
+	cratePu.fxByModel[model] = nil
 	if fx.pulseTween then
 		pcall(function() fx.pulseTween:Cancel() end)
 	end
@@ -1340,7 +1341,7 @@ local function stopPickupFx(model)
 end
 
 local function clearAllPickupFx()
-	for model in pairs(pickupFxByModel) do
+	for model in pairs(cratePu.fxByModel) do
 		stopPickupFx(model)
 	end
 end
@@ -1349,12 +1350,12 @@ local function startPickupFx(model, rare)
 	if not model or not alive(model) then
 		return
 	end
-	for m in pairs(pickupFxByModel) do
+	for m in pairs(cratePu.fxByModel) do
 		if m ~= model then
 			stopPickupFx(m)
 		end
 	end
-	if pickupFxByModel[model] then
+	if cratePu.fxByModel[model] then
 		return
 	end
 
@@ -1395,7 +1396,7 @@ local function startPickupFx(model, rare)
 	lbl.Parent = bg
 
 	local fx = { h = h, bg = bg, lbl = lbl, model = model }
-	pickupFxByModel[model] = fx
+	cratePu.fxByModel[model] = fx
 
 	local pulseInfo = TweenInfo.new(0.38, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 	fx.pulseTween = TS:Create(h, pulseInfo, { FillTransparency = 0.72, OutlineTransparency = 0.35 })
@@ -1405,8 +1406,8 @@ local function startPickupFx(model, rare)
 	fx.bobTween = TS:Create(bg, bobInfo, { StudsOffset = Vector3.new(0, 6.4, 0) })
 	fx.bobTween:Play()
 
-	task.delay(PICKUP_FX_DURATION, function()
-		if pickupFxByModel[model] == fx then
+	task.delay(cratePu.FX_DURATION, function()
+		if cratePu.fxByModel[model] == fx then
 			stopPickupFx(model)
 		end
 	end)
@@ -1426,7 +1427,7 @@ local function tryPickupCrate(S, model)
 		return false
 	end
 	local now = tick()
-	if pickupCooldownIds[id] and now - pickupCooldownIds[id] < 2.5 then
+	if cratePu.cooldownIds[id] and now - cratePu.cooldownIds[id] < 2.5 then
 		return false
 	end
 	local remote = getPicPuRemote()
@@ -1440,8 +1441,8 @@ local function tryPickupCrate(S, model)
 		remote:FireServer(id)
 	end)
 	if ok then
-		pickupCooldownIds[id] = now
-		lastPickupAt = now
+		cratePu.cooldownIds[id] = now
+		cratePu.lastAt = now
 	elseif S.CrimCratePickupFx ~= false then
 		stopPickupFx(model)
 	end
@@ -1454,7 +1455,7 @@ local function tickCratePickup(S)
 	end
 	local now = tick()
 	local delay = math.max(0.08, (tonumber(S.CrimCratePickupDelay) or 200) / 1000)
-	if now - lastPickupAt < delay then
+	if now - cratePu.lastAt < delay then
 		return
 	end
 
@@ -1484,21 +1485,21 @@ local function tickCratePickup(S)
 		tryPickupCrate(S, best)
 	end
 
-	for id, t in pairs(pickupCooldownIds) do
+	for id, t in pairs(cratePu.cooldownIds) do
 		if now - t > 12 then
-			pickupCooldownIds[id] = nil
+			cratePu.cooldownIds[id] = nil
 		end
 	end
 end
 
 -- ── AUTO PICKUP MONEY (SpawnedBread + CZDPZUS) ───────────────────────────────
 
-local moneyRemote = nil
-local lastMoneyPickupAt = 0
+-- Packed into one table to stay under Luau's 200-local limit.
+local moneyPu = { remote = nil, lastAt = 0 }
 
 local function getMoneyPickupRemote()
-	if moneyRemote and moneyRemote.Parent then
-		return moneyRemote
+	if moneyPu.remote and moneyPu.remote.Parent then
+		return moneyPu.remote
 	end
 	local events = RepSt:FindFirstChild("Events")
 	if not events then
@@ -1506,7 +1507,7 @@ local function getMoneyPickupRemote()
 	end
 	local ev = events:FindFirstChild("CZDPZUS")
 	if ev and ev:IsA("RemoteEvent") then
-		moneyRemote = ev
+		moneyPu.remote = ev
 		return ev
 	end
 	return nil
@@ -1550,7 +1551,7 @@ local function tickMoneyPickup(S)
 
 	local now = tick()
 	local delay = math.max(0.5, (tonumber(S.CrimMoneyPickupDelay) or 1000) / 1000)
-	if now - lastMoneyPickupAt < delay then
+	if now - moneyPu.lastAt < delay then
 		return
 	end
 
@@ -1582,7 +1583,7 @@ local function tickMoneyPickup(S)
 			remote:FireServer(best)
 		end)
 		if ok then
-			lastMoneyPickupAt = now
+			moneyPu.lastAt = now
 		end
 	end
 end
@@ -2077,7 +2078,8 @@ local gunMod = {
 }
 
 -- Extra numeric fields that help 3rd-person kick / walk bloom when present.
-local GUN_EXTRA_KEYS = {
+-- Folded into gunMod table to save a register.
+gunMod.EXTRA_KEYS = {
 	"WalkSpreadIncrease",
 	"HipSpread",
 	"AimSpread",
@@ -2117,7 +2119,7 @@ local function captureWeaponOrig(v)
 		Spread = v.Spread,
 		EquipTime = v.EquipTime,
 	}
-	for _, key in ipairs(GUN_EXTRA_KEYS) do
+	for _, key in ipairs(gunMod.EXTRA_KEYS) do
 		local val = rawget(v, key)
 		if val ~= nil then
 			o[key] = val
@@ -2629,9 +2631,10 @@ local function stopNoRecoil()
 end
 
 -- ── STAFF DETECTOR ───────────────────────────────────────────────────────────
-local staffConn = nil
+-- Packed into one table to stay under Luau's 200-local limit.
+local staff = { conn = nil }
 
-local STAFF_GROUPS = {
+staff.GROUPS = {
 	[4165692] = {
 		["Tester"] = true, ["Contributor"] = true, ["Tester+"] = true, ["Developer"] = true,
 		["Developer+"] = true, ["Community Manager"] = true, ["Manager"] = true, ["Owner"] = true,
@@ -2648,7 +2651,7 @@ local STAFF_GROUPS = {
 	},
 }
 
-local STAFF_USERS = {
+staff.USERS = {
 	3294804378, 93676120, 54087314, 81275825, 140837601, 1229486091, 46567801, 418086275, 29706395,
 	3717066084, 1424338327, 5046662686, 5046661126, 5046659439, 418199326, 1024216621, 1810535041,
 	63238912, 111250044, 63315426, 730176906, 141193516, 194512073, 193945439, 412741116, 195538733,
@@ -2689,7 +2692,7 @@ end
 
 local function isStaffPlayer(player)
 	if not player or not player:IsA("Player") then return false end
-	for groupId, roles in pairs(STAFF_GROUPS) do
+	for groupId, roles in pairs(staff.GROUPS) do
 		local okRank, rank = pcall(function() return player:GetRankInGroup(groupId) end)
 		if okRank and rank and rank > 0 then
 			local okRole, roleName = pcall(function() return player:GetRoleInGroup(groupId) end)
@@ -2698,7 +2701,7 @@ local function isStaffPlayer(player)
 			end
 		end
 	end
-	for _, userId in ipairs(STAFF_USERS) do
+	for _, userId in ipairs(staff.USERS) do
 		if player.UserId == userId then
 			return true, "UserID", userId
 		end
@@ -2781,23 +2784,23 @@ local function checkExistingStaff()
 end
 
 local function startStaffDetect()
-	if staffConn then staffConn:Disconnect() end
-	staffConn = Plrs.PlayerAdded:Connect(onStaffPlayerAdded)
+	if staff.conn then staff.conn:Disconnect() end
+	staff.conn = Plrs.PlayerAdded:Connect(onStaffPlayerAdded)
 	crimNotify("Staff Detection", "Monitoring active", 5)
 	task.spawn(function()
-		if checkExistingStaff() and staffConn then
-			staffConn:Disconnect()
-			staffConn = nil
+		if checkExistingStaff() and staff.conn then
+			staff.conn:Disconnect()
+			staff.conn = nil
 		end
 	end)
 end
 
 local function stopStaffDetect()
-	if staffConn then staffConn:Disconnect(); staffConn = nil end
+	if staff.conn then staff.conn:Disconnect(); staff.conn = nil end
 end
 
 -- ── NO FAIL LOCKPICK ─────────────────────────────────────────────────────────
-local lockpickConn = nil
+misc.lockpickConn = nil  -- folded into misc table to save a register
 
 local function scaleLockpickBars(frames, scale)
 	if not frames then return end
@@ -2822,12 +2825,12 @@ local function startNoFailLockpick()
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	if not pg then return end
-	if lockpickConn then lockpickConn:Disconnect() end
-	lockpickConn = pg.ChildAdded:Connect(applyNoFailLockpick)
+	if misc.lockpickConn then misc.lockpickConn:Disconnect() end
+	misc.lockpickConn = pg.ChildAdded:Connect(applyNoFailLockpick)
 end
 
 local function stopNoFailLockpick()
-	if lockpickConn then lockpickConn:Disconnect(); lockpickConn = nil end
+	if misc.lockpickConn then misc.lockpickConn:Disconnect(); misc.lockpickConn = nil end
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local gui = pg and pg:FindFirstChild("LockpickGUI")
@@ -2840,15 +2843,14 @@ local function stopNoFailLockpick()
 end
 
 -- ── AUTO OPEN / UNLOCK DOORS ─────────────────────────────────────────────────
-local DOOR_RADIUS  = 6
-local DOOR_INTERVAL = 0.25
-local lastDoorTick = 0
+-- Packed into one table to stay under Luau's 200-local limit.
+local door = { RADIUS = 6, INTERVAL = 0.25, lastTick = 0 }
 
 local function tickDoors(S)
 	if not S.CrimAutoOpenDoors and not S.CrimAutoUnlockDoors then return end
 	local now = tick()
-	if now - lastDoorTick < DOOR_INTERVAL then return end
-	lastDoorTick = now
+	if now - door.lastTick < door.INTERVAL then return end
+	door.lastTick = now
 
 	local hrp = getHRP()
 	local hum = getHum()
@@ -2865,7 +2867,7 @@ local function tickDoors(S)
 		local valuesFolder = doorInstance:FindFirstChild("Values")
 		local eventsFolder = doorInstance:FindFirstChild("Events")
 		if doorBase and valuesFolder and eventsFolder then
-			if (playerPos - doorBase.Position).Magnitude <= DOOR_RADIUS then
+			if (playerPos - doorBase.Position).Magnitude <= door.RADIUS then
 				local toggleEvent = eventsFolder:FindFirstChild("Toggle")
 				if toggleEvent then
 					if S.CrimAutoUnlockDoors then
@@ -3360,12 +3362,12 @@ end
 
 local function stopMaster()
 	if master.conn then master.conn:Disconnect(); master.conn=nil end
-	if crateFolderConn then crateFolderConn:Disconnect(); crateFolderConn=nil end
-	if crateRemoveConn then crateRemoveConn:Disconnect(); crateRemoveConn=nil end
-	if crateFolderWatch then crateFolderWatch:Disconnect(); crateFolderWatch=nil end
-	if gunFolderConn then gunFolderConn:Disconnect(); gunFolderConn=nil end
-	if gunRemoveConn then gunRemoveConn:Disconnect(); gunRemoveConn=nil end
-	if gunFolderWatch then gunFolderWatch:Disconnect(); gunFolderWatch=nil end
+	if crateWatch.folderConn then crateWatch.folderConn:Disconnect(); crateWatch.folderConn=nil end
+	if crateWatch.removeConn then crateWatch.removeConn:Disconnect(); crateWatch.removeConn=nil end
+	if crateWatch.folderWatch then crateWatch.folderWatch:Disconnect(); crateWatch.folderWatch=nil end
+	if gunWatch.folderConn then gunWatch.folderConn:Disconnect(); gunWatch.folderConn=nil end
+	if gunWatch.removeConn then gunWatch.removeConn:Disconnect(); gunWatch.removeConn=nil end
+	if gunWatch.folderWatch then gunWatch.folderWatch:Disconnect(); gunWatch.folderWatch=nil end
 	pcall(stopNoRecoil)
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
@@ -3377,7 +3379,7 @@ local function stopMaster()
 		elev.conn = nil
 	end
 	crimStamina.active = false
-	lastDoorTick = 0
+	door.lastTick = 0
 	clearCrateESP()
 	clearGunESP()
 	clearSafeESP()
