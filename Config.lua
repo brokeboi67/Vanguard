@@ -19,6 +19,7 @@ local RUNTIME_KEYS = {
 	LastShotRayDir = true,
 	_configApplyHooks = true,
 	OnConfigApplied = true,
+	CrimPathStatus = true,
 }
 
 local function coerceConfigValue(v, current)
@@ -444,6 +445,27 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimSafeShowBroken == nil then
 		S.CrimSafeShowBroken = false
+	end
+	if S.CrimPathDisplay == nil then
+		S.CrimPathDisplay = false
+	end
+	if S.CrimPathTarget == nil then
+		S.CrimPathTarget = "Safe"
+	end
+	if S.CrimPathMaxDist == nil then
+		S.CrimPathMaxDist = 350
+	end
+	if S.CrimPathRefresh == nil then
+		S.CrimPathRefresh = 0.55
+	end
+	if S.CrimPathColor == nil then
+		S.CrimPathColor = Color3.fromRGB(80, 200, 255)
+	end
+	if S.CrimPathJumpColor == nil then
+		S.CrimPathJumpColor = Color3.fromRGB(255, 170, 40)
+	end
+	if S.CrimPathEndColor == nil then
+		S.CrimPathEndColor = Color3.fromRGB(90, 255, 140)
 	end
 	if S.CrimCrateBasic == nil then
 		S.CrimCrateBasic = true

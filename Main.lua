@@ -527,7 +527,7 @@ local CRIM_GAME_ID = 1494262959
 local isCriminality = game.GameId == CRIM_GAME_ID
 
 -- Base modules always fetched (Core → GameSupport). +Criminality +ClientBuild when needed.
-local LOAD_TOTAL = 29 + (isCriminality and 2 or 0)
+local LOAD_TOTAL = 29 + (isCriminality and 3 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -807,6 +807,12 @@ phase("Movement.Init",   Movement.Init,   Settings)
 phase("Invisibility.Init", Invisibility.Init, Settings, GUI)
 if isCriminality and Criminality then
 	phase("Criminality.Init", Criminality.Init, Settings)
+	phase("PathDisplay.Init", function(S)
+		local mod = Get("PathDisplay.lua")
+		if mod and mod.Init then
+			mod.Init(S)
+		end
+	end, Settings)
 	phase("ClientBuild.Init", function(S)
 		local mod = Get("ClientBuild.lua")
 		if mod and mod.Init then

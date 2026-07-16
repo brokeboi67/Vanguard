@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.45.0",
+	Version = "2.46.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -206,6 +206,15 @@ local Settings = {
 	CrimSafeESP = false,
 	CrimSafeShowBroken = false,
 	CrimSafeColor = Color3.fromRGB(255, 220, 50),
+	-- Visual path only (no autofarm walk)
+	CrimPathDisplay = false,
+	CrimPathTarget = "Safe",
+	CrimPathMaxDist = 350,
+	CrimPathRefresh = 0.55,
+	CrimPathColor = Color3.fromRGB(80, 200, 255),
+	CrimPathJumpColor = Color3.fromRGB(255, 170, 40),
+	CrimPathEndColor = Color3.fromRGB(90, 255, 140),
+	CrimPathStatus = "",
 	CrimDealerESP = false,
 	CrimDealerColor = Color3.fromRGB(100, 200, 255),
 	CrimCrateESP = false,
