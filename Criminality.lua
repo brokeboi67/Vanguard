@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.1
+-- Criminality.lua  v2.52.2
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2017,6 +2017,7 @@ local gunMod = {
 	lastDeepAt = 0,
 	reapplyInterval = 8,
 	deepCooldown = 4,
+	baseWalk = nil,
 }
 
 -- Extra numeric fields that help 3rd-person kick / walk bloom when present.
@@ -2066,12 +2067,16 @@ local function captureWeaponOrig(v)
 			o[key] = val
 		end
 	end
-	-- Also snapshot any other numeric Recoil/Shake/Kick* keys we haven't listed
+	-- Also snapshot recoil/shake/kick/spread/reload/fire/aim/slow numeric keys
 	for k, val in pairs(v) do
 		if type(k) == "string" and type(val) == "number" and o[k] == nil then
 			local low = string.lower(k)
 			if low:find("recoil", 1, true) or low:find("shake", 1, true) or low:find("kick", 1, true)
-				or low:find("spread", 1, true) then
+				or low:find("spread", 1, true)
+				or low:find("reload", 1, true) or low:find("chamber", 1, true) or low:find("bolt", 1, true)
+				or low:find("fire", 1, true) or low:find("shoot", 1, true) or low:find("cycle", 1, true)
+				or low:find("aim", 1, true) or low:find("slow", 1, true)
+				or (low:find("walk", 1, true) and low:find("speed", 1, true)) then
 				o[k] = val
 			end
 		end
@@ -2126,7 +2131,141 @@ local function clearGunModCharConns()
 end
 
 local function gunModsWant(S)
-	return S and (S.CrimNoRecoil == true or S.CrimNoSpread == true or S.CrimQuickEquip == true)
+	return S and (
+		S.CrimNoRecoil == true
+		or S.CrimNoSpread == true
+		or S.CrimQuickEquip == true
+		or S.CrimFastReload == true
+		or S.CrimNoGunSlow == true
+		or S.CrimRapidFire == true
+	)
+end
+
+local function applyFastReload(weapon, orig, on)
+	if on then
+		for k, val in pairs(orig or {}) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("reload", 1, true) or low:find("chamber", 1, true) or low:find("bolt", 1, true) then
+					-- Speed fields go high; Time/Delay/Duration go to 0
+					if low:find("speed", 1, true) or low:find("rate", 1, true) then
+						weapon[k] = math.max(val, 1) * 20
+					else
+						weapon[k] = 0
+					end
+				end
+			end
+		end
+		gunSet(weapon, "ReloadTime", 0)
+		gunSet(weapon, "ReloadDuration", 0)
+		gunSet(weapon, "ChamberTime", 0)
+		if rawget(weapon, "ReloadSpeed") ~= nil then
+			weapon.ReloadSpeed = 99
+		end
+	elseif orig then
+		for k, val in pairs(orig) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("reload", 1, true) or low:find("chamber", 1, true) or low:find("bolt", 1, true) then
+					weapon[k] = val
+				end
+			end
+		end
+	end
+end
+
+local function applyRapidFire(weapon, orig, on)
+	if on then
+		for k, val in pairs(orig or {}) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("firedelay", 1, true) or low:find("shootdelay", 1, true)
+					or low:find("cycletime", 1, true) or low == "delay" then
+					weapon[k] = 0
+				elseif low:find("firerate", 1, true) or low == "rpm" then
+					weapon[k] = math.max(val * 3, 1200)
+				end
+			end
+		end
+		gunSet(weapon, "FireDelay", 0)
+		gunSet(weapon, "ShootDelay", 0)
+		gunSet(weapon, "CycleTime", 0)
+		if rawget(weapon, "FireRate") ~= nil and type(weapon.FireRate) == "number" then
+			weapon.FireRate = math.max(weapon.FireRate * 3, 12)
+		end
+	elseif orig then
+		for k, val in pairs(orig) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("fire", 1, true) or low:find("shoot", 1, true) or low:find("cycle", 1, true)
+					or low == "rpm" or low == "delay" then
+					weapon[k] = val
+				end
+			end
+		end
+	end
+end
+
+local function applyNoGunSlow(weapon, orig, on)
+	-- Zero client-side aim/reload walk penalties on the weapon table.
+	if on then
+		for k, val in pairs(orig or {}) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				local isSlow = low:find("slow", 1, true)
+					or (low:find("walk", 1, true) and (low:find("aim", 1, true) or low:find("reload", 1, true) or low:find("ads", 1, true)))
+					or low:find("aimwalk", 1, true) or low:find("reloadwalk", 1, true)
+				if isSlow then
+					-- If it looks like a multiplier (< 1.5), set to 1; if a flat speed, leave to WalkSpeed tick
+					if val > 0 and val <= 1.5 then
+						weapon[k] = 1
+					elseif val < 16 then
+						weapon[k] = 16
+					end
+				end
+			end
+		end
+		gunSet(weapon, "AimWalkSpeed", 16)
+		gunSet(weapon, "ReloadWalkSpeed", 16)
+		gunSet(weapon, "AdsWalkSpeed", 16)
+		gunSet(weapon, "ADSWalkSpeed", 16)
+	elseif orig then
+		for k, val in pairs(orig) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("slow", 1, true) or low:find("walk", 1, true) then
+					if low:find("aim", 1, true) or low:find("reload", 1, true) or low:find("ads", 1, true) or low:find("slow", 1, true) then
+						weapon[k] = val
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Restore WalkSpeed if the game slows you during reload/ADS (client-side).
+local function tickNoGunSlow(S)
+	if not S or not S.CrimNoGunSlow then
+		gunMod.baseWalk = nil
+		return
+	end
+	local char = getChar()
+	if not char then return end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	local hasTool = char:FindFirstChildOfClass("Tool") ~= nil
+	local ws = hum.WalkSpeed
+	if not hasTool then
+		gunMod.baseWalk = ws
+		return
+	end
+	if gunMod.baseWalk == nil or ws > gunMod.baseWalk then
+		gunMod.baseWalk = ws
+	elseif ws + 0.4 < gunMod.baseWalk then
+		pcall(function()
+			hum.WalkSpeed = gunMod.baseWalk
+		end)
+	end
 end
 
 local function applyNoRecoil(weapon, orig, on)
@@ -2225,6 +2364,9 @@ local function applyGunMods(S)
 		elseif orig and orig.EquipTime ~= nil then
 			weapon.EquipTime = orig.EquipTime
 		end
+		applyFastReload(weapon, orig, S.CrimFastReload == true)
+		applyRapidFire(weapon, orig, S.CrimRapidFire == true)
+		applyNoGunSlow(weapon, orig, S.CrimNoGunSlow == true)
 	end
 end
 
@@ -2986,6 +3128,9 @@ local function startMaster(S)
 				-- cheap: only re-zero cached tables (no getgc every few seconds)
 				applyGunMods(S)
 			end
+		end
+		if S.CrimNoGunSlow and crimFrame % 2 == 0 then
+			pcall(tickNoGunSlow, S)
 		end
 
 		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then

@@ -518,6 +518,15 @@ function Config.EnforceRules(S)
 	if S.CrimQuickEquip == nil then
 		S.CrimQuickEquip = false
 	end
+	if S.CrimFastReload == nil then
+		S.CrimFastReload = false
+	end
+	if S.CrimNoGunSlow == nil then
+		S.CrimNoGunSlow = false
+	end
+	if S.CrimRapidFire == nil then
+		S.CrimRapidFire = false
+	end
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false
 	end
