@@ -1,4 +1,4 @@
--- PathDisplay.lua  v2.50.0
+-- PathDisplay.lua  v2.50.1
 -- Visual-only "maze solver" path (NPC navmesh + portal graph through DOORS & STAIRS).
 -- No walk / no farm. Never draws a straight line through a solid wall.
 --
@@ -280,7 +280,15 @@ function PathDisplay.Init(S)
 			end
 		end
 		add(base)
-		local radii = (kind == "Safe") and { 4, 7, 11, 16 } or { 3, 6, 10 }
+		-- Dealers sit behind counters/fences — goals must land on the PLAYER side
+		local radii
+		if kind == "Safe" then
+			radii = { 4, 7, 11, 16 }
+		elseif kind == "Dealer" then
+			radii = { 5, 8, 12, 16, 22, 28 }
+		else
+			radii = { 3, 6, 10, 14 }
+		end
 		for _, r in ipairs(radii) do
 			for deg = 0, 315, 45 do
 				local rad = math.rad(deg)
@@ -290,8 +298,8 @@ function PathDisplay.Init(S)
 		for _, dy in ipairs({ -12, -6, 6, 12 }) do
 			add(base + Vector3.new(0, dy, 0))
 		end
-		-- cap goal count
-		local cap = 6
+		-- keep more goals for dealers (counter approach)
+		local cap = (kind == "Dealer") and 10 or 6
 		if #goals > cap then
 			local t = {}
 			for i = 1, cap do
@@ -300,6 +308,24 @@ function PathDisplay.Init(S)
 			goals = t
 		end
 		return goals
+	end
+
+	-- How close the path END must be to count as a real arrival (interact range).
+	-- Dealers/safes often sit behind fences — you stop at the counter, not inside the cage.
+	local function interactReach(kind)
+		if kind == "Dealer" then
+			return 20
+		end
+		if kind == "Safe" then
+			return 14
+		end
+		return 10
+	end
+
+	local function horizDist(a, b)
+		local dx = a.X - b.X
+		local dz = a.Z - b.Z
+		return math.sqrt(dx * dx + dz * dz)
 	end
 
 	--------------------------------------------------------------------------
@@ -556,11 +582,21 @@ function PathDisplay.Init(S)
 			return nil
 		end
 
+		-- Close enough to interact = SUCCESS even if navmesh can't enter the cage/fence.
+		-- (Dealer behind Armory counter, safe behind glass, etc.)
+		local endPos = pts[#pts].Position
+		local reach = interactReach(kind)
+		local endD = horizDist(endPos, part.Position)
+		if endD <= reach then
+			success = true
+		end
+
 		return {
 			pts = pts,
 			doors = doors,
 			stairs = stairs,
 			success = success,
+			endDist = endD,
 			computes = computes,
 		}
 	end
@@ -700,11 +736,15 @@ function PathDisplay.Init(S)
 			if route.stairs > 0 then
 				extra[#extra + 1] = route.stairs .. " stair"
 			end
-			local suffix = (#extra > 0) and (" · " .. table.concat(extra, " · ")) or ""
-			if not route.success then
-				suffix = suffix .. " · partial"
+			local gap = math.floor(route.endDist or route.dist or 0)
+			local state
+			if route.success then
+				state = (gap <= 6) and "OK" or ("OK · " .. gap .. "m")
+			else
+				state = "partial · " .. gap .. "m"
 			end
-			makeBillboard(prevPart, string.format("%s · %dm%s", route.name or "Target", math.floor(route.dist or 0), suffix))
+			local suffix = (#extra > 0) and (" · " .. table.concat(extra, " · ")) or ""
+			makeBillboard(prevPart, string.format("%s · %s%s", route.name or "Target", state, suffix))
 		end
 	end
 
@@ -813,7 +853,17 @@ function PathDisplay.Init(S)
 	end
 
 	local function needResolve(target, hrpPos)
-		if not cur or not cur.pts then
+		if not cur then
+			return true
+		end
+		if cur.status == "Arrived" and cur.model == target.model then
+			-- still next to the counter — don't re-solve
+			if horizDist(hrpPos, target.part.Position) <= interactReach(cur.kind or "Safe") + 4 then
+				return false
+			end
+			return true
+		end
+		if not cur.pts then
 			return true
 		end
 		if cur.model ~= target.model then
@@ -874,10 +924,32 @@ function PathDisplay.Init(S)
 			return
 		end
 
+		-- already standing at the counter / interact spot — path is done
+		if horizDist(origin, target.part.Position) <= interactReach(kind) then
+			if not cur or cur.model ~= target.model or cur.status ~= "Arrived" then
+				clearVisual()
+				removeSearchIndicator()
+				cur = {
+					model = target.model,
+					targetPos = target.part.Position,
+					pts = nil,
+					builtAt = tick(),
+					kind = kind,
+					name = target.name,
+					dist = 0,
+					doors = 0,
+					stairs = 0,
+					status = "Arrived",
+				}
+			end
+			S.CrimPathStatus = string.format("Arrived · %s", target.name or kind)
+			return
+		end
+
 		-- following an existing locked route → leave it be (no re-solve churn)
 		if cur and cur.pts and not needResolve(target, origin) then
-			local rem = math.floor((origin - target.part.Position).Magnitude)
-			S.CrimPathStatus = string.format("On route · %s · %dm", cur.name or kind, rem)
+			local rem = horizDist(origin, target.part.Position)
+			S.CrimPathStatus = string.format("On route · %s · %dm", cur.name or kind, math.floor(rem))
 			return
 		end
 
@@ -943,7 +1015,7 @@ function PathDisplay.Init(S)
 			S.CrimPathStatus = string.format(
 				"%s · %dm · %dpts · %dd/%ds · %s",
 				target.name or kind,
-				math.floor(target.dist),
+				math.floor(route.endDist or target.dist),
 				#route.pts,
 				route.doors,
 				route.stairs,
