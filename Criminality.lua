@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.6
+-- Criminality.lua  v2.52.7
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2822,8 +2822,8 @@ end
 -- Spoof = mini-teleport → may trip internal AC (same class as noclip). Prefer
 -- no-spoof when already close; Position Spoof toggle OFF by default.
 -- Cobalt: Elevator_N.Events.Toggle:FireServer("Do", Elevator_N.Knob1)
-local elev = { conn = nil, lastAt = 0, busy = false }
-local ELEV_NEAR = 11 -- studs: normal interact → fire without spoof
+local elev = { conn = nil, lastAt = 0, busy = false, NEAR = 11 }
+-- ELEV_NEAR packed into elev.NEAR to stay under Luau's 200-local limit
 
 local function tryRemoteElevator(S)
 	if not S or S.CrimRemoteElevator ~= true or elev.busy then
@@ -2879,7 +2879,7 @@ local function tryRemoteElevator(S)
 		return
 	end
 
-	local needSpoof = (bestDist or 999) > ELEV_NEAR
+	local needSpoof = (bestDist or 999) > elev.NEAR
 	if needSpoof and S.CrimRemoteElevatorSpoof ~= true then
 		crimNotify("Elevator", "Za daleko — włącz Position Spoof (ryzyko AC) albo podejdź", 3)
 		return
@@ -3088,8 +3088,7 @@ end
 -- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
-local masterConn = nil
-local crimFrame  = 0
+local master = { conn = nil, frame = 0 }  -- packed to stay under Luau 200-local limit
 
 local function crimFlag(v)
 	return v == true
@@ -3143,18 +3142,18 @@ local function syncFromConfig(S)
 end
 
 local function startMaster(S)
-	if masterConn then return end
+	if master.conn then return end
 
 	local espInitTick = false
 
 	local perfWrap = _G.__VG_PERF and _G.__VG_PERF.wrap or function(_, fn) return fn end
 
-	masterConn = RS.Heartbeat:Connect(perfWrap("Criminality.Main", function()
-		crimFrame = crimFrame + 1
+	master.conn = RS.Heartbeat:Connect(perfWrap("Criminality.Main", function()
+		master.frame = master.frame + 1
 
 		-- Toggle-sync is cheap but not latency-sensitive: run every 6 frames (~0.1s)
 		-- to cut per-frame function-call overhead and reduce Criminality tab CPU cost.
-		if crimFrame % 6 == 0 then
+		if master.frame % 6 == 0 then
 			syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 			syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 			syncGunMods(S)
@@ -3168,7 +3167,7 @@ local function startMaster(S)
 			setupCrimStaminaHook()
 		end
 		crimStamina.active = crimFlag(S.CrimInfStamina)
-		if crimStamina.active and crimFrame % 8 == 0 then
+		if crimStamina.active and master.frame % 8 == 0 then
 			refillCrimStamina()
 		end
 
@@ -3180,10 +3179,10 @@ local function startMaster(S)
 				applyGunMods(S)
 			end
 		end
-		if S.CrimNoGunSlow and crimFrame % 2 == 0 then
+		if S.CrimNoGunSlow and master.frame % 2 == 0 then
 			pcall(tickNoGunSlow, S)
 		end
-		if S.CrimAutoReload and crimFrame % 4 == 0 then
+		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)
 		end
 
@@ -3191,7 +3190,7 @@ local function startMaster(S)
 			pcall(tickDoors, S)
 		end
 		if S.CrimSafeESP then
-			if crimFrame % 20 == 0 then
+			if master.frame % 20 == 0 then
 				pcall(syncSafeESP, S)
 			end
 		elseif #ESP.safes > 0 then
@@ -3203,7 +3202,7 @@ local function startMaster(S)
 
 		if S.CrimCrateESP then
 			pcall(ensureCrateWatch, S)
-			if crimFrame % 8 == 0 or tick() - ESP.crateScanAt > 0.35 then
+			if master.frame % 8 == 0 or tick() - ESP.crateScanAt > 0.35 then
 				ESP.crateScanAt = tick()
 				pcall(syncCrateESP, S)
 			end
@@ -3213,7 +3212,7 @@ local function startMaster(S)
 
 		if S.CrimGunESP then
 			pcall(ensureGunWatch, S)
-			if crimFrame % 15 == 0 or tick() - ESP.gunScanAt > 0.6 then
+			if master.frame % 15 == 0 or tick() - ESP.gunScanAt > 0.6 then
 				ESP.gunScanAt = tick()
 				pcall(syncGunESP, S)
 			end
@@ -3238,26 +3237,26 @@ local function startMaster(S)
 			tickMelee(S)
 		end
 
-		if S.CrimCratePickup and crimFrame % 3 == 0 then
+		if S.CrimCratePickup and master.frame % 3 == 0 then
 			pcall(tickCratePickup, S)
 		end
-		if S.CrimMoneyPickup and crimFrame % 3 == 0 then
+		if S.CrimMoneyPickup and master.frame % 3 == 0 then
 			pcall(tickMoneyPickup, S)
 		end
 
-		if S.CrimAllowanceClaim and crimFrame % 3 == 0 then
+		if S.CrimAllowanceClaim and master.frame % 3 == 0 then
 			pcall(syncAllowanceAtmESP, S)
 		end
 
-		if S.CrimAllowanceClaim and crimFrame % 15 == 0 then
+		if S.CrimAllowanceClaim and master.frame % 15 == 0 then
 			pcall(tickAllowanceClaim, S)
 		end
 
-		if S.CrimFastPickup and crimFrame % 4 == 0 then
+		if S.CrimFastPickup and master.frame % 4 == 0 then
 			pcall(tickFastPickup, S)
 		end
 
-		if crimFrame % 2 == 0 then
+		if master.frame % 2 == 0 then
 			local anyOn = S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
 			local hasCached = #ESP.safes > 0 or #ESP.dealers > 0 or #ESP.crates > 0 or #ESP.guns > 0
 			if anyOn or hasCached then
@@ -3286,7 +3285,7 @@ local function startMaster(S)
 end
 
 local function stopMaster()
-	if masterConn then masterConn:Disconnect(); masterConn=nil end
+	if master.conn then master.conn:Disconnect(); master.conn=nil end
 	if crateFolderConn then crateFolderConn:Disconnect(); crateFolderConn=nil end
 	if crateRemoveConn then crateRemoveConn:Disconnect(); crateRemoveConn=nil end
 	if crateFolderWatch then crateFolderWatch:Disconnect(); crateFolderWatch=nil end
@@ -3303,7 +3302,7 @@ local function stopMaster()
 		elev.conn:Disconnect()
 		elev.conn = nil
 	end
-	crimStaminaActive = false
+	crimStamina.active = false
 	lastDoorTick = 0
 	clearCrateESP()
 	clearGunESP()
