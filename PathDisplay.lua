@@ -1,6 +1,6 @@
--- PathDisplay.lua  v2.46.0
--- Visual-only path to nearest Criminality target (safes / dealers / crates).
--- Inspired by MagicScripts ShowPath: PathfindingService + adaptive agent + waypoint beams.
+-- PathDisplay.lua  v2.46.1
+-- Visual-only PathfindingService path (NPC-style navmesh). No walk / no farm.
+-- Never draws a straight-line "Direct" through walls.
 
 local PathDisplay = {}
 
@@ -17,30 +17,36 @@ function PathDisplay.Init(S)
 	local folder = nil
 	local computing = false
 	local lastCompute = 0
-	local lastTargetKey = ""
-	local lastStatus = ""
 
+	-- Same ladder Magic uses, plus one looser agent for vertical / tight interiors
 	local AGENT_LADDER = {
 		{
 			AgentRadius = 1,
-			AgentHeight = 4,
+			AgentHeight = 5,
 			AgentCanJump = true,
 			AgentCanClimb = true,
 			WaypointSpacing = 2,
 		},
 		{
 			AgentRadius = 1.2,
-			AgentHeight = 4.5,
+			AgentHeight = 5,
 			AgentCanJump = true,
 			AgentCanClimb = true,
 			WaypointSpacing = 2.5,
 		},
 		{
 			AgentRadius = 1.5,
-			AgentHeight = 5,
+			AgentHeight = 5.5,
 			AgentCanJump = true,
 			AgentCanClimb = true,
 			WaypointSpacing = 3,
+		},
+		{
+			AgentRadius = 2,
+			AgentHeight = 6,
+			AgentCanJump = true,
+			AgentCanClimb = true,
+			WaypointSpacing = 4,
 		},
 	}
 
@@ -66,7 +72,7 @@ function PathDisplay.Init(S)
 
 	local function getHRP()
 		local char = LP.Character
-		return char and char:FindFirstChild("HumanoidRootPart")
+		return char and char:FindFirstChild("HumanoidRootPart"), char
 	end
 
 	local function getModelPart(model)
@@ -76,8 +82,8 @@ function PathDisplay.Init(S)
 		if model:IsA("BasePart") then
 			return model
 		end
-		return model:FindFirstChild("HumanoidRootPart")
-			or model:FindFirstChild("PrimaryPart")
+		return model.PrimaryPart
+			or model:FindFirstChild("HumanoidRootPart")
 			or model:FindFirstChildWhichIsA("BasePart", true)
 	end
 
@@ -85,6 +91,61 @@ function PathDisplay.Init(S)
 		local values = model:FindFirstChild("Values")
 		local broken = (values and values:FindFirstChild("Broken")) or model:FindFirstChild("Broken", true)
 		return broken and broken:IsA("BoolValue") and broken.Value == true
+	end
+
+	-- Snap to walkable floor (navmesh-friendly), HRP-ish height
+	local function snapToGround(pos, extraIgnore)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local ignore = { LP.Character, folder }
+		if extraIgnore then
+			table.insert(ignore, extraIgnore)
+		end
+		params.FilterDescendantsInstances = ignore
+
+		-- try from above, then higher for multi-floor
+		for _, up in ipairs({ 6, 14, 28, 48 }) do
+			local origin = Vector3.new(pos.X, pos.Y + up, pos.Z)
+			local hit = workspace:Raycast(origin, Vector3.new(0, -(up + 60), 0), params)
+			if hit then
+				return hit.Position + Vector3.new(0, 3, 0)
+			end
+		end
+		return pos + Vector3.new(0, 3, 0)
+	end
+
+	-- Destinations around a prop so path doesn't end inside the mesh (FailFinishNotEmpty)
+	local function approachGoals(part, kind)
+		local base = part.Position
+		local model = part:FindFirstAncestorOfClass("Model") or part
+		local goals = {}
+		local seen = {}
+
+		local function add(p)
+			local g = snapToGround(p, model)
+			local key = string.format("%d_%d_%d", math.floor(g.X), math.floor(g.Y), math.floor(g.Z))
+			if not seen[key] then
+				seen[key] = true
+				table.insert(goals, g)
+			end
+		end
+
+		add(base)
+		-- denser ring for safes/registers (often flush against walls)
+		local radii = (kind == "Safe") and { 3, 5, 7, 9, 12, 16 } or { 3, 5, 8, 12 }
+		for _, r in ipairs(radii) do
+			for deg = 0, 315, 45 do
+				local rad = math.rad(deg)
+				add(base + Vector3.new(math.cos(rad) * r, 0, math.sin(rad) * r))
+			end
+		end
+		-- vertical neighbors (floors above/below)
+		for _, dy in ipairs({ -12, -6, 6, 12, 20 }) do
+			add(base + Vector3.new(0, dy, 0))
+			add(base + Vector3.new(4, dy, 0))
+			add(base + Vector3.new(-4, dy, 0))
+		end
+		return goals
 	end
 
 	local function collectCandidates(kind, origin, maxDist, showBroken)
@@ -106,7 +167,7 @@ function PathDisplay.Init(S)
 						if part then
 							local d = (origin - part.Position).Magnitude
 							if d <= maxDist then
-								table.insert(list, { part = part, dist = d, name = safe.Name })
+								table.insert(list, { part = part, model = safe, dist = d, name = safe.Name })
 							end
 						end
 					end
@@ -120,7 +181,7 @@ function PathDisplay.Init(S)
 					if part then
 						local d = (origin - part.Position).Magnitude
 						if d <= maxDist then
-							table.insert(list, { part = part, dist = d, name = shop.Name })
+							table.insert(list, { part = part, model = shop, dist = d, name = shop.Name })
 						end
 					end
 				end
@@ -135,7 +196,7 @@ function PathDisplay.Init(S)
 						if part then
 							local d = (origin - part.Position).Magnitude
 							if d <= maxDist and d > 2 then
-								table.insert(list, { part = part, dist = d, name = c.Name })
+								table.insert(list, { part = part, model = c, dist = d, name = c.Name })
 							end
 						end
 					end
@@ -194,37 +255,100 @@ function PathDisplay.Init(S)
 			prevPart = part
 		end
 
-		-- end marker
 		if prevPart then
 			prevPart.Size = Vector3.new(1.1, 1.1, 1.1)
 			prevPart.Color = S.CrimPathEndColor or Color3.fromRGB(90, 255, 140)
 		end
 	end
 
-	local function computePath(fromPos, toPos)
+	local function statusOk(st)
+		return st == Enum.PathStatus.Success
+			or st == Enum.PathStatus.ClosestNoPath
+			or tostring(st) == "Enum.PathStatus.Success"
+			or tostring(st) == "Enum.PathStatus.ClosestNoPath"
+	end
+
+	local function tryCompute(fromPos, toPos, agent)
+		local path = PFS:CreatePath(agent)
+		local ok = pcall(function()
+			path:ComputeAsync(fromPos, toPos)
+		end)
+		if not ok then
+			return nil
+		end
+		if not statusOk(path.Status) then
+			return nil
+		end
+		local wps = path:GetWaypoints()
+		if not wps or #wps < 2 then
+			return nil
+		end
+		-- reject degenerate "almost straight through wall" (1 segment, huge distance)
+		-- real navmesh paths usually have several points when obstructed
+		return wps, path.Status
+	end
+
+	-- Full search: agent ladder × approach goals. NO straight-line fallback.
+	local function computeSmartPath(fromPos, part, kind)
+		local start = snapToGround(fromPos, LP.Character)
+		local goals = approachGoals(part, kind)
+		-- try nearer approach points first
+		table.sort(goals, function(a, b)
+			return (a - start).Magnitude < (b - start).Magnitude
+		end)
+		-- hard cap so we don't stall the client
+		local maxGoals = (kind == "Safe") and 18 or 12
+		if #goals > maxGoals then
+			local trimmed = {}
+			for i = 1, maxGoals do
+				trimmed[i] = goals[i]
+			end
+			goals = trimmed
+		end
+
+		local bestWps, bestStatus, bestScore = nil, nil, math.huge
+
 		for _, agent in ipairs(AGENT_LADDER) do
-			local path = PFS:CreatePath(agent)
-			local ok = pcall(function()
-				path:ComputeAsync(fromPos, toPos)
-			end)
-			if ok and path.Status == Enum.PathStatus.Success then
-				local wps = path:GetWaypoints()
-				if wps and #wps > 1 then
-					return wps, path.Status
+			for _, goal in ipairs(goals) do
+				local wps, st = tryCompute(start, goal, agent)
+				if wps then
+					local score = #wps
+					local isSuccess = st == Enum.PathStatus.Success or tostring(st):find("Success")
+					if isSuccess then
+						score = score - 1000
+					end
+					local jumps = 0
+					for _, wp in ipairs(wps) do
+						if wp.Action == Enum.PathWaypointAction.Jump then
+							jumps += 1
+						end
+					end
+					score = score + jumps * 2
+					local endDist = (wps[#wps].Position - part.Position).Magnitude
+					score = score + endDist * 0.15
+
+					if score < bestScore then
+						bestScore = score
+						bestWps = wps
+						bestStatus = st
+						if isSuccess and endDist < 12 and #wps >= 2 then
+							return bestWps, bestStatus
+						end
+					end
 				end
 			end
+			-- if we already have a decent Success from a tighter agent, stop
+			if bestWps and (bestStatus == Enum.PathStatus.Success or tostring(bestStatus):find("Success")) then
+				break
+			end
 		end
-		-- direct fallback line (2 points) if navmesh fails
-		return {
-			{ Position = fromPos, Action = Enum.PathWaypointAction.Walk },
-			{ Position = toPos, Action = Enum.PathWaypointAction.Walk },
-		}, "Direct"
+
+		return bestWps, bestStatus
 	end
 
 	local function tickPath()
 		if S.Unloaded or not S.CrimPathDisplay then
 			clearVisual()
-			lastTargetKey = ""
 			return
 		end
 
@@ -234,7 +358,7 @@ function PathDisplay.Init(S)
 			return
 		end
 
-		local refresh = math.clamp(tonumber(S.CrimPathRefresh) or 0.55, 0.25, 2)
+		local refresh = math.clamp(tonumber(S.CrimPathRefresh) or 0.7, 0.35, 2.5)
 		if computing or (tick() - lastCompute) < refresh then
 			return
 		end
@@ -246,40 +370,44 @@ function PathDisplay.Init(S)
 		local best = cands[1]
 		if not best or not best.part then
 			clearVisual()
-			lastTargetKey = ""
 			S.CrimPathStatus = "No target"
 			return
 		end
 
-		local targetPos = best.part.Position
-		local key = tostring(best.part) .. ":" .. math.floor(targetPos.X) .. "," .. math.floor(targetPos.Z)
-		-- still recompute periodically even if same target (player moved)
 		lastCompute = tick()
 		computing = true
 
 		task.spawn(function()
 			local ok, wps, status = pcall(function()
-				local w, st = computePath(origin, targetPos)
-				return w, st
+				return computeSmartPath(origin, best.part, kind)
 			end)
 			computing = false
+
 			if S.Unloaded or not S.CrimPathDisplay then
 				clearVisual()
 				return
 			end
+
 			if not ok or not wps then
-				S.CrimPathStatus = "Path failed"
+				clearVisual()
+				S.CrimPathStatus = "No path (navmesh)"
 				return
 			end
-			lastTargetKey = key
-			lastStatus = tostring(status)
+
 			local jumps = 0
 			for _, wp in ipairs(wps) do
 				if wp.Action == Enum.PathWaypointAction.Jump then
 					jumps += 1
 				end
 			end
-			S.CrimPathStatus = string.format("%s · %dm · %d pts · %d jump", best.name or kind, math.floor(best.dist), #wps, jumps)
+			S.CrimPathStatus = string.format(
+				"%s · %dm · %d pts · %d jump · %s",
+				best.name or kind,
+				math.floor(best.dist),
+				#wps,
+				jumps,
+				tostring(status):gsub("Enum.PathStatus.", "")
+			)
 			pcall(drawWaypoints, wps)
 		end)
 	end

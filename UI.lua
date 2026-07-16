@@ -2685,41 +2685,54 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
 		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
 		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4, { flat = true })
-		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 5, { flat = true })
-		MakeTog(CUtil, "Elevator Pos Spoof", "CrimRemoteElevatorSpoof", 6, {
+		MakeSection(CUtil, "INVISIBILITY", 5)
+		MakeTog(CUtil, "Invisibility", "Invisibility", 6, { flat = true })
+		MakeTog(CUtil, "Visible Warning", "InvisShowWarning", 7, {
+			flat = true,
+			requires = "Invisibility",
+		})
+		MakeSlider(CUtil, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 8, {
+			suffix = "",
+			step = 1,
+			fmt = function(v) return string.format("%d", v) end,
+		})
+		MakeBind(CUtil, "Invis Key", "InvisKey", 9)
+		MakeHint(CUtil, "hint_invis", 10)
+		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 11, { flat = true })
+		MakeTog(CUtil, "Elevator Pos Spoof", "CrimRemoteElevatorSpoof", 12, {
 			flat = true,
 			requires = "CrimRemoteElevator",
 		})
-		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 7)
-		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 8, {
+		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 13)
+		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 14, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CUtil, "hint_crim_elevator", 9)
-		MakeSection(CUtil, L("crim_sub_clientbuild"), 10)
-		MakeButton(CUtil, nil, 11, function()
+		MakeHint(CUtil, "hint_crim_elevator", 15)
+		MakeSection(CUtil, L("crim_sub_clientbuild"), 16)
+		MakeButton(CUtil, nil, 17, function()
 			if S._clientBridgeStart then
 				S._clientBridgeStart()
 			end
 		end, "btn_crim_bridge")
-		MakeButton(CUtil, nil, 12, function()
+		MakeButton(CUtil, nil, 18, function()
 			if S._clientBridgeClear then
 				S._clientBridgeClear()
 			end
 		end, "btn_crim_bridge_clear")
-		MakeButton(CUtil, nil, 13, function()
+		MakeButton(CUtil, nil, 19, function()
 			if S._clientDeleteStart then
 				S._clientDeleteStart()
 			end
 		end, "btn_crim_delete")
-		MakeButton(CUtil, nil, 14, function()
+		MakeButton(CUtil, nil, 20, function()
 			if S._clientDeleteRestore then
 				S._clientDeleteRestore()
 			end
 		end, "btn_crim_delete_restore")
-		MakeHint(CUtil, "hint_crim_clientbuild", 15)
-		MakeHint(CUtil, "hint_crim_util", 16)
+		MakeHint(CUtil, "hint_crim_clientbuild", 21)
+		MakeHint(CUtil, "hint_crim_util", 22)
 	end
 
 	local function refreshWorld()
@@ -3779,18 +3792,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	MakeHint(MMove, "hint_spider", 15)
 	MakeTog(MMove, "Infinite Stamina", "InfStamina", 16, { flat = true })
 	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 17, { flat = true })
-	MakeTog(MMove, "Invisibility", "Invisibility", 18, { flat = true })
-	MakeTog(MMove, "Visible Warning", "InvisShowWarning", 19, {
-		flat = true,
-		requires = "Invisibility",
-	})
-	MakeSlider(MMove, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 20, {
-		suffix = "",
-		step = 1,
-		fmt = function(v) return string.format("%d", v) end,
-	})
-	MakeBind(MMove, "Invis Key", "InvisKey", 21)
-	MakeHint(MMove, "hint_invis", 22)
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })
