@@ -1,4 +1,4 @@
--- Criminality.lua  v2.51.3
+-- Criminality.lua  v2.52.0
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -1998,7 +1998,7 @@ local function stopFastPickupInput()
 	end
 end
 
--- ── NO RECOIL (weapon GC tables) ─────────────────────────────────────────────
+-- ── GUN MODS (weapon GC tables: recoil / spread / equip) ─────────────────────
 local featureRunning = {
 	noFall = false,
 	noSpike = false,
@@ -2019,8 +2019,64 @@ local gunMod = {
 	deepCooldown = 4,
 }
 
+-- Extra numeric fields that help 3rd-person kick / walk bloom when present.
+local GUN_EXTRA_KEYS = {
+	"WalkSpreadIncrease",
+	"HipSpread",
+	"AimSpread",
+	"MinSpread",
+	"MaxSpread",
+	"CamShake",
+	"CameraShake",
+	"Kick",
+	"RecoilPunch",
+	"VRecoil",
+	"HRecoil",
+}
+
 local function isWeaponTable(v)
 	return type(v) == "table" and rawget(v, "EquipTime") ~= nil
+end
+
+local function gunSet(weapon, key, value)
+	if rawget(weapon, key) ~= nil then
+		weapon[key] = value
+	end
+end
+
+local function gunRestore(weapon, orig, key)
+	if orig[key] ~= nil then
+		weapon[key] = orig[key]
+	end
+end
+
+local function captureWeaponOrig(v)
+	local o = {
+		Recoil = v.Recoil,
+		CameraRecoilingEnabled = v.CameraRecoilingEnabled,
+		AngleX_Min = v.AngleX_Min, AngleX_Max = v.AngleX_Max,
+		AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
+		AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
+		Spread = v.Spread,
+		EquipTime = v.EquipTime,
+	}
+	for _, key in ipairs(GUN_EXTRA_KEYS) do
+		local val = rawget(v, key)
+		if val ~= nil then
+			o[key] = val
+		end
+	end
+	-- Also snapshot any other numeric Recoil/Shake/Kick* keys we haven't listed
+	for k, val in pairs(v) do
+		if type(k) == "string" and type(val) == "number" and o[k] == nil then
+			local low = string.lower(k)
+			if low:find("recoil", 1, true) or low:find("shake", 1, true) or low:find("kick", 1, true)
+				or low:find("spread", 1, true) then
+				o[k] = val
+			end
+		end
+	end
+	return o
 end
 
 local function pruneWeaponOrig(active)
@@ -2045,15 +2101,7 @@ local function cacheWeapons(deep)
 					active[v] = true
 					table.insert(found, v)
 					if not gunMod.orig[v] then
-						gunMod.orig[v] = {
-							Recoil = v.Recoil,
-							CameraRecoilingEnabled = v.CameraRecoilingEnabled,
-							AngleX_Min = v.AngleX_Min, AngleX_Max = v.AngleX_Max,
-							AngleY_Min = v.AngleY_Min, AngleY_Max = v.AngleY_Max,
-							AngleZ_Min = v.AngleZ_Min, AngleZ_Max = v.AngleZ_Max,
-							Spread = v.Spread,
-							EquipTime = v.EquipTime,
-						}
+						gunMod.orig[v] = captureWeaponOrig(v)
 					elseif gunMod.orig[v].EquipTime == nil then
 						gunMod.orig[v].EquipTime = v.EquipTime
 					end
@@ -2078,7 +2126,76 @@ local function clearGunModCharConns()
 end
 
 local function gunModsWant(S)
-	return S and (S.CrimNoRecoil == true or S.CrimQuickEquip == true)
+	return S and (S.CrimNoRecoil == true or S.CrimNoSpread == true or S.CrimQuickEquip == true)
+end
+
+local function applyNoRecoil(weapon, orig, on)
+	if on then
+		gunSet(weapon, "Recoil", 0)
+		gunSet(weapon, "CameraRecoilingEnabled", false)
+		gunSet(weapon, "AngleX_Min", 0); gunSet(weapon, "AngleX_Max", 0)
+		gunSet(weapon, "AngleY_Min", 0); gunSet(weapon, "AngleY_Max", 0)
+		gunSet(weapon, "AngleZ_Min", 0); gunSet(weapon, "AngleZ_Max", 0)
+		-- Extra kick / shake fields (3rd person bloom)
+		for k, val in pairs(orig or {}) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("recoil", 1, true) or low:find("shake", 1, true) or low:find("kick", 1, true) then
+					weapon[k] = 0
+				end
+			end
+		end
+		gunSet(weapon, "WalkSpreadIncrease", 0)
+	elseif orig then
+		gunRestore(weapon, orig, "Recoil")
+		gunRestore(weapon, orig, "CameraRecoilingEnabled")
+		gunRestore(weapon, orig, "AngleX_Min"); gunRestore(weapon, orig, "AngleX_Max")
+		gunRestore(weapon, orig, "AngleY_Min"); gunRestore(weapon, orig, "AngleY_Max")
+		gunRestore(weapon, orig, "AngleZ_Min"); gunRestore(weapon, orig, "AngleZ_Max")
+		for k, val in pairs(orig) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("recoil", 1, true) or low:find("shake", 1, true) or low:find("kick", 1, true) then
+					weapon[k] = val
+				end
+			end
+		end
+		-- WalkSpread only restored here if No Spread is also off (handled below)
+	end
+end
+
+local function applyNoSpread(weapon, orig, on)
+	if on then
+		gunSet(weapon, "Spread", 0)
+		gunSet(weapon, "WalkSpreadIncrease", 0)
+		gunSet(weapon, "HipSpread", 0)
+		gunSet(weapon, "AimSpread", 0)
+		gunSet(weapon, "MinSpread", 0)
+		gunSet(weapon, "MaxSpread", 0)
+		for k, val in pairs(orig or {}) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("spread", 1, true) then
+					weapon[k] = 0
+				end
+			end
+		end
+	elseif orig then
+		gunRestore(weapon, orig, "Spread")
+		gunRestore(weapon, orig, "WalkSpreadIncrease")
+		gunRestore(weapon, orig, "HipSpread")
+		gunRestore(weapon, orig, "AimSpread")
+		gunRestore(weapon, orig, "MinSpread")
+		gunRestore(weapon, orig, "MaxSpread")
+		for k, val in pairs(orig) do
+			if type(k) == "string" and type(val) == "number" then
+				local low = string.lower(k)
+				if low:find("spread", 1, true) then
+					weapon[k] = val
+				end
+			end
+		end
+	end
 end
 
 local function applyGunMods(S)
@@ -2087,23 +2204,24 @@ local function applyGunMods(S)
 	end
 	for _, weapon in ipairs(gunMod.cache) do
 		local orig = gunMod.orig[weapon]
-		if S.CrimNoRecoil then
-			weapon.Recoil = 0
-			weapon.CameraRecoilingEnabled = false
-			weapon.AngleX_Min = 0; weapon.AngleX_Max = 0
-			weapon.AngleY_Min = 0; weapon.AngleY_Max = 0
-			weapon.AngleZ_Min = 0; weapon.AngleZ_Max = 0
-			weapon.Spread = 0
+		applyNoRecoil(weapon, orig, S.CrimNoRecoil == true)
+		-- Spread is independent; if No Recoil is on we still leave Spread to CrimNoSpread
+		-- unless user wants both (common). WalkSpread zeroed by either toggle.
+		if S.CrimNoSpread then
+			applyNoSpread(weapon, orig, true)
+		elseif not S.CrimNoRecoil then
+			applyNoSpread(weapon, orig, false)
 		elseif orig then
-			weapon.Recoil = orig.Recoil
-			weapon.CameraRecoilingEnabled = orig.CameraRecoilingEnabled
-			weapon.AngleX_Min = orig.AngleX_Min; weapon.AngleX_Max = orig.AngleX_Max
-			weapon.AngleY_Min = orig.AngleY_Min; weapon.AngleY_Max = orig.AngleY_Max
-			weapon.AngleZ_Min = orig.AngleZ_Min; weapon.AngleZ_Max = orig.AngleZ_Max
-			weapon.Spread = orig.Spread
+			-- No Recoil on, No Spread off → restore Spread but keep WalkSpread at 0 from recoil path
+			gunRestore(weapon, orig, "Spread")
+			gunRestore(weapon, orig, "HipSpread")
+			gunRestore(weapon, orig, "AimSpread")
+			gunRestore(weapon, orig, "MinSpread")
+			gunRestore(weapon, orig, "MaxSpread")
+			gunSet(weapon, "WalkSpreadIncrease", 0)
 		end
 		if S.CrimQuickEquip then
-			weapon.EquipTime = 0
+			gunSet(weapon, "EquipTime", 0)
 		elseif orig and orig.EquipTime ~= nil then
 			weapon.EquipTime = orig.EquipTime
 		end
@@ -2142,14 +2260,10 @@ end
 local function resetGunMods()
 	for weapon, values in pairs(gunMod.orig) do
 		if type(weapon) == "table" then
-			weapon.Recoil = values.Recoil
-			weapon.CameraRecoilingEnabled = values.CameraRecoilingEnabled
-			weapon.AngleX_Min = values.AngleX_Min; weapon.AngleX_Max = values.AngleX_Max
-			weapon.AngleY_Min = values.AngleY_Min; weapon.AngleY_Max = values.AngleY_Max
-			weapon.AngleZ_Min = values.AngleZ_Min; weapon.AngleZ_Max = values.AngleZ_Max
-			weapon.Spread = values.Spread
-			if values.EquipTime ~= nil then
-				weapon.EquipTime = values.EquipTime
+			for k, val in pairs(values) do
+				pcall(function()
+					weapon[k] = val
+				end)
 			end
 		end
 	end

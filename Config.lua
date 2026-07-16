@@ -512,6 +512,9 @@ function Config.EnforceRules(S)
 	if S.CrimNoRecoil == nil then
 		S.CrimNoRecoil = false
 	end
+	if S.CrimNoSpread == nil then
+		S.CrimNoSpread = false
+	end
 	if S.CrimQuickEquip == nil then
 		S.CrimQuickEquip = false
 	end

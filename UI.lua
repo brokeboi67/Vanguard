@@ -2418,7 +2418,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CCombat, "Quick Equip", "CrimQuickEquip", 4, {
+		MakeTog(CCombat, "No Spread", "CrimNoSpread", 4, {
 			flat = true,
 			onChange = function()
 				if S._crimRefreshGunMods then
@@ -2426,9 +2426,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_norecoil", 5)
-		MakeHint(CCombat, "hint_crim_quickequip", 6)
-		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 7, {
+		MakeTog(CCombat, "Quick Equip", "CrimQuickEquip", 5, {
+			flat = true,
+			onChange = function()
+				if S._crimRefreshGunMods then
+					task.delay(0.2, S._crimRefreshGunMods)
+				end
+			end,
+		})
+		MakeHint(CCombat, "hint_crim_norecoil", 6)
+		MakeHint(CCombat, "hint_crim_nospread", 7)
+		MakeHint(CCombat, "hint_crim_quickequip", 8)
+		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 9, {
 			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimAimPredictionLead
@@ -2437,7 +2446,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 8, {
+		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 10, {
 			suffix = "",
 			step = 1,
 			requires = "CrimAimPrediction",
@@ -2448,7 +2457,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_prediction", 9)
+		MakeHint(CCombat, "hint_crim_prediction", 11)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
