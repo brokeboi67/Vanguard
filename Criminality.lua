@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.7
+-- Criminality.lua  v2.52.8
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -279,25 +279,87 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highl
 
 	local bg  = Instance.new("BillboardGui")
 	bg.Name        = "VG_CrimESP"
-	bg.Size        = UDim2.new(0, 64, 0, 16)
+	bg.Size        = UDim2.new(0, math.clamp(#labelText * 7 + 22, 58, 130), 0, 20)
 	bg.StudsOffset = Vector3.new(0, 4, 0)
 	bg.AlwaysOnTop = true
 	bg.Enabled     = false
 	bg.Adornee     = part
 	bg.Parent      = getGui()
 
+	-- Pill-style rounded label (dark bg + colored stroke)
+	local pill = Instance.new("Frame")
+	pill.Name                   = "Pill"
+	pill.Size                   = UDim2.new(1, 0, 1, 0)
+	pill.BackgroundColor3       = Color3.fromRGB(12, 12, 16)
+	pill.BackgroundTransparency = 0.25
+	pill.BorderSizePixel        = 0
+	pill.Parent                 = bg
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent       = pill
+	local stroke = Instance.new("UIStroke")
+	stroke.Color        = fillCol
+	stroke.Thickness    = 1
+	stroke.Transparency = 0.35
+	stroke.Parent       = pill
+
 	local lbl = Instance.new("TextLabel")
-	lbl.Size                   = UDim2.new(1,0,1,0)
+	lbl.Size                   = UDim2.new(1, -8, 1, 0)
+	lbl.Position               = UDim2.new(0, 4, 0, 0)
 	lbl.BackgroundTransparency = 1
 	lbl.Text                   = labelText
-	lbl.TextColor3             = Color3.fromRGB(255,255,255)
+	lbl.TextColor3             = Color3.fromRGB(240, 240, 245)
 	lbl.TextSize               = 10
 	lbl.Font                   = Enum.Font.GothamBold
-	lbl.TextStrokeTransparency = 0.35
-	lbl.Parent                 = bg
+	lbl.TextStrokeTransparency = 1
+	lbl.TextTruncate           = Enum.TextTruncate.AtEnd
+	lbl.Parent                 = pill
 
-	return { h=h, bg=bg, lbl=lbl, part=part, model=model, broken=brokenVal,
-	         fillCol=fillCol }
+	return { h=h, bg=bg, lbl=lbl, pill=pill, stroke=stroke, part=part,
+	         model=model, broken=brokenVal, fillCol=fillCol, visState=false }
+end
+
+-- Animated show/hide — tween only on state transition (cheap; no per-frame cost).
+local ESP_FADE_IN = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function espShow(e)
+	if e.visState then return end
+	e.visState = true
+	if alive(e.h) then
+		e.h.Enabled = true
+		e.h.FillTransparency = 1
+		e.h.OutlineTransparency = 1
+		TS:Create(e.h, ESP_FADE_IN, { FillTransparency = 0.55, OutlineTransparency = 0 }):Play()
+	end
+	if alive(e.bg) then
+		e.bg.Enabled = true
+		e.bg.StudsOffset = Vector3.new(0, 2.6, 0)
+		TS:Create(e.bg, ESP_FADE_IN, { StudsOffset = Vector3.new(0, 4, 0) }):Play()
+	end
+	if alive(e.pill) then
+		e.pill.BackgroundTransparency = 1
+		TS:Create(e.pill, ESP_FADE_IN, { BackgroundTransparency = 0.25 }):Play()
+	end
+	if alive(e.lbl) then
+		e.lbl.TextTransparency = 1
+		TS:Create(e.lbl, ESP_FADE_IN, { TextTransparency = 0 }):Play()
+	end
+	if e.stroke and e.stroke.Parent then
+		e.stroke.Transparency = 1
+		TS:Create(e.stroke, ESP_FADE_IN, { Transparency = 0.35 }):Play()
+	end
+end
+
+local function espHide(e)
+	if not e.visState then
+		-- keep hard-off in case instances were re-created visible
+		if alive(e.h) and e.h.Enabled then e.h.Enabled = false end
+		if alive(e.bg) and e.bg.Enabled then e.bg.Enabled = false end
+		return
+	end
+	e.visState = false
+	if alive(e.h) then e.h.Enabled = false end
+	if alive(e.bg) then e.bg.Enabled = false end
 end
 
 local function clearSafeESP()
@@ -529,6 +591,7 @@ local function playCrateSpawnFx(entry, rare)
 		return
 	end
 	local fill = rare and (colCrateRare) or (colCrateNorm)
+	entry.visState = true  -- mark visible so tickESP doesn't re-run fade-in over the fx
 	entry.h.Enabled = true
 	entry.h.FillColor = fill
 	entry.h.FillTransparency = 1
@@ -553,10 +616,17 @@ local function playCrateSpawnFx(entry, rare)
 
 	if alive(entry.lbl) then
 		local finalText = entry.lbl.Text
+		local finalSize = alive(entry.bg) and entry.bg.Size or nil
 		entry.lbl.Text = rare and "✦ RARE SPAWN ✦" or "▲ CRATE SPAWN ▲"
+		if alive(entry.bg) then
+			entry.bg.Size = UDim2.new(0, 118, 0, 20)
+		end
 		task.delay(1.1, function()
 			if alive(entry.lbl) and entry.lbl.Text:find("SPAWN") then
 				entry.lbl.Text = finalText
+				if finalSize and alive(entry.bg) then
+					entry.bg.Size = finalSize
+				end
 			end
 		end)
 	end
@@ -910,6 +980,7 @@ local function playGunSpawnFx(entry, fill)
 	if not entry or not alive(entry.h) then
 		return
 	end
+	entry.visState = true  -- mark visible so tickESP doesn't re-run fade-in over the fx
 	entry.h.Enabled = true
 	entry.h.FillColor = fill
 	entry.h.FillTransparency = 1
@@ -946,7 +1017,7 @@ local function addGunESP(model, S, withSpawnFx)
 		entry.bg.Adornee = entry.part
 	end
 	if alive(entry.bg) then
-		entry.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 18, 64, 110), 0, 16)
+		entry.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 22, 64, 122), 0, 20)
 	end
 	entry.kind = kind
 	entry.label = label
@@ -985,7 +1056,7 @@ local function syncGunESP(S)
 				if alive(e.h) then e.h.FillColor = fill end
 				if alive(e.lbl) then e.lbl.Text = label end
 				if alive(e.bg) then
-					e.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 18, 64, 110), 0, 16)
+					e.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 22, 64, 122), 0, 20)
 				end
 			end
 		end
@@ -1109,15 +1180,16 @@ local function tickESP(S)
 			if vis then
 				local open   = e.broken and e.broken.Value == true
 				local newCol = open and colOpen or (S.CrimSafeColor or colSafeD)
-				if e.h.FillColor ~= newCol then e.h.FillColor = newCol end
+				if e.h.FillColor ~= newCol then
+					e.h.FillColor = newCol
+					if e.stroke and e.stroke.Parent then e.stroke.Color = newCol end
+				end
 				local base = e.baseLabel or "SAFE"
 				local newTxt = open and ("OPEN " .. base) or base
 				if e.lbl.Text ~= newTxt then e.lbl.Text = newTxt end
-				if not e.h.Enabled  then e.h.Enabled  = true end
-				if not e.bg.Enabled then e.bg.Enabled = true end
+				espShow(e)
 			else
-				if e.h.Enabled  then e.h.Enabled  = false end
-				if e.bg.Enabled then e.bg.Enabled = false end
+				espHide(e)
 			end
 		end
 	end
@@ -1130,13 +1202,7 @@ local function tickESP(S)
 			vis = (camPos - e.part.Position).Magnitude <= maxDist
 		end
 		if alive(e.h) then
-			if vis then
-				if not e.h.Enabled  then e.h.Enabled  = true end
-				if not e.bg.Enabled then e.bg.Enabled = true end
-			else
-				if e.h.Enabled  then e.h.Enabled  = false end
-				if e.bg.Enabled then e.bg.Enabled = false end
-			end
+			if vis then espShow(e) else espHide(e) end
 		end
 	end
 
@@ -1156,13 +1222,7 @@ local function tickESP(S)
 			end
 		end
 		if alive(e.h) then
-			if vis then
-				if not e.h.Enabled  then e.h.Enabled  = true end
-				if not e.bg.Enabled then e.bg.Enabled = true end
-			else
-				if e.h.Enabled  then e.h.Enabled  = false end
-				if e.bg.Enabled then e.bg.Enabled = false end
-			end
+			if vis then espShow(e) else espHide(e) end
 		end
 	end
 
@@ -1190,13 +1250,7 @@ local function tickESP(S)
 			end
 		end
 		if alive(e.h) then
-			if vis then
-				if not e.h.Enabled  then e.h.Enabled  = true end
-				if not e.bg.Enabled then e.bg.Enabled = true end
-			else
-				if e.h.Enabled  then e.h.Enabled  = false end
-				if e.bg.Enabled then e.bg.Enabled = false end
-			end
+			if vis then espShow(e) else espHide(e) end
 		end
 	end
 end
@@ -2096,6 +2150,11 @@ end
 
 local function cacheWeapons(deep)
 	if typeof(getgc) ~= "function" then return end
+	-- Global scan cooldown: getgc allocates huge arrays; rapid re-scans (e.g.
+	-- scope re-equipping the tool) caused freezes + RAM spikes.
+	local now = tick()
+	if now - (gunMod.lastScanAt or 0) < 2.5 then return end
+	gunMod.lastScanAt = now
 	local active = {}
 	local found = {}
 	-- shallow first; deep only when requested or shallow empty
@@ -2532,19 +2591,34 @@ local function stopGunMods()
 	gunMod.conns = {}
 end
 
+local function gunModCombo(S)
+	-- Signature of the toggle combination; re-apply only when it changes.
+	return (S.CrimNoRecoil == true and 1 or 0)
+		+ (S.CrimNoSpread == true and 2 or 0)
+		+ (S.CrimQuickEquip == true and 4 or 0)
+		+ (S.CrimNoGunSlow == true and 8 or 0)
+end
+
 local function syncGunMods(S)
 	local want = gunModsWant(S)
 	if featureRunning.gunMods == want then
-		-- already running — still re-apply when toggles change combination
 		if want then
-			pcall(function() applyGunMods(S) end)
+			-- Re-apply ONLY when the toggle combo changed (was: every call =
+			-- 10x/s full weapon-table sweep → CPU waste + freeze w/ scope).
+			local combo = gunModCombo(S)
+			if combo ~= gunMod.lastCombo then
+				gunMod.lastCombo = combo
+				pcall(function() applyGunMods(S) end)
+			end
 		end
 		return
 	end
 	featureRunning.gunMods = want
 	if want then
+		gunMod.lastCombo = gunModCombo(S)
 		pcall(function() startGunMods(S) end)
 	else
+		gunMod.lastCombo = nil
 		pcall(stopGunMods)
 	end
 end

@@ -1,4 +1,4 @@
--- BountyTracker.lua v2.52.6
+-- BountyTracker.lua v2.52.8
 -- Scrapes Criminality's custom bounty popups ("Bounty Alert" / "Bounty Claimed").
 -- Fixes:
 --   • Display names with spaces/special chars now matched (pattern .-)
@@ -150,23 +150,28 @@ end
 
 -- Try to extract a player name and bounty amount from a block of popup texts.
 -- Handles display names with spaces, amounts with commas, $ prefix optional.
+-- IMPORTANT: name must resolve to a real player on the server — otherwise we
+-- risk grabbing random GUI text (e.g. server codes like "#1x8z").
 local function tryExtractAlert(texts, joined)
 	-- Pattern 1: line with "Name: $1,000" or "Name: 1000"
-	-- Use (.-)  so names with spaces work.
 	for _, t in ipairs(texts) do
 		local name, amt = t:match("^%s*(.-)%s*:%s*%$?([%d,]+)%s*$")
 		if name and amt and #name >= 2 and not string.lower(name):find("bounty") then
 			local n = parseAmount(amt)
-			if n and n > 0 then return name, n end
+			if n and n > 0 and resolvePlayer(name) then
+				return name, n
+			end
 		end
 	end
-	-- Pattern 2: anywhere in joined text
-	local name, amt = joined:match("([%a%d%s_]+)%s*:%s*%$?([%d,]+)")
-	if name and amt then
+	-- Pattern 2: anywhere in joined text — try every "x: y" pair and keep the
+	-- first that matches a real player.
+	for name, amt in joined:gmatch("([^\n:]+)%s*:%s*%$?([%d,]+)") do
 		name = name:match("^%s*(.-)%s*$")  -- trim
 		if #name >= 2 and not string.lower(name):find("bounty") then
 			local n = parseAmount(amt)
-			if n and n > 0 then return name, n end
+			if n and n > 0 and resolvePlayer(name) then
+				return name, n
+			end
 		end
 	end
 	return nil, nil
