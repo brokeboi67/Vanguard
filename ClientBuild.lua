@@ -1,7 +1,8 @@
--- ClientBuild.lua  v2.52.25
+-- ClientBuild.lua  v2.52.26
 -- NOTE: bump with Settings.Version when changing.
 -- Client-only bridge + delete + wallbang.
--- Local parts / local CanQuery/CanCollide — server/AC never sees it.
+-- Wallbang = gun raycast penetration ONLY (no CanCollide edits).
+-- Editing map collide caused Anti Exploit "movement cheats" rectify/reset.
 
 local ClientBuild = {}
 
@@ -18,18 +19,16 @@ local markerB = nil
 local bridges = {}
 local hidden = {} -- { part = BasePart, canCollide, transparency, canQuery }
 
--- Wallbang: CanCollide+CanQuery off on walls, Transparency untouched.
--- Roblox: CanQuery=false is IGNORED while CanCollide is still true.
--- Floors: Map names are obfuscated — protect whatever the character is standing on
--- (raycast/overlap under feet) and never punch those parts.
 local wallbangOn = false
-local wallbang = {} -- [part] = { canCollide, canQuery }
-local wallbangSafe = {} -- [part] = true — stood-on / walk surface, never punch again
-local wallbangMapConn = nil
-local wallbangFeetConn = nil
 local wallbangSyncConn = nil
-local wallbangScanToken = 0
+local wallbangHooks = false
 local settingsRef = nil
+
+-- originals
+local oldRaycast = nil
+local oldFindPartOnRay = nil
+local oldFindPartOnRayIgnore = nil
+local oldFindPartOnRayWhite = nil
 
 local function notify(title, text)
 	pcall(function()
@@ -103,6 +102,10 @@ local function mouseRay(maxDist)
 		table.insert(exclude, player.Character)
 	end
 	params.FilterDescendantsInstances = exclude
+	-- Use raw raycast (bypass wallbang hook via oldRaycast when available)
+	if oldRaycast then
+		return oldRaycast(workspace, ray.Origin, ray.Direction * (maxDist or 500), params)
+	end
 	return workspace:Raycast(ray.Origin, ray.Direction * (maxDist or 500), params)
 end
 
@@ -154,7 +157,6 @@ local function hideAsset(part)
 		transparency = part.Transparency,
 		canQuery = part.CanQuery,
 	})
-	wallbang[part] = nil
 	pcall(function()
 		part.CanCollide = false
 		part.CanQuery = false
@@ -234,290 +236,259 @@ local function bindInput()
 	end)
 end
 
--- ── Wallbang ─────────────────────────────────────────────────────────────────
+-- ── Wallbang (ray penetration — NO map collide edits) ─────────────────────────
 
-local function isHiddenPart(part)
-	for _, e in ipairs(hidden) do
-		if e.part == part then
-			return true
+local function wrap(fn)
+	if typeof(newcclosure) == "function" then
+		local ok, w = pcall(newcclosure, fn)
+		if ok and w then
+			return w
 		end
 	end
-	return false
+	return fn
 end
 
--- Geometry-only soft filter (names are obfuscated on Criminality Map).
-local function isLikelyFlatSlab(part)
-	if not part or not part:IsA("BasePart") then
+local function isCharacterPart(inst)
+	if not inst then
 		return false
 	end
-	local size = part.Size
-	local upY = math.abs(part.CFrame.UpVector.Y)
-	if upY < 0.78 then
+	local model = inst:FindFirstAncestorOfClass("Model")
+	if not model then
 		return false
 	end
-	local footprint = size.X * size.Z
-	if size.Y <= 5 then
-		return true
-	end
-	if size.Y <= 20 and footprint >= 60 then
-		return true
-	end
-	if footprint >= (size.Y * math.max(size.X, size.Z)) * 0.5 then
-		return true
-	end
-	return false
+	return Players:GetPlayerFromCharacter(model) ~= nil
+		or model:FindFirstChildOfClass("Humanoid") ~= nil
 end
 
-local function unpunchForStanding(part)
-	if not part or not part:IsA("BasePart") then
-		return
-	end
-	wallbangSafe[part] = true
-	local orig = wallbang[part]
-	if type(orig) == "table" then
-		pcall(function()
-			-- Force solid under feet — falling is worse than a wrong restore
-			part.CanCollide = true
-			part.CanQuery = orig.canQuery == true
-		end)
-		wallbang[part] = nil
-	elseif not part.CanCollide then
-		pcall(function()
-			part.CanCollide = true
-		end)
-	end
-end
-
--- What is the character standing on right now? (no name checks)
-local function protectStanding()
+local function hasGunOut()
 	local player = lp()
 	local char = player and player.Character
 	if not char then
-		return
+		return false
 	end
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return
-	end
-	local folder = ensureFolder()
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { char, folder }
+	return char:FindFirstChildOfClass("Tool") ~= nil
+end
 
-	local origin = hrp.Position + Vector3.new(0, 0.6, 0)
-	local downs = {
-		Vector3.new(0, 0, 0),
-		Vector3.new(1.6, 0, 0),
-		Vector3.new(-1.6, 0, 0),
-		Vector3.new(0, 0, 1.6),
-		Vector3.new(0, 0, -1.6),
-		Vector3.new(1.1, 0, 1.1),
-		Vector3.new(-1.1, 0, -1.1),
-		Vector3.new(1.1, 0, -1.1),
-		Vector3.new(-1.1, 0, 1.1),
-	}
-	for _, off in ipairs(downs) do
-		local hit = workspace:Raycast(origin + off, Vector3.new(0, -14, 0), params)
-		if hit and hit.Instance and hit.Instance:IsA("BasePart") then
-			unpunchForStanding(hit.Instance)
+local function shouldPenetrate()
+	return wallbangOn and hasGunOut()
+end
+
+-- Continue ray through world geo until a character (or budget exhausted).
+local function penetrateRaycast(self, origin, direction, params)
+	if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
+		return oldRaycast(self, origin, direction, params)
+	end
+	local mag = direction.Magnitude
+	if mag < 0.05 then
+		return oldRaycast(self, origin, direction, params)
+	end
+	local unit = direction.Unit
+	local left = mag
+	local pos = origin
+	for _ = 1, 10 do
+		if left <= 0.05 then
+			return nil
 		end
-	end
-
-	local ok, parts = pcall(function()
-		local op = OverlapParams.new()
-		op.FilterType = Enum.RaycastFilterType.Exclude
-		op.FilterDescendantsInstances = { char, folder }
-		return workspace:GetPartBoundsInBox(
-			hrp.CFrame * CFrame.new(0, -3.4, 0),
-			Vector3.new(8, 8, 8),
-			op
-		)
-	end)
-	if ok and type(parts) == "table" then
-		for _, p in ipairs(parts) do
-			if p:IsA("BasePart") then
-				local rel = hrp.CFrame:PointToObjectSpace(p.Position)
-				if rel.Y < 2 then
-					unpunchForStanding(p)
-				end
-			end
+		local result = oldRaycast(self, pos, unit * left, params)
+		if not result then
+			return nil
 		end
-	end
-end
-
-local function shouldWallbangPart(part)
-	if not part or not part:IsA("BasePart") then
-		return false
-	end
-	if part:IsDescendantOf(ensureFolder()) then
-		return false
-	end
-	if isHiddenPart(part) then
-		return false
-	end
-	if wallbangSafe[part] then
-		return false
-	end
-	local model = part:FindFirstAncestorOfClass("Model")
-	if model and Players:GetPlayerFromCharacter(model) then
-		return false
-	end
-	if not part.CanCollide and not part.CanQuery then
-		return false
-	end
-	-- Soft filter: skip obvious flat slabs even before you step on them
-	if isLikelyFlatSlab(part) then
-		wallbangSafe[part] = true
-		return false
-	end
-	return true
-end
-
-local function punchPart(part)
-	if wallbang[part] ~= nil or wallbangSafe[part] then
-		return
-	end
-	if not shouldWallbangPart(part) then
-		return
-	end
-	wallbang[part] = {
-		canCollide = part.CanCollide,
-		canQuery = part.CanQuery,
-	}
-	pcall(function()
-		part.CanCollide = false
-		part.CanQuery = false
-	end)
-end
-
-local function clearWallbangConns()
-	if wallbangMapConn then
-		wallbangMapConn:Disconnect()
-		wallbangMapConn = nil
-	end
-	if wallbangFeetConn then
-		wallbangFeetConn:Disconnect()
-		wallbangFeetConn = nil
-	end
-end
-
-local function restoreWallbang()
-	clearWallbangConns()
-	wallbangScanToken += 1
-	for part, orig in pairs(wallbang) do
-		if part and part.Parent and not isHiddenPart(part) and type(orig) == "table" then
-			pcall(function()
-				part.CanCollide = orig.canCollide
-				part.CanQuery = orig.canQuery
-			end)
+		if isCharacterPart(result.Instance) then
+			return result
 		end
-		wallbang[part] = nil
+		-- skip wall / prop / floor — keep going (physics collide untouched)
+		local step = (result.Position - pos).Magnitude + 0.1
+		if step < 0.1 then
+			step = 0.1
+		end
+		left -= step
+		pos = result.Position + unit * 0.1
 	end
-	table.clear(wallbang)
-	table.clear(wallbangSafe)
+	return nil
 end
 
-local function wallbangRoots()
+local function penetrateFindOnRay(ray, ignoreList)
+	-- Legacy API: returns hitPart, position
+	if not oldFindPartOnRayIgnore and not oldFindPartOnRay then
+		return nil
+	end
+	local origin = ray.Origin
+	local dir = ray.Direction
+	local unit = dir.Unit
+	local left = dir.Magnitude
+	if left < 0.05 then
+		left = 999
+	end
+	local pos = origin
+	local ignore = ignoreList
+	if type(ignore) ~= "table" then
+		ignore = {}
+	end
+	local list = {}
+	for i = 1, #ignore do
+		list[i] = ignore[i]
+	end
+	for _ = 1, 10 do
+		local hit, hitPos
+		if oldFindPartOnRayIgnore then
+			hit, hitPos = oldFindPartOnRayIgnore(workspace, Ray.new(pos, unit * left), list)
+		else
+			hit, hitPos = oldFindPartOnRay(workspace, Ray.new(pos, unit * left), true)
+		end
+		if not hit then
+			return nil
+		end
+		if isCharacterPart(hit) then
+			return hit, hitPos
+		end
+		table.insert(list, hit)
+		local step = (hitPos - pos).Magnitude + 0.1
+		left -= step
+		if left <= 0.05 then
+			return nil
+		end
+		pos = hitPos + unit * 0.1
+	end
+	return nil
+end
+
+-- Undo previous wallbang versions that zeroed CanCollide (stops fall + AC rectify).
+local function healOldCollidePunches()
 	local roots = {}
 	local map = workspace:FindFirstChild("Map")
 	if map then
 		table.insert(roots, map)
 	end
-	for _, name in ipairs({ "Buildings", "Props", "Structures", "World", "Geometry" }) do
-		local f = workspace:FindFirstChild(name)
-		if f and f ~= map then
-			table.insert(roots, f)
+	for _, root in ipairs(roots) do
+		local descs = root:GetDescendants()
+		for i, d in ipairs(descs) do
+			if d:IsA("BasePart") and d.Anchored and not d.CanCollide and not d.CanQuery and d.Transparency < 0.99 then
+				pcall(function()
+					d.CanCollide = true
+					d.CanQuery = true
+				end)
+			end
+			if i % 200 == 0 then
+				task.wait()
+			end
 		end
 	end
-	return roots
+	-- Always solidify whatever is under feet right now
+	local player = lp()
+	local char = player and player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { char, ensureFolder() }
+		local raw = oldRaycast or workspace.Raycast
+		for _, off in ipairs({
+			Vector3.zero,
+			Vector3.new(2, 0, 0),
+			Vector3.new(-2, 0, 0),
+			Vector3.new(0, 0, 2),
+			Vector3.new(0, 0, -2),
+		}) do
+			local hit = raw(workspace, hrp.Position + Vector3.new(0, 1, 0) + off, Vector3.new(0, -20, 0), params)
+			if hit and hit.Instance and hit.Instance:IsA("BasePart") then
+				pcall(function()
+					hit.Instance.CanCollide = true
+				end)
+			end
+		end
+	end
 end
 
-local function scanMapForWallbang()
-	wallbangScanToken += 1
-	local token = wallbangScanToken
-	task.spawn(function()
-		-- Protect under feet BEFORE punching anything
-		protectStanding()
-		local roots = wallbangRoots()
-		if #roots == 0 then
-			for _, ch in ipairs(workspace:GetChildren()) do
-				if ch:IsA("Folder") or ch:IsA("Model") then
-					if not Players:GetPlayerFromCharacter(ch) and ch.Name ~= FOLDER then
-						table.insert(roots, ch)
+local function installWallbangHooks()
+	if wallbangHooks then
+		return true
+	end
+	if typeof(hookfunction) ~= "function" then
+		notify("Wallbang", "Executor bez hookfunction — wallbang niedostępny")
+		return false
+	end
+
+	local ok1, err1 = pcall(function()
+		oldRaycast = hookfunction(
+			workspace.Raycast,
+			wrap(function(self, origin, direction, params)
+				if shouldPenetrate() and self == workspace then
+					return penetrateRaycast(self, origin, direction, params)
+				end
+				return oldRaycast(self, origin, direction, params)
+			end)
+		)
+	end)
+	if not ok1 then
+		notify("Wallbang", "Hook Raycast fail: " .. tostring(err1))
+		return false
+	end
+
+	pcall(function()
+		if typeof(workspace.FindPartOnRayWithIgnoreList) == "function" then
+			oldFindPartOnRayIgnore = hookfunction(
+				workspace.FindPartOnRayWithIgnoreList,
+				wrap(function(self, ray, ignoreList, ...)
+					if shouldPenetrate() and self == workspace then
+						local hit, pos = penetrateFindOnRay(ray, ignoreList)
+						return hit, pos
 					end
-				end
-			end
-		end
-		for _, root in ipairs(roots) do
-			if token ~= wallbangScanToken or not wallbangOn then
-				return
-			end
-			local descs = root:GetDescendants()
-			for i, d in ipairs(descs) do
-				if token ~= wallbangScanToken or not wallbangOn then
-					return
-				end
-				punchPart(d)
-				if i % 180 == 0 then
-					protectStanding()
-					task.wait()
-				end
-			end
-		end
-		if token == wallbangScanToken and wallbangOn then
-			protectStanding()
+					return oldFindPartOnRayIgnore(self, ray, ignoreList, ...)
+				end)
+			)
 		end
 	end)
-end
 
-local function startFeetWatch()
-	if wallbangFeetConn then
-		return
-	end
-	-- Stepped = before physics, so collide is back before you sink
-	wallbangFeetConn = RS.Stepped:Connect(function()
-		if wallbangOn then
-			protectStanding()
+	pcall(function()
+		if typeof(workspace.FindPartOnRay) == "function" then
+			oldFindPartOnRay = hookfunction(
+				workspace.FindPartOnRay,
+				wrap(function(self, ray, terrainCellsAreCubes, ignoreWater, ...)
+					if shouldPenetrate() and self == workspace and oldFindPartOnRayIgnore then
+						-- reuse ignore-list path with empty ignore
+						local hit, pos = penetrateFindOnRay(ray, {})
+						return hit, pos
+					end
+					return oldFindPartOnRay(self, ray, terrainCellsAreCubes, ignoreWater, ...)
+				end)
+			)
 		end
 	end)
+
+	pcall(function()
+		if typeof(workspace.FindPartOnRayWithWhitelist) == "function" then
+			oldFindPartOnRayWhite = hookfunction(
+				workspace.FindPartOnRayWithWhitelist,
+				wrap(function(self, ray, whitelist, ...)
+					-- whitelist mode: don't penetrate (would break includes)
+					return oldFindPartOnRayWhite(self, ray, whitelist, ...)
+				end)
+			)
+		end
+	end)
+
+	wallbangHooks = true
+	return true
 end
 
 function ClientBuild.SetWallbang(on)
 	on = on == true
 	if on == wallbangOn then
-		if on then
-			protectStanding()
-			startFeetWatch()
-			local map = workspace:FindFirstChild("Map")
-			if map and not wallbangMapConn then
-				wallbangMapConn = map.DescendantAdded:Connect(function(d)
-					if wallbangOn then
-						punchPart(d)
-					end
-				end)
-				scanMapForWallbang()
-			end
-		end
 		return
 	end
 	wallbangOn = on
 	if on then
-		clearWallbangConns()
-		protectStanding()
-		startFeetWatch()
-		local map = workspace:FindFirstChild("Map")
-		if map then
-			wallbangMapConn = map.DescendantAdded:Connect(function(d)
-				if wallbangOn then
-					punchPart(d)
-				end
-			end)
+		task.spawn(healOldCollidePunches)
+		if not installWallbangHooks() then
+			wallbangOn = false
+			if settingsRef then
+				settingsRef.CrimWallbang = false
+			end
+			return
 		end
-		scanMapForWallbang()
-		notify("Wallbang", "ON — ściany do strzału; pod Tobą zawsze solidne")
+		notify("Wallbang", "ON — tylko raycast kuli (bez ruszania collidów mapy)")
 	else
-		restoreWallbang()
-		notify("Wallbang", "OFF — przywrócono collidy ścian")
+		notify("Wallbang", "OFF")
 	end
 end
 
@@ -563,16 +534,7 @@ function ClientBuild.RestoreHidden()
 			pcall(function()
 				p.CanCollide = e.canCollide
 				p.Transparency = e.transparency
-				if wallbangOn and shouldWallbangPart(p) then
-					wallbang[p] = {
-						canCollide = e.canCollide,
-						canQuery = e.canQuery,
-					}
-					p.CanCollide = false
-					p.CanQuery = false
-				else
-					p.CanQuery = e.canQuery
-				end
+				p.CanQuery = e.canQuery
 				if p.LocalTransparencyModifier ~= nil then
 					p.LocalTransparencyModifier = 0
 				end
@@ -585,9 +547,7 @@ end
 
 function ClientBuild.Stop()
 	stopMode()
-	if wallbangOn then
-		ClientBuild.SetWallbang(false)
-	end
+	wallbangOn = false
 	if wallbangSyncConn then
 		wallbangSyncConn:Disconnect()
 		wallbangSyncConn = nil
@@ -606,6 +566,9 @@ function ClientBuild.Init(S)
 	S._clientBridgeClear = ClientBuild.ClearBridges
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
 	S._clientWallbangSet = ClientBuild.SetWallbang
+
+	-- Heal leftover collide-punches from older wallbang versions on load
+	task.spawn(healOldCollidePunches)
 
 	wallbangSyncConn = RS.Heartbeat:Connect(function()
 		local want = settingsRef and settingsRef.CrimWallbang == true
