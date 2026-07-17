@@ -1,4 +1,4 @@
--- ClientBuild.lua  v2.52.23
+-- ClientBuild.lua  v2.52.24
 -- NOTE: bump with Settings.Version when changing.
 -- Client-only bridge + delete + wallbang.
 -- Local parts / local CanQuery/CanCollide — server/AC never sees it.
@@ -245,6 +245,40 @@ local function isHiddenPart(part)
 	return false
 end
 
+-- Floors / ground / stairs must KEEP CanCollide or you fall through the map.
+local function isLikelyWalkSurface(part)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	local n = string.lower(part.Name)
+	if n:find("floor", 1, true) or n:find("ground", 1, true) or n:find("baseplate", 1, true)
+		or n:find("base_plate", 1, true) or n:find("road", 1, true) or n:find("street", 1, true)
+		or n:find("sidewalk", 1, true) or n:find("pavement", 1, true) or n:find("asphalt", 1, true)
+		or n:find("terrain", 1, true) or n:find("grass", 1, true) or n:find("dirt", 1, true)
+		or n:find("stair", 1, true) or n:find("step", 1, true) or n:find("ramp", 1, true)
+		or n:find("platform", 1, true) or n:find("deck", 1, true) or n:find("slab", 1, true)
+		or n:find("path", 1, true) or n:find("walkway", 1, true)
+	then
+		return true
+	end
+	local size = part.Size
+	local upY = math.abs(part.CFrame.UpVector.Y)
+	-- Nearly horizontal top face = floor/ceiling slab
+	if upY >= 0.78 then
+		local footprint = size.X * size.Z
+		if size.Y <= 4 then
+			return true
+		end
+		if size.Y <= 18 and footprint >= 80 then
+			return true
+		end
+		if footprint >= (size.Y * math.max(size.X, size.Z)) * 0.55 then
+			return true
+		end
+	end
+	return false
+end
+
 local function shouldWallbangPart(part)
 	if not part or not part:IsA("BasePart") then
 		return false
@@ -255,13 +289,15 @@ local function shouldWallbangPart(part)
 	if isHiddenPart(part) then
 		return false
 	end
-	-- Skip live characters / tools
 	local model = part:FindFirstAncestorOfClass("Model")
 	if model and Players:GetPlayerFromCharacter(model) then
 		return false
 	end
-	-- Prefer Map geometry; anchored collide props are the usual cover
 	if not part.CanCollide and not part.CanQuery then
+		return false
+	end
+	-- Never punch floors — that was yeeting people under the map
+	if isLikelyWalkSurface(part) then
 		return false
 	end
 	return true
@@ -283,6 +319,25 @@ local function punchPart(part)
 		part.CanCollide = false
 		part.CanQuery = false
 	end)
+end
+
+-- If an older session punched floors, put their collide back while wallbang stays on.
+local function unpunchWalkSurfaces()
+	local removeList = {}
+	for part, orig in pairs(wallbang) do
+		if part and part.Parent and type(orig) == "table" and isLikelyWalkSurface(part) then
+			pcall(function()
+				part.CanCollide = orig.canCollide
+				part.CanQuery = orig.canQuery
+			end)
+			table.insert(removeList, part)
+		elseif not part or not part.Parent then
+			table.insert(removeList, part)
+		end
+	end
+	for _, part in ipairs(removeList) do
+		wallbang[part] = nil
+	end
 end
 
 local function clearWallbangConns()
@@ -313,7 +368,6 @@ local function wallbangRoots()
 	if map then
 		table.insert(roots, map)
 	end
-	-- Some Criminality props live beside Map
 	for _, name in ipairs({ "Buildings", "Props", "Structures", "World", "Geometry" }) do
 		local f = workspace:FindFirstChild(name)
 		if f and f ~= map then
@@ -329,7 +383,6 @@ local function scanMapForWallbang()
 	task.spawn(function()
 		local roots = wallbangRoots()
 		if #roots == 0 then
-			-- Fallback: top-level workspace folders/models (skip characters)
 			for _, ch in ipairs(workspace:GetChildren()) do
 				if ch:IsA("Folder") or ch:IsA("Model") then
 					if not Players:GetPlayerFromCharacter(ch) and ch.Name ~= FOLDER then
@@ -353,6 +406,9 @@ local function scanMapForWallbang()
 				end
 			end
 		end
+		if token == wallbangScanToken and wallbangOn then
+			unpunchWalkSurfaces()
+		end
 	end)
 end
 
@@ -369,6 +425,7 @@ function ClientBuild.SetWallbang(on)
 				end)
 				scanMapForWallbang()
 			end
+			unpunchWalkSurfaces()
 		end
 		return
 	end
@@ -384,7 +441,7 @@ function ClientBuild.SetWallbang(on)
 			end)
 		end
 		scanMapForWallbang()
-		notify("Wallbang", "ON — ściany widoczne; CanCollide+CanQuery off (możesz przez nie przejść)")
+		notify("Wallbang", "ON — ściany do strzału; podłogi zostają solidne")
 	else
 		restoreWallbang()
 		notify("Wallbang", "OFF — przywrócono collidy ścian")
