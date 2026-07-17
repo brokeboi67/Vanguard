@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.21",
+	Version = "2.52.22",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -241,6 +241,7 @@ local Settings = {
 	CrimNoSpread = false,
 	CrimQuickEquip = false,
 	CrimAutoReload = false,
+	CrimWallbang = false,
 	CrimStaffDetect = false,
 	CrimNoFailLockpick = false,
 	CrimAutoOpenDoors = false,

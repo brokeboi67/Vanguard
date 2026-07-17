@@ -524,6 +524,9 @@ function Config.EnforceRules(S)
 	if S.CrimAutoReload == nil then
 		S.CrimAutoReload = false
 	end
+	if S.CrimWallbang == nil then
+		S.CrimWallbang = false
+	end
 	-- Removed server-validated gun mods (kept for old configs, ignored)
 	S.CrimFastReload = nil
 	S.CrimRapidFire = nil

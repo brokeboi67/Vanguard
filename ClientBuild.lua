@@ -1,11 +1,13 @@
--- ClientBuild.lua  v2.44.4
+-- ClientBuild.lua  v2.52.22
 -- NOTE: bump with Settings.Version when changing.
--- Client-only bridge + delete. Local parts / local collision-off — server/AC never sees it.
+-- Client-only bridge + delete + wallbang.
+-- Local parts / local CanQuery/CanCollide — server/AC never sees it.
 
 local ClientBuild = {}
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
 
 local FOLDER = "VG_ClientBuild"
 local mode = nil -- "bridge", "delete", nil
@@ -15,6 +17,15 @@ local markerA = nil
 local markerB = nil
 local bridges = {}
 local hidden = {} -- { part = BasePart, canCollide, transparency, canQuery }
+
+-- Wallbang: CanQuery off only — walls stay visible + CanCollide (walk solid).
+-- Same reason Delete lets you shoot through: client gun raycasts skip CanQuery=false.
+local wallbangOn = false
+local wallbang = {} -- [part] = original CanQuery
+local wallbangMapConn = nil
+local wallbangSyncConn = nil
+local wallbangScanToken = 0
+local settingsRef = nil
 
 local function notify(title, text)
 	pcall(function()
@@ -141,6 +152,8 @@ local function hideAsset(part)
 		transparency = part.Transparency,
 		canQuery = part.CanQuery,
 	})
+	-- Drop from wallbang restore list — delete owns this part now
+	wallbang[part] = nil
 	pcall(function()
 		part.CanCollide = false
 		part.CanQuery = false
@@ -220,6 +233,130 @@ local function bindInput()
 	end)
 end
 
+-- ── Wallbang ─────────────────────────────────────────────────────────────────
+
+local function isHiddenPart(part)
+	for _, e in ipairs(hidden) do
+		if e.part == part then
+			return true
+		end
+	end
+	return false
+end
+
+local function shouldWallbangPart(part)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	if not part.Anchored then
+		return false
+	end
+	if part:IsDescendantOf(ensureFolder()) then
+		return false
+	end
+	if isHiddenPart(part) then
+		return false
+	end
+	-- Skip live characters / tools (not under Map usually, but be safe)
+	local player = Players:GetPlayerFromCharacter(part.Parent)
+		or (part.Parent and part.Parent.Parent and Players:GetPlayerFromCharacter(part.Parent.Parent))
+	if player then
+		return false
+	end
+	return true
+end
+
+local function punchPart(part)
+	if wallbang[part] ~= nil then
+		return
+	end
+	if not shouldWallbangPart(part) then
+		return
+	end
+	wallbang[part] = part.CanQuery
+	pcall(function()
+		part.CanQuery = false
+	end)
+end
+
+local function clearWallbangConns()
+	if wallbangMapConn then
+		wallbangMapConn:Disconnect()
+		wallbangMapConn = nil
+	end
+end
+
+local function restoreWallbang()
+	clearWallbangConns()
+	wallbangScanToken += 1
+	for part, orig in pairs(wallbang) do
+		if part and part.Parent and not isHiddenPart(part) then
+			pcall(function()
+				part.CanQuery = orig
+			end)
+		end
+		wallbang[part] = nil
+	end
+	table.clear(wallbang)
+end
+
+local function scanMapForWallbang()
+	wallbangScanToken += 1
+	local token = wallbangScanToken
+	task.spawn(function()
+		local map = workspace:FindFirstChild("Map")
+		if not map then
+			return
+		end
+		local descs = map:GetDescendants()
+		for i, d in ipairs(descs) do
+			if token ~= wallbangScanToken or not wallbangOn then
+				return
+			end
+			punchPart(d)
+			if i % 180 == 0 then
+				task.wait()
+			end
+		end
+	end)
+end
+
+function ClientBuild.SetWallbang(on)
+	on = on == true
+	if on == wallbangOn then
+		if on then
+			-- keep watching; re-scan if Map appeared late
+			local map = workspace:FindFirstChild("Map")
+			if map and not wallbangMapConn then
+				wallbangMapConn = map.DescendantAdded:Connect(function(d)
+					if wallbangOn then
+						punchPart(d)
+					end
+				end)
+				scanMapForWallbang()
+			end
+		end
+		return
+	end
+	wallbangOn = on
+	if on then
+		local map = workspace:FindFirstChild("Map")
+		if map then
+			clearWallbangConns()
+			wallbangMapConn = map.DescendantAdded:Connect(function(d)
+				if wallbangOn then
+					punchPart(d)
+				end
+			end)
+		end
+		scanMapForWallbang()
+		notify("Wallbang", "ON — ściany widoczne, strzały przechodzą (CanQuery off)")
+	else
+		restoreWallbang()
+		notify("Wallbang", "OFF — przywrócono raycast ścian")
+	end
+end
+
 function ClientBuild.StartBridge()
 	stopMode()
 	mode = "bridge"
@@ -262,7 +399,13 @@ function ClientBuild.RestoreHidden()
 			pcall(function()
 				p.CanCollide = e.canCollide
 				p.Transparency = e.transparency
-				p.CanQuery = e.canQuery
+				-- If wallbang still on, keep CanQuery false; else restore
+				if wallbangOn and shouldWallbangPart(p) then
+					wallbang[p] = e.canQuery
+					p.CanQuery = false
+				else
+					p.CanQuery = e.canQuery
+				end
 				if p.LocalTransparencyModifier ~= nil then
 					p.LocalTransparencyModifier = 0
 				end
@@ -275,6 +418,14 @@ end
 
 function ClientBuild.Stop()
 	stopMode()
+	if wallbangOn then
+		ClientBuild.SetWallbang(false)
+	end
+	if wallbangSyncConn then
+		wallbangSyncConn:Disconnect()
+		wallbangSyncConn = nil
+	end
+	settingsRef = nil
 end
 
 function ClientBuild.Init(S)
@@ -282,10 +433,23 @@ function ClientBuild.Init(S)
 	if not S then
 		return
 	end
+	settingsRef = S
 	S._clientBridgeStart = ClientBuild.StartBridge
 	S._clientDeleteStart = ClientBuild.StartDelete
 	S._clientBridgeClear = ClientBuild.ClearBridges
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
+	S._clientWallbangSet = ClientBuild.SetWallbang
+
+	-- Sync Combat toggle without adding locals in Criminality.lua
+	wallbangSyncConn = RS.Heartbeat:Connect(function()
+		local want = settingsRef and settingsRef.CrimWallbang == true
+		if want ~= wallbangOn then
+			ClientBuild.SetWallbang(want)
+		end
+	end)
+	if S.CrimWallbang then
+		ClientBuild.SetWallbang(true)
+	end
 end
 
 return ClientBuild
