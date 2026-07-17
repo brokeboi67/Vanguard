@@ -527,6 +527,10 @@ function Config.EnforceRules(S)
 	if S.CrimWallbang == nil then
 		S.CrimWallbang = false
 	end
+	-- Old full-map wallbang left soft floors; force off until user re-enables crosshair mode
+	if type(S.CrimWallbang) ~= "boolean" then
+		S.CrimWallbang = false
+	end
 	-- Removed server-validated gun mods (kept for old configs, ignored)
 	S.CrimFastReload = nil
 	S.CrimRapidFire = nil
