@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.9
+-- Criminality.lua  v2.52.11
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -2076,6 +2076,14 @@ local gunMod = {
 	lastReloadAt = 0,
 	reloadBusy = false,
 }
+-- `orig` is keyed by live getgc() weapon tables. Firing/reloading makes some
+-- games re-create their weapon stat table, so getgc scans can pick up a
+-- steady trickle of *different* table identities over a play session. Regular
+-- (strong) keys would pin every one of those snapshots in memory forever —
+-- exactly the "freeze + climbing RAM while shooting" bug. Weak keys let Lua
+-- collect a weapon snapshot the moment the game itself drops the table,
+-- without changing any read/write behavior of gunMod.orig elsewhere.
+setmetatable(gunMod.orig, { __mode = "k" })
 
 -- Extra numeric fields that help 3rd-person kick / walk bloom when present.
 -- Folded into gunMod table to save a register.
