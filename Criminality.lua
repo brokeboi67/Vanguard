@@ -3074,20 +3074,30 @@ end
 -- Packed into one table to stay under Luau's 200-local limit.
 local snd = {
 	orig = {},
-	IDS = {
-		-- CS:GO headshot "dink" (community upload: Headshot - CS:GO)
-		HeadshotSound = "rbxassetid://5764885315",
-		-- Crisp hitmarker (common FPS kit ID)
-		HitmarkerSound = "rbxassetid://4868633804",
+	HITMARKER = "rbxassetid://4868633804",
+	-- Presets for HeadshotSound only
+	PRESETS = {
+		CS = "rbxassetid://5764885315",           -- CS:GO helmet dink
+		UT = "rbxassetid://92457871987705",       -- UT Announcer "HEADSHOT!"
 	},
 }
 
-local function applyCrimHitSounds(on)
+local function resolveHeadshotId(S)
+	local preset = (S and S.CrimHitSoundPreset) or "UT"
+	return snd.PRESETS[preset] or snd.PRESETS.UT
+end
+
+local function applyCrimHitSounds(on, S)
+	S = S or _G.__VG_S
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local core = pg and (pg:FindFirstChild("CoreGUI") or pg:FindFirstChild("CoreGui"))
 	if not core then return end
-	for name, id in pairs(snd.IDS) do
+	local map = {
+		HeadshotSound = resolveHeadshotId(S),
+		HitmarkerSound = snd.HITMARKER,
+	}
+	for name, id in pairs(map) do
 		local s = core:FindFirstChild(name)
 		if s and s:IsA("Sound") then
 			if on then
@@ -3108,11 +3118,17 @@ local function applyCrimHitSounds(on)
 end
 
 local function startCrimHitSounds()
-	applyCrimHitSounds(true)
+	applyCrimHitSounds(true, _G.__VG_S)
 end
 
 local function stopCrimHitSounds()
-	applyCrimHitSounds(false)
+	applyCrimHitSounds(false, _G.__VG_S)
+end
+
+_G.__VG_ReapplyHitSounds = function()
+	if _G.__VG_S and _G.__VG_S.CrimHitSoundSwap then
+		applyCrimHitSounds(true, _G.__VG_S)
+	end
 end
 
 -- â”€â”€ MASTER HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -3212,7 +3228,7 @@ local function startMaster(S)
 			end
 		end
 		if featureRunning.hitSounds and master.frame % 30 == 0 then
-			pcall(applyCrimHitSounds, true)
+			pcall(applyCrimHitSounds, true, S)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)

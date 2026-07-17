@@ -566,6 +566,9 @@ function Config.EnforceRules(S)
 	if S.CrimHitSoundSwap == nil then
 		S.CrimHitSoundSwap = false
 	end
+	if S.CrimHitSoundPreset == nil or (S.CrimHitSoundPreset ~= "UT" and S.CrimHitSoundPreset ~= "CS") then
+		S.CrimHitSoundPreset = "UT"
+	end
 	if S.CrimCratePickupFx == nil then
 		S.CrimCratePickupFx = true
 	end

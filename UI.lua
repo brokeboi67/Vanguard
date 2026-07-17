@@ -2750,7 +2750,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
 		MakeTog(CVIS, "Custom Hit Sounds", "CrimHitSoundSwap", 3, { flat = true })
-		MakeHint(CVIS, "hint_crim_hitsounds", 4)
+		MakeChoice(CVIS, "Headshot Sound", "CrimHitSoundPreset", {
+			{ label = "UT Announcer", value = "UT" },
+			{ label = "CS:GO Dink", value = "CS" },
+		}, 4, {
+			onChange = function()
+				if S.CrimHitSoundSwap and type(_G.__VG_ReapplyHitSounds) == "function" then
+					pcall(_G.__VG_ReapplyHitSounds)
+				end
+			end,
+		})
+		MakeHint(CVIS, "hint_crim_hitsounds", 5)
 
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
 		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })

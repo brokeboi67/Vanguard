@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.19",
+	Version = "2.52.20",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -252,6 +252,7 @@ local Settings = {
 	CrimInfStamina = false,
 	CrimFullBright = false,
 	CrimHitSoundSwap = false,
+	CrimHitSoundPreset = "UT",
 	CrimMoneyPickup = false,
 	CrimMoneyPickupDist = 5,
 	CrimMoneyPickupDelay = 1000,
