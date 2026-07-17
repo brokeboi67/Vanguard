@@ -1,10 +1,11 @@
--- Criminality.lua  v2.52.18
+-- Criminality.lua  v2.52.19
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
 -- NOTE: many small state vars are packed into shared tables (COLORS, misc,
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
 -- stay under Luau's 200-local-register limit for the main chunk.
+-- v2.52.19: CS:GO headshot sound (5764885315) as default HeadshotSound swap.
 -- v2.52.18: bounty via CoreGUI.NotificationFrame; optional hit sound swap.
 -- v2.52.17: removed No Gun Slow. Auto Reload uses GunGUI Current/Stored.
 
@@ -3074,7 +3075,9 @@ end
 local snd = {
 	orig = {},
 	IDS = {
-		HeadshotSound = "rbxassetid://9114481067",
+		-- CS:GO headshot "dink" (community upload: Headshot - CS:GO)
+		HeadshotSound = "rbxassetid://5764885315",
+		-- Crisp hitmarker (common FPS kit ID)
 		HitmarkerSound = "rbxassetid://4868633804",
 	},
 }
