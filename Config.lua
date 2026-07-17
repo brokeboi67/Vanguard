@@ -518,8 +518,8 @@ function Config.EnforceRules(S)
 	if S.CrimQuickEquip == nil then
 		S.CrimQuickEquip = false
 	end
-	if S.CrimNoGunSlow == nil then
-		S.CrimNoGunSlow = false
+	if S.CrimNoGunSlow ~= nil then
+		S.CrimNoGunSlow = nil -- removed: WalkSpeed fight crashed on equip
 	end
 	if S.CrimAutoReload == nil then
 		S.CrimAutoReload = false

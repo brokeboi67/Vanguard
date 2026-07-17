@@ -1,12 +1,12 @@
--- Criminality.lua  v2.52.16
+-- Criminality.lua  v2.52.17
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
 -- NOTE: many small state vars are packed into shared tables (COLORS, misc,
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
 -- stay under Luau's 200-local-register limit for the main chunk.
--- v2.52.16: Auto Reload reads GunGUI.Frame.Main.Current/Stored; No Gun Slow
--- ignores first 1s after equip (WalkSpeed fight on draw was crashing).
+-- v2.52.17: removed No Gun Slow (WalkSpeed fight kept crashing on equip).
+-- Auto Reload uses GunGUI.Frame.Main.Current/Stored.
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -2073,7 +2073,6 @@ local gunMod = {
 	lastDeepAt = 0,
 	reapplyInterval = 8,
 	deepCooldown = 4,
-	baseWalk = nil,
 	lastReloadAt = 0,
 	reloadBusy = false,
 }
@@ -2203,7 +2202,7 @@ local function clearGunModCharConns()
 end
 
 local function gunModsWant(S)
-	-- getgc ONLY for these three. No Gun Slow must NEVER start getgc.
+	-- getgc ONLY for No Recoil / No Spread / Quick Equip
 	return S and (
 		S.CrimNoRecoil == true
 		or S.CrimNoSpread == true
@@ -2236,55 +2235,6 @@ local function getGunGuiAmmo()
 	end
 	gunMod.gunGui = { current = current, stored = stored }
 	return tonumber(current.Text), stored and tonumber(stored.Text) or nil
-end
-
--- No Gun Slow: ONLY restore WalkSpeed during reload, never on equip.
--- Fighting WalkSpeed while drawing a gun was crashing Roblox.
-local function tickNoGunSlow(S)
-	if not S or not S.CrimNoGunSlow then
-		gunMod.baseWalk = nil
-		gunMod.equipAt = nil
-		return
-	end
-	local char = getChar()
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-
-	local tool = char:FindFirstChildOfClass("Tool")
-	local now = tick()
-	if not tool then
-		gunMod.baseWalk = hum.WalkSpeed
-		gunMod.equipAt = nil
-		return
-	end
-	if gunMod.equipAt == nil then
-		gunMod.equipAt = now
-	end
-	-- Ignore first second after equip — game sets its own WalkSpeed then
-	if now - gunMod.equipAt < 1.0 then
-		local ws = hum.WalkSpeed
-		if gunMod.baseWalk == nil or ws > (gunMod.baseWalk or 0) then
-			gunMod.baseWalk = ws
-		end
-		return
-	end
-
-	-- Only act when GunGUI is up (real gun out)
-	local mag = getGunGuiAmmo()
-	if mag == nil then return end
-
-	local ws = hum.WalkSpeed
-	if gunMod.baseWalk == nil or ws > gunMod.baseWalk then
-		gunMod.baseWalk = ws
-		return
-	end
-	-- Clear reload/ADS slow only (drop of at least 2)
-	if ws + 2 <= gunMod.baseWalk then
-		pcall(function()
-			hum.WalkSpeed = gunMod.baseWalk
-		end)
-	end
 end
 
 local function pressReloadKey()
@@ -2324,7 +2274,6 @@ local function tickAutoReload(S)
 	local mag, reserve = getGunGuiAmmo()
 	if mag == nil then return end
 	if mag > 0 then return end
-	-- empty mag; only reload if there is reserve (or unknown reserve)
 	if reserve ~= nil and reserve <= 0 then return end
 
 	gunMod.reloadBusy = true
@@ -3212,9 +3161,6 @@ local function startMaster(S)
 				-- cheap: only re-zero cached tables (no getgc every few seconds)
 				applyGunMods(S)
 			end
-		end
-		if S.CrimNoGunSlow and master.frame % 4 == 0 then
-			pcall(tickNoGunSlow, S)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)
