@@ -1,6 +1,5 @@
--- ClientBuild.lua  v2.52.31
--- Wallbang = crosshair punch ONLY on real walls (never floors, never doors, never look-down).
--- Heal restores CanCollide+CanQuery on Map (incl. Doors) — also non-anchored parts.
+-- ClientBuild.lua  v2.52.33
+-- Wallbang UI toggle only heals here — actual wallbang is shot-path in Criminality.
 
 local ClientBuild = {}
 
@@ -441,6 +440,8 @@ function ClientBuild.SetWallbang(on)
 	end
 	wallbangOn = on
 	stopWallbangConns()
+	-- Crosshair punch REMOVED — wallbang is shot-path in Criminality (bullet tracers).
+	-- ClientBuild only heals leftover soft floors/doors when toggling.
 	if on then
 		bootHealSync()
 		protectFeet()
@@ -449,19 +450,14 @@ function ClientBuild.SetWallbang(on)
 				protectFeet()
 			end
 		end)
-		wallbangAimConn = RS.RenderStepped:Connect(function()
-			if wallbangOn then
-				punchCrosshair()
-			end
-		end)
-		notify("Wallbang", "ON — ściany z celownika (nie podłoga/drzwi)")
+		notify("Wallbang", "ON — ściany na torze pocisku (nie celownik)")
 	else
 		restoreTracked()
 		task.spawn(function()
 			healEverything(true)
 			protectFeet()
 		end)
-		notify("Wallbang", "OFF + heal drzwi/podłóg")
+		notify("Wallbang", "OFF + heal")
 	end
 end
 
@@ -707,7 +703,8 @@ function ClientBuild.Init(S)
 	end
 	settingsRef = S
 
-	-- Sync heal doors+floors immediately (fixes leftover doorframes / soft floors)
+	-- Do NOT force CrimWallbang off — shot-path wallbang is safe for floors.
+	-- Still heal leftovers from older crosshair/map punch versions.
 	bootHealSync()
 
 	S._clientBridgeStart = ClientBuild.StartBridge
@@ -717,9 +714,6 @@ function ClientBuild.Init(S)
 	S._clientWallbangSet = ClientBuild.SetWallbang
 	S._clientWallbangHeal = ClientBuild.HealWallbangCollide
 
-	S.CrimWallbang = false
-
-	-- Deeper async heal (doors folder + soft map parts)
 	task.spawn(function()
 		healEverything(false)
 	end)
@@ -730,6 +724,9 @@ function ClientBuild.Init(S)
 			ClientBuild.SetWallbang(want)
 		end
 	end)
+	if S.CrimWallbang then
+		ClientBuild.SetWallbang(true)
+	end
 end
 
 return ClientBuild

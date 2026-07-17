@@ -3158,8 +3158,10 @@ _G.__VG_ReapplyHitSounds = function()
 	end
 end
 
--- ── BULLET / SHOT TRACERS (track fire + flying projectile if game spawns one) ─
--- Packed table — stay under Luau local limit. Wallbang untouched.
+-- ── BULLET TRACERS + SHOT-PATH WALLBANG ─────────────────────────────────────
+-- Tracers: neon line + follow real projectile if spawned.
+-- Wallbang: on each shot, CanCollide/CanQuery off ONLY on walls along the bullet ray
+-- (and ahead of a flying projectile). Never floors / doors / under feet.
 local bulletFx = {
 	conns = {},
 	watchConn = nil,
@@ -3167,6 +3169,7 @@ local bulletFx = {
 	lastAmmo = nil,
 	lastFireAt = 0,
 	folder = nil,
+	wb = {}, -- [part] = { canCollide, canQuery }
 }
 
 local function bulletFxFolder()
@@ -3209,6 +3212,143 @@ local function getGunMuzzle()
 	return nil, nil
 end
 
+local function wbIsFloor(part)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	local size = part.Size
+	local upY = math.abs(part.CFrame.UpVector.Y)
+	local footprint = size.X * size.Z
+	if upY >= 0.55 then
+		if size.Y <= 10 then
+			return true
+		end
+		if footprint >= 25 and size.Y <= 35 then
+			return true
+		end
+		if footprint >= size.Y * math.max(size.X, size.Z) * 0.35 then
+			return true
+		end
+	end
+	return false
+end
+
+local function wbIsDoor(part)
+	if not part then
+		return false
+	end
+	local map = workspace:FindFirstChild("Map")
+	local doors = map and map:FindFirstChild("Doors")
+	if doors and part:IsDescendantOf(doors) then
+		return true
+	end
+	local cur = part
+	for _ = 1, 6 do
+		if not cur then
+			break
+		end
+		local n = string.lower(cur.Name)
+		if n:find("door", 1, true) or n:find("knob", 1, true) or n:find("hinge", 1, true) then
+			return true
+		end
+		cur = cur.Parent
+		if cur == workspace then
+			break
+		end
+	end
+	return false
+end
+
+local function punchWallPart(part)
+	if not part or not part:IsA("BasePart") then
+		return
+	end
+	if bulletFx.wb[part] ~= nil then
+		return
+	end
+	if wbIsFloor(part) or wbIsDoor(part) then
+		return
+	end
+	local char = getChar()
+	if char and part:IsDescendantOf(char) then
+		return
+	end
+	bulletFx.wb[part] = { canCollide = part.CanCollide, canQuery = part.CanQuery }
+	pcall(function()
+		part.CanCollide = false
+		part.CanQuery = false
+	end)
+end
+
+-- Pierce along shot: disable walls the bullet would hit (hitscan path).
+local function punchShotPath(from, look, maxDist)
+	local S = _G.__VG_S
+	if not S or not S.CrimWallbang then
+		return
+	end
+	if typeof(from) ~= "Vector3" or typeof(look) ~= "Vector3" or look.Magnitude < 0.01 then
+		return
+	end
+	local char = getChar()
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local ignore = { bulletFxFolder() }
+	if char then
+		table.insert(ignore, char)
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local origin = from
+	local unit = look.Unit
+	local left = maxDist or 500
+	for _ = 1, 16 do
+		params.FilterDescendantsInstances = ignore
+		local hit = workspace:Raycast(origin, unit * left, params)
+		if not hit then
+			break
+		end
+		local p = hit.Instance
+		if not p:IsA("BasePart") then
+			p = p:FindFirstAncestorWhichIsA("BasePart")
+		end
+		if not p then
+			break
+		end
+		table.insert(ignore, p)
+
+		local skip = wbIsFloor(p) or wbIsDoor(p)
+		if hrp and hit.Position.Y < hrp.Position.Y - 0.75 then
+			skip = true
+		end
+		if not skip then
+			punchWallPart(p)
+		end
+
+		local step = (hit.Position - origin).Magnitude + 0.1
+		left -= step
+		origin = hit.Position + unit * 0.1
+		if left < 1 then
+			break
+		end
+	end
+end
+
+local function restoreShotWallbang()
+	for part, orig in pairs(bulletFx.wb) do
+		if part and part.Parent and type(orig) == "table" then
+			pcall(function()
+				part.CanCollide = true
+				part.CanQuery = orig.canQuery
+			end)
+		end
+		bulletFx.wb[part] = nil
+	end
+	table.clear(bulletFx.wb)
+	local S = _G.__VG_S
+	if S and typeof(S._clientWallbangHeal) == "function" then
+		pcall(S._clientWallbangHeal)
+	end
+end
+
 local function drawBulletTracer(from, to, color)
 	if typeof(from) ~= "Vector3" or typeof(to) ~= "Vector3" then
 		return
@@ -3238,13 +3378,13 @@ local function drawBulletTracer(from, to, color)
 			pcall(function()
 				local tw = game:GetService("TweenService"):Create(
 					p,
-					TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 					{ Transparency = 1 }
 				)
 				tw:Play()
 			end)
 		end)
-		task.delay(0.7, function()
+		task.delay(0.55, function()
 			pcall(function()
 				p:Destroy()
 			end)
@@ -3295,12 +3435,20 @@ local function followBulletInst(inst, fromHint)
 	if inst:IsA("Model") then
 		part = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
 	elseif inst:IsA("Beam") or inst:IsA("Trail") then
-		-- draw once from attachment0 → 1 if possible
 		pcall(function()
 			local a0 = inst.Attachment0
 			local a1 = inst.Attachment1
 			if a0 and a1 then
-				drawBulletTracer(a0.WorldPosition, a1.WorldPosition, Color3.fromRGB(120, 220, 255))
+				local S = _G.__VG_S
+				if S and S.CrimBulletTracers then
+					drawBulletTracer(a0.WorldPosition, a1.WorldPosition, Color3.fromRGB(120, 220, 255))
+				end
+				if S and S.CrimWallbang then
+					local d = a1.WorldPosition - a0.WorldPosition
+					if d.Magnitude > 0.5 then
+						punchShotPath(a0.WorldPosition, d.Unit, d.Magnitude + 20)
+					end
+				end
 			end
 		end)
 		return
@@ -3310,17 +3458,33 @@ local function followBulletInst(inst, fromHint)
 	end
 	local start = typeof(fromHint) == "Vector3" and fromHint or part.Position
 	local last = part.Position
-	local aliveUntil = tick() + 1.2
+	local aliveUntil = tick() + 1.25
 	local conn
 	conn = RS.Heartbeat:Connect(function()
 		if tick() > aliveUntil or not part.Parent then
 			if conn then
 				conn:Disconnect()
 			end
-			drawBulletTracer(start, last, Color3.fromRGB(120, 220, 255))
+			local S = _G.__VG_S
+			if S and S.CrimBulletTracers then
+				drawBulletTracer(start, last, Color3.fromRGB(120, 220, 255))
+			end
 			return
 		end
-		last = part.Position
+		local pos = part.Position
+		local S = _G.__VG_S
+		-- As projectile flies: clear walls ahead of it
+		if S and S.CrimWallbang then
+			local vel = Vector3.zero
+			pcall(function()
+				vel = part.AssemblyLinearVelocity
+			end)
+			local dir = vel.Magnitude > 20 and vel.Unit or (pos - last)
+			if dir.Magnitude > 0.05 then
+				punchShotPath(pos, dir.Unit, 35)
+			end
+		end
+		last = pos
 	end)
 	table.insert(bulletFx.followConns, conn)
 end
@@ -3332,7 +3496,7 @@ local function openBulletWatch(fromPos)
 		end)
 		bulletFx.watchConn = nil
 	end
-	local untilT = tick() + 0.5
+	local untilT = tick() + 0.55
 	bulletFx.watchConn = workspace.DescendantAdded:Connect(function(inst)
 		if tick() > untilT then
 			return
@@ -3343,7 +3507,7 @@ local function openBulletWatch(fromPos)
 			end)
 		end
 	end)
-	task.delay(0.55, function()
+	task.delay(0.6, function()
 		if bulletFx.watchConn then
 			pcall(function()
 				bulletFx.watchConn:Disconnect()
@@ -3354,8 +3518,18 @@ local function openBulletWatch(fromPos)
 end
 
 local function fireBulletFx()
+	local S = _G.__VG_S
+	if not S then
+		return
+	end
+	local wantTrace = S.CrimBulletTracers == true
+	local wantWb = S.CrimWallbang == true
+	if not wantTrace and not wantWb then
+		return
+	end
 	local now = tick()
-	if now - bulletFx.lastFireAt < 0.05 then
+	-- Low cooldown so full-auto / blue tracers keep up
+	if now - bulletFx.lastFireAt < 0.018 then
 		return
 	end
 	bulletFx.lastFireAt = now
@@ -3371,22 +3545,33 @@ local function fireBulletFx()
 	params.FilterDescendantsInstances = char and { char, bulletFxFolder() } or { bulletFxFolder() }
 	local hit = workspace:Raycast(from, look * 900, params)
 	local to = hit and hit.Position or (from + look * 260)
-	drawBulletTracer(from, to, Color3.fromRGB(255, 200, 70))
-	local S = _G.__VG_S
-	if S then
-		S.LastShotAt = now
-		S.LastShotRayOrigin = from
-		S.LastShotRayDir = look
-		S.LastShotPos = to
-		if typeof(S.RequestShotTracer) == "function" and S.ShotTracers then
-			pcall(S.RequestShotTracer, false, nil, to)
-		end
+
+	-- Wallbang FIRST so this shot's ray already sees cleared walls if multi-pierce
+	if wantWb then
+		punchShotPath(from, look, 550)
+		-- re-ray for nicer tracer end after punches
+		hit = workspace:Raycast(from, look * 900, params)
+		to = hit and hit.Position or to
+	end
+
+	if wantTrace then
+		drawBulletTracer(from, to, Color3.fromRGB(255, 200, 70))
+	end
+	S.LastShotAt = now
+	S.LastShotRayOrigin = from
+	S.LastShotRayDir = look
+	S.LastShotPos = to
+	if wantTrace and typeof(S.RequestShotTracer) == "function" and S.ShotTracers then
+		pcall(S.RequestShotTracer, false, nil, to)
 	end
 	openBulletWatch(from)
 end
 
 local function tickBulletFx(S)
-	if not S or not S.CrimBulletTracers then
+	if not S then
+		return
+	end
+	if not S.CrimBulletTracers and not S.CrimWallbang then
 		return
 	end
 	local char = getChar()
@@ -3417,7 +3602,7 @@ local function startBulletFx()
 				return
 			end
 			local S = _G.__VG_S
-			if not S or not S.CrimBulletTracers then
+			if not S or (not S.CrimBulletTracers and not S.CrimWallbang) then
 				return
 			end
 			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
@@ -3427,8 +3612,8 @@ local function startBulletFx()
 			if not char or not char:FindFirstChildOfClass("Tool") then
 				return
 			end
-			-- Only as backup when GunGUI ammo isn't readable
-			if bulletFx.lastAmmo == nil then
+			-- Ammo HUD is preferred; LMB backup when HUD missing OR wallbang needs instant punch
+			if bulletFx.lastAmmo == nil or S.CrimWallbang then
 				task.defer(fireBulletFx)
 			end
 		end)
@@ -3454,6 +3639,7 @@ local function stopBulletFx()
 		end)
 	end
 	bulletFx.followConns = {}
+	restoreShotWallbang()
 	local f = workspace:FindFirstChild("VG_CrimBulletFx")
 	if f then
 		pcall(function()
@@ -3462,6 +3648,23 @@ local function stopBulletFx()
 	end
 	bulletFx.folder = nil
 	bulletFx.lastAmmo = nil
+end
+
+-- Keep shot-watch alive when either tracers OR wallbang is on
+local function syncShotWatch(S)
+	local want = S and (S.CrimBulletTracers == true or S.CrimWallbang == true)
+	if want and not featureRunning.bulletFx then
+		featureRunning.bulletFx = true
+		startBulletFx()
+	elseif not want and featureRunning.bulletFx then
+		featureRunning.bulletFx = false
+		stopBulletFx()
+	elseif featureRunning.bulletFx and not (S and S.CrimWallbang) then
+		-- wallbang turned off but tracers still on — restore punched walls only
+		if next(bulletFx.wb) ~= nil then
+			restoreShotWallbang()
+		end
+	end
 end
 
 -- â”€â”€ MASTER HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -3499,7 +3702,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
-	syncFeatureToggle("bulletFx", "CrimBulletTracers", startBulletFx, stopBulletFx, S)
+	syncShotWatch(S)
 	if crimFlag(S.CrimInfStamina) then
 		refillCrimStamina()
 	end
@@ -3542,7 +3745,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
-			syncFeatureToggle("bulletFx", "CrimBulletTracers", startBulletFx, stopBulletFx, S)
+			syncShotWatch(S)
 			pcall(syncRemoteElevator, S)
 		end
 
