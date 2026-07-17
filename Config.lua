@@ -531,6 +531,9 @@ function Config.EnforceRules(S)
 	if type(S.CrimWallbang) ~= "boolean" then
 		S.CrimWallbang = false
 	end
+	if S.CrimBulletTracers == nil then
+		S.CrimBulletTracers = false
+	end
 	-- Removed server-validated gun mods (kept for old configs, ignored)
 	S.CrimFastReload = nil
 	S.CrimRapidFire = nil

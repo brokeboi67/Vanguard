@@ -2480,6 +2480,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeHint(CCombat, "hint_crim_prediction", 16)
+		MakeTog(CCombat, "Bullet Tracers", "CrimBulletTracers", 17, { flat = true })
+		MakeHint(CCombat, "hint_crim_bullet_tracers", 18)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })

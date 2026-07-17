@@ -2064,6 +2064,7 @@ local featureRunning = {
 	noFailLockpick = false,
 	fullBright = false,
 	hitSounds = false,
+	bulletFx = false,
 }
 local gunMod = {
 	conns = {},
@@ -3157,6 +3158,312 @@ _G.__VG_ReapplyHitSounds = function()
 	end
 end
 
+-- ── BULLET / SHOT TRACERS (track fire + flying projectile if game spawns one) ─
+-- Packed table — stay under Luau local limit. Wallbang untouched.
+local bulletFx = {
+	conns = {},
+	watchConn = nil,
+	followConns = {},
+	lastAmmo = nil,
+	lastFireAt = 0,
+	folder = nil,
+}
+
+local function bulletFxFolder()
+	local f = bulletFx.folder
+	if f and f.Parent then
+		return f
+	end
+	f = workspace:FindFirstChild("VG_CrimBulletFx")
+	if not f then
+		f = Instance.new("Folder")
+		f.Name = "VG_CrimBulletFx"
+		f.Parent = workspace
+	end
+	bulletFx.folder = f
+	return f
+end
+
+local function getGunMuzzle()
+	local char = getChar()
+	local tool = char and char:FindFirstChildOfClass("Tool")
+	if tool then
+		for _, name in ipairs({ "Muzzle", "MuzzlePoint", "GunFire", "Fire", "Barrel", "Emit" }) do
+			local p = tool:FindFirstChild(name, true)
+			if p and p:IsA("BasePart") then
+				return p.Position, p.CFrame.LookVector
+			end
+			if p and p:IsA("Attachment") then
+				return p.WorldPosition, p.WorldCFrame.LookVector
+			end
+		end
+		local h = tool:FindFirstChild("Handle")
+		if h and h:IsA("BasePart") then
+			return h.Position, h.CFrame.LookVector
+		end
+	end
+	local cam = workspace.CurrentCamera
+	if cam then
+		return cam.CFrame.Position + cam.CFrame.LookVector * 1.2, cam.CFrame.LookVector
+	end
+	return nil, nil
+end
+
+local function drawBulletTracer(from, to, color)
+	if typeof(from) ~= "Vector3" or typeof(to) ~= "Vector3" then
+		return
+	end
+	local diff = to - from
+	local dist = diff.Magnitude
+	if dist < 0.8 then
+		return
+	end
+	local mid = from + diff * 0.5
+	local col = color or Color3.fromRGB(255, 210, 90)
+	local function seg(w, c, t0)
+		local p = Instance.new("Part")
+		p.Name = "VG_CrimTrace"
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Material = Enum.Material.Neon
+		p.Color = c
+		p.Size = Vector3.new(w, w, dist)
+		p.CFrame = CFrame.lookAt(mid, to)
+		p.Transparency = t0
+		p.Parent = bulletFxFolder()
+		task.delay(0.02, function()
+			pcall(function()
+				local tw = game:GetService("TweenService"):Create(
+					p,
+					TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+					{ Transparency = 1 }
+				)
+				tw:Play()
+			end)
+		end)
+		task.delay(0.7, function()
+			pcall(function()
+				p:Destroy()
+			end)
+		end)
+	end
+	seg(0.22, col, 0.15)
+	seg(0.08, Color3.fromRGB(255, 255, 230), 0.05)
+end
+
+local function isBulletLike(inst)
+	if not inst or inst:IsDescendantOf(bulletFxFolder()) then
+		return false
+	end
+	local char = getChar()
+	if char and inst:IsDescendantOf(char) then
+		return false
+	end
+	if inst:IsA("Beam") or inst:IsA("Trail") then
+		return true
+	end
+	local n = string.lower(inst.Name)
+	if n:find("bullet", 1, true) or n:find("tracer", 1, true) or n:find("projectile", 1, true)
+		or n:find("pellet", 1, true) or n:find("slug", 1, true) or n:find("round", 1, true)
+	then
+		return true
+	end
+	if inst:IsA("BasePart") and not inst.Anchored then
+		local s = inst.Size
+		if math.max(s.X, s.Y, s.Z) <= 1.6 then
+			local ok, vel = pcall(function()
+				return inst.AssemblyLinearVelocity.Magnitude
+			end)
+			if ok and vel and vel > 55 then
+				return true
+			end
+		end
+	end
+	if inst:IsA("Model") then
+		if n:find("bullet", 1, true) or n:find("projectile", 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+local function followBulletInst(inst, fromHint)
+	local part = inst
+	if inst:IsA("Model") then
+		part = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+	elseif inst:IsA("Beam") or inst:IsA("Trail") then
+		-- draw once from attachment0 → 1 if possible
+		pcall(function()
+			local a0 = inst.Attachment0
+			local a1 = inst.Attachment1
+			if a0 and a1 then
+				drawBulletTracer(a0.WorldPosition, a1.WorldPosition, Color3.fromRGB(120, 220, 255))
+			end
+		end)
+		return
+	end
+	if not part or not part:IsA("BasePart") then
+		return
+	end
+	local start = typeof(fromHint) == "Vector3" and fromHint or part.Position
+	local last = part.Position
+	local aliveUntil = tick() + 1.2
+	local conn
+	conn = RS.Heartbeat:Connect(function()
+		if tick() > aliveUntil or not part.Parent then
+			if conn then
+				conn:Disconnect()
+			end
+			drawBulletTracer(start, last, Color3.fromRGB(120, 220, 255))
+			return
+		end
+		last = part.Position
+	end)
+	table.insert(bulletFx.followConns, conn)
+end
+
+local function openBulletWatch(fromPos)
+	if bulletFx.watchConn then
+		pcall(function()
+			bulletFx.watchConn:Disconnect()
+		end)
+		bulletFx.watchConn = nil
+	end
+	local untilT = tick() + 0.5
+	bulletFx.watchConn = workspace.DescendantAdded:Connect(function(inst)
+		if tick() > untilT then
+			return
+		end
+		if isBulletLike(inst) then
+			task.defer(function()
+				followBulletInst(inst, fromPos)
+			end)
+		end
+	end)
+	task.delay(0.55, function()
+		if bulletFx.watchConn then
+			pcall(function()
+				bulletFx.watchConn:Disconnect()
+			end)
+			bulletFx.watchConn = nil
+		end
+	end)
+end
+
+local function fireBulletFx()
+	local now = tick()
+	if now - bulletFx.lastFireAt < 0.05 then
+		return
+	end
+	bulletFx.lastFireAt = now
+	local from, look = getGunMuzzle()
+	if not from or not look then
+		return
+	end
+	look = look.Unit
+	local lp = getLP()
+	local char = lp and lp.Character
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = char and { char, bulletFxFolder() } or { bulletFxFolder() }
+	local hit = workspace:Raycast(from, look * 900, params)
+	local to = hit and hit.Position or (from + look * 260)
+	drawBulletTracer(from, to, Color3.fromRGB(255, 200, 70))
+	local S = _G.__VG_S
+	if S then
+		S.LastShotAt = now
+		S.LastShotRayOrigin = from
+		S.LastShotRayDir = look
+		S.LastShotPos = to
+		if typeof(S.RequestShotTracer) == "function" and S.ShotTracers then
+			pcall(S.RequestShotTracer, false, nil, to)
+		end
+	end
+	openBulletWatch(from)
+end
+
+local function tickBulletFx(S)
+	if not S or not S.CrimBulletTracers then
+		return
+	end
+	local char = getChar()
+	if not char or not char:FindFirstChildOfClass("Tool") then
+		bulletFx.lastAmmo = nil
+		return
+	end
+	local cur = getGunGuiAmmo()
+	if bulletFx.lastAmmo ~= nil and cur ~= nil and cur < bulletFx.lastAmmo then
+		fireBulletFx()
+	end
+	bulletFx.lastAmmo = cur
+end
+
+local function startBulletFx()
+	for _, c in ipairs(bulletFx.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	bulletFx.conns = {}
+	bulletFx.lastAmmo = nil
+	local UIS = game:GetService("UserInputService")
+	table.insert(
+		bulletFx.conns,
+		UIS.InputBegan:Connect(function(input, gp)
+			if gp then
+				return
+			end
+			local S = _G.__VG_S
+			if not S or not S.CrimBulletTracers then
+				return
+			end
+			if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+				return
+			end
+			local char = getChar()
+			if not char or not char:FindFirstChildOfClass("Tool") then
+				return
+			end
+			-- Only as backup when GunGUI ammo isn't readable
+			if bulletFx.lastAmmo == nil then
+				task.defer(fireBulletFx)
+			end
+		end)
+	)
+end
+
+local function stopBulletFx()
+	for _, c in ipairs(bulletFx.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	bulletFx.conns = {}
+	if bulletFx.watchConn then
+		pcall(function()
+			bulletFx.watchConn:Disconnect()
+		end)
+		bulletFx.watchConn = nil
+	end
+	for _, c in ipairs(bulletFx.followConns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	bulletFx.followConns = {}
+	local f = workspace:FindFirstChild("VG_CrimBulletFx")
+	if f then
+		pcall(function()
+			f:Destroy()
+		end)
+	end
+	bulletFx.folder = nil
+	bulletFx.lastAmmo = nil
+end
+
 -- â”€â”€ MASTER HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
@@ -3192,6 +3499,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
+	syncFeatureToggle("bulletFx", "CrimBulletTracers", startBulletFx, stopBulletFx, S)
 	if crimFlag(S.CrimInfStamina) then
 		refillCrimStamina()
 	end
@@ -3234,6 +3542,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
+			syncFeatureToggle("bulletFx", "CrimBulletTracers", startBulletFx, stopBulletFx, S)
 			pcall(syncRemoteElevator, S)
 		end
 
@@ -3261,6 +3570,9 @@ local function startMaster(S)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)
+		end
+		if featureRunning.bulletFx and master.frame % 2 == 0 then
+			pcall(tickBulletFx, S)
 		end
 
 		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then
@@ -3374,6 +3686,7 @@ local function stopMaster()
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
 	pcall(stopCrimHitSounds)
+	pcall(stopBulletFx)
 	clearAllPickupFx()
 	stopFastPickupInput()
 	if elev.conn then
