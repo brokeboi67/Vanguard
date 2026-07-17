@@ -1,4 +1,4 @@
--- ClientBuild.lua  v2.52.24
+-- ClientBuild.lua  v2.52.25
 -- NOTE: bump with Settings.Version when changing.
 -- Client-only bridge + delete + wallbang.
 -- Local parts / local CanQuery/CanCollide — server/AC never sees it.
@@ -18,12 +18,15 @@ local markerB = nil
 local bridges = {}
 local hidden = {} -- { part = BasePart, canCollide, transparency, canQuery }
 
--- Wallbang: CanCollide+CanQuery off, Transparency untouched.
--- Roblox: CanQuery=false is IGNORED while CanCollide is still true — that is why
--- Query-only wallbang did nothing. Delete worked because it cleared both.
+-- Wallbang: CanCollide+CanQuery off on walls, Transparency untouched.
+-- Roblox: CanQuery=false is IGNORED while CanCollide is still true.
+-- Floors: Map names are obfuscated — protect whatever the character is standing on
+-- (raycast/overlap under feet) and never punch those parts.
 local wallbangOn = false
 local wallbang = {} -- [part] = { canCollide, canQuery }
+local wallbangSafe = {} -- [part] = true — stood-on / walk surface, never punch again
 local wallbangMapConn = nil
+local wallbangFeetConn = nil
 local wallbangSyncConn = nil
 local wallbangScanToken = 0
 local settingsRef = nil
@@ -133,7 +136,6 @@ local function hideAsset(part)
 	if not part or not part:IsA("BasePart") then
 		return false
 	end
-	-- Skip our own client builds (delete those for real)
 	if part:IsDescendantOf(ensureFolder()) then
 		pcall(function()
 			part:Destroy()
@@ -146,14 +148,12 @@ local function hideAsset(part)
 		notify("Delete", "Usunięto local bridge")
 		return true
 	end
-	-- Server asset: local-only. Don't Destroy (replicates back) — collision/vis off.
 	table.insert(hidden, {
 		part = part,
 		canCollide = part.CanCollide,
 		transparency = part.Transparency,
 		canQuery = part.CanQuery,
 	})
-	-- Drop from wallbang restore list — delete owns this part now
 	wallbang[part] = nil
 	pcall(function()
 		part.CanCollide = false
@@ -245,38 +245,104 @@ local function isHiddenPart(part)
 	return false
 end
 
--- Floors / ground / stairs must KEEP CanCollide or you fall through the map.
-local function isLikelyWalkSurface(part)
+-- Geometry-only soft filter (names are obfuscated on Criminality Map).
+local function isLikelyFlatSlab(part)
 	if not part or not part:IsA("BasePart") then
 		return false
 	end
-	local n = string.lower(part.Name)
-	if n:find("floor", 1, true) or n:find("ground", 1, true) or n:find("baseplate", 1, true)
-		or n:find("base_plate", 1, true) or n:find("road", 1, true) or n:find("street", 1, true)
-		or n:find("sidewalk", 1, true) or n:find("pavement", 1, true) or n:find("asphalt", 1, true)
-		or n:find("terrain", 1, true) or n:find("grass", 1, true) or n:find("dirt", 1, true)
-		or n:find("stair", 1, true) or n:find("step", 1, true) or n:find("ramp", 1, true)
-		or n:find("platform", 1, true) or n:find("deck", 1, true) or n:find("slab", 1, true)
-		or n:find("path", 1, true) or n:find("walkway", 1, true)
-	then
-		return true
-	end
 	local size = part.Size
 	local upY = math.abs(part.CFrame.UpVector.Y)
-	-- Nearly horizontal top face = floor/ceiling slab
-	if upY >= 0.78 then
-		local footprint = size.X * size.Z
-		if size.Y <= 4 then
-			return true
-		end
-		if size.Y <= 18 and footprint >= 80 then
-			return true
-		end
-		if footprint >= (size.Y * math.max(size.X, size.Z)) * 0.55 then
-			return true
-		end
+	if upY < 0.78 then
+		return false
+	end
+	local footprint = size.X * size.Z
+	if size.Y <= 5 then
+		return true
+	end
+	if size.Y <= 20 and footprint >= 60 then
+		return true
+	end
+	if footprint >= (size.Y * math.max(size.X, size.Z)) * 0.5 then
+		return true
 	end
 	return false
+end
+
+local function unpunchForStanding(part)
+	if not part or not part:IsA("BasePart") then
+		return
+	end
+	wallbangSafe[part] = true
+	local orig = wallbang[part]
+	if type(orig) == "table" then
+		pcall(function()
+			-- Force solid under feet — falling is worse than a wrong restore
+			part.CanCollide = true
+			part.CanQuery = orig.canQuery == true
+		end)
+		wallbang[part] = nil
+	elseif not part.CanCollide then
+		pcall(function()
+			part.CanCollide = true
+		end)
+	end
+end
+
+-- What is the character standing on right now? (no name checks)
+local function protectStanding()
+	local player = lp()
+	local char = player and player.Character
+	if not char then
+		return
+	end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+	local folder = ensureFolder()
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { char, folder }
+
+	local origin = hrp.Position + Vector3.new(0, 0.6, 0)
+	local downs = {
+		Vector3.new(0, 0, 0),
+		Vector3.new(1.6, 0, 0),
+		Vector3.new(-1.6, 0, 0),
+		Vector3.new(0, 0, 1.6),
+		Vector3.new(0, 0, -1.6),
+		Vector3.new(1.1, 0, 1.1),
+		Vector3.new(-1.1, 0, -1.1),
+		Vector3.new(1.1, 0, -1.1),
+		Vector3.new(-1.1, 0, 1.1),
+	}
+	for _, off in ipairs(downs) do
+		local hit = workspace:Raycast(origin + off, Vector3.new(0, -14, 0), params)
+		if hit and hit.Instance and hit.Instance:IsA("BasePart") then
+			unpunchForStanding(hit.Instance)
+		end
+	end
+
+	local ok, parts = pcall(function()
+		local op = OverlapParams.new()
+		op.FilterType = Enum.RaycastFilterType.Exclude
+		op.FilterDescendantsInstances = { char, folder }
+		return workspace:GetPartBoundsInBox(
+			hrp.CFrame * CFrame.new(0, -3.4, 0),
+			Vector3.new(8, 8, 8),
+			op
+		)
+	end)
+	if ok and type(parts) == "table" then
+		for _, p in ipairs(parts) do
+			if p:IsA("BasePart") then
+				local rel = hrp.CFrame:PointToObjectSpace(p.Position)
+				if rel.Y < 2 then
+					unpunchForStanding(p)
+				end
+			end
+		end
+	end
 end
 
 local function shouldWallbangPart(part)
@@ -289,6 +355,9 @@ local function shouldWallbangPart(part)
 	if isHiddenPart(part) then
 		return false
 	end
+	if wallbangSafe[part] then
+		return false
+	end
 	local model = part:FindFirstAncestorOfClass("Model")
 	if model and Players:GetPlayerFromCharacter(model) then
 		return false
@@ -296,15 +365,16 @@ local function shouldWallbangPart(part)
 	if not part.CanCollide and not part.CanQuery then
 		return false
 	end
-	-- Never punch floors — that was yeeting people under the map
-	if isLikelyWalkSurface(part) then
+	-- Soft filter: skip obvious flat slabs even before you step on them
+	if isLikelyFlatSlab(part) then
+		wallbangSafe[part] = true
 		return false
 	end
 	return true
 end
 
 local function punchPart(part)
-	if wallbang[part] ~= nil then
+	if wallbang[part] ~= nil or wallbangSafe[part] then
 		return
 	end
 	if not shouldWallbangPart(part) then
@@ -315,35 +385,19 @@ local function punchPart(part)
 		canQuery = part.CanQuery,
 	}
 	pcall(function()
-		-- Order matters: CanCollide must go false BEFORE CanQuery takes effect
 		part.CanCollide = false
 		part.CanQuery = false
 	end)
-end
-
--- If an older session punched floors, put their collide back while wallbang stays on.
-local function unpunchWalkSurfaces()
-	local removeList = {}
-	for part, orig in pairs(wallbang) do
-		if part and part.Parent and type(orig) == "table" and isLikelyWalkSurface(part) then
-			pcall(function()
-				part.CanCollide = orig.canCollide
-				part.CanQuery = orig.canQuery
-			end)
-			table.insert(removeList, part)
-		elseif not part or not part.Parent then
-			table.insert(removeList, part)
-		end
-	end
-	for _, part in ipairs(removeList) do
-		wallbang[part] = nil
-	end
 end
 
 local function clearWallbangConns()
 	if wallbangMapConn then
 		wallbangMapConn:Disconnect()
 		wallbangMapConn = nil
+	end
+	if wallbangFeetConn then
+		wallbangFeetConn:Disconnect()
+		wallbangFeetConn = nil
 	end
 end
 
@@ -360,6 +414,7 @@ local function restoreWallbang()
 		wallbang[part] = nil
 	end
 	table.clear(wallbang)
+	table.clear(wallbangSafe)
 end
 
 local function wallbangRoots()
@@ -381,6 +436,8 @@ local function scanMapForWallbang()
 	wallbangScanToken += 1
 	local token = wallbangScanToken
 	task.spawn(function()
+		-- Protect under feet BEFORE punching anything
+		protectStanding()
 		local roots = wallbangRoots()
 		if #roots == 0 then
 			for _, ch in ipairs(workspace:GetChildren()) do
@@ -402,12 +459,25 @@ local function scanMapForWallbang()
 				end
 				punchPart(d)
 				if i % 180 == 0 then
+					protectStanding()
 					task.wait()
 				end
 			end
 		end
 		if token == wallbangScanToken and wallbangOn then
-			unpunchWalkSurfaces()
+			protectStanding()
+		end
+	end)
+end
+
+local function startFeetWatch()
+	if wallbangFeetConn then
+		return
+	end
+	-- Stepped = before physics, so collide is back before you sink
+	wallbangFeetConn = RS.Stepped:Connect(function()
+		if wallbangOn then
+			protectStanding()
 		end
 	end)
 end
@@ -416,6 +486,8 @@ function ClientBuild.SetWallbang(on)
 	on = on == true
 	if on == wallbangOn then
 		if on then
+			protectStanding()
+			startFeetWatch()
 			local map = workspace:FindFirstChild("Map")
 			if map and not wallbangMapConn then
 				wallbangMapConn = map.DescendantAdded:Connect(function(d)
@@ -425,13 +497,14 @@ function ClientBuild.SetWallbang(on)
 				end)
 				scanMapForWallbang()
 			end
-			unpunchWalkSurfaces()
 		end
 		return
 	end
 	wallbangOn = on
 	if on then
 		clearWallbangConns()
+		protectStanding()
+		startFeetWatch()
 		local map = workspace:FindFirstChild("Map")
 		if map then
 			wallbangMapConn = map.DescendantAdded:Connect(function(d)
@@ -441,7 +514,7 @@ function ClientBuild.SetWallbang(on)
 			end)
 		end
 		scanMapForWallbang()
-		notify("Wallbang", "ON — ściany do strzału; podłogi zostają solidne")
+		notify("Wallbang", "ON — ściany do strzału; pod Tobą zawsze solidne")
 	else
 		restoreWallbang()
 		notify("Wallbang", "OFF — przywrócono collidy ścian")
@@ -490,7 +563,6 @@ function ClientBuild.RestoreHidden()
 			pcall(function()
 				p.CanCollide = e.canCollide
 				p.Transparency = e.transparency
-				-- If wallbang still on, keep both flags off; else restore
 				if wallbangOn and shouldWallbangPart(p) then
 					wallbang[p] = {
 						canCollide = e.canCollide,
@@ -535,7 +607,6 @@ function ClientBuild.Init(S)
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
 	S._clientWallbangSet = ClientBuild.SetWallbang
 
-	-- Sync Combat toggle without adding locals in Criminality.lua
 	wallbangSyncConn = RS.Heartbeat:Connect(function()
 		local want = settingsRef and settingsRef.CrimWallbang == true
 		if want ~= wallbangOn then
