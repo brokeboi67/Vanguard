@@ -1,4 +1,4 @@
--- Criminality.lua  v2.52.11
+-- Criminality.lua  v2.52.12
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
@@ -6,6 +6,8 @@
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
 -- stay under Luau's 200-local-register limit for the main chunk. No behavior
 -- change - just fewer top-level locals.
+-- v2.52.12: No Gun Slow is WalkSpeed-only (never triggers getgc). Auto Reload
+-- reads ammo from tool attributes/values + HUD "mag/reserve" text.
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -2070,19 +2072,18 @@ local gunMod = {
 	orig = {},
 	lastApplyAt = 0,
 	lastDeepAt = 0,
+	lastScanAt = 0,
 	reapplyInterval = 8,
-	deepCooldown = 4,
+	deepCooldown = 8,
+	scanCooldown = 4.0, -- getgc is expensive; never spam it
 	baseWalk = nil,
 	lastReloadAt = 0,
 	reloadBusy = false,
+	ammoLabel = nil, -- cached HUD TextLabel for "mag/reserve"
+	ammoScanAt = 0,
 }
--- `orig` is keyed by live getgc() weapon tables. Firing/reloading makes some
--- games re-create their weapon stat table, so getgc scans can pick up a
--- steady trickle of *different* table identities over a play session. Regular
--- (strong) keys would pin every one of those snapshots in memory forever —
--- exactly the "freeze + climbing RAM while shooting" bug. Weak keys let Lua
--- collect a weapon snapshot the moment the game itself drops the table,
--- without changing any read/write behavior of gunMod.orig elsewhere.
+-- `orig` is keyed by live getgc() weapon tables. Weak keys so recreated
+-- weapon tables (fire/reload) don't pin forever and climb RAM.
 setmetatable(gunMod.orig, { __mode = "k" })
 
 -- Extra numeric fields that help 3rd-person kick / walk bloom when present.
@@ -2160,14 +2161,14 @@ end
 
 local function cacheWeapons(deep)
 	if typeof(getgc) ~= "function" then return end
-	-- Global scan cooldown: getgc allocates huge arrays; rapid re-scans (e.g.
-	-- scope re-equipping the tool) caused freezes + RAM spikes.
+	-- Global scan cooldown: getgc allocates huge arrays; rapid re-scans
+	-- (enable toggle / reload / scope re-equip) freeze the client + spike RAM.
 	local now = tick()
-	if now - (gunMod.lastScanAt or 0) < 2.5 then return end
+	if now - (gunMod.lastScanAt or 0) < (gunMod.scanCooldown or 4) then return end
 	gunMod.lastScanAt = now
 	local active = {}
 	local found = {}
-	-- shallow first; deep only when requested or shallow empty
+	-- Prefer shallow. Deep only when explicitly requested AND shallow empty.
 	local scans = deep and { false, true } or { false }
 	for _, useDeep in ipairs(scans) do
 		local ok, gc = pcall(getgc, useDeep)
@@ -2181,6 +2182,8 @@ local function cacheWeapons(deep)
 					elseif gunMod.orig[v].EquipTime == nil then
 						gunMod.orig[v].EquipTime = v.EquipTime
 					end
+					-- Cap: never pin hundreds of stale weapon tables
+					if #found >= 40 then break end
 				end
 			end
 		end
@@ -2201,12 +2204,14 @@ local function clearGunModCharConns()
 	table.clear(gunMod.charConns)
 end
 
-local function gunModsWant(S)
+-- GC-based mods only (No Recoil / No Spread / Quick Equip).
+-- No Gun Slow is WalkSpeed-only and MUST NOT trigger getgc — that was the
+-- enable/reload freeze + RAM climb.
+local function gunModsNeedGc(S)
 	return S and (
 		S.CrimNoRecoil == true
 		or S.CrimNoSpread == true
 		or S.CrimQuickEquip == true
-		or S.CrimNoGunSlow == true
 	)
 end
 
@@ -2248,6 +2253,7 @@ local function applyNoGunSlow(weapon, orig, on)
 end
 
 -- Restore WalkSpeed if the game slows you during reload/ADS (client-side).
+-- This is the ONLY path for No Gun Slow — no getgc, no weapon-table scan.
 local function tickNoGunSlow(S)
 	if not S or not S.CrimNoGunSlow then
 		gunMod.baseWalk = nil
@@ -2260,24 +2266,37 @@ local function tickNoGunSlow(S)
 	local hasTool = char:FindFirstChildOfClass("Tool") ~= nil
 	local ws = hum.WalkSpeed
 	if not hasTool then
-		gunMod.baseWalk = ws
+		-- Track normal walk when unequipped (don't fight game sprint reset)
+		if ws >= 12 then
+			gunMod.baseWalk = ws
+		end
 		return
 	end
-	if gunMod.baseWalk == nil or ws > gunMod.baseWalk then
+	if gunMod.baseWalk == nil then
+		gunMod.baseWalk = math.max(ws, 16)
+	elseif ws > gunMod.baseWalk then
 		gunMod.baseWalk = ws
-	elseif ws + 0.4 < gunMod.baseWalk then
+	elseif ws + 0.25 < gunMod.baseWalk then
+		-- Game applied reload/ADS slow — snap back
 		pcall(function()
 			hum.WalkSpeed = gunMod.baseWalk
 		end)
 	end
 end
 
--- Auto Reload: when mag is empty, press R (client input — server accepts normal reload).
+-- Folded into gunMod to stay under Luau's 200-local limit.
+gunMod.AMMO_ATTR_KEYS = {
+	"Ammo", "ammo", "Mag", "Magazine", "Clip", "InMag", "BulletsLeft",
+	"CurrentAmmo", "AmmoInMag", "Ammo_Hold", "Rounds", "Chamber", "Bullets",
+	"AmmoCount", "MagAmmo", "MagazineAmmo", "AmmoLeft",
+}
+
 local function ammoNameMatch(n)
 	if type(n) ~= "string" then return false end
 	n = string.lower(n)
 	return n == "ammo" or n == "mag" or n == "magazine" or n == "clip"
 		or n == "bullets" or n == "rounds" or n == "chamber"
+		or n == "inmag" or n == "currentammo" or n == "ammoinmag"
 		or n:find("ammo", 1, true) ~= nil or n:find("mag", 1, true) ~= nil
 end
 
@@ -2289,55 +2308,171 @@ local function readNumberish(v)
 		return nil
 	end
 	if type(v) == "number" then return v end
-	if type(v) == "string" then return tonumber(v) end
+	if type(v) == "string" then return tonumber((v:gsub("[^%d%-%.]", ""))) end
 	return nil
 end
 
-local function getToolAmmo(tool)
+local function parseAmmoFromText(t)
+	if type(t) ~= "string" or #t < 1 or #t > 24 then return nil end
+	-- "12/30" or "12 / 30" → mag count
+	local mag = t:match("^%s*(%d+)%s*/%s*%d+%s*$")
+	if mag then return tonumber(mag) end
+	-- "AMMO 12" / "Mag: 0"
+	mag = t:match("[Aa][Mm][Mm][Oo]%s*:?%s*(%d+)")
+		or t:match("[Mm][Aa][Gg]%s*:?%s*(%d+)")
+	if mag then return tonumber(mag) end
+	return nil
+end
+
+local function scanToolAmmo(tool)
 	if not tool then return nil end
-	-- Attributes first (cheap)
-	for _, key in ipairs({ "Ammo", "ammo", "Mag", "Magazine", "Clip" }) do
+	for _, key in ipairs(gunMod.AMMO_ATTR_KEYS) do
 		local ok, a = pcall(function() return tool:GetAttribute(key) end)
 		if ok then
 			local n = readNumberish(a)
 			if n ~= nil then return n end
 		end
 	end
-	-- Shallow children + one nested folder (Values / Stats)
-	local function scanContainer(cont)
-		if not cont then return nil end
-		for _, ch in ipairs(cont:GetChildren()) do
-			if ammoNameMatch(ch.Name) then
-				local n = readNumberish(ch)
+	-- Limited BFS (no GetDescendants) — Values / Stats / Configuration
+	local queue = { tool }
+	local depth = { [tool] = 0 }
+	local qi, nodes = 1, 0
+	while qi <= #queue and nodes < 80 do
+		local node = queue[qi]; qi += 1; nodes += 1
+		local d = depth[node] or 0
+		if node ~= tool then
+			if ammoNameMatch(node.Name) then
+				local n = readNumberish(node)
 				if n ~= nil then return n end
 			end
-			if ch:IsA("Folder") or ch:IsA("Configuration") or ch.Name == "Values" or ch.Name == "Stats" then
-				for _, g in ipairs(ch:GetChildren()) do
-					if ammoNameMatch(g.Name) then
-						local n = readNumberish(g)
-						if n ~= nil then return n end
+			if node:IsA("IntValue") or node:IsA("NumberValue") then
+				if ammoNameMatch(node.Name) then
+					local n = tonumber(node.Value)
+					if n ~= nil then return n end
+				end
+			end
+		end
+		if d < 4 then
+			local ok, kids = pcall(node.GetChildren, node)
+			if ok then
+				for _, ch in ipairs(kids) do
+					if not depth[ch] then
+						queue[#queue + 1] = ch
+						depth[ch] = d + 1
 					end
 				end
 			end
 		end
-		return nil
 	end
-	return scanContainer(tool)
+	return nil
+end
+
+local function scanHudAmmo()
+	local lbl = gunMod.ammoLabel
+	if lbl and lbl.Parent then
+		local n = parseAmmoFromText(lbl.Text)
+		if n ~= nil then return n, lbl end
+	end
+	-- Re-discover HUD label at most every 1.5s
+	local now = tick()
+	if now - (gunMod.ammoScanAt or 0) < 1.5 then
+		return nil, nil
+	end
+	gunMod.ammoScanAt = now
+
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChildOfClass("PlayerGui")
+	if not pg then return nil, nil end
+
+	local best, bestScore = nil, -1
+	for _, sg in ipairs(pg:GetChildren()) do
+		if (sg:IsA("ScreenGui") or sg:IsA("Folder")) and sg.Name:find("^VG_") == nil then
+			local queue = { sg }
+			local depth = { [sg] = 0 }
+			local qi, nodes = 1, 0
+			while qi <= #queue and nodes < 120 do
+				local node = queue[qi]; qi += 1; nodes += 1
+				local d = depth[node] or 0
+				if node:IsA("TextLabel") or node:IsA("TextButton") then
+					local t = node.Text
+					local n = parseAmmoFromText(t)
+					if n ~= nil then
+						local score = 1
+						local nm = string.lower(node.Name)
+						if ammoNameMatch(nm) then score += 5 end
+						if t:find("/") then score += 3 end
+						if score > bestScore then
+							bestScore = score
+							best = node
+						end
+					elseif ammoNameMatch(node.Name) then
+						local n2 = readNumberish(t)
+						if n2 ~= nil and n2 <= 200 then
+							local score = 4
+							if score > bestScore then
+								bestScore = score
+								best = node
+							end
+						end
+					end
+				end
+				if d < 8 then
+					local ok, kids = pcall(node.GetChildren, node)
+					if ok then
+						for _, ch in ipairs(kids) do
+							if not depth[ch] and tostring(ch.Name):find("^VG_") == nil then
+								queue[#queue + 1] = ch
+								depth[ch] = d + 1
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	if best then
+		gunMod.ammoLabel = best
+		return parseAmmoFromText(best.Text) or readNumberish(best.Text), best
+	end
+	return nil, nil
+end
+
+local function getToolAmmo(tool)
+	local n = scanToolAmmo(tool)
+	if n ~= nil then return n end
+	n = select(1, scanHudAmmo())
+	if n ~= nil then return n end
+	-- Last resort: cached weapon tables from other gun mods (if already scanned)
+	for _, weapon in ipairs(gunMod.cache) do
+		if type(weapon) == "table" then
+			for _, key in ipairs(gunMod.AMMO_ATTR_KEYS) do
+				local v = rawget(weapon, key)
+				if type(v) == "number" and v >= 0 and v <= 200 then
+					return v
+				end
+			end
+		end
+	end
+	return nil
 end
 
 local function isGunTool(tool)
 	if not tool or not tool:IsA("Tool") then return false end
-	-- Has ammo state → gun
-	if getToolAmmo(tool) ~= nil then return true end
-	-- Common gun parts / names
+	if scanToolAmmo(tool) ~= nil then return true end
 	if tool:FindFirstChild("MagPart") or tool:FindFirstChild("Gun") or tool:FindFirstChild("Shoot") then
+		return true
+	end
+	if tool:FindFirstChild("Handle") and (tool:FindFirstChild("MagPart", true) or tool:FindFirstChild("Barrel", true)) then
 		return true
 	end
 	local n = string.lower(tool.Name)
 	if n:find("knife") or n:find("crowbar") or n:find("bat") or n:find("sword")
-		or n:find("axe") or n:find("pipe") or n:find("wrench") or n:find("taser") then
+		or n:find("axe") or n:find("pipe") or n:find("wrench") or n:find("taser")
+		or n:find("fist") or n:find("melee") then
 		return false
 	end
+	-- HUD shows ammo while this tool is out → treat as gun
+	if select(1, scanHudAmmo()) ~= nil then return true end
 	return false
 end
 
@@ -2369,12 +2504,15 @@ local function tickAutoReload(S)
 	if not S or not S.CrimAutoReload then return end
 	if gunMod.reloadBusy then return end
 	local now = tick()
-	if now - gunMod.lastReloadAt < 1.1 then return end
+	if now - gunMod.lastReloadAt < 1.25 then return end
 
 	local char = getChar()
 	if not char then return end
 	local tool = char:FindFirstChildOfClass("Tool")
-	if not tool or not isGunTool(tool) then return end
+	if not tool or not isGunTool(tool) then
+		gunMod.ammoLabel = nil
+		return
+	end
 
 	local ammo = getToolAmmo(tool)
 	if ammo == nil then return end
@@ -2384,7 +2522,7 @@ local function tickAutoReload(S)
 	gunMod.lastReloadAt = now
 	task.spawn(function()
 		pressReloadKey()
-		task.wait(0.35)
+		task.wait(0.4)
 		gunMod.reloadBusy = false
 	end)
 end
@@ -2459,7 +2597,8 @@ local function applyNoSpread(weapon, orig, on)
 end
 
 local function applyGunMods(S)
-	if not gunModsWant(S) then
+	-- Only iterate cache when GC mods are active (No Gun Slow is WalkSpeed-only)
+	if not gunModsNeedGc(S) then
 		return
 	end
 	for _, weapon in ipairs(gunMod.cache) do
@@ -2485,15 +2624,17 @@ local function applyGunMods(S)
 		elseif orig and orig.EquipTime ~= nil then
 			weapon.EquipTime = orig.EquipTime
 		end
+		-- Optional table-side slow zero when we already have cache from other mods
 		applyNoGunSlow(weapon, orig, S.CrimNoGunSlow == true)
 	end
 end
 
 local function refreshGunMods(S, preferDeep)
-	if not gunModsWant(S) then
+	if not gunModsNeedGc(S) then
 		return
 	end
 	local now = tick()
+	-- Tool equip/unequip should NEVER force deep getgc — that freezes on reload.
 	local wantDeep = preferDeep == true and (now - gunMod.lastDeepAt >= gunMod.deepCooldown)
 	cacheWeapons(wantDeep)
 	if wantDeep then
@@ -2511,10 +2652,11 @@ local function scheduleGunModRefresh(preferDeep, delaySec)
 			return
 		end
 		local S = _G.__VG_S
-		if not gunModsWant(S) then
+		if not gunModsNeedGc(S) then
 			return
 		end
-		refreshGunMods(S, preferDeep)
+		-- Always shallow on scheduled refreshes (equip/backpack churn)
+		refreshGunMods(S, false)
 	end)
 end
 
@@ -2540,34 +2682,34 @@ local function watchBackpackForGuns(backpack)
 	end
 	table.insert(gunMod.charConns, backpack.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(true, 0.35)
+			scheduleGunModRefresh(false, 0.5)
 		end
 	end))
 	table.insert(gunMod.charConns, backpack.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(true, 0.35)
+			scheduleGunModRefresh(false, 0.5)
 		end
 	end))
 end
 
 local function onGunModCharacter(character)
 	clearGunModCharConns()
-	scheduleGunModRefresh(true, 1.0)
+	scheduleGunModRefresh(false, 1.0)
 	table.insert(gunMod.charConns, character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(true, 0.25)
+			scheduleGunModRefresh(false, 0.4)
 		end
 	end))
 	table.insert(gunMod.charConns, character.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(true, 0.35)
+			scheduleGunModRefresh(false, 0.4)
 		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
 		table.insert(gunMod.charConns, humanoid.Died:Connect(function()
 			gunMod.lastDeepAt = 0
-			scheduleGunModRefresh(true, 2.0)
+			scheduleGunModRefresh(false, 2.0)
 		end))
 	end
 	local lp = getLP()
@@ -2577,14 +2719,14 @@ end
 local function startGunMods(S)
 	clearGunModCharConns()
 	gunMod.lastDeepAt = 0
+	-- One shallow scan on start; deep only if shallow finds nothing (inside cacheWeapons)
 	refreshGunMods(S, true)
 	local lp = getLP()
 	table.insert(gunMod.conns, lp.CharacterAdded:Connect(onGunModCharacter))
-	-- Backpack can respawn; keep a live watch on player children
 	table.insert(gunMod.conns, lp.ChildAdded:Connect(function(ch)
 		if ch:IsA("Backpack") then
 			watchBackpackForGuns(ch)
-			scheduleGunModRefresh(true, 0.4)
+			scheduleGunModRefresh(false, 0.5)
 		end
 	end))
 	watchBackpackForGuns(lp:FindFirstChildOfClass("Backpack"))
@@ -2599,6 +2741,8 @@ local function stopGunMods()
 	resetGunMods()
 	for _, conn in ipairs(gunMod.conns) do pcall(conn.Disconnect, conn) end
 	gunMod.conns = {}
+	gunMod.ammoLabel = nil
+	gunMod.baseWalk = nil
 end
 
 local function gunModCombo(S)
@@ -2606,15 +2750,13 @@ local function gunModCombo(S)
 	return (S.CrimNoRecoil == true and 1 or 0)
 		+ (S.CrimNoSpread == true and 2 or 0)
 		+ (S.CrimQuickEquip == true and 4 or 0)
-		+ (S.CrimNoGunSlow == true and 8 or 0)
 end
 
 local function syncGunMods(S)
-	local want = gunModsWant(S)
+	-- getgc path ONLY for recoil/spread/quick — never for No Gun Slow alone
+	local want = gunModsNeedGc(S)
 	if featureRunning.gunMods == want then
 		if want then
-			-- Re-apply ONLY when the toggle combo changed (was: every call =
-			-- 10x/s full weapon-table sweep → CPU waste + freeze w/ scope).
 			local combo = gunModCombo(S)
 			if combo ~= gunMod.lastCombo then
 				gunMod.lastCombo = combo
@@ -3255,7 +3397,7 @@ local function startMaster(S)
 			refillCrimStamina()
 		end
 
-		if featureRunning.gunMods and gunModsWant(S) then
+		if featureRunning.gunMods and gunModsNeedGc(S) then
 			local now = tick()
 			if now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
 				gunMod.lastApplyAt = now
@@ -3266,7 +3408,7 @@ local function startMaster(S)
 		if S.CrimNoGunSlow and master.frame % 2 == 0 then
 			pcall(tickNoGunSlow, S)
 		end
-		if S.CrimAutoReload and master.frame % 4 == 0 then
+		if S.CrimAutoReload and master.frame % 3 == 0 then
 			pcall(tickAutoReload, S)
 		end
 
@@ -3412,7 +3554,7 @@ function Criminality.Init(S)
 	end
 
 	S._crimRefreshGunMods = function()
-		if gunModsWant(S) then
+		if gunModsNeedGc(S) then
 			pcall(function()
 				syncGunMods(S)
 				refreshGunMods(S, true)
