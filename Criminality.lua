@@ -1,12 +1,12 @@
--- Criminality.lua  v2.52.15
+-- Criminality.lua  v2.52.16
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
 -- NOTE: many small state vars are packed into shared tables (COLORS, misc,
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
 -- stay under Luau's 200-local-register limit for the main chunk.
--- v2.52.14: restore getgc for NoRecoil/NoSpread/QuickEquip (v2.52.11 path).
--- No Gun Slow = WalkSpeed tick only — never starts getgc (that crashed on equip).
+-- v2.52.16: Auto Reload reads GunGUI.Frame.Main.Current/Stored; No Gun Slow
+-- ignores first 1s after equip (WalkSpeed fight on draw was crashing).
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -2203,8 +2203,7 @@ local function clearGunModCharConns()
 end
 
 local function gunModsWant(S)
-	-- getgc ONLY for these three. No Gun Slow is WalkSpeed-only (tickNoGunSlow)
-	-- and must NEVER start getgc / ChildAdded rescans — that crashes on equip.
+	-- getgc ONLY for these three. No Gun Slow must NEVER start getgc.
 	return S and (
 		S.CrimNoRecoil == true
 		or S.CrimNoSpread == true
@@ -2212,135 +2211,80 @@ local function gunModsWant(S)
 	)
 end
 
-local function applyNoGunSlow(weapon, orig, on)
-	-- Zero client-side aim/reload walk penalties on the weapon table.
-	if on then
-		for k, val in pairs(orig or {}) do
-			if type(k) == "string" and type(val) == "number" then
-				local low = string.lower(k)
-				local isSlow = low:find("slow", 1, true)
-					or (low:find("walk", 1, true) and (low:find("aim", 1, true) or low:find("reload", 1, true) or low:find("ads", 1, true)))
-					or low:find("aimwalk", 1, true) or low:find("reloadwalk", 1, true)
-				if isSlow then
-					-- If it looks like a multiplier (< 1.5), set to 1; if a flat speed, leave to WalkSpeed tick
-					if val > 0 and val <= 1.5 then
-						weapon[k] = 1
-					elseif val < 16 then
-						weapon[k] = 16
-					end
-				end
-			end
-		end
-		gunSet(weapon, "AimWalkSpeed", 16)
-		gunSet(weapon, "ReloadWalkSpeed", 16)
-		gunSet(weapon, "AdsWalkSpeed", 16)
-		gunSet(weapon, "ADSWalkSpeed", 16)
-	elseif orig then
-		for k, val in pairs(orig) do
-			if type(k) == "string" and type(val) == "number" then
-				local low = string.lower(k)
-				if low:find("slow", 1, true) or low:find("walk", 1, true) then
-					if low:find("aim", 1, true) or low:find("reload", 1, true) or low:find("ads", 1, true) or low:find("slow", 1, true) then
-						weapon[k] = val
-					end
-				end
-			end
-		end
+-- Criminality ammo HUD: PlayerGui.GunGUI.Frame.Main.Current / Stored
+local function getGunGuiAmmo()
+	local cache = gunMod.gunGui
+	if cache and cache.current and cache.current.Parent then
+		local cur = tonumber(cache.current.Text)
+		local sto = cache.stored and tonumber(cache.stored.Text) or nil
+		return cur, sto
 	end
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChild("PlayerGui")
+	local gg = pg and pg:FindFirstChild("GunGUI")
+	local fr = gg and gg:FindFirstChild("Frame")
+	local main = fr and fr:FindFirstChild("Main")
+	if not main then
+		gunMod.gunGui = nil
+		return nil, nil
+	end
+	local current = main:FindFirstChild("Current")
+	local stored = main:FindFirstChild("Stored")
+	if not current or not current:IsA("TextLabel") then
+		gunMod.gunGui = nil
+		return nil, nil
+	end
+	gunMod.gunGui = { current = current, stored = stored }
+	return tonumber(current.Text), stored and tonumber(stored.Text) or nil
 end
 
--- Restore WalkSpeed if the game slows you during reload/ADS (client-side).
+-- No Gun Slow: ONLY restore WalkSpeed during reload, never on equip.
+-- Fighting WalkSpeed while drawing a gun was crashing Roblox.
 local function tickNoGunSlow(S)
 	if not S or not S.CrimNoGunSlow then
 		gunMod.baseWalk = nil
+		gunMod.equipAt = nil
 		return
 	end
 	local char = getChar()
 	if not char then return end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
-	local hasTool = char:FindFirstChildOfClass("Tool") ~= nil
+
+	local tool = char:FindFirstChildOfClass("Tool")
+	local now = tick()
+	if not tool then
+		gunMod.baseWalk = hum.WalkSpeed
+		gunMod.equipAt = nil
+		return
+	end
+	if gunMod.equipAt == nil then
+		gunMod.equipAt = now
+	end
+	-- Ignore first second after equip — game sets its own WalkSpeed then
+	if now - gunMod.equipAt < 1.0 then
+		local ws = hum.WalkSpeed
+		if gunMod.baseWalk == nil or ws > (gunMod.baseWalk or 0) then
+			gunMod.baseWalk = ws
+		end
+		return
+	end
+
+	-- Only act when GunGUI is up (real gun out)
+	local mag = getGunGuiAmmo()
+	if mag == nil then return end
+
 	local ws = hum.WalkSpeed
-	if not hasTool then
+	if gunMod.baseWalk == nil or ws > gunMod.baseWalk then
 		gunMod.baseWalk = ws
 		return
 	end
-	if gunMod.baseWalk == nil or ws > gunMod.baseWalk then
-		gunMod.baseWalk = ws
-	elseif ws + 0.4 < gunMod.baseWalk then
+	-- Clear reload/ADS slow only (drop of at least 2)
+	if ws + 2 <= gunMod.baseWalk then
 		pcall(function()
 			hum.WalkSpeed = gunMod.baseWalk
 		end)
 	end
-end
-
--- Auto Reload: when mag is empty, press R (client input ÔÇö server accepts normal reload).
-local function ammoNameMatch(n)
-	if type(n) ~= "string" then return false end
-	n = string.lower(n)
-	return n == "ammo" or n == "mag" or n == "magazine" or n == "clip"
-		or n == "bullets" or n == "rounds" or n == "chamber"
-		or n:find("ammo", 1, true) ~= nil or n:find("mag", 1, true) ~= nil
-end
-
-local function readNumberish(v)
-	if typeof(v) == "Instance" then
-		if v:IsA("IntValue") or v:IsA("NumberValue") or v:IsA("StringValue") then
-			return tonumber(v.Value)
-		end
-		return nil
-	end
-	if type(v) == "number" then return v end
-	if type(v) == "string" then return tonumber(v) end
-	return nil
-end
-
-local function getToolAmmo(tool)
-	if not tool then return nil end
-	-- Attributes first (cheap)
-	for _, key in ipairs({ "Ammo", "ammo", "Mag", "Magazine", "Clip" }) do
-		local ok, a = pcall(function() return tool:GetAttribute(key) end)
-		if ok then
-			local n = readNumberish(a)
-			if n ~= nil then return n end
-		end
-	end
-	-- Shallow children + one nested folder (Values / Stats)
-	local function scanContainer(cont)
-		if not cont then return nil end
-		for _, ch in ipairs(cont:GetChildren()) do
-			if ammoNameMatch(ch.Name) then
-				local n = readNumberish(ch)
-				if n ~= nil then return n end
-			end
-			if ch:IsA("Folder") or ch:IsA("Configuration") or ch.Name == "Values" or ch.Name == "Stats" then
-				for _, g in ipairs(ch:GetChildren()) do
-					if ammoNameMatch(g.Name) then
-						local n = readNumberish(g)
-						if n ~= nil then return n end
-					end
-				end
-			end
-		end
-		return nil
-	end
-	return scanContainer(tool)
-end
-
-local function isGunTool(tool)
-	if not tool or not tool:IsA("Tool") then return false end
-	-- Has ammo state Ôćĺ gun
-	if getToolAmmo(tool) ~= nil then return true end
-	-- Common gun parts / names
-	if tool:FindFirstChild("MagPart") or tool:FindFirstChild("Gun") or tool:FindFirstChild("Shoot") then
-		return true
-	end
-	local n = string.lower(tool.Name)
-	if n:find("knife") or n:find("crowbar") or n:find("bat") or n:find("sword")
-		or n:find("axe") or n:find("pipe") or n:find("wrench") or n:find("taser") then
-		return false
-	end
-	return false
 end
 
 local function pressReloadKey()
@@ -2367,26 +2311,27 @@ local function pressReloadKey()
 	return false
 end
 
+-- Auto Reload: GunGUI.Frame.Main.Current == 0 and Stored > 0 → press R
 local function tickAutoReload(S)
 	if not S or not S.CrimAutoReload then return end
 	if gunMod.reloadBusy then return end
 	local now = tick()
-	if now - gunMod.lastReloadAt < 1.1 then return end
+	if now - gunMod.lastReloadAt < 1.35 then return end
 
 	local char = getChar()
-	if not char then return end
-	local tool = char:FindFirstChildOfClass("Tool")
-	if not tool or not isGunTool(tool) then return end
+	if not char or not char:FindFirstChildOfClass("Tool") then return end
 
-	local ammo = getToolAmmo(tool)
-	if ammo == nil then return end
-	if ammo > 0 then return end
+	local mag, reserve = getGunGuiAmmo()
+	if mag == nil then return end
+	if mag > 0 then return end
+	-- empty mag; only reload if there is reserve (or unknown reserve)
+	if reserve ~= nil and reserve <= 0 then return end
 
 	gunMod.reloadBusy = true
 	gunMod.lastReloadAt = now
 	task.spawn(function()
 		pressReloadKey()
-		task.wait(0.35)
+		task.wait(0.4)
 		gunMod.reloadBusy = false
 	end)
 end
@@ -2487,7 +2432,6 @@ local function applyGunMods(S)
 		elseif orig and orig.EquipTime ~= nil then
 			weapon.EquipTime = orig.EquipTime
 		end
-		applyNoGunSlow(weapon, orig, S.CrimNoGunSlow == true)
 	end
 end
 
@@ -3269,7 +3213,7 @@ local function startMaster(S)
 				applyGunMods(S)
 			end
 		end
-		if S.CrimNoGunSlow and master.frame % 2 == 0 then
+		if S.CrimNoGunSlow and master.frame % 4 == 0 then
 			pcall(tickNoGunSlow, S)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
