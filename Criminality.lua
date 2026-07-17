@@ -1,12 +1,12 @@
--- Criminality.lua  v2.52.13
+﻿-- Criminality.lua  v2.52.14
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
 -- NOTE: many small state vars are packed into shared tables (COLORS, misc,
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
--- stay under Luau's 200-local-register limit for the main chunk. No behavior
--- change - just fewer top-level locals.
--- v2.52.13: NEVER getgc / recursive tool scan on gun equip — that froze Roblox.
+-- stay under Luau's 200-local-register limit for the main chunk.
+-- v2.52.14: restore getgc for NoRecoil/NoSpread/QuickEquip (v2.52.11 path).
+-- No Gun Slow = WalkSpeed tick only — never starts getgc (that crashed on equip).
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -29,7 +29,7 @@ local function getHRP()  local c=getChar(); return c and c:FindFirstChild("Human
 local VIM; pcall(function() VIM = game:GetService("VirtualInputManager") end)
 local UIS; pcall(function() UIS = game:GetService("UserInputService") end)
 
--- ── NO FALL DAMAGE ───────────────────────────────────────────────────────────
+-- â”€â”€ NO FALL DAMAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
 local misc = { noFallConns = {}, noSpikeConn = nil }
 
@@ -66,7 +66,7 @@ local function stopNoFall()
 	end
 end
 
--- ── NO SPIKE DAMAGE ──────────────────────────────────────────────────────────
+-- â”€â”€ NO SPIKE DAMAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 local function disableSpikeParts()
 	local ff=workspace:FindFirstChild("Filter"); if not ff then return end
@@ -103,7 +103,7 @@ local function stopNoSpike()
 end
 
 
--- ── MELEE AURA ───────────────────────────────────────────────────────────────
+-- â”€â”€ MELEE AURA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
 local melee = { cooldown = false, CD = 0.5 }
 
@@ -163,7 +163,7 @@ local function tickMelee(S)
 	end)
 end
 
--- ── SAFE / DEALER / CRATE ESP ────────────────────────────────────────────────
+-- â”€â”€ SAFE / DEALER / CRATE ESP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Safes/dealers: one build pass. Crates: dynamic (SpawnedPiles).
 -- Per-frame: only reads cached .part.Position and sets .Enabled.
 
@@ -251,7 +251,7 @@ local function getCrateVisualPart(model)
 			end
 		end
 	end
-	-- deep fallback — crates often stream nested MeshParts a frame late
+	-- deep fallback â€” crates often stream nested MeshParts a frame late
 	if not best then
 		for _, d in ipairs(model:GetDescendants()) do
 			if d:IsA("BasePart") and isReasonableCratePart(d) then
@@ -323,7 +323,7 @@ local function makeEntry(model, fillCol, outlineCol, labelText, brokenVal, highl
 	         model=model, broken=brokenVal, fillCol=fillCol, visState=false }
 end
 
--- Animated show/hide — tween only on state transition (cheap; no per-frame cost).
+-- Animated show/hide â€” tween only on state transition (cheap; no per-frame cost).
 ESP.FADE_IN = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)  -- folded into ESP table to save a register
 
 local function espShow(e)
@@ -560,7 +560,7 @@ local function isCrateModel(model)
 	if not model or not model:IsA("Model") then
 		return false
 	end
-	-- Workspace.Filter.SpawnedPiles → each child named C1 is a crate.
+	-- Workspace.Filter.SpawnedPiles â†’ each child named C1 is a crate.
 	return model.Name == "C1" and isInSpawnedPiles(model)
 end
 
@@ -630,7 +630,7 @@ local function playCrateSpawnFx(entry, rare)
 	if alive(entry.lbl) then
 		local finalText = entry.lbl.Text
 		local finalSize = alive(entry.bg) and entry.bg.Size or nil
-		entry.lbl.Text = rare and "✦ RARE SPAWN ✦" or "▲ CRATE SPAWN ▲"
+		entry.lbl.Text = rare and "âś¦ RARE SPAWN âś¦" or "â–˛ CRATE SPAWN â–˛"
 		if alive(entry.bg) then
 			entry.bg.Size = UDim2.new(0, 118, 0, 20)
 		end
@@ -806,7 +806,7 @@ local function ensureCrateWatch(S)
 	end)
 end
 
--- ── SPAWNED TOOL / GUN ESP (SpawnedTools) ────────────────────────────────────
+-- â”€â”€ SPAWNED TOOL / GUN ESP (SpawnedTools) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local gunByModel = {}
 -- Packed into one table to stay under Luau's 200-local limit.
 local gunWatch = { folderConn = nil, removeConn = nil, folderWatch = nil }
@@ -1169,7 +1169,7 @@ local function tickESP(S)
 	local gunDist = S.CrimGunESPMaxDist or maxDist
 	local camPos  = workspace.CurrentCamera.CFrame.Position
 
-	-- Safes / registers (BredMakurz → Values.Broken)
+	-- Safes / registers (BredMakurz â†’ Values.Broken)
 	local showSafe = S.CrimSafeESP
 	local showBroken = S.CrimSafeShowBroken == true
 	for _, e in ipairs(ESP.safes) do
@@ -1261,7 +1261,7 @@ local function tickESP(S)
 	end
 end
 
--- ── CRATE AUTO PICKUP ────────────────────────────────────────────────────────
+-- â”€â”€ CRATE AUTO PICKUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- ReplicatedStorage.Events.PIC_PU:FireServer(crateId)
 
 -- Packed into one table to stay under Luau's 200-local limit.
@@ -1493,7 +1493,7 @@ local function tickCratePickup(S)
 	end
 end
 
--- ── AUTO PICKUP MONEY (SpawnedBread + CZDPZUS) ───────────────────────────────
+-- â”€â”€ AUTO PICKUP MONEY (SpawnedBread + CZDPZUS) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 -- Packed into one table to stay under Luau's 200-local limit.
 local moneyPu = { remote = nil, lastAt = 0 }
@@ -1589,7 +1589,7 @@ local function tickMoneyPickup(S)
 	end
 end
 
--- ── AUTO CLAIM ALLOWANCE (CLMZALOW + PlayerbaseData2.NextAllowance.Claim) ───
+-- â”€â”€ AUTO CLAIM ALLOWANCE (CLMZALOW + PlayerbaseData2.NextAllowance.Claim) â”€â”€â”€
 
 local allow = { remote=nil, lastAt=0, atm=nil }
 
@@ -1772,7 +1772,7 @@ local function tickAllowanceClaim(S)
 	end
 end
 
--- ── FAST PICKUP (PIC_TLO — guns/melee on ground) ─────────────────────────────
+-- â”€â”€ FAST PICKUP (PIC_TLO â€” guns/melee on ground) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Cobalt dump uses getnilinstances + WeaponHandle; we resolve dynamically.
 
 -- Packed to stay under Luau's 200-local limit
@@ -2054,7 +2054,7 @@ local function stopFastPickupInput()
 	end
 end
 
--- ── GUN MODS (weapon GC tables: recoil / spread / equip) ─────────────────────
+-- â”€â”€ GUN MODS (weapon GC tables: recoil / spread / equip) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 local featureRunning = {
 	noFall = false,
 	noSpike = false,
@@ -2071,18 +2071,19 @@ local gunMod = {
 	orig = {},
 	lastApplyAt = 0,
 	lastDeepAt = 0,
-	lastScanAt = 0,
-	reapplyInterval = 12,
-	deepCooldown = 30,
-	scanCooldown = 10.0, -- getgc is brutal; almost never
+	reapplyInterval = 8,
+	deepCooldown = 4,
 	baseWalk = nil,
 	lastReloadAt = 0,
 	reloadBusy = false,
-	ammoLabel = nil,
-	ammoScanAt = 0,
-	ammoCache = nil, -- { tool = Instance, value = number, at = tick }
 }
--- Weak keys so recreated weapon tables don't pin forever.
+-- `orig` is keyed by live getgc() weapon tables. Firing/reloading makes some
+-- games re-create their weapon stat table, so getgc scans can pick up a
+-- steady trickle of *different* table identities over a play session. Regular
+-- (strong) keys would pin every one of those snapshots in memory forever ÔÇö
+-- exactly the "freeze + climbing RAM while shooting" bug. Weak keys let Lua
+-- collect a weapon snapshot the moment the game itself drops the table,
+-- without changing any read/write behavior of gunMod.orig elsewhere.
 setmetatable(gunMod.orig, { __mode = "k" })
 
 -- Extra numeric fields that help 3rd-person kick / walk bloom when present.
@@ -2133,7 +2134,20 @@ local function captureWeaponOrig(v)
 			o[key] = val
 		end
 	end
-	-- Do NOT pairs()-scan the whole weapon table — that alone can hitch hard.
+	-- Also snapshot recoil/shake/kick/spread/reload/fire/aim/slow numeric keys
+	for k, val in pairs(v) do
+		if type(k) == "string" and type(val) == "number" and o[k] == nil then
+			local low = string.lower(k)
+			if low:find("recoil", 1, true) or low:find("shake", 1, true) or low:find("kick", 1, true)
+				or low:find("spread", 1, true)
+				or low:find("reload", 1, true) or low:find("chamber", 1, true) or low:find("bolt", 1, true)
+				or low:find("fire", 1, true) or low:find("shoot", 1, true) or low:find("cycle", 1, true)
+				or low:find("aim", 1, true) or low:find("slow", 1, true)
+				or (low:find("walk", 1, true) and low:find("speed", 1, true)) then
+				o[k] = val
+			end
+		end
+	end
 	return o
 end
 
@@ -2147,27 +2161,32 @@ end
 
 local function cacheWeapons(deep)
 	if typeof(getgc) ~= "function" then return end
-	-- getgc allocates a huge array of every live Lua object — even shallow
-	-- freezes the client for a beat. Never call this from Tool equip paths.
+	-- Global scan cooldown: getgc allocates huge arrays; rapid re-scans (e.g.
+	-- scope re-equipping the tool) caused freezes + RAM spikes.
 	local now = tick()
-	if now - (gunMod.lastScanAt or 0) < (gunMod.scanCooldown or 10) then return end
+	if now - (gunMod.lastScanAt or 0) < 2.5 then return end
 	gunMod.lastScanAt = now
 	local active = {}
 	local found = {}
-	-- Shallow ONLY. getgc(true) is what froze Roblox on gun draw.
-	local ok, gc = pcall(getgc, false)
-	if ok and type(gc) == "table" then
-		for _, v in ipairs(gc) do
-			if isWeaponTable(v) and not active[v] then
-				active[v] = true
-				table.insert(found, v)
-				if not gunMod.orig[v] then
-					gunMod.orig[v] = captureWeaponOrig(v)
-				elseif gunMod.orig[v].EquipTime == nil then
-					gunMod.orig[v].EquipTime = v.EquipTime
+	-- shallow first; deep only when requested or shallow empty
+	local scans = deep and { false, true } or { false }
+	for _, useDeep in ipairs(scans) do
+		local ok, gc = pcall(getgc, useDeep)
+		if ok and type(gc) == "table" then
+			for _, v in ipairs(gc) do
+				if isWeaponTable(v) and not active[v] then
+					active[v] = true
+					table.insert(found, v)
+					if not gunMod.orig[v] then
+						gunMod.orig[v] = captureWeaponOrig(v)
+					elseif gunMod.orig[v].EquipTime == nil then
+						gunMod.orig[v].EquipTime = v.EquipTime
+					end
 				end
-				if #found >= 24 then break end
 			end
+		end
+		if #found > 0 then
+			break
 		end
 	end
 	if #found > 0 then
@@ -2183,10 +2202,9 @@ local function clearGunModCharConns()
 	table.clear(gunMod.charConns)
 end
 
--- GC-based mods only (No Recoil / No Spread / Quick Equip).
--- No Gun Slow is WalkSpeed-only and MUST NOT trigger getgc — that was the
--- enable/reload freeze + RAM climb.
-local function gunModsNeedGc(S)
+local function gunModsWant(S)
+	-- getgc ONLY for these three. No Gun Slow is WalkSpeed-only (tickNoGunSlow)
+	-- and must NEVER start getgc / ChildAdded rescans — that crashes on equip.
 	return S and (
 		S.CrimNoRecoil == true
 		or S.CrimNoSpread == true
@@ -2232,7 +2250,6 @@ local function applyNoGunSlow(weapon, orig, on)
 end
 
 -- Restore WalkSpeed if the game slows you during reload/ADS (client-side).
--- This is the ONLY path for No Gun Slow — no getgc, no weapon-table scan.
 local function tickNoGunSlow(S)
 	if not S or not S.CrimNoGunSlow then
 		gunMod.baseWalk = nil
@@ -2245,37 +2262,24 @@ local function tickNoGunSlow(S)
 	local hasTool = char:FindFirstChildOfClass("Tool") ~= nil
 	local ws = hum.WalkSpeed
 	if not hasTool then
-		-- Track normal walk when unequipped (don't fight game sprint reset)
-		if ws >= 12 then
-			gunMod.baseWalk = ws
-		end
+		gunMod.baseWalk = ws
 		return
 	end
-	if gunMod.baseWalk == nil then
-		gunMod.baseWalk = math.max(ws, 16)
-	elseif ws > gunMod.baseWalk then
+	if gunMod.baseWalk == nil or ws > gunMod.baseWalk then
 		gunMod.baseWalk = ws
-	elseif ws + 0.25 < gunMod.baseWalk then
-		-- Game applied reload/ADS slow — snap back
+	elseif ws + 0.4 < gunMod.baseWalk then
 		pcall(function()
 			hum.WalkSpeed = gunMod.baseWalk
 		end)
 	end
 end
 
--- Folded into gunMod to stay under Luau's 200-local limit.
-gunMod.AMMO_ATTR_KEYS = {
-	"Ammo", "ammo", "Mag", "Magazine", "Clip", "InMag", "BulletsLeft",
-	"CurrentAmmo", "AmmoInMag", "Ammo_Hold", "Rounds", "Chamber", "Bullets",
-	"AmmoCount", "MagAmmo", "MagazineAmmo", "AmmoLeft",
-}
-
+-- Auto Reload: when mag is empty, press R (client input ÔÇö server accepts normal reload).
 local function ammoNameMatch(n)
 	if type(n) ~= "string" then return false end
 	n = string.lower(n)
 	return n == "ammo" or n == "mag" or n == "magazine" or n == "clip"
 		or n == "bullets" or n == "rounds" or n == "chamber"
-		or n == "inmag" or n == "currentammo" or n == "ammoinmag"
 		or n:find("ammo", 1, true) ~= nil or n:find("mag", 1, true) ~= nil
 end
 
@@ -2287,44 +2291,30 @@ local function readNumberish(v)
 		return nil
 	end
 	if type(v) == "number" then return v end
-	if type(v) == "string" then return tonumber((v:gsub("[^%d%-%.]", ""))) end
+	if type(v) == "string" then return tonumber(v) end
 	return nil
 end
 
-local function parseAmmoFromText(t)
-	if type(t) ~= "string" or #t < 1 or #t > 24 then return nil end
-	-- "12/30" or "12 / 30" → mag count
-	local mag = t:match("^%s*(%d+)%s*/%s*%d+%s*$")
-	if mag then return tonumber(mag) end
-	-- "AMMO 12" / "Mag: 0"
-	mag = t:match("[Aa][Mm][Mm][Oo]%s*:?%s*(%d+)")
-		or t:match("[Mm][Aa][Gg]%s*:?%s*(%d+)")
-	if mag then return tonumber(mag) end
-	return nil
-end
-
-local function scanToolAmmo(tool)
+local function getToolAmmo(tool)
 	if not tool then return nil end
-	-- Attributes only (cheap) — no BFS on equip frame
-	for _, key in ipairs(gunMod.AMMO_ATTR_KEYS) do
+	-- Attributes first (cheap)
+	for _, key in ipairs({ "Ammo", "ammo", "Mag", "Magazine", "Clip" }) do
 		local ok, a = pcall(function() return tool:GetAttribute(key) end)
 		if ok then
 			local n = readNumberish(a)
 			if n ~= nil then return n end
 		end
 	end
-	-- Shallow children only (1 level) — never recurse the whole gun model
-	local ok, kids = pcall(tool.GetChildren, tool)
-	if not ok then return nil end
-	for _, ch in ipairs(kids) do
-		if ammoNameMatch(ch.Name) then
-			local n = readNumberish(ch)
-			if n ~= nil then return n end
-		end
-		if ch:IsA("Folder") or ch:IsA("Configuration") or ch.Name == "Values" or ch.Name == "Stats" then
-			local ok2, grand = pcall(ch.GetChildren, ch)
-			if ok2 then
-				for _, g in ipairs(grand) do
+	-- Shallow children + one nested folder (Values / Stats)
+	local function scanContainer(cont)
+		if not cont then return nil end
+		for _, ch in ipairs(cont:GetChildren()) do
+			if ammoNameMatch(ch.Name) then
+				local n = readNumberish(ch)
+				if n ~= nil then return n end
+			end
+			if ch:IsA("Folder") or ch:IsA("Configuration") or ch.Name == "Values" or ch.Name == "Stats" then
+				for _, g in ipairs(ch:GetChildren()) do
 					if ammoNameMatch(g.Name) then
 						local n = readNumberish(g)
 						if n ~= nil then return n end
@@ -2332,100 +2322,24 @@ local function scanToolAmmo(tool)
 				end
 			end
 		end
-	end
-	return nil
-end
-
-local function scanHudAmmo()
-	local lbl = gunMod.ammoLabel
-	if lbl and lbl.Parent then
-		local n = parseAmmoFromText(lbl.Text)
-		if n ~= nil then return n end
-		n = readNumberish(lbl.Text)
-		if n ~= nil and n <= 200 then return n end
-	end
-	-- Rare rediscovery only — full PlayerGui walk freezes if done on equip
-	local now = tick()
-	if now - (gunMod.ammoScanAt or 0) < 3.0 then
 		return nil
 	end
-	gunMod.ammoScanAt = now
-
-	local lp = getLP()
-	local pg = lp and lp:FindFirstChildOfClass("PlayerGui")
-	if not pg then return nil end
-
-	local best, bestScore = nil, -1
-	local budget = 80
-	for _, sg in ipairs(pg:GetChildren()) do
-		if budget <= 0 then break end
-		if sg:IsA("ScreenGui") and sg.Name:find("^VG_") == nil and sg.Enabled ~= false then
-			local queue = { sg }
-			local depth = { [sg] = 0 }
-			local qi = 1
-			while qi <= #queue and budget > 0 do
-				local node = queue[qi]; qi += 1; budget -= 1
-				local d = depth[node] or 0
-				if node:IsA("TextLabel") or node:IsA("TextButton") then
-					local t = node.Text
-					local n = parseAmmoFromText(t)
-					if n ~= nil then
-						local score = 2 + (t:find("/") and 3 or 0)
-						if ammoNameMatch(node.Name) then score += 5 end
-						if score > bestScore then bestScore = score; best = node end
-					end
-				end
-				if d < 5 then
-					local ok, kids = pcall(node.GetChildren, node)
-					if ok then
-						for _, ch in ipairs(kids) do
-							if not depth[ch] then
-								queue[#queue + 1] = ch
-								depth[ch] = d + 1
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-	if best then
-		gunMod.ammoLabel = best
-		return parseAmmoFromText(best.Text) or readNumberish(best.Text)
-	end
-	return nil
-end
-
-local function getToolAmmo(tool)
-	-- Short-lived cache so equip/tick doesn't re-scan every frame
-	local c = gunMod.ammoCache
-	if c and c.tool == tool and (tick() - c.at) < 0.2 then
-		return c.value
-	end
-	local n = scanToolAmmo(tool)
-	if n == nil then
-		n = scanHudAmmo()
-	end
-	gunMod.ammoCache = { tool = tool, value = n, at = tick() }
-	return n
+	return scanContainer(tool)
 end
 
 local function isGunTool(tool)
 	if not tool or not tool:IsA("Tool") then return false end
-	-- Shallow checks ONLY — FindFirstChild(..., true) walks the whole gun and freezes
-	if tool:FindFirstChild("MagPart") or tool:FindFirstChild("Gun") or tool:FindFirstChild("Shoot")
-		or tool:FindFirstChild("Barrel") or tool:FindFirstChild("Bolt") then
+	-- Has ammo state Ôćĺ gun
+	if getToolAmmo(tool) ~= nil then return true end
+	-- Common gun parts / names
+	if tool:FindFirstChild("MagPart") or tool:FindFirstChild("Gun") or tool:FindFirstChild("Shoot") then
 		return true
 	end
 	local n = string.lower(tool.Name)
 	if n:find("knife") or n:find("crowbar") or n:find("bat") or n:find("sword")
-		or n:find("axe") or n:find("pipe") or n:find("wrench") or n:find("taser")
-		or n:find("fist") or n:find("melee") or n:find("armor") then
+		or n:find("axe") or n:find("pipe") or n:find("wrench") or n:find("taser") then
 		return false
 	end
-	-- Attribute hint without full scan
-	local ok, a = pcall(function() return tool:GetAttribute("Ammo") or tool:GetAttribute("InMag") end)
-	if ok and a ~= nil then return true end
 	return false
 end
 
@@ -2457,14 +2371,12 @@ local function tickAutoReload(S)
 	if not S or not S.CrimAutoReload then return end
 	if gunMod.reloadBusy then return end
 	local now = tick()
-	if now - gunMod.lastReloadAt < 1.25 then return end
+	if now - gunMod.lastReloadAt < 1.1 then return end
 
 	local char = getChar()
 	if not char then return end
 	local tool = char:FindFirstChildOfClass("Tool")
-	if not tool or not isGunTool(tool) then
-		return
-	end
+	if not tool or not isGunTool(tool) then return end
 
 	local ammo = getToolAmmo(tool)
 	if ammo == nil then return end
@@ -2474,7 +2386,7 @@ local function tickAutoReload(S)
 	gunMod.lastReloadAt = now
 	task.spawn(function()
 		pressReloadKey()
-		task.wait(0.4)
+		task.wait(0.35)
 		gunMod.reloadBusy = false
 	end)
 end
@@ -2549,8 +2461,7 @@ local function applyNoSpread(weapon, orig, on)
 end
 
 local function applyGunMods(S)
-	-- Only iterate cache when GC mods are active (No Gun Slow is WalkSpeed-only)
-	if not gunModsNeedGc(S) then
+	if not gunModsWant(S) then
 		return
 	end
 	for _, weapon in ipairs(gunMod.cache) do
@@ -2563,7 +2474,7 @@ local function applyGunMods(S)
 		elseif not S.CrimNoRecoil then
 			applyNoSpread(weapon, orig, false)
 		elseif orig then
-			-- No Recoil on, No Spread off → restore Spread but keep WalkSpread at 0 from recoil path
+			-- No Recoil on, No Spread off Ôćĺ restore Spread but keep WalkSpread at 0 from recoil path
 			gunRestore(weapon, orig, "Spread")
 			gunRestore(weapon, orig, "HipSpread")
 			gunRestore(weapon, orig, "AimSpread")
@@ -2576,25 +2487,37 @@ local function applyGunMods(S)
 		elseif orig and orig.EquipTime ~= nil then
 			weapon.EquipTime = orig.EquipTime
 		end
-		-- Optional table-side slow zero when we already have cache from other mods
 		applyNoGunSlow(weapon, orig, S.CrimNoGunSlow == true)
 	end
 end
 
 local function refreshGunMods(S, preferDeep)
-	if not gunModsNeedGc(S) then
+	if not gunModsWant(S) then
 		return
 	end
-	cacheWeapons(false)
+	local now = tick()
+	local wantDeep = preferDeep == true and (now - gunMod.lastDeepAt >= gunMod.deepCooldown)
+	cacheWeapons(wantDeep)
+	if wantDeep then
+		gunMod.lastDeepAt = now
+	end
 	applyGunMods(S)
-	gunMod.lastApplyAt = tick()
+	gunMod.lastApplyAt = now
 end
 
 local function scheduleGunModRefresh(preferDeep, delaySec)
-	-- Intentionally a no-op for equip events.
-	-- Calling getgc on Tool ChildAdded froze Roblox every time a gun was drawn.
-	-- Cache is filled once on startGunMods; periodic reapply covers live tables.
 	gunMod.scanToken += 1
+	local token = gunMod.scanToken
+	task.delay(delaySec or 0.4, function()
+		if token ~= gunMod.scanToken then
+			return
+		end
+		local S = _G.__VG_S
+		if not gunModsWant(S) then
+			return
+		end
+		refreshGunMods(S, preferDeep)
+	end)
 end
 
 local function resetGunMods()
@@ -2611,42 +2534,62 @@ local function resetGunMods()
 	table.clear(gunMod.orig)
 	gunMod.lastApplyAt = 0
 	gunMod.lastDeepAt = 0
-	gunMod.lastScanAt = 0
 end
 
 local function watchBackpackForGuns(backpack)
-	-- Do NOT hook ChildAdded → getgc. Equip/unequip must stay free.
+	if not backpack then
+		return
+	end
+	table.insert(gunMod.charConns, backpack.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(false, 0.45)
+		end
+	end))
+	table.insert(gunMod.charConns, backpack.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(false, 0.45)
+		end
+	end))
 end
 
 local function onGunModCharacter(character)
 	clearGunModCharConns()
-	-- Cheap re-apply only (no getgc) after character loads
-	task.delay(1.0, function()
-		local S = _G.__VG_S
-		if gunModsNeedGc(S) then
-			pcall(applyGunMods, S)
+	scheduleGunModRefresh(false, 1.0)
+	table.insert(gunMod.charConns, character.ChildAdded:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(false, 0.45)
 		end
-	end)
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	end))
+	table.insert(gunMod.charConns, character.ChildRemoved:Connect(function(child)
+		if child:IsA("Tool") then
+			scheduleGunModRefresh(false, 0.45)
+		end
+	end))
+	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
 		table.insert(gunMod.charConns, humanoid.Died:Connect(function()
-			gunMod.baseWalk = nil
-			gunMod.ammoCache = nil
+			gunMod.lastDeepAt = 0
+			scheduleGunModRefresh(false, 2.0)
 		end))
 	end
+	local lp = getLP()
+	watchBackpackForGuns(lp and lp:FindFirstChildOfClass("Backpack"))
 end
 
 local function startGunMods(S)
 	clearGunModCharConns()
 	gunMod.lastDeepAt = 0
-	gunMod.lastScanAt = 0
-	-- ONE getgc scan when enabling mods — never again on equip
-	task.defer(function()
-		if not gunModsNeedGc(_G.__VG_S) then return end
-		refreshGunMods(S, true)
-	end)
+	refreshGunMods(S, true)
 	local lp = getLP()
 	table.insert(gunMod.conns, lp.CharacterAdded:Connect(onGunModCharacter))
+	-- Backpack can respawn; keep a live watch on player children
+	table.insert(gunMod.conns, lp.ChildAdded:Connect(function(ch)
+		if ch:IsA("Backpack") then
+			watchBackpackForGuns(ch)
+			scheduleGunModRefresh(false, 0.5)
+		end
+	end))
+	watchBackpackForGuns(lp:FindFirstChildOfClass("Backpack"))
 	if lp.Character then
 		onGunModCharacter(lp.Character)
 	end
@@ -2658,9 +2601,6 @@ local function stopGunMods()
 	resetGunMods()
 	for _, conn in ipairs(gunMod.conns) do pcall(conn.Disconnect, conn) end
 	gunMod.conns = {}
-	gunMod.ammoLabel = nil
-	gunMod.ammoCache = nil
-	gunMod.baseWalk = nil
 end
 
 local function gunModCombo(S)
@@ -2671,10 +2611,11 @@ local function gunModCombo(S)
 end
 
 local function syncGunMods(S)
-	-- getgc path ONLY for recoil/spread/quick — never for No Gun Slow alone
-	local want = gunModsNeedGc(S)
+	local want = gunModsWant(S)
 	if featureRunning.gunMods == want then
 		if want then
+			-- Re-apply ONLY when the toggle combo changed (was: every call =
+			-- 10x/s full weapon-table sweep Ôćĺ CPU waste + freeze w/ scope).
 			local combo = gunModCombo(S)
 			if combo ~= gunMod.lastCombo then
 				gunMod.lastCombo = combo
@@ -2698,7 +2639,12 @@ local function stopNoRecoil()
 	stopGunMods()
 end
 
--- ── STAFF DETECTOR ───────────────────────────────────────────────────────────
+-- legacy names for stopMaster
+local function stopNoRecoil()
+	stopGunMods()
+end
+
+-- â”€â”€ STAFF DETECTOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
 local staff = { conn = nil }
 
@@ -2867,7 +2813,7 @@ local function stopStaffDetect()
 	if staff.conn then staff.conn:Disconnect(); staff.conn = nil end
 end
 
--- ── NO FAIL LOCKPICK ─────────────────────────────────────────────────────────
+-- â”€â”€ NO FAIL LOCKPICK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 misc.lockpickConn = nil  -- folded into misc table to save a register
 
 local function scaleLockpickBars(frames, scale)
@@ -2910,7 +2856,7 @@ local function stopNoFailLockpick()
 	end
 end
 
--- ── AUTO OPEN / UNLOCK DOORS ─────────────────────────────────────────────────
+-- â”€â”€ AUTO OPEN / UNLOCK DOORS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
 local door = { RADIUS = 6, INTERVAL = 0.25, lastTick = 0 }
 
@@ -2961,9 +2907,9 @@ local function tickDoors(S)
 	end
 end
 
--- ── REMOTE ELEVATOR ─────────────────────────────────────────────────────────
+-- â”€â”€ REMOTE ELEVATOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Server distance-checks Knob. Far FireServer fails unless we spoof HRP nearby.
--- Spoof = mini-teleport → may trip internal AC (same class as noclip). Prefer
+-- Spoof = mini-teleport â†’ may trip internal AC (same class as noclip). Prefer
 -- no-spoof when already close; Position Spoof toggle OFF by default.
 -- Cobalt: Elevator_N.Events.Toggle:FireServer("Do", Elevator_N.Knob1)
 local elev = { conn = nil, lastAt = 0, busy = false, NEAR = 11 }
@@ -3019,13 +2965,13 @@ local function tryRemoteElevator(S)
 	end
 
 	if not bestToggle or not bestKnob then
-		crimNotify("Elevator", "Brak windy w zasięgu", 2)
+		crimNotify("Elevator", "Brak windy w zasiÄ™gu", 2)
 		return
 	end
 
 	local needSpoof = (bestDist or 999) > elev.NEAR
 	if needSpoof and S.CrimRemoteElevatorSpoof ~= true then
-		crimNotify("Elevator", "Za daleko — włącz Position Spoof (ryzyko AC) albo podejdź", 3)
+		crimNotify("Elevator", "Za daleko â€” wĹ‚Ä…cz Position Spoof (ryzyko AC) albo podejdĹş", 3)
 		return
 	end
 
@@ -3047,7 +2993,7 @@ local function tryRemoteElevator(S)
 				root.CFrame = near
 			end)
 			spoofed = true
-			-- 1 frame only — shorter blink than 2 waits
+			-- 1 frame only â€” shorter blink than 2 waits
 			RS.Heartbeat:Wait()
 		end
 		local ok = pcall(function()
@@ -3097,7 +3043,7 @@ local function syncRemoteElevator(S)
 	end
 end
 
--- ── INFINITE STAMINA (Criminality) ───────────────────────────────────────────
+-- â”€â”€ INFINITE STAMINA (Criminality) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
 local crimStamina = { hooked=false, active=false, oldFn=nil }
 
@@ -3152,7 +3098,7 @@ local function refillCrimStamina()
 	end
 end
 
--- ── FULLBRIGHT (Criminality) ─────────────────────────────────────────────────
+-- â”€â”€ FULLBRIGHT (Criminality) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
 local fb = {
 	conn  = nil,
@@ -3229,7 +3175,7 @@ local function stopFullBright()
 	end
 end
 
--- ── MASTER HEARTBEAT ─────────────────────────────────────────────────────────
+-- â”€â”€ MASTER HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
 local master = { conn = nil, frame = 0 }  -- packed to stay under Luau 200-local limit
@@ -3315,7 +3261,7 @@ local function startMaster(S)
 			refillCrimStamina()
 		end
 
-		if featureRunning.gunMods and gunModsNeedGc(S) then
+		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
 			if now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
 				gunMod.lastApplyAt = now
@@ -3326,7 +3272,7 @@ local function startMaster(S)
 		if S.CrimNoGunSlow and master.frame % 2 == 0 then
 			pcall(tickNoGunSlow, S)
 		end
-		if S.CrimAutoReload and master.frame % 3 == 0 then
+		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)
 		end
 
@@ -3459,7 +3405,7 @@ local function stopMaster()
 	table.clear(toolIdCache)
 end
 
--- ── INIT ─────────────────────────────────────────────────────────────────────
+-- â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
@@ -3472,7 +3418,7 @@ function Criminality.Init(S)
 	end
 
 	S._crimRefreshGunMods = function()
-		if gunModsNeedGc(S) then
+		if gunModsWant(S) then
 			pcall(function()
 				syncGunMods(S)
 				refreshGunMods(S, true)
