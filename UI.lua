@@ -2435,31 +2435,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeTog(CCombat, "Auto Reload", "CrimAutoReload", 6, { flat = true })
-		MakeTog(CCombat, "Wallbang", "CrimWallbang", 7, {
-			flat = true,
-			onChange = function(on)
-				if S._clientWallbangSet then
-					pcall(S._clientWallbangSet, on)
-				end
-				if not on and S._clientWallbangHeal then
-					pcall(S._clientWallbangHeal)
-				end
-			end,
-		})
-		MakeButton(CCombat, "Fix Floor Collide", 8, function()
-			if S._clientWallbangHeal then
-				S._clientWallbangHeal()
-			elseif S._clientWallbangSet then
-				-- force heal path via off pulse if heal missing
-				pcall(S._clientWallbangSet, false)
-			end
-		end)
-		MakeHint(CCombat, "hint_crim_wallbang", 9)
-		MakeHint(CCombat, "hint_crim_norecoil", 10)
-		MakeHint(CCombat, "hint_crim_nospread", 11)
-		MakeHint(CCombat, "hint_crim_gunextra", 12)
-		MakeHint(CCombat, "hint_crim_quickequip", 13)
-		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 14, {
+		MakeHint(CCombat, "hint_crim_norecoil", 7)
+		MakeHint(CCombat, "hint_crim_nospread", 8)
+		MakeHint(CCombat, "hint_crim_gunextra", 9)
+		MakeHint(CCombat, "hint_crim_quickequip", 10)
+		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 11, {
 			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimAimPredictionLead
@@ -2468,7 +2448,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 15, {
+		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 12, {
 			suffix = "",
 			step = 1,
 			requires = "CrimAimPrediction",
@@ -2479,14 +2459,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_prediction", 16)
-		MakeTog(CCombat, "Bullet Tracers", "CrimBulletTracers", 17, { flat = true })
-		MakeHint(CCombat, "hint_crim_bullet_tracers", 18)
+		MakeHint(CCombat, "hint_crim_prediction", 13)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
 		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 3, { flat = true })
 		MakeHint(CSurv, "hint_crim_stamina", 4)
+		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 5, { flat = true })
+		MakeHint(CSurv, "hint_crim_autorespawn", 6)
 
 		MakeSection(CCrate, L("crim_sub_pickup_crates"), 1)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 2, {

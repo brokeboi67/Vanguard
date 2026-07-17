@@ -524,17 +524,12 @@ function Config.EnforceRules(S)
 	if S.CrimAutoReload == nil then
 		S.CrimAutoReload = false
 	end
-	if S.CrimWallbang == nil then
-		S.CrimWallbang = false
+	if S.CrimAutoRespawn == nil then
+		S.CrimAutoRespawn = false
 	end
-	-- Old full-map wallbang left soft floors; force off until user re-enables crosshair mode
-	if type(S.CrimWallbang) ~= "boolean" then
-		S.CrimWallbang = false
-	end
-	if S.CrimBulletTracers == nil then
-		S.CrimBulletTracers = false
-	end
-	-- Removed server-validated gun mods (kept for old configs, ignored)
+	-- Removed: wallbang / bullet tracers / server-validated gun mods
+	S.CrimWallbang = nil
+	S.CrimBulletTracers = nil
 	S.CrimFastReload = nil
 	S.CrimRapidFire = nil
 	if S.CrimAimPrediction == nil then
