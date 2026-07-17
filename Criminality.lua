@@ -2073,8 +2073,11 @@ local gunMod = {
 	orig = {},
 	lastApplyAt = 0,
 	lastDeepAt = 0,
+	lastScanAt = 0,
 	reapplyInterval = 8,
+	rescanInterval = 12,
 	deepCooldown = 4,
+	scanCooldown = 2.5,
 	lastReloadAt = 0,
 	reloadBusy = false,
 }
@@ -2160,16 +2163,20 @@ local function pruneWeaponOrig(active)
 	end
 end
 
-local function cacheWeapons(deep)
+local function cacheWeapons(deep, force)
 	if typeof(getgc) ~= "function" then return end
 	-- Global scan cooldown: getgc allocates huge arrays; rapid re-scans (e.g.
 	-- scope re-equipping the tool) caused freezes + RAM spikes.
+	-- `force` bypasses cooldown for backpack/equip events (new guns in EQ).
 	local now = tick()
-	if now - (gunMod.lastScanAt or 0) < 2.5 then return end
+	if not force and (now - (gunMod.lastScanAt or 0) < (gunMod.scanCooldown or 2.5)) then
+		return
+	end
 	gunMod.lastScanAt = now
 	local active = {}
 	local found = {}
-	-- shallow first; deep only when requested or shallow empty
+	-- shallow first; when deep requested, also deep-merge (do NOT early-break —
+	-- old guns already in shallow GC would otherwise block discovering new ones).
 	local scans = deep and { false, true } or { false }
 	for _, useDeep in ipairs(scans) do
 		local ok, gc = pcall(getgc, useDeep)
@@ -2186,7 +2193,8 @@ local function cacheWeapons(deep)
 				end
 			end
 		end
-		if #found > 0 then
+		-- Only skip deep when shallow is empty *and* we did not ask for deep.
+		if #found > 0 and not deep then
 			break
 		end
 	end
@@ -2386,13 +2394,13 @@ local function applyGunMods(S)
 	end
 end
 
-local function refreshGunMods(S, preferDeep)
+local function refreshGunMods(S, preferDeep, force)
 	if not gunModsWant(S) then
 		return
 	end
 	local now = tick()
-	local wantDeep = preferDeep == true and (now - gunMod.lastDeepAt >= gunMod.deepCooldown)
-	cacheWeapons(wantDeep)
+	local wantDeep = preferDeep == true and (force == true or (now - gunMod.lastDeepAt >= gunMod.deepCooldown))
+	cacheWeapons(wantDeep, force == true)
 	if wantDeep then
 		gunMod.lastDeepAt = now
 	end
@@ -2400,7 +2408,7 @@ local function refreshGunMods(S, preferDeep)
 	gunMod.lastApplyAt = now
 end
 
-local function scheduleGunModRefresh(preferDeep, delaySec)
+local function scheduleGunModRefresh(preferDeep, delaySec, force)
 	gunMod.scanToken += 1
 	local token = gunMod.scanToken
 	task.delay(delaySec or 0.4, function()
@@ -2411,7 +2419,24 @@ local function scheduleGunModRefresh(preferDeep, delaySec)
 		if not gunModsWant(S) then
 			return
 		end
-		refreshGunMods(S, preferDeep)
+		refreshGunMods(S, preferDeep, force)
+	end)
+end
+
+-- New Tool in EQ / equip: force rescan (cooldown bypass) + delayed follow-up
+-- because Criminality often builds the weapon stat table a moment after the Tool appears.
+local function onGunToolChanged()
+	scheduleGunModRefresh(true, 0.35, true)
+	gunMod.followToken = (gunMod.followToken or 0) + 1
+	local ft = gunMod.followToken
+	task.delay(1.25, function()
+		if ft ~= gunMod.followToken then
+			return
+		end
+		local S = _G.__VG_S
+		if gunModsWant(S) then
+			refreshGunMods(S, true, true)
+		end
 	end)
 end
 
@@ -2437,34 +2462,34 @@ local function watchBackpackForGuns(backpack)
 	end
 	table.insert(gunMod.charConns, backpack.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(false, 0.45)
+			onGunToolChanged()
 		end
 	end))
 	table.insert(gunMod.charConns, backpack.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(false, 0.45)
+			onGunToolChanged()
 		end
 	end))
 end
 
 local function onGunModCharacter(character)
 	clearGunModCharConns()
-	scheduleGunModRefresh(false, 1.0)
+	scheduleGunModRefresh(true, 1.0, true)
 	table.insert(gunMod.charConns, character.ChildAdded:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(false, 0.45)
+			onGunToolChanged()
 		end
 	end))
 	table.insert(gunMod.charConns, character.ChildRemoved:Connect(function(child)
 		if child:IsA("Tool") then
-			scheduleGunModRefresh(false, 0.45)
+			onGunToolChanged()
 		end
 	end))
 	local humanoid = character:WaitForChild("Humanoid", 2)
 	if humanoid then
 		table.insert(gunMod.charConns, humanoid.Died:Connect(function()
 			gunMod.lastDeepAt = 0
-			scheduleGunModRefresh(false, 2.0)
+			scheduleGunModRefresh(true, 2.0, true)
 		end))
 	end
 	local lp = getLP()
@@ -2474,14 +2499,15 @@ end
 local function startGunMods(S)
 	clearGunModCharConns()
 	gunMod.lastDeepAt = 0
-	refreshGunMods(S, true)
+	gunMod.lastScanAt = 0
+	refreshGunMods(S, true, true)
 	local lp = getLP()
 	table.insert(gunMod.conns, lp.CharacterAdded:Connect(onGunModCharacter))
 	-- Backpack can respawn; keep a live watch on player children
 	table.insert(gunMod.conns, lp.ChildAdded:Connect(function(ch)
 		if ch:IsA("Backpack") then
 			watchBackpackForGuns(ch)
-			scheduleGunModRefresh(false, 0.5)
+			scheduleGunModRefresh(true, 0.5, true)
 		end
 	end))
 	watchBackpackForGuns(lp:FindFirstChildOfClass("Backpack"))
@@ -3221,9 +3247,12 @@ local function startMaster(S)
 
 		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
-			if now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
+			if now - gunMod.lastApplyAt >= gunMod.rescanInterval then
+				-- periodic shallow rescan so newly spawned weapon tables join the cache
+				refreshGunMods(S, false, false)
+			elseif now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
 				gunMod.lastApplyAt = now
-				-- cheap: only re-zero cached tables (no getgc every few seconds)
+				-- cheap: only re-zero cached tables
 				applyGunMods(S)
 			end
 		end
