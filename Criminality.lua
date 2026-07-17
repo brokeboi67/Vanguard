@@ -1,12 +1,12 @@
--- Criminality.lua  v2.52.17
+-- Criminality.lua  v2.52.18
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
 -- NOTE: many small state vars are packed into shared tables (COLORS, misc,
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
 -- stay under Luau's 200-local-register limit for the main chunk.
--- v2.52.17: removed No Gun Slow (WalkSpeed fight kept crashing on equip).
--- Auto Reload uses GunGUI.Frame.Main.Current/Stored.
+-- v2.52.18: bounty via CoreGUI.NotificationFrame; optional hit sound swap.
+-- v2.52.17: removed No Gun Slow. Auto Reload uses GunGUI Current/Stored.
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -2062,6 +2062,7 @@ local featureRunning = {
 	staffDetect = false,
 	noFailLockpick = false,
 	fullBright = false,
+	hitSounds = false,
 }
 local gunMod = {
 	conns = {},
@@ -3068,6 +3069,49 @@ local function stopFullBright()
 	end
 end
 
+-- ── CUSTOM HIT SOUNDS (CoreGUI HeadshotSound / HitmarkerSound) ───────────────
+-- Packed into one table to stay under Luau's 200-local limit.
+local snd = {
+	orig = {},
+	IDS = {
+		HeadshotSound = "rbxassetid://9114481067",
+		HitmarkerSound = "rbxassetid://4868633804",
+	},
+}
+
+local function applyCrimHitSounds(on)
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChild("PlayerGui")
+	local core = pg and (pg:FindFirstChild("CoreGUI") or pg:FindFirstChild("CoreGui"))
+	if not core then return end
+	for name, id in pairs(snd.IDS) do
+		local s = core:FindFirstChild(name)
+		if s and s:IsA("Sound") then
+			if on then
+				if snd.orig[name] == nil then
+					snd.orig[name] = s.SoundId
+				end
+				if s.SoundId ~= id then
+					s.SoundId = id
+				end
+			elseif snd.orig[name] then
+				s.SoundId = snd.orig[name]
+			end
+		end
+	end
+	if not on then
+		table.clear(snd.orig)
+	end
+end
+
+local function startCrimHitSounds()
+	applyCrimHitSounds(true)
+end
+
+local function stopCrimHitSounds()
+	applyCrimHitSounds(false)
+end
+
 -- â”€â”€ MASTER HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Single connection instead of 5 separate ones = less scheduler overhead.
 
@@ -3102,6 +3146,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
 	if crimFlag(S.CrimInfStamina) then
 		refillCrimStamina()
 	end
@@ -3143,6 +3188,7 @@ local function startMaster(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
 			pcall(syncRemoteElevator, S)
 		end
 
@@ -3161,6 +3207,9 @@ local function startMaster(S)
 				-- cheap: only re-zero cached tables (no getgc every few seconds)
 				applyGunMods(S)
 			end
+		end
+		if featureRunning.hitSounds and master.frame % 30 == 0 then
+			pcall(applyCrimHitSounds, true)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)
@@ -3276,6 +3325,7 @@ local function stopMaster()
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
+	pcall(stopCrimHitSounds)
 	clearAllPickupFx()
 	stopFastPickupInput()
 	if elev.conn then

@@ -2749,6 +2749,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
+		MakeTog(CVIS, "Custom Hit Sounds", "CrimHitSoundSwap", 3, { flat = true })
+		MakeHint(CVIS, "hint_crim_hitsounds", 4)
 
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
 		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })

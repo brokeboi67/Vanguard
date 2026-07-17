@@ -563,6 +563,9 @@ function Config.EnforceRules(S)
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
+	if S.CrimHitSoundSwap == nil then
+		S.CrimHitSoundSwap = false
+	end
 	if S.CrimCratePickupFx == nil then
 		S.CrimCratePickupFx = true
 	end
