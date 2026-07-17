@@ -1,4 +1,4 @@
--- ClientBuild.lua  v2.52.22
+-- ClientBuild.lua  v2.52.23
 -- NOTE: bump with Settings.Version when changing.
 -- Client-only bridge + delete + wallbang.
 -- Local parts / local CanQuery/CanCollide — server/AC never sees it.
@@ -18,10 +18,11 @@ local markerB = nil
 local bridges = {}
 local hidden = {} -- { part = BasePart, canCollide, transparency, canQuery }
 
--- Wallbang: CanQuery off only — walls stay visible + CanCollide (walk solid).
--- Same reason Delete lets you shoot through: client gun raycasts skip CanQuery=false.
+-- Wallbang: CanCollide+CanQuery off, Transparency untouched.
+-- Roblox: CanQuery=false is IGNORED while CanCollide is still true — that is why
+-- Query-only wallbang did nothing. Delete worked because it cleared both.
 local wallbangOn = false
-local wallbang = {} -- [part] = original CanQuery
+local wallbang = {} -- [part] = { canCollide, canQuery }
 local wallbangMapConn = nil
 local wallbangSyncConn = nil
 local wallbangScanToken = 0
@@ -248,19 +249,19 @@ local function shouldWallbangPart(part)
 	if not part or not part:IsA("BasePart") then
 		return false
 	end
-	if not part.Anchored then
-		return false
-	end
 	if part:IsDescendantOf(ensureFolder()) then
 		return false
 	end
 	if isHiddenPart(part) then
 		return false
 	end
-	-- Skip live characters / tools (not under Map usually, but be safe)
-	local player = Players:GetPlayerFromCharacter(part.Parent)
-		or (part.Parent and part.Parent.Parent and Players:GetPlayerFromCharacter(part.Parent.Parent))
-	if player then
+	-- Skip live characters / tools
+	local model = part:FindFirstAncestorOfClass("Model")
+	if model and Players:GetPlayerFromCharacter(model) then
+		return false
+	end
+	-- Prefer Map geometry; anchored collide props are the usual cover
+	if not part.CanCollide and not part.CanQuery then
 		return false
 	end
 	return true
@@ -273,8 +274,13 @@ local function punchPart(part)
 	if not shouldWallbangPart(part) then
 		return
 	end
-	wallbang[part] = part.CanQuery
+	wallbang[part] = {
+		canCollide = part.CanCollide,
+		canQuery = part.CanQuery,
+	}
 	pcall(function()
+		-- Order matters: CanCollide must go false BEFORE CanQuery takes effect
+		part.CanCollide = false
 		part.CanQuery = false
 	end)
 end
@@ -290,9 +296,10 @@ local function restoreWallbang()
 	clearWallbangConns()
 	wallbangScanToken += 1
 	for part, orig in pairs(wallbang) do
-		if part and part.Parent and not isHiddenPart(part) then
+		if part and part.Parent and not isHiddenPart(part) and type(orig) == "table" then
 			pcall(function()
-				part.CanQuery = orig
+				part.CanCollide = orig.canCollide
+				part.CanQuery = orig.canQuery
 			end)
 		end
 		wallbang[part] = nil
@@ -300,22 +307,50 @@ local function restoreWallbang()
 	table.clear(wallbang)
 end
 
+local function wallbangRoots()
+	local roots = {}
+	local map = workspace:FindFirstChild("Map")
+	if map then
+		table.insert(roots, map)
+	end
+	-- Some Criminality props live beside Map
+	for _, name in ipairs({ "Buildings", "Props", "Structures", "World", "Geometry" }) do
+		local f = workspace:FindFirstChild(name)
+		if f and f ~= map then
+			table.insert(roots, f)
+		end
+	end
+	return roots
+end
+
 local function scanMapForWallbang()
 	wallbangScanToken += 1
 	local token = wallbangScanToken
 	task.spawn(function()
-		local map = workspace:FindFirstChild("Map")
-		if not map then
-			return
+		local roots = wallbangRoots()
+		if #roots == 0 then
+			-- Fallback: top-level workspace folders/models (skip characters)
+			for _, ch in ipairs(workspace:GetChildren()) do
+				if ch:IsA("Folder") or ch:IsA("Model") then
+					if not Players:GetPlayerFromCharacter(ch) and ch.Name ~= FOLDER then
+						table.insert(roots, ch)
+					end
+				end
+			end
 		end
-		local descs = map:GetDescendants()
-		for i, d in ipairs(descs) do
+		for _, root in ipairs(roots) do
 			if token ~= wallbangScanToken or not wallbangOn then
 				return
 			end
-			punchPart(d)
-			if i % 180 == 0 then
-				task.wait()
+			local descs = root:GetDescendants()
+			for i, d in ipairs(descs) do
+				if token ~= wallbangScanToken or not wallbangOn then
+					return
+				end
+				punchPart(d)
+				if i % 180 == 0 then
+					task.wait()
+				end
 			end
 		end
 	end)
@@ -325,7 +360,6 @@ function ClientBuild.SetWallbang(on)
 	on = on == true
 	if on == wallbangOn then
 		if on then
-			-- keep watching; re-scan if Map appeared late
 			local map = workspace:FindFirstChild("Map")
 			if map and not wallbangMapConn then
 				wallbangMapConn = map.DescendantAdded:Connect(function(d)
@@ -340,9 +374,9 @@ function ClientBuild.SetWallbang(on)
 	end
 	wallbangOn = on
 	if on then
+		clearWallbangConns()
 		local map = workspace:FindFirstChild("Map")
 		if map then
-			clearWallbangConns()
 			wallbangMapConn = map.DescendantAdded:Connect(function(d)
 				if wallbangOn then
 					punchPart(d)
@@ -350,10 +384,10 @@ function ClientBuild.SetWallbang(on)
 			end)
 		end
 		scanMapForWallbang()
-		notify("Wallbang", "ON — ściany widoczne, strzały przechodzą (CanQuery off)")
+		notify("Wallbang", "ON — ściany widoczne; CanCollide+CanQuery off (możesz przez nie przejść)")
 	else
 		restoreWallbang()
-		notify("Wallbang", "OFF — przywrócono raycast ścian")
+		notify("Wallbang", "OFF — przywrócono collidy ścian")
 	end
 end
 
@@ -399,9 +433,13 @@ function ClientBuild.RestoreHidden()
 			pcall(function()
 				p.CanCollide = e.canCollide
 				p.Transparency = e.transparency
-				-- If wallbang still on, keep CanQuery false; else restore
+				-- If wallbang still on, keep both flags off; else restore
 				if wallbangOn and shouldWallbangPart(p) then
-					wallbang[p] = e.canQuery
+					wallbang[p] = {
+						canCollide = e.canCollide,
+						canQuery = e.canQuery,
+					}
+					p.CanCollide = false
 					p.CanQuery = false
 				else
 					p.CanQuery = e.canQuery
