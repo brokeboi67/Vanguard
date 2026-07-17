@@ -1,10 +1,14 @@
--- BountyTracker.lua v2.52.8
+-- BountyTracker.lua v2.52.10
 -- Scrapes Criminality's custom bounty popups ("Bounty Alert" / "Bounty Claimed").
 -- Fixes:
 --   • Display names with spaces/special chars now matched (pattern .-)
 --   • Passive $3/s drain simulation after ~8 s combat-tag window
 --   • seenSigs keyed on name+amount so new amounts for same player always pass
--- Performance: same as before — event-driven, no full-PlayerGui BFS on a timer.
+--   • Popup is often a REUSED/persistent Frame (Visible + Text just get updated,
+--     no ChildAdded, no child-count change) → fallback now unconditionally
+--     re-scans every watched root every 1s instead of only on child-count diff.
+-- Performance: bounded BFS (MAX_NODES/MAX_DEPTH) on already-known roots only,
+-- no full-PlayerGui walk.
 
 local BountyTracker = {}
 
@@ -33,7 +37,7 @@ local lastFallback  = 0
 local lastRender    = 0
 local lastSeenPrune = 0
 
-local FALLBACK_INTERVAL = 2.0
+local FALLBACK_INTERVAL = 1.0
 local RENDER_INTERVAL   = 0.5   -- refresh display twice/s so drain looks smooth
 local SCAN_DEBOUNCE     = 0.20
 local MAX_DEPTH         = 12
@@ -335,16 +339,19 @@ local function pruneSeen()
 	table.clear(seenSigs)
 end
 
+-- IMPORTANT: Criminality's popup is often a single persistent Frame that just
+-- toggles Visible + updates Text (no ChildAdded fires, child count unchanged).
+-- So we can't rely on mutation events alone — periodically re-scan every
+-- watched root unconditionally. Still bounded (MAX_NODES/MAX_DEPTH) and only
+-- touches roots we already track, so cost stays tiny (no full PlayerGui walk).
 local function fallbackCheck(S)
 	for sg, last in pairs(sgChildCount) do
 		if not sg.Parent then
 			unwatchScreenGui(sg)
 		else
 			local ok, n = pcall(function() return #sg:GetChildren() end)
-			if ok and n ~= last then
-				sgChildCount[sg] = n
-				scheduleScan(sg, S)
-			end
+			if ok then sgChildCount[sg] = n end
+			scheduleScan(sg, S)
 		end
 	end
 end
