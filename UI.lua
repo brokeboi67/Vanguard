@@ -2441,14 +2441,25 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				if S._clientWallbangSet then
 					pcall(S._clientWallbangSet, on)
 				end
+				if not on and S._clientWallbangHeal then
+					pcall(S._clientWallbangHeal)
+				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_wallbang", 8)
-		MakeHint(CCombat, "hint_crim_norecoil", 9)
-		MakeHint(CCombat, "hint_crim_nospread", 10)
-		MakeHint(CCombat, "hint_crim_gunextra", 11)
-		MakeHint(CCombat, "hint_crim_quickequip", 12)
-		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 13, {
+		MakeButton(CCombat, "Fix Floor Collide", 8, function()
+			if S._clientWallbangHeal then
+				S._clientWallbangHeal()
+			elseif S._clientWallbangSet then
+				-- force heal path via off pulse if heal missing
+				pcall(S._clientWallbangSet, false)
+			end
+		end)
+		MakeHint(CCombat, "hint_crim_wallbang", 9)
+		MakeHint(CCombat, "hint_crim_norecoil", 10)
+		MakeHint(CCombat, "hint_crim_nospread", 11)
+		MakeHint(CCombat, "hint_crim_gunextra", 12)
+		MakeHint(CCombat, "hint_crim_quickequip", 13)
+		MakeTog(CCombat, "Aim Prediction", "CrimAimPrediction", 14, {
 			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimAimPredictionLead
@@ -2457,7 +2468,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 14, {
+		MakeSlider(CCombat, "Prediction Lead", "CrimAimPredictionLead", 5, 35, 15, {
 			suffix = "",
 			step = 1,
 			requires = "CrimAimPrediction",
@@ -2468,7 +2479,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_prediction", 15)
+		MakeHint(CCombat, "hint_crim_prediction", 16)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })

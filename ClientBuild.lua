@@ -1,8 +1,8 @@
--- ClientBuild.lua  v2.52.27
+-- ClientBuild.lua  v2.52.28
 -- NOTE: bump with Settings.Version when changing.
 -- Client-only bridge + delete + wallbang.
--- Wallbang = CanCollide+CanQuery off on WALLS only (Criminality needs this for bullets).
--- Floors stay solid: geometry filter + Stepped protect-under-feet (obfuscated names ignored).
+-- Wallbang punches WALLS only (CanCollide+CanQuery off). Floors never punched.
+-- CRITICAL: on disable/init, nuclear-heal leftover collide=false (old bug left floors soft).
 
 local ClientBuild = {}
 
@@ -11,17 +11,17 @@ local UIS = game:GetService("UserInputService")
 local RS = game:GetService("RunService")
 
 local FOLDER = "VG_ClientBuild"
-local mode = nil -- "bridge", "delete", nil
+local mode = nil
 local bridgeA = nil
 local inputConn = nil
 local markerA = nil
 local markerB = nil
 local bridges = {}
-local hidden = {} -- { part = BasePart, canCollide, transparency, canQuery }
+local hidden = {}
 
 local wallbangOn = false
 local wallbang = {} -- [part] = { canCollide, canQuery }
-local wallbangSafe = {} -- [part] = true — floor / stood-on — NEVER punch
+local wallbangSafe = {}
 local wallbangMapConn = nil
 local wallbangFeetConn = nil
 local wallbangSyncConn = nil
@@ -231,7 +231,7 @@ local function bindInput()
 	end)
 end
 
--- ── Wallbang (collide-off walls ONLY — floors stay solid) ─────────────────────
+-- ── Wallbang ─────────────────────────────────────────────────────────────────
 
 local function isHiddenPart(part)
 	for _, e in ipairs(hidden) do
@@ -242,35 +242,71 @@ local function isHiddenPart(part)
 	return false
 end
 
--- Obfuscated map: NO name checks. Flat / walkable slabs must never lose collide.
+local function iterMapParts(fn)
+	local roots = {}
+	local map = workspace:FindFirstChild("Map")
+	if map then
+		table.insert(roots, map)
+	end
+	for _, name in ipairs({ "Buildings", "Props", "Structures", "World", "Geometry" }) do
+		local f = workspace:FindFirstChild(name)
+		if f and f ~= map then
+			table.insert(roots, f)
+		end
+	end
+	if #roots == 0 then
+		for _, ch in ipairs(workspace:GetChildren()) do
+			if (ch:IsA("Folder") or ch:IsA("Model")) and ch.Name ~= FOLDER then
+				if not Players:GetPlayerFromCharacter(ch) then
+					table.insert(roots, ch)
+				end
+			end
+		end
+	end
+	for _, root in ipairs(roots) do
+		local descs = root:GetDescendants()
+		for i, d in ipairs(descs) do
+			if d:IsA("BasePart") then
+				fn(d)
+			end
+			if i % 250 == 0 then
+				task.wait()
+			end
+		end
+	end
+end
+
+-- Flat walk surfaces (no names — map is obfuscated).
 local function isLikelyFloor(part)
 	if not part or not part:IsA("BasePart") then
 		return false
 	end
 	local size = part.Size
 	local upY = math.abs(part.CFrame.UpVector.Y)
-	-- Top face roughly world-up → floor/ceiling/platform
-	if upY < 0.65 then
-		return false
-	end
 	local footprint = size.X * size.Z
-	local tallFace = size.Y * math.max(size.X, size.Z)
-	-- Thin slab
-	if size.Y <= 6 then
-		return true
+	local maxXZ = math.max(size.X, size.Z)
+	local minXZ = math.min(size.X, size.Z)
+
+	-- Classic horizontal slab
+	if upY >= 0.55 then
+		if size.Y <= 8 then
+			return true
+		end
+		if footprint >= 30 and size.Y <= 30 then
+			return true
+		end
+		if footprint >= size.Y * maxXZ * 0.4 then
+			return true
+		end
 	end
-	-- Large pad / foundation
-	if footprint >= 40 and size.Y <= 25 then
-		return true
-	end
-	-- More horizontal than vertical
-	if footprint >= tallFace * 0.45 then
+	-- Wide flat-ish even if slightly tilted
+	if footprint >= 80 and size.Y <= 12 and minXZ >= 4 then
 		return true
 	end
 	return false
 end
 
--- Only punch vertical cover / walls (what bullets hit).
+-- STRICT walls only. No "tilted catch-all" (that punched floors).
 local function isLikelyWall(part)
 	if not part or not part:IsA("BasePart") then
 		return false
@@ -282,22 +318,108 @@ local function isLikelyWall(part)
 	local upY = math.abs(part.CFrame.UpVector.Y)
 	local minXZ = math.min(size.X, size.Z)
 	local maxXZ = math.max(size.X, size.Z)
-
-	-- Upright part: thin in X or Z, has height
-	if upY >= 0.65 then
-		if size.Y >= 3.5 and minXZ <= 7 then
-			return true
-		end
-		if size.Y >= 5 and minXZ <= 12 and maxXZ >= 3 then
-			return true
-		end
-		if size.Y >= 8 and minXZ <= 14 then
-			return true
-		end
+	-- Must be upright-ish and thin + tall
+	if upY < 0.7 then
 		return false
 	end
-	-- Tilted / sideways mesh — treat as cover
-	return size.Y >= 2 or maxXZ >= 4 or math.max(size.X, size.Y, size.Z) >= 4
+	if size.Y < 4 then
+		return false
+	end
+	if minXZ > 6 then
+		return false
+	end
+	if maxXZ < 2 then
+		return false
+	end
+	return true
+end
+
+--[[
+	NUCLEAR HEAL — fixes "disabled wallbang but still falling".
+	Our punch always sets BOTH CanCollide=false AND CanQuery=false and keeps Transparency.
+	Restore every such anchored visible part. Also force-solid every likely floor.
+]]
+local function healMapCollide(reason)
+	local fixed = 0
+	-- 1) tracked punches
+	for part, orig in pairs(wallbang) do
+		if part and part.Parent and type(orig) == "table" then
+			pcall(function()
+				part.CanCollide = orig.canCollide ~= false and orig.canCollide or true
+				part.CanQuery = orig.canQuery
+				if not part.CanCollide and isLikelyFloor(part) then
+					part.CanCollide = true
+				end
+			end)
+			fixed += 1
+		end
+		wallbang[part] = nil
+	end
+	table.clear(wallbang)
+
+	-- 2) orphan punches + all floors
+	iterMapParts(function(part)
+		if isHiddenPart(part) then
+			return
+		end
+		local punched = part.Anchored and (not part.CanCollide) and (not part.CanQuery) and part.Transparency < 0.99
+		local floorSoft = isLikelyFloor(part) and not part.CanCollide
+		if punched or floorSoft then
+			pcall(function()
+				part.CanCollide = true
+				if punched then
+					part.CanQuery = true
+				end
+			end)
+			fixed += 1
+			wallbangSafe[part] = true
+		end
+	end)
+
+	-- 3) under feet right now
+	local player = lp()
+	local char = player and player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = { char, ensureFolder() }
+		for _, off in ipairs({
+			Vector3.zero,
+			Vector3.new(2, 0, 0),
+			Vector3.new(-2, 0, 0),
+			Vector3.new(0, 0, 2),
+			Vector3.new(0, 0, -2),
+			Vector3.new(3, 0, 3),
+			Vector3.new(-3, 0, -3),
+		}) do
+			-- Cast from high above in case already under map
+			local hit = workspace:Raycast(hrp.Position + Vector3.new(0, 50, 0) + off, Vector3.new(0, -200, 0), params)
+			if hit and hit.Instance and hit.Instance:IsA("BasePart") then
+				pcall(function()
+					hit.Instance.CanCollide = true
+				end)
+				wallbangSafe[hit.Instance] = true
+			end
+		end
+		-- Also solidify anything near HRP in a big box (if stuck under)
+		pcall(function()
+			local op = OverlapParams.new()
+			op.FilterType = Enum.RaycastFilterType.Exclude
+			op.FilterDescendantsInstances = { char, ensureFolder() }
+			local parts = workspace:GetPartBoundsInBox(hrp.CFrame, Vector3.new(40, 40, 40), op)
+			for _, p in ipairs(parts) do
+				if p:IsA("BasePart") and isLikelyFloor(p) then
+					p.CanCollide = true
+					wallbangSafe[p] = true
+				end
+			end
+		end)
+	end
+
+	if reason then
+		notify("Wallbang", "Heal collidów (" .. tostring(reason) .. ") · ~" .. tostring(fixed))
+	end
 end
 
 local function markSafeAndSolid(part)
@@ -305,23 +427,12 @@ local function markSafeAndSolid(part)
 		return
 	end
 	wallbangSafe[part] = true
-	local orig = wallbang[part]
-	if type(orig) == "table" then
-		pcall(function()
-			part.CanCollide = true
-			part.CanQuery = orig.canQuery == true
-		end)
-		wallbang[part] = nil
-	else
-		pcall(function()
-			if not part.CanCollide then
-				part.CanCollide = true
-			end
-		end)
-	end
+	wallbang[part] = nil
+	pcall(function()
+		part.CanCollide = true
+	end)
 end
 
--- Every Stepped: whatever is under the character MUST be solid (no name needed).
 local function protectStanding()
 	local player = lp()
 	local char = player and player.Character
@@ -337,56 +448,46 @@ local function protectStanding()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { char, folder }
 
-	local origin = hrp.Position + Vector3.new(0, 1.0, 0)
-	local offs = {
+	local origin = hrp.Position + Vector3.new(0, 2, 0)
+	for _, off in ipairs({
 		Vector3.zero,
-		Vector3.new(1.8, 0, 0),
-		Vector3.new(-1.8, 0, 0),
-		Vector3.new(0, 0, 1.8),
-		Vector3.new(0, 0, -1.8),
-		Vector3.new(1.2, 0, 1.2),
-		Vector3.new(-1.2, 0, -1.2),
-		Vector3.new(1.2, 0, -1.2),
-		Vector3.new(-1.2, 0, 1.2),
-	}
-	for _, off in ipairs(offs) do
-		local hit = workspace:Raycast(origin + off, Vector3.new(0, -18, 0), params)
+		Vector3.new(2, 0, 0),
+		Vector3.new(-2, 0, 0),
+		Vector3.new(0, 0, 2),
+		Vector3.new(0, 0, -2),
+		Vector3.new(1.5, 0, 1.5),
+		Vector3.new(-1.5, 0, -1.5),
+	}) do
+		local hit = workspace:Raycast(origin + off, Vector3.new(0, -25, 0), params)
 		if hit and hit.Instance and hit.Instance:IsA("BasePart") then
 			markSafeAndSolid(hit.Instance)
 		end
 	end
-
-	local ok, parts = pcall(function()
+	pcall(function()
 		local op = OverlapParams.new()
 		op.FilterType = Enum.RaycastFilterType.Exclude
 		op.FilterDescendantsInstances = { char, folder }
-		return workspace:GetPartBoundsInBox(
-			hrp.CFrame * CFrame.new(0, -3.5, 0),
-			Vector3.new(10, 10, 10),
+		local parts = workspace:GetPartBoundsInBox(
+			hrp.CFrame * CFrame.new(0, -3, 0),
+			Vector3.new(12, 12, 12),
 			op
 		)
-	end)
-	if ok and type(parts) == "table" then
 		for _, p in ipairs(parts) do
 			if p:IsA("BasePart") then
 				local rel = hrp.CFrame:PointToObjectSpace(p.Position)
-				-- below / around feet only
-				if rel.Y < 2.5 then
+				if rel.Y < 3 then
 					markSafeAndSolid(p)
 				end
 			end
 		end
-	end
+	end)
 end
 
 local function shouldWallbangPart(part)
 	if not part or not part:IsA("BasePart") then
 		return false
 	end
-	if part:IsDescendantOf(ensureFolder()) then
-		return false
-	end
-	if isHiddenPart(part) then
+	if part:IsDescendantOf(ensureFolder()) or isHiddenPart(part) then
 		return false
 	end
 	if wallbangSafe[part] then
@@ -400,10 +501,6 @@ local function shouldWallbangPart(part)
 	if model and Players:GetPlayerFromCharacter(model) then
 		return false
 	end
-	if not part.CanCollide and not part.CanQuery then
-		return false
-	end
-	-- ONLY walls/cover — never random floors
 	if not isLikelyWall(part) then
 		return false
 	end
@@ -422,7 +519,6 @@ local function punchPart(part)
 		canQuery = part.CanQuery,
 	}
 	pcall(function()
-		-- Roblox: CanQuery=false only works after CanCollide=false
 		part.CanCollide = false
 		part.CanQuery = false
 	end)
@@ -439,80 +535,36 @@ local function clearWallbangConns()
 	end
 end
 
-local function restoreWallbang()
-	clearWallbangConns()
-	wallbangScanToken += 1
-	for part, orig in pairs(wallbang) do
-		if part and part.Parent and not isHiddenPart(part) and type(orig) == "table" then
-			pcall(function()
-				part.CanCollide = orig.canCollide
-				part.CanQuery = orig.canQuery
-			end)
-		end
-		wallbang[part] = nil
-	end
-	table.clear(wallbang)
-	table.clear(wallbangSafe)
-end
-
-local function wallbangRoots()
-	local roots = {}
-	local map = workspace:FindFirstChild("Map")
-	if map then
-		table.insert(roots, map)
-	end
-	for _, name in ipairs({ "Buildings", "Props", "Structures", "World", "Geometry" }) do
-		local f = workspace:FindFirstChild(name)
-		if f and f ~= map then
-			table.insert(roots, f)
-		end
-	end
-	return roots
-end
-
 local function scanWallsOnly()
 	wallbangScanToken += 1
 	local token = wallbangScanToken
 	task.spawn(function()
 		protectStanding()
-		local roots = wallbangRoots()
-		if #roots == 0 then
-			for _, ch in ipairs(workspace:GetChildren()) do
-				if ch:IsA("Folder") or ch:IsA("Model") then
-					if not Players:GetPlayerFromCharacter(ch) and ch.Name ~= FOLDER then
-						table.insert(roots, ch)
-					end
-				end
-			end
+		local map = workspace:FindFirstChild("Map")
+		local roots = {}
+		if map then
+			table.insert(roots, map)
 		end
 		for _, root in ipairs(roots) do
 			if token ~= wallbangScanToken or not wallbangOn then
 				return
 			end
-			local descs = root:GetDescendants()
-			for i, d in ipairs(descs) do
+			for i, d in ipairs(root:GetDescendants()) do
 				if token ~= wallbangScanToken or not wallbangOn then
 					return
 				end
 				punchPart(d)
-				if i % 120 == 0 then
+				if i % 100 == 0 then
 					protectStanding()
 					task.wait()
 				end
 			end
 		end
-		if token == wallbangScanToken and wallbangOn then
-			protectStanding()
-			-- Final pass: unpunch anything that looks like a floor if it slipped in
-			local removeList = {}
-			for part, orig in pairs(wallbang) do
-				if part and part.Parent and (isLikelyFloor(part) or wallbangSafe[part]) then
-					markSafeAndSolid(part)
-					table.insert(removeList, part)
-				end
-			end
-			for _, p in ipairs(removeList) do
-				wallbang[p] = nil
+		protectStanding()
+		-- strip any floor that slipped into wallbang
+		for part, _ in pairs(wallbang) do
+			if part and isLikelyFloor(part) then
+				markSafeAndSolid(part)
 			end
 		end
 	end)
@@ -522,11 +574,16 @@ local function startFeetWatch()
 	if wallbangFeetConn then
 		return
 	end
-	-- Before physics step — collide back under feet before you sink
 	wallbangFeetConn = RS.Stepped:Connect(function()
 		if wallbangOn then
 			protectStanding()
 		end
+	end)
+end
+
+function ClientBuild.HealWallbangCollide()
+	task.spawn(function()
+		healMapCollide("manual")
 	end)
 end
 
@@ -541,7 +598,10 @@ function ClientBuild.SetWallbang(on)
 	end
 	wallbangOn = on
 	if on then
+		-- clean slate first so old soft floors are fixed before new punches
 		clearWallbangConns()
+		healMapCollide(nil)
+		table.clear(wallbangSafe)
 		protectStanding()
 		startFeetWatch()
 		local map = workspace:FindFirstChild("Map")
@@ -553,10 +613,14 @@ function ClientBuild.SetWallbang(on)
 			end)
 		end
 		scanWallsOnly()
-		notify("Wallbang", "ON — tylko ściany bez collidu; podłoga solidna")
+		notify("Wallbang", "ON — tylko cienkie ściany; podłoga solidna")
 	else
-		restoreWallbang()
-		notify("Wallbang", "OFF — przywrócono collidy ścian")
+		clearWallbangConns()
+		wallbangScanToken += 1
+		-- MUST heal orphans — tracked table alone left floors soft after disable
+		healMapCollide("OFF")
+		table.clear(wallbangSafe)
+		notify("Wallbang", "OFF + heal collidów mapy")
 	end
 end
 
@@ -602,16 +666,7 @@ function ClientBuild.RestoreHidden()
 			pcall(function()
 				p.CanCollide = e.canCollide
 				p.Transparency = e.transparency
-				if wallbangOn and shouldWallbangPart(p) then
-					wallbang[p] = {
-						canCollide = e.canCollide,
-						canQuery = e.canQuery,
-					}
-					p.CanCollide = false
-					p.CanQuery = false
-				else
-					p.CanQuery = e.canQuery
-				end
+				p.CanQuery = e.canQuery
 				if p.LocalTransparencyModifier ~= nil then
 					p.LocalTransparencyModifier = 0
 				end
@@ -625,7 +680,9 @@ end
 function ClientBuild.Stop()
 	stopMode()
 	if wallbangOn then
-		ClientBuild.SetWallbang(false)
+		wallbangOn = false
+		clearWallbangConns()
+		healMapCollide(nil)
 	end
 	if wallbangSyncConn then
 		wallbangSyncConn:Disconnect()
@@ -645,15 +702,51 @@ function ClientBuild.Init(S)
 	S._clientBridgeClear = ClientBuild.ClearBridges
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
 	S._clientWallbangSet = ClientBuild.SetWallbang
+	S._clientWallbangHeal = ClientBuild.HealWallbangCollide
 
+	-- Always fix leftover soft floors from older versions / bad disable
+	task.spawn(function()
+		healMapCollide("boot")
+	end)
+
+	-- If freefalling under map with wallbang off, keep healing floors
 	wallbangSyncConn = RS.Heartbeat:Connect(function()
 		local want = settingsRef and settingsRef.CrimWallbang == true
 		if want ~= wallbangOn then
 			ClientBuild.SetWallbang(want)
 		end
+		if wallbangOn then
+			return
+		end
+		local player = lp()
+		local char = player and player.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum and hum:GetState() == Enum.HumanoidStateType.Freefall then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp and hrp.Position.Y < 20 then
+				protectStanding()
+				pcall(function()
+					local op = OverlapParams.new()
+					op.FilterType = Enum.RaycastFilterType.Exclude
+					op.FilterDescendantsInstances = { char, ensureFolder() }
+					for _, p in ipairs(workspace:GetPartBoundsInBox(hrp.CFrame, Vector3.new(60, 80, 60), op)) do
+						if p:IsA("BasePart") and not p.CanCollide and isLikelyFloor(p) then
+							p.CanCollide = true
+						end
+					end
+				end)
+			end
+		end
 	end)
+
+	-- Force wallbang off on boot if it was left on — user can re-enable
+	-- (prevents instant fall from old config). Still honor saved true after heal.
 	if S.CrimWallbang then
-		ClientBuild.SetWallbang(true)
+		task.delay(0.6, function()
+			if settingsRef and settingsRef.CrimWallbang then
+				ClientBuild.SetWallbang(true)
+			end
+		end)
 	end
 end
 
