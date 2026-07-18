@@ -2248,6 +2248,7 @@ local function gunModsWant(S)
 end
 
 -- Criminality ammo HUD: PlayerGui.GunGUI.Frame.Main.Current / Stored
+-- NEVER keep long-lived label refs — switching Tool leaves old GunGUI text on screen.
 local function parseAmmoText(text)
 	if typeof(text) ~= "string" then
 		return nil
@@ -2287,8 +2288,29 @@ local function readAmmoLabel(inst)
 	return raw, parseAmmoText(raw)
 end
 
+local function gunTitleMatchesTool(titleText, toolName)
+	if typeof(titleText) ~= "string" or titleText == "" then
+		return true
+	end
+	if typeof(toolName) ~= "string" or toolName == "" then
+		return true
+	end
+	local t = string.lower(titleText)
+	local n = string.lower(toolName)
+	if t:find(n, 1, true) or n:find(t, 1, true) then
+		return true
+	end
+	local tc = t:gsub("%W", "")
+	local nc = n:gsub("%W", "")
+	if tc ~= "" and nc ~= "" and (tc:find(nc, 1, true) or nc:find(tc, 1, true)) then
+		return true
+	end
+	return false
+end
+
 -- returns: currentNum, storedNum, debugTbl
-local function getGunGuiAmmo()
+-- toolName: equipped Tool.Name — used to reject stale HUD from previous gun
+local function getGunGuiAmmo(toolName)
 	local dbg = {
 		ok = false,
 		path = "?",
@@ -2298,34 +2320,42 @@ local function getGunGuiAmmo()
 		stoRaw = nil,
 		gg = false,
 		main = false,
+		enabled = nil,
+		title = nil,
+		titleOk = true,
 	}
 
-	local function finish(curInst, stoInst, path)
+	local function finish(curInst, stoInst, path, titleInst)
 		dbg.path = path or dbg.path
 		dbg.curClass = curInst and curInst.ClassName or nil
 		dbg.stoClass = stoInst and stoInst.ClassName or nil
+		if titleInst and isAmmoTextObj(titleInst) then
+			local tr = select(1, readAmmoLabel(titleInst))
+			dbg.title = tr
+			dbg.titleOk = gunTitleMatchesTool(tr, toolName)
+		end
 		local curRaw, curNum = readAmmoLabel(curInst)
 		local stoRaw, stoNum = readAmmoLabel(stoInst)
 		dbg.curRaw = curRaw
 		dbg.stoRaw = stoRaw
-		dbg.ok = curNum ~= nil and stoNum ~= nil
-		if isAmmoTextObj(curInst) and isAmmoTextObj(stoInst) then
-			gunMod.gunGui = { current = curInst, stored = stoInst }
-		else
-			gunMod.gunGui = nil
+		if not dbg.titleOk then
+			dbg.ok = false
+			dbg.path = (path or "?") .. "+STALE_TITLE"
+			return nil, nil, dbg
 		end
+		dbg.ok = curNum ~= nil and stoNum ~= nil
 		return curNum, stoNum, dbg
 	end
 
-	local cache = gunMod.gunGui
-	if cache and cache.current and cache.current.Parent and cache.stored and cache.stored.Parent then
-		return finish(cache.current, cache.stored, "cache")
+	-- Drop any previous cache on tool swap
+	if toolName ~= gunMod.lastAmmoToolName then
+		gunMod.lastAmmoToolName = toolName
+		gunMod.gunGui = nil
 	end
 
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	if not pg then
-		gunMod.gunGui = nil
 		dbg.path = "no PlayerGui"
 		return nil, nil, dbg
 	end
@@ -2333,37 +2363,50 @@ local function getGunGuiAmmo()
 	local gg = pg:FindFirstChild("GunGUI")
 	dbg.gg = gg ~= nil
 	if not gg then
-		gunMod.gunGui = nil
 		dbg.path = "no GunGUI"
 		return nil, nil, dbg
 	end
 
-	-- Canonical: GunGUI.Frame.Main.{Current,Stored}
+	local enabled = true
+	pcall(function()
+		enabled = gg.Enabled ~= false
+	end)
+	dbg.enabled = enabled
+	if not enabled then
+		dbg.path = "GunGUI.Disabled"
+		return nil, nil, dbg
+	end
+
+	-- Canonical: GunGUI.Frame.Main.{Current,Stored,Title}
 	local frame = gg:FindFirstChild("Frame")
 	local main = frame and frame:FindFirstChild("Main")
 	dbg.main = main ~= nil
-	local current = main and main:FindFirstChild("Current")
-	local stored = main and main:FindFirstChild("Stored")
-	if isAmmoTextObj(current) and isAmmoTextObj(stored) then
-		return finish(current, stored, "GunGUI.Frame.Main")
+	if main then
+		local current = main:FindFirstChild("Current")
+		local stored = main:FindFirstChild("Stored")
+		local title = main:FindFirstChild("Title")
+		if isAmmoTextObj(current) and isAmmoTextObj(stored) then
+			return finish(current, stored, "GunGUI.Frame.Main", title)
+		end
 	end
 
-	-- Alternate: GunGUI.Main
 	main = gg:FindFirstChild("Main")
-	current = main and main:FindFirstChild("Current")
-	stored = main and main:FindFirstChild("Stored")
-	if isAmmoTextObj(current) and isAmmoTextObj(stored) then
-		return finish(current, stored, "GunGUI.Main")
+	if main then
+		local current = main:FindFirstChild("Current")
+		local stored = main:FindFirstChild("Stored")
+		local title = main:FindFirstChild("Title")
+		if isAmmoTextObj(current) and isAmmoTextObj(stored) then
+			return finish(current, stored, "GunGUI.Main", title)
+		end
 	end
 
-	-- Deep search under GunGUI
-	current = gg:FindFirstChild("Current", true)
-	stored = gg:FindFirstChild("Stored", true)
+	local current = gg:FindFirstChild("Current", true)
+	local stored = gg:FindFirstChild("Stored", true)
+	local title = gg:FindFirstChild("Title", true)
 	if current or stored then
-		return finish(current, stored, "GunGUI/**/deep")
+		return finish(current, stored, "GunGUI/**/deep", title)
 	end
 
-	gunMod.gunGui = nil
 	dbg.path = "GunGUI found but no Current/Stored"
 	return nil, nil, dbg
 end
@@ -2393,6 +2436,7 @@ local function pressReloadKey()
 end
 
 -- Auto Reload: ONLY when Current == 0 and Stored >= 1 (never on 0/0)
+-- Ignores stale GunGUI left over from previous gun (Title vs Tool.Name).
 local function tickAutoReload(S)
 	if not S or not S.CrimAutoReload then
 		return
@@ -2400,15 +2444,19 @@ local function tickAutoReload(S)
 	local now = tick()
 	local char = getChar()
 	local tool = char and char:FindFirstChildOfClass("Tool")
-	local current, stored, dbg = getGunGuiAmmo()
+	local toolName = tool and tool.Name or nil
+	local current, stored, dbg = getGunGuiAmmo(toolName)
 	dbg = dbg or {}
 
-	-- Console debug ~1/s so we see what HUD returns
 	if now - (gunMod.lastReloadDbgAt or 0) >= 1.0 then
 		gunMod.lastReloadDbgAt = now
 		local action = "idle"
 		if not tool then
 			action = "no-tool"
+		elseif dbg.enabled == false then
+			action = "gui-off"
+		elseif dbg.titleOk == false then
+			action = "stale-hud"
 		elseif current == nil or stored == nil then
 			action = "bad-read"
 		elseif current ~= 0 then
@@ -2423,14 +2471,13 @@ local function tickAutoReload(S)
 			action = "WILL-RELOAD"
 		end
 		print(string.format(
-			"[VG:AutoReload] action=%s path=%s tool=%s gg=%s main=%s curClass=%s stoClass=%s curRaw=%q cur=%s stoRaw=%q sto=%s",
+			"[VG:AutoReload] action=%s path=%s tool=%s title=%q titleOk=%s enabled=%s curRaw=%q cur=%s stoRaw=%q sto=%s",
 			action,
 			tostring(dbg.path),
-			tool and tool.Name or "nil",
-			tostring(dbg.gg),
-			tostring(dbg.main),
-			tostring(dbg.curClass),
-			tostring(dbg.stoClass),
+			toolName or "nil",
+			tostring(dbg.title),
+			tostring(dbg.titleOk),
+			tostring(dbg.enabled),
 			tostring(dbg.curRaw),
 			tostring(current),
 			tostring(dbg.stoRaw),
@@ -2447,6 +2494,9 @@ local function tickAutoReload(S)
 	if not tool then
 		return
 	end
+	if dbg.titleOk == false or dbg.enabled == false then
+		return
+	end
 	if current == nil or stored == nil then
 		return
 	end
@@ -2459,7 +2509,7 @@ local function tickAutoReload(S)
 
 	gunMod.reloadBusy = true
 	gunMod.lastReloadAt = now
-	print("[VG:AutoReload] >>> pressing R  current=0 stored=" .. tostring(stored))
+	print("[VG:AutoReload] >>> pressing R  current=0 stored=" .. tostring(stored) .. " tool=" .. tostring(toolName))
 	task.spawn(function()
 		local ok = pressReloadKey()
 		print("[VG:AutoReload] R sent ok=" .. tostring(ok))
