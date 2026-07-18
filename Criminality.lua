@@ -2222,30 +2222,56 @@ local function gunModsWant(S)
 end
 
 -- Criminality ammo HUD: PlayerGui.GunGUI.Frame.Main.Current / Stored
+local function parseAmmoText(text)
+	if typeof(text) ~= "string" then
+		return nil
+	end
+	-- plain number first
+	local n = tonumber(text)
+	if n ~= nil then
+		return math.floor(n)
+	end
+	-- strip junk (" 0 ", "0rds", etc.)
+	local digits = string.match(text, "%-?%d+")
+	if digits then
+		return tonumber(digits)
+	end
+	return nil
+end
+
 local function getGunGuiAmmo()
 	local cache = gunMod.gunGui
-	if cache and cache.current and cache.current.Parent then
-		local cur = tonumber(cache.current.Text)
-		local sto = cache.stored and tonumber(cache.stored.Text) or nil
-		return cur, sto
+	if cache and cache.current and cache.current.Parent and cache.stored and cache.stored.Parent then
+		return parseAmmoText(cache.current.Text), parseAmmoText(cache.stored.Text)
 	end
+
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local gg = pg and pg:FindFirstChild("GunGUI")
-	local fr = gg and gg:FindFirstChild("Frame")
-	local main = fr and fr:FindFirstChild("Main")
-	if not main then
+	if not gg then
 		gunMod.gunGui = nil
 		return nil, nil
 	end
-	local current = main:FindFirstChild("Current")
-	local stored = main:FindFirstChild("Stored")
-	if not current or not current:IsA("TextLabel") then
+
+	-- Canonical path from Cobalt/Explorer: GunGUI.Frame.Main.{Current,Stored}
+	local main = gg:FindFirstChild("Frame")
+	main = main and main:FindFirstChild("Main")
+	local current = main and main:FindFirstChild("Current")
+	local stored = main and main:FindFirstChild("Stored")
+
+	-- Fallback: some weapons nest labels differently under GunGUI
+	if not current or not stored then
+		current = gg:FindFirstChild("Current", true)
+		stored = gg:FindFirstChild("Stored", true)
+	end
+
+	if not current or not current:IsA("TextLabel") or not stored or not stored:IsA("TextLabel") then
 		gunMod.gunGui = nil
 		return nil, nil
 	end
+
 	gunMod.gunGui = { current = current, stored = stored }
-	return tonumber(current.Text), stored and tonumber(stored.Text) or nil
+	return parseAmmoText(current.Text), parseAmmoText(stored.Text)
 end
 
 local function pressReloadKey()
@@ -2272,7 +2298,7 @@ local function pressReloadKey()
 	return false
 end
 
--- Auto Reload: GunGUI.Frame.Main.Current == 0 and Stored > 0 → press R
+-- Auto Reload: ONLY when Current == 0 and Stored >= 1 (never on 0/0)
 local function tickAutoReload(S)
 	if not S or not S.CrimAutoReload then return end
 	if gunMod.reloadBusy then return end
@@ -2282,10 +2308,11 @@ local function tickAutoReload(S)
 	local char = getChar()
 	if not char or not char:FindFirstChildOfClass("Tool") then return end
 
-	local mag, reserve = getGunGuiAmmo()
-	if mag == nil then return end
-	if mag > 0 then return end
-	if reserve ~= nil and reserve <= 0 then return end
+	local current, stored = getGunGuiAmmo()
+	-- Need both readings — missing Stored means we don't know reserve
+	if current == nil or stored == nil then return end
+	if current ~= 0 then return end
+	if stored < 1 then return end -- 0/0 or empty reserve → no reload
 
 	gunMod.reloadBusy = true
 	gunMod.lastReloadAt = now
