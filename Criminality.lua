@@ -3374,9 +3374,14 @@ _G.__VG_ReapplyHitSounds = function()
 	end
 end
 
--- List ALL Sound instances by class (not by name) — for discovering swappable IDs.
+-- List ALL Sound instances by class — fills in-menu scroll list (not F9 dump).
 local function listGameSounds()
 	task.spawn(function()
+		local header = _G.__VG_SoundHeader
+		if header then
+			header.Text = "Scanning…"
+		end
+
 		local roots = {}
 		local function addRoot(inst, label)
 			if inst then
@@ -3402,8 +3407,7 @@ local function listGameSounds()
 			end)
 		end
 
-		local entries = {} -- { id, name, path, playing, vol }
-		local byId = {} -- id -> { count, names = {}, paths = {} }
+		local byId = {}
 		local n = 0
 
 		local function fullPath(inst, rootLabel)
@@ -3428,20 +3432,16 @@ local function listGameSounds()
 						n += 1
 						local id = tostring(d.SoundId or "")
 						local path = fullPath(d, root.label)
-						table.insert(entries, {
-							id = id,
-							name = d.Name,
-							path = path,
-							playing = d.IsPlaying,
-							vol = d.Volume,
-						})
 						local g = byId[id]
 						if not g then
-							g = { count = 0, names = {}, sample = path }
+							g = { count = 0, names = {}, sample = path, playing = 0 }
 							byId[id] = g
 						end
 						g.count += 1
 						g.names[d.Name] = (g.names[d.Name] or 0) + 1
+						if d.IsPlaying then
+							g.playing += 1
+						end
 						if i % 400 == 0 then
 							task.wait()
 						end
@@ -3456,14 +3456,14 @@ local function listGameSounds()
 			table.insert(unique, id)
 		end
 		table.sort(unique, function(a, b)
-			return byId[a].count > byId[b].count
+			local ga, gb = byId[a], byId[b]
+			if ga.playing ~= gb.playing then
+				return ga.playing > gb.playing
+			end
+			return ga.count > gb.count
 		end)
 
-		print(string.format(
-			"[VG:Sounds] === %d Sound instance(s), %d unique SoundId(s) ===",
-			n,
-			#unique
-		))
+		local rows = {}
 		for _, id in ipairs(unique) do
 			local g = byId[id]
 			local nameList = {}
@@ -3471,37 +3471,24 @@ local function listGameSounds()
 				table.insert(nameList, cnt > 1 and (name .. "×" .. cnt) or name)
 			end
 			table.sort(nameList)
-			print(string.format(
-				"[VG:Sounds] %s | x%d | names={%s} | eg: %s",
-				id ~= "" and id or "(empty SoundId)",
-				g.count,
-				table.concat(nameList, ", "),
-				g.sample
-			))
-		end
-		print("[VG:Sounds] --- per-instance (name @ path) ---")
-		table.sort(entries, function(a, b)
-			if a.id ~= b.id then
-				return a.id < b.id
+			-- cap name list for UI width
+			local namesStr = table.concat(nameList, ", ")
+			if #namesStr > 72 then
+				namesStr = string.sub(namesStr, 1, 69) .. "…"
 			end
-			return a.path < b.path
-		end)
-		for i, e in ipairs(entries) do
-			print(string.format(
-				"[VG:Sounds] #%d  %s  vol=%.2f playing=%s  %s  @ %s",
-				i,
-				e.id ~= "" and e.id or "(empty)",
-				tonumber(e.vol) or 0,
-				tostring(e.playing),
-				e.name,
-				e.path
-			))
-			if i % 80 == 0 then
-				task.wait()
-			end
+			table.insert(rows, {
+				id = id,
+				count = g.count,
+				playing = g.playing,
+				names = namesStr,
+				sample = g.sample,
+			})
 		end
-		print(string.format("[VG:Sounds] === done (%d) ===", n))
-		crimNotify("Sounds", string.format("%d Sound · %d unique IDs → konsola F9", n, #unique), 5)
+
+		if typeof(_G.__VG_FillSoundList) == "function" then
+			pcall(_G.__VG_FillSoundList, rows, n)
+		end
+		crimNotify("Sounds", string.format("%d Sound · %d unique — lista w Visual", n, #rows), 4)
 	end)
 end
 

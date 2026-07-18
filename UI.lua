@@ -2769,6 +2769,220 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end, "btn_crim_list_sounds")
 		MakeHint(CVIS, "hint_crim_hitsounds", 6)
 
+		local SoundHeader = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 18),
+			BackgroundTransparency = 1,
+			Text = "Click List → unique SoundIds here. Click row = copy ID · Play = preview",
+			Font = Enum.Font.Gotham,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(130, 130, 140),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			LayoutOrder = 7,
+			ZIndex = 5,
+			Parent = CVIS,
+		})
+
+		local SoundBox = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 320),
+			BackgroundColor3 = Color3.fromRGB(15, 15, 19),
+			BorderSizePixel = 0,
+			LayoutOrder = 8,
+			ZIndex = 5,
+			Parent = CVIS,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = SoundBox })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = SoundBox })
+
+		local SoundList = C("ScrollingFrame", {
+			Size = UDim2.new(1, -8, 1, -8),
+			Position = UDim2.new(0, 4, 0, 4),
+			BackgroundTransparency = 1,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = SoundBox,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 3),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = SoundList,
+		})
+
+		_G.__VG_SoundHeader = SoundHeader
+		_G.__VG_SoundList = SoundList
+
+		local previewSound = nil
+		local function stopPreview()
+			if previewSound then
+				pcall(function()
+					previewSound:Stop()
+					previewSound:Destroy()
+				end)
+				previewSound = nil
+			end
+		end
+
+		local function copyId(id)
+			if not id or id == "" then
+				return
+			end
+			if typeof(setclipboard) == "function" then
+				pcall(setclipboard, id)
+			elseif typeof(toclipboard) == "function" then
+				pcall(toclipboard, id)
+			end
+		end
+
+		local function playPreview(id)
+			if not id or id == "" then
+				return
+			end
+			stopPreview()
+			local s = Instance.new("Sound")
+			s.Name = "VG_SoundPreview"
+			s.SoundId = id
+			s.Volume = 0.7
+			s.Parent = game:GetService("SoundService")
+			previewSound = s
+			pcall(function()
+				s:Play()
+			end)
+			task.delay(4, function()
+				if previewSound == s then
+					stopPreview()
+				end
+			end)
+		end
+
+		_G.__VG_FillSoundList = function(rows, totalN)
+			stopPreview()
+			for _, ch in ipairs(SoundList:GetChildren()) do
+				if not ch:IsA("UIListLayout") then
+					ch:Destroy()
+				end
+			end
+			local uniq = type(rows) == "table" and #rows or 0
+			SoundHeader.Text = string.format(
+				"%d Sound · %d unique  |  click row = copy ID  ·  ▶ = play",
+				tonumber(totalN) or 0,
+				uniq
+			)
+
+			if uniq == 0 then
+				local empty = C("TextLabel", {
+					Size = UDim2.new(1, 0, 0, 28),
+					BackgroundTransparency = 1,
+					Text = "No Sound found",
+					Font = Enum.Font.Gotham,
+					TextSize = 11,
+					TextColor3 = Color3.fromRGB(120, 120, 130),
+					LayoutOrder = 1,
+					ZIndex = 7,
+					Parent = SoundList,
+				})
+				return
+			end
+
+			task.spawn(function()
+				for i, row in ipairs(rows) do
+					local id = row.id or ""
+					local idShow = id ~= "" and id or "(empty SoundId)"
+					local playingTag = (row.playing or 0) > 0 and " ●PLAYING" or ""
+
+					local card = C("Frame", {
+						Size = UDim2.new(1, 0, 0, 52),
+						BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+						BorderSizePixel = 0,
+						LayoutOrder = i,
+						ZIndex = 7,
+						Parent = SoundList,
+					})
+					C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = card })
+
+					local hit = C("TextButton", {
+						Size = UDim2.new(1, -44, 1, 0),
+						BackgroundTransparency = 1,
+						Text = "",
+						AutoButtonColor = false,
+						ZIndex = 8,
+						Parent = card,
+					})
+
+					C("TextLabel", {
+						Size = UDim2.new(1, -8, 0, 14),
+						Position = UDim2.new(0, 8, 0, 4),
+						BackgroundTransparency = 1,
+						Text = string.format("x%d%s  %s", row.count or 1, playingTag, row.names or "?"),
+						Font = Enum.Font.GothamMedium,
+						TextSize = 10,
+						TextColor3 = Color3.fromRGB(210, 210, 220),
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						ZIndex = 9,
+						Parent = card,
+					})
+					C("TextLabel", {
+						Size = UDim2.new(1, -8, 0, 12),
+						Position = UDim2.new(0, 8, 0, 20),
+						BackgroundTransparency = 1,
+						Text = idShow,
+						Font = Enum.Font.Code,
+						TextSize = 9,
+						TextColor3 = ACC,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						ZIndex = 9,
+						Parent = card,
+					})
+					C("TextLabel", {
+						Size = UDim2.new(1, -8, 0, 12),
+						Position = UDim2.new(0, 8, 0, 34),
+						BackgroundTransparency = 1,
+						Text = tostring(row.sample or ""),
+						Font = Enum.Font.Gotham,
+						TextSize = 9,
+						TextColor3 = Color3.fromRGB(110, 110, 120),
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						ZIndex = 9,
+						Parent = card,
+					})
+
+					local playBtn = C("TextButton", {
+						Size = UDim2.new(0, 36, 0, 36),
+						Position = UDim2.new(1, -40, 0.5, -18),
+						BackgroundColor3 = Color3.fromRGB(32, 32, 42),
+						Text = "▶",
+						Font = Enum.Font.GothamBold,
+						TextSize = 12,
+						TextColor3 = Color3.fromRGB(230, 230, 240),
+						AutoButtonColor = false,
+						BorderSizePixel = 0,
+						ZIndex = 10,
+						Parent = card,
+					})
+					C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = playBtn })
+
+					hit.MouseButton1Click:Connect(function()
+						copyId(id)
+						SoundHeader.Text = "Copied: " .. idShow
+					end)
+					playBtn.MouseButton1Click:Connect(function()
+						playPreview(id)
+						SoundHeader.Text = "Playing: " .. idShow
+					end)
+
+					if i % 40 == 0 then
+						task.wait()
+					end
+				end
+			end)
+		end
+
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
 		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
 		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
