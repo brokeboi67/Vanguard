@@ -77,6 +77,31 @@ local function shouldSkipSerializeKey(k)
 	return false
 end
 
+local function fireApplyCallbacks(S)
+	if typeof(S._configApplyHooks) ~= "table" then
+		return
+	end
+	for _, fn in ipairs(S._configApplyHooks) do
+		pcall(fn, S)
+	end
+	if typeof(S.OnConfigApplied) == "function" then
+		pcall(S.OnConfigApplied, S)
+	end
+end
+
+local function canPersist()
+	return typeof(writefile) == "function"
+		and typeof(readfile) == "function"
+		and typeof(isfile) == "function"
+end
+
+local function ensureDirs()
+	if typeof(makefolder) == "function" then
+		pcall(makefolder, ROOT)
+		pcall(makefolder, CONFIG_DIR)
+	end
+end
+
 function Config.LoadGlobals(S)
 	if typeof(S) ~= "table" or not canPersist() then
 		return false
@@ -115,31 +140,6 @@ function Config.SaveGlobals(S)
 		writefile(GLOBALS_PATH, HttpService:JSONEncode(data))
 	end)
 	return ok == true
-end
-
-local function fireApplyCallbacks(S)
-	if typeof(S._configApplyHooks) ~= "table" then
-		return
-	end
-	for _, fn in ipairs(S._configApplyHooks) do
-		pcall(fn, S)
-	end
-	if typeof(S.OnConfigApplied) == "function" then
-		pcall(S.OnConfigApplied, S)
-	end
-end
-
-local function canPersist()
-	return typeof(writefile) == "function"
-		and typeof(readfile) == "function"
-		and typeof(isfile) == "function"
-end
-
-local function ensureDirs()
-	if typeof(makefolder) == "function" then
-		pcall(makefolder, ROOT)
-		pcall(makefolder, CONFIG_DIR)
-	end
 end
 
 local function sanitizeName(name)
