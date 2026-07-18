@@ -1769,7 +1769,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function MakeChoice(page, label, key, options, order, choiceOpts)
 		choiceOpts = choiceOpts or {}
-		local rowH = #options >= 4 and 64 or (#options >= 3 and 60 or 52)
+		local nOpts = #options
+		-- Wrap into columns so long option lists don't crush labels into one row
+		local perRow = nOpts <= 2 and nOpts or (nOpts <= 4 and 2 or 3)
+		if nOpts >= 9 then
+			perRow = 3
+		end
+		local numRows = math.max(1, math.ceil(nOpts / math.max(perRow, 1)))
+		local btnH = 26
+		local gap = 4
+		local wrapH = numRows * btnH + (numRows - 1) * gap
+		local rowH = 28 + wrapH
+
 		local Row = C("Frame", {
 			Size = UDim2.new(1, 0, 0, rowH),
 			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
@@ -1785,7 +1796,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local rowText = rowLabelKey and L(rowLabelKey) or (label or "")
 		local rowLbl = C("TextLabel", {
 			Size = UDim2.new(1, -16, 0, 14),
-			Position = UDim2.new(0, 12, 0, 8),
+			Position = UDim2.new(0, 12, 0, 6),
 			BackgroundTransparency = 1,
 			Text = rowText,
 			Font = Enum.Font.GothamMedium,
@@ -1800,31 +1811,35 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 
 		local BtnWrap = C("Frame", {
-			Size = UDim2.new(1, -24, 0, 24),
-			Position = UDim2.new(0, 12, 0, rowH - 30),
+			Size = UDim2.new(1, -24, 0, wrapH),
+			Position = UDim2.new(0, 12, 0, 24),
 			BackgroundTransparency = 1,
 			ZIndex = 6,
 			Parent = Row,
 		})
-		C("UIListLayout", {
+		C("UIGridLayout", {
+			CellSize = UDim2.new(1 / perRow, -gap, 0, btnH),
+			CellPadding = UDim2.new(0, gap, 0, gap),
 			FillDirection = Enum.FillDirection.Horizontal,
-			Padding = UDim.new(0, 4),
+			FillDirectionMaxCells = perRow,
 			SortOrder = Enum.SortOrder.LayoutOrder,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment = Enum.VerticalAlignment.Top,
 			Parent = BtnWrap,
 		})
 
 		local btns = {}
-		local btnScale = 1 / #options
 		for i, opt in ipairs(options) do
 			local active = S[key] == opt.value
 			local btnText = opt.labelKey and L(opt.labelKey) or opt.label
 			local B = C("TextButton", {
-				Size = UDim2.new(btnScale, -3, 1, 0),
+				Size = UDim2.new(1, 0, 1, 0),
 				BackgroundColor3 = active and ACC_SOFT or Color3.fromRGB(24, 24, 30),
 				Text = btnText,
 				Font = Enum.Font.GothamSemibold,
-				TextSize = #options >= 3 and 9 or 10,
+				TextSize = 10,
 				TextColor3 = active and Color3.fromRGB(240, 240, 245) or Color3.fromRGB(110, 110, 120),
+				TextTruncate = Enum.TextTruncate.AtEnd,
 				AutoButtonColor = false,
 				BorderSizePixel = 0,
 				LayoutOrder = i,
@@ -1832,6 +1847,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				Parent = BtnWrap,
 			})
 			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
+			C("UIPadding", {
+				PaddingLeft = UDim.new(0, 4),
+				PaddingRight = UDim.new(0, 4),
+				Parent = B,
+			})
 			if active then
 				C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.5, Parent = B })
 			end
@@ -2763,20 +2783,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeChoice(CVIS, "Menu Track", "CrimMenuMusicTrack", {
-			{ label = "Polish Accordion Polka", value = "Polka" },
+			{ label = "Polskie Pola", value = "PolskiePola" },
+			{ label = "Disco Polo", value = "DiscoPolo" },
+			{ label = "Pył i Kości", value = "PylKos" },
+			{ label = "Polish Accordion", value = "Polka" },
+			{ label = "Accordion Polka", value = "Accordion" },
+			{ label = "Mountain Polka", value = "Mountain" },
+			{ label = "Flute Oberek", value = "Oberek" },
+			{ label = "Krakowiak", value = "Krakowiak" },
+			{ label = "Mazurka", value = "Mazurka" },
+			{ label = "Polish Hard Killer", value = "HardKiller" },
+			{ label = "Polski Eleven", value = "Polski11" },
 			{ label = "Panpipe Polka", value = "Panpipe" },
-			{ label = "Crab Rave Party", value = "Crab" },
-			{ label = "Nu Disco Groove", value = "Disco" },
-			{ label = "Tung Tung Sahur", value = "Tung" },
-			{ label = "Brainrot Skibidi", value = "Brainrot" },
-			{ label = "Funny Dance", value = "FunnyDance" },
-			{ label = "Tom Scream Meme", value = "Tom" },
-			{ label = "Cat Laughing", value = "Cat" },
-			{ label = "Church Bell Meme", value = "Bell" },
-			{ label = "Meme Explosion", value = "Boom" },
-			{ label = "Happy-Go-Lively", value = "Happy" },
-			{ label = "Sunrise Workout", value = "Workout" },
-			{ label = "Great Days Out", value = "Chill" },
 		}, 4, {
 			onChange = function()
 				if ConfigModule and ConfigModule.SaveGlobals then

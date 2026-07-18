@@ -3321,23 +3321,21 @@ local menuMus = {
 	started = false,
 	conns = {},
 	patched = {},
-	DEFAULT = "Polka",
+	DEFAULT = "PolskiePola",
 	PRESETS = {
-		-- Only IsPublicDomain=true assets (checked 2026-07-18). Old Cypis/Multi/etc. IDs are all 403.
+		-- Public-domain only (verified). Copyrighted Cypis/Multi/etc. are all 403.
+		PolskiePola = "rbxassetid://89202760707274", -- NASZE POLSKIE POLA I ŁĄKI
+		DiscoPolo = "rbxassetid://111241611178446", -- Moja Żono — Disco Polo
+		PylKos = "rbxassetid://129541671299468", -- PYŁ I KOŚCI
 		Polka = "rbxassetid://1845005853", -- Polish Accordion Polka
+		Accordion = "rbxassetid://9043829590", -- Accordion Polka
+		Mountain = "rbxassetid://1845005692", -- Mountain Polka
+		Oberek = "rbxassetid://1845019921", -- Flute Oberek
+		Krakowiak = "rbxassetid://105595896535305", -- Solo Joy Krakowiak
+		Mazurka = "rbxassetid://1836282546", -- Coppelia: Mazurka
+		HardKiller = "rbxassetid://70863080128515", -- Polish Hard Killer
+		Polski11 = "rbxassetid://85263852134870", -- polski eleven
 		Panpipe = "rbxassetid://129323914286343", -- Panpipe Polka
-		Crab = "rbxassetid://75093051757850", -- Crab Rave Party
-		Disco = "rbxassetid://139838794512700", -- Nu Disco Groove
-		Tung = "rbxassetid://125329517369659", -- Tung Tung Tung Sahur
-		Brainrot = "rbxassetid://133664122932845", -- Brainrot Skibidi Sigma
-		FunnyDance = "rbxassetid://138915681911522", -- Funny Dance
-		Tom = "rbxassetid://139694892021582", -- Tom scream MEME
-		Cat = "rbxassetid://133312610824902", -- Cat laughing meme
-		Bell = "rbxassetid://139726388352120", -- old church bell meme
-		Boom = "rbxassetid://139771888058836", -- Meme Explosion
-		Happy = "rbxassetid://1841476350", -- Happy-Go-Lively
-		Workout = "rbxassetid://1837324500", -- Sunrise Workout
-		Chill = "rbxassetid://9044426200", -- Great Days Out
 	},
 }
 

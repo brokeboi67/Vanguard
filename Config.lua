@@ -30,20 +30,18 @@ local GLOBAL_KEYS = {
 }
 
 local OK_MENU_TRACKS = {
+	PolskiePola = true,
+	DiscoPolo = true,
+	PylKos = true,
 	Polka = true,
+	Accordion = true,
+	Mountain = true,
+	Oberek = true,
+	Krakowiak = true,
+	Mazurka = true,
+	HardKiller = true,
+	Polski11 = true,
 	Panpipe = true,
-	Crab = true,
-	Disco = true,
-	Tung = true,
-	Brainrot = true,
-	FunnyDance = true,
-	Tom = true,
-	Cat = true,
-	Bell = true,
-	Boom = true,
-	Happy = true,
-	Workout = true,
-	Chill = true,
 }
 
 local function coerceConfigValue(v, current)
@@ -123,7 +121,7 @@ function Config.LoadGlobals(S)
 		end
 	end
 	if S.CrimMenuMusicTrack ~= nil and not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
-		S.CrimMenuMusicTrack = "Polka"
+		S.CrimMenuMusicTrack = "PolskiePola"
 	end
 	return true
 end
@@ -646,7 +644,7 @@ function Config.EnforceRules(S)
 		S.CrimMenuMusic = true
 	end
 	if S.CrimMenuMusicTrack == nil or not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
-		S.CrimMenuMusicTrack = "Polka"
+		S.CrimMenuMusicTrack = "PolskiePola"
 	end
 	if S.CrimHitSoundSwap == nil then
 		S.CrimHitSoundSwap = false
