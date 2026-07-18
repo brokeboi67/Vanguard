@@ -3321,7 +3321,7 @@ local menuMus = {
 	started = false,
 	conns = {},
 	patched = {},
-	DEFAULT = "Sciernisko",
+	DEFAULT = "Wegorz",
 	PRESETS = {
 		Wegorz = "rbxassetid://5563485991",
 		Plecak = "rbxassetid://1320048269",
@@ -3474,10 +3474,16 @@ function Criminality.StartMenuMusicEarly(S)
 		return
 	end
 	if S then
-		S.CrimMenuMusic = true
-		S.CrimMenuMusicTrack = menuMus.DEFAULT
+		if S.CrimMenuMusic == nil then
+			S.CrimMenuMusic = true
+		end
+		if S.CrimMenuMusicTrack == nil then
+			S.CrimMenuMusicTrack = menuMus.DEFAULT
+		end
 	end
-	menuMus.start(S)
+	if not S or S.CrimMenuMusic == true then
+		menuMus.start(S)
+	end
 end
 
 -- ── CUSTOM HIT SOUNDS (CoreGUI HeadshotSound / HitmarkerSound) ───────────────

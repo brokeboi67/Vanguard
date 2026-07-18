@@ -2754,6 +2754,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CVIS, "Menu Meme Music", "CrimMenuMusic", 3, {
 			flat = true,
 			onChange = function(on)
+				if ConfigModule and ConfigModule.SaveGlobals then
+					pcall(ConfigModule.SaveGlobals, S)
+				end
 				if on and S._crimStartMenuMusic then
 					pcall(S._crimStartMenuMusic)
 				end
@@ -2775,6 +2778,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			{ label = "Żabson – Floyd Mayweather", value = "Floyd" },
 		}, 4, {
 			onChange = function()
+				if ConfigModule and ConfigModule.SaveGlobals then
+					pcall(ConfigModule.SaveGlobals, S)
+				end
 				if S.CrimMenuMusic and S._crimStartMenuMusic then
 					pcall(S._crimStartMenuMusic)
 				end

@@ -7,6 +7,7 @@ local HttpService = game:GetService("HttpService")
 local ROOT = "Vanguard"
 local INDEX_PATH = ROOT .. "/index.json"
 local CONFIG_DIR = ROOT .. "/configs"
+local GLOBALS_PATH = ROOT .. "/globals.json"
 
 local RUNTIME_KEYS = {
 	MenuOpen = true,
@@ -20,6 +21,28 @@ local RUNTIME_KEYS = {
 	_configApplyHooks = true,
 	OnConfigApplied = true,
 	CrimPathStatus = true,
+}
+
+-- Portable prefs: survive every config load/save (not stored in named profiles).
+local GLOBAL_KEYS = {
+	CrimMenuMusic = true,
+	CrimMenuMusicTrack = true,
+}
+
+local OK_MENU_TRACKS = {
+	Wegorz = true,
+	Plecak = true,
+	Pogba = true,
+	Gucci = true,
+	Tamagotchi = true,
+	Pato = true,
+	Cyka = true,
+	Dzien6 = true,
+	Jolka = true,
+	Skrrrt = true,
+	Ruda = true,
+	Sciernisko = true,
+	Floyd = true,
 }
 
 local function coerceConfigValue(v, current)
@@ -45,13 +68,53 @@ local function coerceConfigValue(v, current)
 end
 
 local function shouldSkipSerializeKey(k)
-	if RUNTIME_KEYS[k] then
+	if RUNTIME_KEYS[k] or GLOBAL_KEYS[k] then
 		return true
 	end
 	if typeof(k) == "string" and string.sub(k, 1, 1) == "_" then
 		return true
 	end
 	return false
+end
+
+function Config.LoadGlobals(S)
+	if typeof(S) ~= "table" or not canPersist() then
+		return false
+	end
+	ensureDirs()
+	if not isfile(GLOBALS_PATH) then
+		return false
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(readfile(GLOBALS_PATH))
+	end)
+	if not ok or typeof(data) ~= "table" then
+		return false
+	end
+	for k in pairs(GLOBAL_KEYS) do
+		if data[k] ~= nil then
+			S[k] = coerceConfigValue(data[k], S[k])
+		end
+	end
+	if S.CrimMenuMusicTrack ~= nil and not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
+		S.CrimMenuMusicTrack = "Wegorz"
+	end
+	return true
+end
+
+function Config.SaveGlobals(S)
+	if typeof(S) ~= "table" or not canPersist() then
+		return false
+	end
+	ensureDirs()
+	local data = {}
+	for k in pairs(GLOBAL_KEYS) do
+		data[k] = S[k]
+	end
+	local ok = pcall(function()
+		writefile(GLOBALS_PATH, HttpService:JSONEncode(data))
+	end)
+	return ok == true
 end
 
 local function fireApplyCallbacks(S)
@@ -140,9 +203,15 @@ function Config.Apply(S, data)
 	if typeof(data) ~= "table" then
 		return false
 	end
+	local migrateGlobals = {}
+	local hasMigrate = false
 	for k, v in pairs(data) do
 		if RUNTIME_KEYS[k] then
 			-- skip runtime keys
+		elseif GLOBAL_KEYS[k] then
+			-- named configs no longer own these; keep for one-time migrate
+			migrateGlobals[k] = v
+			hasMigrate = true
 		elseif typeof(v) == "table" and v.__color then
 			S[k] = Color3.new(v.r, v.g, v.b)
 		elseif typeof(v) == "table" then
@@ -150,6 +219,13 @@ function Config.Apply(S, data)
 		else
 			S[k] = coerceConfigValue(v, S[k])
 		end
+	end
+	local hadGlobals = Config.LoadGlobals(S)
+	if not hadGlobals and hasMigrate then
+		for k, v in pairs(migrateGlobals) do
+			S[k] = coerceConfigValue(v, S[k])
+		end
+		Config.SaveGlobals(S)
 	end
 	Config.EnforceRules(S)
 	fireApplyCallbacks(S)
@@ -564,9 +640,13 @@ function Config.EnforceRules(S)
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
-	-- Global default for every config: always Ściernisko on menu open
-	S.CrimMenuMusic = true
-	S.CrimMenuMusicTrack = "Sciernisko"
+	-- Menu music is portable (globals.json) — only fill defaults when missing
+	if S.CrimMenuMusic == nil then
+		S.CrimMenuMusic = true
+	end
+	if S.CrimMenuMusicTrack == nil or not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
+		S.CrimMenuMusicTrack = "Wegorz"
+	end
 	if S.CrimHitSoundSwap == nil then
 		S.CrimHitSoundSwap = false
 	end
@@ -736,6 +816,7 @@ function Config.Save(name, S)
 	ensureDirs()
 	local path = CONFIG_DIR .. "/" .. name .. ".json"
 	writefile(path, HttpService:JSONEncode(Config.Serialize(S)))
+	Config.SaveGlobals(S)
 	local index = readIndex()
 	local found = false
 	for _, n in ipairs(index.configs) do
@@ -802,10 +883,15 @@ end
 
 function Config.Autoload(S)
 	local name = Config.GetAutoload()
-	if name == "" or not name then
-		return false
+	local loaded = false
+	if name and name ~= "" then
+		local ok = Config.Load(name, S)
+		loaded = ok == true
 	end
-	return Config.Load(name, S)
+	-- Always restore portable prefs (even when no autoload config)
+	Config.LoadGlobals(S)
+	Config.EnforceRules(S)
+	return loaded
 end
 
 return Config
