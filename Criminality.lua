@@ -3455,12 +3455,24 @@ local function listGameSounds()
 		for id in pairs(byId) do
 			table.insert(unique, id)
 		end
-		table.sort(unique, function(a, b)
-			local ga, gb = byId[a], byId[b]
-			if ga.playing ~= gb.playing then
-				return ga.playing > gb.playing
+		-- Build primary name for each id, then sort alphabetically by name (then id)
+		local primaryName = {}
+		for id, g in pairs(byId) do
+			local best, bestCnt = nil, -1
+			for name, cnt in pairs(g.names) do
+				if cnt > bestCnt or (cnt == bestCnt and (not best or name < best)) then
+					bestCnt = cnt
+					best = name
+				end
 			end
-			return ga.count > gb.count
+			primaryName[id] = string.lower(best or "")
+		end
+		table.sort(unique, function(a, b)
+			local na, nb = primaryName[a], primaryName[b]
+			if na ~= nb then
+				return na < nb
+			end
+			return a < b
 		end)
 
 		local rows = {}
