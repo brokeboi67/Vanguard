@@ -526,8 +526,8 @@ _G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
 local CRIM_GAME_ID = 1494262959
 local isCriminality = game.GameId == CRIM_GAME_ID
 
--- Base modules always fetched (Core → GameSupport). +Criminality +ClientBuild when needed.
-local LOAD_TOTAL = 29 + (isCriminality and 3 or 0)
+-- Base modules always fetched (Core → GameSupport). +4 Criminality modules when needed.
+local LOAD_TOTAL = 29 + (isCriminality and 4 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -566,11 +566,62 @@ local function fetchUrl(url)
 	return nil
 end
 
+-- Fetch independent module sources concurrently. Execution remains ordered below,
+-- but network latency no longer stacks across 29–33 sequential GitHub requests.
+local MODULE_FILES = {
+	"Core.lua", "Stealth.lua", "AntiBypass.lua", "Settings.lua", "Logger.lua", "Perf.lua",
+	"Config.lua", "I18n.lua", "Teleport.lua", "Session.lua", "Util.lua", "ESP.lua",
+	"TeamFriends.lua", "Aim.lua", "Rage.lua", "Movement.lua", "Invisibility.lua", "Misc.lua",
+	"Features.lua", "Animations.lua", "World.lua", "Effects.lua", "Music.lua", "UIColorPicker.lua",
+	"UIConfigMenus.lua", "UIMusic.lua", "UI.lua", "Menus.lua", "GameSupport.lua",
+}
+if isCriminality then
+	table.insert(MODULE_FILES, "Criminality.lua")
+	table.insert(MODULE_FILES, "PathDisplay.lua")
+	table.insert(MODULE_FILES, "ClientBuild.lua")
+	table.insert(MODULE_FILES, "BountyTracker.lua")
+end
+
+local MODULE_SOURCES = {}
+local function prefetchModuleSources()
+	bootProgress("Pobieranie modułów", 0.03, "0 / " .. LOAD_TOTAL .. " modułów", false)
+	local nextIndex = 1
+	local completed = 0
+	local workers = math.min(8, #MODULE_FILES)
+	for _ = 1, workers do
+		task.spawn(function()
+			while true do
+				local index = nextIndex
+				nextIndex += 1
+				local file = MODULE_FILES[index]
+				if not file then
+					break
+				end
+				if not _G.VG_MODULE_CACHE[file] then
+					local ok, body = pcall(fetchUrl, REPO_BASE .. file)
+					if ok and body and body ~= "" then
+						MODULE_SOURCES[file] = body
+					end
+				end
+				completed += 1
+				bootProgress(
+					"Pobieranie modułów",
+					math.max(0.03, completed / LOAD_TOTAL * 0.62),
+					completed .. " / " .. LOAD_TOTAL .. " modułów",
+					true
+				)
+			end
+		end)
+	end
+	while completed < #MODULE_FILES do
+		task.wait()
+	end
+end
+
 local function Get(file)
 	if _G.VG_MODULE_CACHE[file] then
 		loadStep += 1
 		bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów", true)
-		task.wait()
 		return _G.VG_MODULE_CACHE[file]
 	end
 
@@ -587,17 +638,20 @@ local function Get(file)
 	end
 
 	local url = REPO_BASE .. file
-	local src
+	local src = MODULE_SOURCES[file]
+	MODULE_SOURCES[file] = nil
 	local lastErr = "empty response"
-	for attempt = 1, 4 do
-		local ok, body = pcall(fetchUrl, url)
-		if ok and body and body ~= "" then
-			src = body
-			break
-		end
-		lastErr = ok and "empty response" or tostring(body)
-		if attempt < 4 then
-			task.wait(0.25 * attempt)
+	if not src then
+		for attempt = 1, 4 do
+			local ok, body = pcall(fetchUrl, url)
+			if ok and body and body ~= "" then
+				src = body
+				break
+			end
+			lastErr = ok and "empty response" or tostring(body)
+			if attempt < 4 then
+				task.wait(0.25 * attempt)
+			end
 		end
 	end
 	if not src or src == "" then
@@ -634,12 +688,13 @@ local function Get(file)
 	_G.VG_MODULE_CACHE[file] = res
 	loadStep += 1
 	bootProgress(file:gsub("%.lua$", ""), loadStep / LOAD_TOTAL * 0.68, loadStep .. " / " .. LOAD_TOTAL .. " modułów", true)
-	task.wait()
 	return res
 end
 
 local isTransferLoad = _G.VG_FROM_TRANSFER == true
 _G.VG_FROM_TRANSFER = nil
+
+prefetchModuleSources()
 
 local Core = Get("Core.lua")
 if Core.isActive() then

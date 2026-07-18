@@ -32,7 +32,7 @@ local GLOBAL_KEYS = {
 local OK_MENU_TRACKS = {
 	PolskiePola = true,
 	DiscoPolo = true,
-	PylKos = true,
+	Miguel = true,
 	Polka = true,
 	Accordion = true,
 	Mountain = true,
@@ -119,6 +119,10 @@ function Config.LoadGlobals(S)
 		if data[k] ~= nil then
 			S[k] = coerceConfigValue(data[k], S[k])
 		end
+	end
+	-- Migrate the replaced "Pył i Kości" slot.
+	if S.CrimMenuMusicTrack == "PylKos" then
+		S.CrimMenuMusicTrack = "Miguel"
 	end
 	if S.CrimMenuMusicTrack ~= nil and not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
 		S.CrimMenuMusicTrack = "PolskiePola"

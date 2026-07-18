@@ -2785,7 +2785,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeChoice(CVIS, "Menu Track", "CrimMenuMusicTrack", {
 			{ label = "Polskie Pola", value = "PolskiePola" },
 			{ label = "Disco Polo", value = "DiscoPolo" },
-			{ label = "Pył i Kości", value = "PylKos" },
+			{ label = "Miguel Phonk", value = "Miguel" },
 			{ label = "Polish Accordion", value = "Polka" },
 			{ label = "Accordion Polka", value = "Accordion" },
 			{ label = "Mountain Polka", value = "Mountain" },
