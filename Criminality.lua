@@ -3325,6 +3325,7 @@ local menuMus = {
 	conns = {},
 	patched = {},
 	DEFAULT = "PolskiePola",
+	VOLUME = 1.8,
 	PRESETS = {
 		-- Public-domain only (verified). Copyrighted Cypis/Multi/etc. are all 403.
 		PolskiePola = "rbxassetid://89202760707274", -- NASZE POLSKIE POLA I ŁĄKI
@@ -3357,6 +3358,9 @@ function menuMus.patch(s, id)
 		if s.SoundId ~= id then
 			s.SoundId = id
 		end
+		if s.Volume ~= menuMus.VOLUME then
+			s.Volume = menuMus.VOLUME
+		end
 		if not menuMus.patched[s] then
 			menuMus.patched[s] = true
 			table.insert(
@@ -3369,6 +3373,15 @@ function menuMus.patch(s, id)
 					local want = menuMus.resolveId(cur)
 					if s.SoundId ~= want then
 						s.SoundId = want
+					end
+				end)
+			)
+			table.insert(
+				menuMus.conns,
+				s:GetPropertyChangedSignal("Volume"):Connect(function()
+					local cur = _G.__VG_S
+					if cur and cur.CrimMenuMusic == true and s.Volume ~= menuMus.VOLUME then
+						s.Volume = menuMus.VOLUME
 					end
 				end)
 			)
