@@ -1296,7 +1296,7 @@ local function getCrateId(model)
 end
 
 local function getCratePart(model)
-	return getCrateVisualPart(model)
+	return getCrateVisualPart(model, true)
 end
 
 local function getCrateDist(model)
