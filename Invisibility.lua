@@ -1,6 +1,7 @@
--- Invisibility.lua  v2.52.35
+-- Invisibility.lua  v2.52.37
 -- R6 anim-desync. Master toggle arms the feature; keybind toggles visibility.
 -- Turning Invisibility OFF disables everything.
+-- Desync: Heartbeat applies pose, RenderStepped restores (no Wait — no hitch).
 
 local Invisibility = {}
 
@@ -333,6 +334,34 @@ function Invisibility.Init(S, ParentGUI)
 		return fn
 	end
 
+	-- Desync without Heartbeat:Wait(RenderStepped) — that yield hitch'd the frame
+	-- and inflated PERF. Heartbeat applies weird pose; next RenderStepped restores.
+	local pendingRestore = false
+	local savedCF = nil
+	local savedCamOff = nil
+
+	local function clearPendingRestore()
+		if pendingRestore and hum and hrp then
+			pcall(function()
+				if typeof(savedCamOff) == "Vector3" then
+					hum.CameraOffset = savedCamOff
+				end
+				if typeof(savedCF) == "CFrame" then
+					hrp.CFrame = savedCF
+				end
+			end)
+		end
+		pendingRestore = false
+		savedCF = nil
+		savedCamOff = nil
+	end
+
+	local oldStopActive = stopActive
+	stopActive = function()
+		clearPendingRestore()
+		oldStopActive()
+	end
+
 	RS.Heartbeat:Connect(perfWrap("Invis.Main", function(dt)
 		if S.Unloaded then
 			if active or S.Invisibility then
@@ -341,7 +370,6 @@ function Invisibility.Init(S, ParentGUI)
 			return
 		end
 
-		-- Master toggle from UI
 		if not S.Invisibility then
 			if active then
 				stopActive()
@@ -369,8 +397,8 @@ function Invisibility.Init(S, ParentGUI)
 			hrp.CFrame = hrp.CFrame + hum.MoveDirection * speed * dt
 		end
 
-		local oldCF = hrp.CFrame
-		local oldCamOff = hum.CameraOffset
+		savedCF = hrp.CFrame
+		savedCamOff = hum.CameraOffset
 
 		local _, yaw = Cam.CFrame:ToOrientation()
 		hrp.CFrame = CFrame.new(hrp.CFrame.Position) * CFrame.fromOrientation(0, yaw, 0)
@@ -392,25 +420,36 @@ function Invisibility.Init(S, ParentGUI)
 			loadTrack()
 		end
 
-		RS.RenderStepped:Wait()
+		pendingRestore = true
+	end))
 
-		if not active or not S.Invisibility then
-			if hum and hum:IsDescendantOf(workspace) then
-				hum.CameraOffset = oldCamOff
+	RS.RenderStepped:Connect(perfWrap("Invis.Restore", function()
+		if not pendingRestore then
+			return
+		end
+		pendingRestore = false
+
+		local stillOn = active and S.Invisibility and not S.Unloaded
+		if not stillOn then
+			if hum and hum:IsDescendantOf(workspace) and typeof(savedCamOff) == "Vector3" then
+				hum.CameraOffset = savedCamOff
 			end
-			if hrp and hrp:IsDescendantOf(workspace) then
-				hrp.CFrame = oldCF
+			if hrp and hrp:IsDescendantOf(workspace) and typeof(savedCF) == "CFrame" then
+				hrp.CFrame = savedCF
 			end
 			stopTrack()
 			resetTransparency()
+			savedCF = nil
+			savedCamOff = nil
 			return
 		end
 
-		if hum and hum:IsDescendantOf(workspace) then
-			hum.CameraOffset = oldCamOff
+		refreshRefs()
+		if hum and hum:IsDescendantOf(workspace) and typeof(savedCamOff) == "Vector3" then
+			hum.CameraOffset = savedCamOff
 		end
-		if hrp and hrp:IsDescendantOf(workspace) then
-			hrp.CFrame = oldCF
+		if hrp and hrp:IsDescendantOf(workspace) and typeof(savedCF) == "CFrame" then
+			hrp.CFrame = savedCF
 		end
 
 		stopTrack()
@@ -424,9 +463,9 @@ function Invisibility.Init(S, ParentGUI)
 			end
 		end
 
-		if active and S.Invisibility then
-			applyLocalGhost()
-		end
+		applyLocalGhost()
+		savedCF = nil
+		savedCamOff = nil
 	end))
 
 	-- UI toggle still uses SetInvisibility for master feature

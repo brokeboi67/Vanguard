@@ -3409,11 +3409,16 @@ local function startMaster(S)
 		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
 			if now - gunMod.lastApplyAt >= gunMod.rescanInterval then
-				-- periodic shallow rescan so newly spawned weapon tables join the cache
-				refreshGunMods(S, false, false)
+				-- getgc is 50–150ms — never run it on Heartbeat (causes hitch).
+				gunMod.lastApplyAt = now
+				task.defer(function()
+					local cur = _G.__VG_S
+					if featureRunning.gunMods and gunModsWant(cur) then
+						refreshGunMods(cur, false, false)
+					end
+				end)
 			elseif now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
 				gunMod.lastApplyAt = now
-				-- cheap: only re-zero cached tables
 				applyGunMods(S)
 			end
 		end
@@ -3439,7 +3444,9 @@ local function startMaster(S)
 		end
 
 		if S.CrimCrateESP then
-			pcall(ensureCrateWatch, S)
+			if master.frame % 30 == 0 then
+				pcall(ensureCrateWatch, S)
+			end
 			if master.frame % 8 == 0 or tick() - ESP.crateScanAt > 0.35 then
 				ESP.crateScanAt = tick()
 				pcall(syncCrateESP, S)
@@ -3449,7 +3456,9 @@ local function startMaster(S)
 		end
 
 		if S.CrimGunESP then
-			pcall(ensureGunWatch, S)
+			if master.frame % 30 == 0 then
+				pcall(ensureGunWatch, S)
+			end
 			if master.frame % 15 == 0 or tick() - ESP.gunScanAt > 0.6 then
 				ESP.gunScanAt = tick()
 				pcall(syncGunESP, S)
