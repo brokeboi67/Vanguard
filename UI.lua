@@ -2779,15 +2779,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			step = 1,
 			fmt = function(v) return string.format("%d", v) end,
 		})
-		MakeTog(CUtil, "Enable Invis Keybind", "InvisKeybindEnabled", 8, { flat = true })
-		MakeBind(CUtil, "Invis Key", "InvisKey", 9, { requires = "InvisKeybindEnabled" })
+		MakeBind(CUtil, "Visibility Key", "InvisKey", 9, { requires = "Invisibility" })
 		MakeHint(CUtil, "hint_invis", 10)
 		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 11, { flat = true })
-		MakeTog(CUtil, "Elevator Pos Spoof", "CrimRemoteElevatorSpoof", 12, {
-			flat = true,
+		MakeButton(CUtil, nil, 12, function()
+			if S._crimElevatorTeleport then
+				S._crimElevatorTeleport()
+			end
+		end, "btn_crim_elevator_tp")
+		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 13, {
 			requires = "CrimRemoteElevator",
 		})
-		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 13)
 		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 14, {
 			suffix = " st",
 			step = 25,

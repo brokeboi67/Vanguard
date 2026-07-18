@@ -2829,37 +2829,27 @@ local function tickDoors(S)
 	end
 end
 
--- â”€â”€ REMOTE ELEVATOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
--- Server distance-checks Knob. Far FireServer fails unless we spoof HRP nearby.
--- Spoof = mini-teleport â†’ may trip internal AC (same class as noclip). Prefer
--- no-spoof when already close; Position Spoof toggle OFF by default.
+-- ── REMOTE ELEVATOR ─────────────────────────────────────────────────────────
+-- Fire Toggle when near knob (~11 st). Far away: use TP button first (no pos spoof).
 -- Cobalt: Elevator_N.Events.Toggle:FireServer("Do", Elevator_N.Knob1)
 local elev = { conn = nil, lastAt = 0, busy = false, NEAR = 11 }
--- ELEV_NEAR packed into elev.NEAR to stay under Luau's 200-local limit
 
-local function tryRemoteElevator(S)
-	if not S or S.CrimRemoteElevator ~= true or elev.busy then
-		return
-	end
-	local now = tick()
-	if now - elev.lastAt < 0.55 then
-		return
-	end
+local function findBestElevator(S)
 	local cam = workspace.CurrentCamera
 	local hrp = getHRP()
 	if not cam or not hrp then
-		return
+		return nil
 	end
 	local map = workspace:FindFirstChild("Map")
 	local doors = map and map:FindFirstChild("Doors")
 	if not doors then
-		return
+		return nil
 	end
-	local maxDist = math.clamp(tonumber(S.CrimRemoteElevatorMaxDist) or 400, 50, 1000)
+	local maxDist = math.clamp(tonumber(S and S.CrimRemoteElevatorMaxDist) or 400, 50, 1000)
 	local origin = cam.CFrame.Position
 	local look = cam.CFrame.LookVector
 	local playerPos = hrp.Position
-	local bestToggle, bestKnob, bestName, bestScore, bestDist = nil, nil, nil, nil, nil
+	local bestToggle, bestKnob, bestPart, bestName, bestScore, bestDist = nil, nil, nil, nil, nil, nil
 
 	for _, ch in ipairs(doors:GetChildren()) do
 		local n = ch.Name
@@ -2878,6 +2868,7 @@ local function tryRemoteElevator(S)
 						bestScore = score
 						bestToggle = toggle
 						bestKnob = knob
+						bestPart = part
 						bestName = n
 						bestDist = (playerPos - part.Position).Magnitude
 					end
@@ -2887,53 +2878,67 @@ local function tryRemoteElevator(S)
 	end
 
 	if not bestToggle or not bestKnob then
-		crimNotify("Elevator", "Brak windy w zasiÄ™gu", 2)
+		return nil
+	end
+	return {
+		toggle = bestToggle,
+		knob = bestKnob,
+		part = bestPart,
+		name = bestName,
+		dist = bestDist or 0,
+	}
+end
+
+local function teleportToElevator(S)
+	local hit = findBestElevator(S or _G.__VG_S)
+	if not hit then
+		crimNotify("Elevator", "Brak windy w zasięgu", 2)
 		return
 	end
+	local root = getHRP()
+	if not root or not alive(hit.knob) then
+		return
+	end
+	local near = hit.knob.CFrame * CFrame.new(0, 1.2, -1.8)
+	pcall(function()
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.AssemblyAngularVelocity = Vector3.zero
+		root.CFrame = near
+	end)
+	crimNotify("Elevator", "TP → " .. tostring(hit.name) .. string.format("  %.0fm", hit.dist), 2)
+end
 
-	local needSpoof = (bestDist or 999) > elev.NEAR
-	if needSpoof and S.CrimRemoteElevatorSpoof ~= true then
-		crimNotify("Elevator", "Za daleko â€” wĹ‚Ä…cz Position Spoof (ryzyko AC) albo podejdĹş", 3)
+local function tryRemoteElevator(S)
+	if not S or S.CrimRemoteElevator ~= true or elev.busy then
+		return
+	end
+	local now = tick()
+	if now - elev.lastAt < 0.55 then
+		return
+	end
+	local hit = findBestElevator(S)
+	if not hit then
+		crimNotify("Elevator", "Brak windy w zasięgu", 2)
+		return
+	end
+	if (hit.dist or 999) > elev.NEAR then
+		crimNotify("Elevator", "Za daleko — użyj TP to Elevator, potem key", 3)
 		return
 	end
 
 	elev.busy = true
 	elev.lastAt = now
 	task.spawn(function()
-		local root = getHRP()
-		if not root or not alive(bestKnob) or not alive(bestToggle) then
+		if not alive(hit.knob) or not alive(hit.toggle) then
 			elev.busy = false
 			return
 		end
-		local saved = root.CFrame
-		local spoofed = false
-		if needSpoof then
-			local near = bestKnob.CFrame * CFrame.new(0, 1.2, -1.8)
-			pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = near
-			end)
-			spoofed = true
-			-- 1 frame only â€” shorter blink than 2 waits
-			RS.Heartbeat:Wait()
-		end
 		local ok = pcall(function()
-			bestToggle:FireServer("Do", bestKnob)
+			hit.toggle:FireServer("Do", hit.knob)
 		end)
-		if spoofed then
-			pcall(function()
-				local r2 = getHRP()
-				if r2 then
-					r2.CFrame = saved
-					r2.AssemblyLinearVelocity = Vector3.zero
-				end
-			end)
-		end
 		elev.busy = false
 		if ok then
-			local tag = spoofed and " [spoof]" or " [near]"
-			crimNotify("Elevator", tostring(bestName) .. string.format("  %.0fm", bestDist or 0) .. tag, 2)
+			crimNotify("Elevator", tostring(hit.name) .. string.format("  %.0fm", hit.dist or 0), 2)
 		else
 			crimNotify("Elevator", "Fire failed", 2)
 		end
@@ -3528,6 +3533,10 @@ function Criminality.Init(S)
 		else
 			pcall(syncGunMods, S)
 		end
+	end
+
+	S._crimElevatorTeleport = function()
+		pcall(teleportToElevator, S)
 	end
 
 	S._configApplyHooks = S._configApplyHooks or {}

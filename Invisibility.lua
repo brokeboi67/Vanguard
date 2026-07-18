@@ -1,5 +1,6 @@
--- Invisibility.lua  v2.52.4
--- R6 animation desync (EQR/kogo style) + "You are visible" when airborne.
+-- Invisibility.lua  v2.52.35
+-- R6 anim-desync. Master toggle arms the feature; keybind toggles visibility.
+-- Turning Invisibility OFF disables everything.
 
 local Invisibility = {}
 
@@ -13,13 +14,13 @@ function Invisibility.Init(S, ParentGUI)
 	local Cam = workspace.CurrentCamera
 
 	local ANIM_ID = "rbxassetid://215384594"
-	local active = false
+	local active = false -- currently desynced / "invisible"
 	local usable = true
 	local track = nil
 	local lastToggle = 0
 	local char, hum, hrp = nil, nil, nil
-	-- original Transparency values we overwrote (so keybind-off restores correctly)
 	local savedTrans = {}
+	local ghostApplied = false
 
 	local Animation = Instance.new("Animation")
 	Animation.AnimationId = ANIM_ID
@@ -96,7 +97,6 @@ function Invisibility.Init(S, ParentGUI)
 			savedTrans[part] = nil
 		end
 		table.clear(savedTrans)
-		-- safety: clear leftover ghost if we lost the map (respawn mid-invis)
 		if char then
 			for _, v in ipairs(char:GetDescendants()) do
 				if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
@@ -108,13 +108,10 @@ function Invisibility.Init(S, ParentGUI)
 		end
 	end
 
-	local ghostApplied = false  -- true once all current parts are 0.5
-
 	local function applyLocalGhost()
 		if not char or not active then
 			return
 		end
-		-- Fast path: if ghost already applied and no new parts appeared, skip the scan.
 		if ghostApplied then
 			return
 		end
@@ -157,10 +154,10 @@ function Invisibility.Init(S, ParentGUI)
 		end
 	end
 
-	local function disable()
+	-- Stop desync / ghost, but keep master feature flag alone.
+	local function stopActive()
 		active = false
 		ghostApplied = false
-		S.Invisibility = false
 		stopTrack()
 		if hum then
 			pcall(function()
@@ -171,7 +168,7 @@ function Invisibility.Init(S, ParentGUI)
 		WarnLabel.Visible = false
 	end
 
-	local function enable()
+	local function startActive()
 		refreshRefs()
 		if not char or not hum or not hrp then
 			return false
@@ -183,20 +180,38 @@ function Invisibility.Init(S, ParentGUI)
 		end
 		usable = true
 		active = true
-		S.Invisibility = true
 		Cam.CameraSubject = hrp
 		loadTrack()
 		return true
 	end
 
-	local function setEnabled(on)
+	-- Master feature off: wipe everything.
+	local function disableFeature()
+		S.Invisibility = false
+		stopActive()
+	end
+
+	-- Master feature on: arm keybind; do not auto-start invis.
+	local function enableFeature()
+		refreshRefs()
+		if char and hum and not isR6() then
+			usable = false
+			S.Invisibility = false
+			notify("Invisibility", "Wymaga avatara R6 (Torso).")
+			return false
+		end
+		usable = true
+		S.Invisibility = true
+		return true
+	end
+
+	local function setFeature(on)
 		if on then
-			if not enable() then
-				S.Invisibility = false
-				resetTransparency()
+			if not enableFeature() then
+				stopActive()
 			end
 		else
-			disable()
+			disableFeature()
 		end
 	end
 
@@ -232,23 +247,23 @@ function Invisibility.Init(S, ParentGUI)
 		end
 		if not hum then
 			usable = false
-			disable()
+			stopActive()
 			return
 		end
 		if hum.RigType ~= Enum.HumanoidRigType.R6 then
 			usable = false
 			if active or S.Invisibility then
-				disable()
+				disableFeature()
 				notify("Invisibility", "R15 wykryty — wyłączone.")
 			end
 			return
 		end
 		usable = true
-		if S.Invisibility then
-			enable()
-		else
-			resetTransparency()
+		-- Feature stays armed if still on; stay visible until keybind.
+		if active then
+			stopActive()
 		end
+		resetTransparency()
 	end)
 
 	LP.CharacterRemoving:Connect(function()
@@ -257,9 +272,9 @@ function Invisibility.Init(S, ParentGUI)
 		ghostApplied = false
 		resetTransparency()
 		WarnLabel.Visible = false
+		active = false
 	end)
 
-	-- When a new child is added to character (e.g. equipped tool), force ghost re-apply on next frame.
 	LP.CharacterAdded:Connect(function(newChar)
 		newChar.ChildAdded:Connect(function()
 			if active then
@@ -279,10 +294,8 @@ function Invisibility.Init(S, ParentGUI)
 		if processed or S.MenuOpen or S.Unloaded then
 			return
 		end
-		-- Keybind is opt-in: the hotkey does nothing unless the user explicitly
-		-- enables it. Prevents X (or any bound key) from toggling invisibility
-		-- when the feature isn't being used.
-		if not S.InvisKeybindEnabled then
+		-- Keybind only works while master Invisibility is ON
+		if not S.Invisibility then
 			return
 		end
 		local key = getInvisKey()
@@ -293,20 +306,25 @@ function Invisibility.Init(S, ParentGUI)
 			return
 		end
 		lastToggle = tick()
-		setEnabled(not active)
+		if active then
+			stopActive()
+			notify("Invisibility", "Visible")
+		else
+			if startActive() then
+				notify("Invisibility", "Invisible")
+			end
+		end
 	end)
 
 	if typeof(S._configApplyHooks) == "table" then
 		table.insert(S._configApplyHooks, function()
 			if S.Invisibility then
-				if not active then
-					setEnabled(true)
+				-- Feature on: keep current active state; don't force invis
+				if not usable then
+					enableFeature()
 				end
-			elseif active then
-				disable()
 			else
-				-- config says off and we are off — still wipe leftover ghost
-				resetTransparency()
+				disableFeature()
 			end
 		end)
 	end
@@ -317,21 +335,18 @@ function Invisibility.Init(S, ParentGUI)
 
 	RS.Heartbeat:Connect(perfWrap("Invis.Main", function(dt)
 		if S.Unloaded then
-			if active then
-				disable()
+			if active or S.Invisibility then
+				disableFeature()
 			end
 			return
 		end
 
-		-- Toggle from UI / config without key
-		if S.Invisibility and not active then
-			if not enable() then
-				S.Invisibility = false
-				resetTransparency()
-				return
+		-- Master toggle from UI
+		if not S.Invisibility then
+			if active then
+				stopActive()
 			end
-		elseif not S.Invisibility and active then
-			disable()
+			WarnLabel.Visible = false
 			return
 		end
 
@@ -379,7 +394,6 @@ function Invisibility.Init(S, ParentGUI)
 
 		RS.RenderStepped:Wait()
 
-		-- Keybind may have disabled mid-wait — NEVER re-apply ghost after that
 		if not active or not S.Invisibility then
 			if hum and hum:IsDescendantOf(workspace) then
 				hum.CameraOffset = oldCamOff
@@ -415,9 +429,10 @@ function Invisibility.Init(S, ParentGUI)
 		end
 	end))
 
-	S.SetInvisibility = setEnabled
+	-- UI toggle still uses SetInvisibility for master feature
+	S.SetInvisibility = setFeature
 	S.IsInvisibilityActive = function()
-		return active
+		return active == true
 	end
 end
 

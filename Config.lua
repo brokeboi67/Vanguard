@@ -263,9 +263,7 @@ function Config.EnforceRules(S)
 	if S.InvisKey == nil then
 		S.InvisKey = "X"
 	end
-	if S.InvisKeybindEnabled == nil then
-		S.InvisKeybindEnabled = false
-	end
+	S.InvisKeybindEnabled = nil -- keybind works whenever Invisibility master is on
 	if S.NoFog == nil then
 		S.NoFog = false
 	end
@@ -559,9 +557,7 @@ function Config.EnforceRules(S)
 	if S.CrimRemoteElevatorMaxDist == nil then
 		S.CrimRemoteElevatorMaxDist = 400
 	end
-	if S.CrimRemoteElevatorSpoof == nil then
-		S.CrimRemoteElevatorSpoof = false
-	end
+	S.CrimRemoteElevatorSpoof = nil -- use TP to Elevator button instead
 	if S.CrimInfStamina == nil then
 		S.CrimInfStamina = false
 	end

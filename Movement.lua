@@ -435,7 +435,7 @@ function Movement.Init(S)
 
 	RS.RenderStepped:Connect(perfWrap2("Movement.Main", function()
 		-- Invis anim-desync owns HRP/camera — don't fight it with fly/spider/noclip
-		local invisOn = S.Invisibility == true
+		local invisOn = typeof(S.IsInvisibilityActive) == "function" and S.IsInvisibilityActive() == true
 		local needBHop    = S.BHop and not invisOn
 		local needStrafe  = S.AutoStrafe and not invisOn
 		local needFly     = S.Fly and not invisOn

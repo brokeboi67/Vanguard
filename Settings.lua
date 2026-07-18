@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.34",
+	Version = "2.52.35",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -154,7 +154,6 @@ local Settings = {
 	InvisShowWarning = true,
 	InvisWalkSpeed = 12,
 	InvisKey = "X",
-	InvisKeybindEnabled = false,
 
 	-- ANIMATIONS
 	AnimSpeed = 1,
@@ -249,7 +248,6 @@ local Settings = {
 	CrimRemoteElevator = false,
 	CrimRemoteElevatorKey = "T",
 	CrimRemoteElevatorMaxDist = 400,
-	CrimRemoteElevatorSpoof = false,
 	CrimInfStamina = false,
 	CrimFullBright = false,
 	CrimHitSoundSwap = false,
