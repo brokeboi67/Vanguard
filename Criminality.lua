@@ -3315,51 +3315,49 @@ end
 
 -- ── MENU INTRO MUSIC SWAP (PlayerGui.Intro.music) ────────────────────────────
 -- Must start ASAP on execute — Criminality menu music plays before our UI boots.
--- Packed into one table to stay under Luau's 200-local limit.
+-- Packed as menuMus.* methods — no extra chunk locals (200-register limit).
+-- Track is GLOBAL default: Config always forces Sciernisko (not per-profile).
 local menuMus = {
 	started = false,
 	conns = {},
-	patched = {}, -- [Sound] = true
-	-- Polish meme tracks (IDs from public boombox lists — may die if Roblox nukes audio)
+	patched = {},
+	DEFAULT = "Sciernisko",
 	PRESETS = {
-		Wegorz = "rbxassetid://5563485991", -- Cypis – Gdzie jest biały węgorz
-		Plecak = "rbxassetid://1320048269", -- YOUNG MULTI – Plecak
-		Pogba = "rbxassetid://1807763649", -- YOUNG MULTI – Pogba
-		Gucci = "rbxassetid://3050890100", -- Deemz x Bedoes x Young Multi – Gucci Mane
-		Tamagotchi = "rbxassetid://1928340366", -- TACONAFIDE – Tamagotchi
-		Pato = "rbxassetid://4688680407", -- Mata – Patointeligencja
-		Cyka = "rbxassetid://2879686441", -- BIAŁAS & LANEK – CYKA BLYAT
-		Dzien6 = "rbxassetid://746254038", -- Cypis – 6 Dzień tygodnia
-		Jolka = "rbxassetid://3993530706", -- Chillwagon – Jolka
-		Skrrrt = "rbxassetid://2297002699", -- YOUNG MULTI ft. Beteo – Skrrrt
-		Ruda = "rbxassetid://1361172431", -- Czadomen – Ruda tańczy jak szalona
-		Sciernisko = "rbxassetid://1369849205", -- GOLEC UORKIESTRA – Ściernisko
-		Floyd = "rbxassetid://4504202068", -- Żabson – Floyd Mayweather
+		Wegorz = "rbxassetid://5563485991",
+		Plecak = "rbxassetid://1320048269",
+		Pogba = "rbxassetid://1807763649",
+		Gucci = "rbxassetid://3050890100",
+		Tamagotchi = "rbxassetid://1928340366",
+		Pato = "rbxassetid://4688680407",
+		Cyka = "rbxassetid://2879686441",
+		Dzien6 = "rbxassetid://746254038",
+		Jolka = "rbxassetid://3993530706",
+		Skrrrt = "rbxassetid://2297002699",
+		Ruda = "rbxassetid://1361172431",
+		Sciernisko = "rbxassetid://1369849205",
+		Floyd = "rbxassetid://4504202068",
 	},
 }
 
-local function resolveMenuMusicId(S)
+function menuMus.resolveId(S)
 	S = S or _G.__VG_S
-	local key = (S and S.CrimMenuMusicTrack) or "Wegorz"
-	return menuMus.PRESETS[key] or menuMus.PRESETS.Wegorz
+	local key = (S and S.CrimMenuMusicTrack) or menuMus.DEFAULT
+	return menuMus.PRESETS[key] or menuMus.PRESETS[menuMus.DEFAULT]
 end
 
-local function patchMenuSound(s, id)
+function menuMus.patch(s, id)
 	if not s or not s:IsA("Sound") then
 		return false
 	end
-	local ok = pcall(function()
+	return (pcall(function()
 		if s.SoundId ~= id then
 			s.SoundId = id
 		end
-		-- Menu track should actually play the meme
-		if not s.Playing and not s.IsPlaying then
+		if not s.IsPlaying then
 			s:Play()
-		elseif s.IsPlaying and s.TimePosition < 0.15 then
-			-- just swapped mid-start — keep playing from beginning of new track
+		elseif s.TimePosition < 0.15 then
 			s.TimePosition = 0
 		end
-		-- Re-assert if game writes original ID back
 		if not menuMus.patched[s] then
 			menuMus.patched[s] = true
 			table.insert(
@@ -3369,22 +3367,21 @@ local function patchMenuSound(s, id)
 					if not cur or cur.CrimMenuMusic ~= true then
 						return
 					end
-					local want = resolveMenuMusicId(cur)
+					local want = menuMus.resolveId(cur)
 					if s.SoundId ~= want then
 						s.SoundId = want
 					end
 				end)
 			)
 		end
-	end)
-	return ok
+	end))
 end
 
-local function scanAndPatchIntro(S)
+function menuMus.scan(S)
 	if not S or S.CrimMenuMusic ~= true then
 		return
 	end
-	local id = resolveMenuMusicId(S)
+	local id = menuMus.resolveId(S)
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	if not pg then
@@ -3396,31 +3393,26 @@ local function scanAndPatchIntro(S)
 	end
 	local music = intro:FindFirstChild("music") or intro:FindFirstChild("Music")
 	if music then
-		patchMenuSound(music, id)
+		menuMus.patch(music, id)
 	end
 	for _, d in ipairs(intro:GetDescendants()) do
 		if d:IsA("Sound") then
-			patchMenuSound(d, id)
+			menuMus.patch(d, id)
 		end
 	end
 end
 
-local function startIntroMusicSwap(S)
+function menuMus.start(S)
 	S = S or _G.__VG_S
 	if not S then
 		return
 	end
-	-- Always keep settings ref fresh for early Main.lua call
 	_G.__VG_S = S
-
-	-- Immediate attempt (menu may already be up)
-	pcall(scanAndPatchIntro, S)
-
+	pcall(menuMus.scan, S)
 	if menuMus.started then
 		return
 	end
 	menuMus.started = true
-
 	local lp = getLP()
 	if not lp then
 		return
@@ -3430,7 +3422,6 @@ local function startIntroMusicSwap(S)
 		if not pg then
 			return
 		end
-		-- Hot path: Intro / music appear
 		table.insert(
 			menuMus.conns,
 			pg.DescendantAdded:Connect(function(inst)
@@ -3439,30 +3430,24 @@ local function startIntroMusicSwap(S)
 					return
 				end
 				if inst:IsA("Sound") then
-					local p = inst.Parent
-					if p and (p.Name == "Intro" or (p.Parent and p.Parent.Name == "Intro") or inst.Name == "music" or inst.Name == "Music") then
-						patchMenuSound(inst, resolveMenuMusicId(cur))
-					end
-					-- Also: any Sound under Intro
 					local intro = pg:FindFirstChild("Intro")
 					if intro and inst:IsDescendantOf(intro) then
-						patchMenuSound(inst, resolveMenuMusicId(cur))
+						menuMus.patch(inst, menuMus.resolveId(cur))
+					elseif inst.Name == "music" or inst.Name == "Music" then
+						menuMus.patch(inst, menuMus.resolveId(cur))
 					end
 				elseif inst.Name == "Intro" then
 					task.defer(function()
-						scanAndPatchIntro(cur)
+						menuMus.scan(cur)
 					end)
-				elseif (inst.Name == "music" or inst.Name == "Music") and inst:IsA("Sound") then
-					patchMenuSound(inst, resolveMenuMusicId(cur))
 				end
 			end)
 		)
-		-- Burst re-patch for a few seconds (game often sets SoundId a frame late)
 		task.spawn(function()
 			for _ = 1, 40 do
 				local cur = _G.__VG_S
 				if cur and cur.CrimMenuMusic == true then
-					scanAndPatchIntro(cur)
+					menuMus.scan(cur)
 				end
 				task.wait(0.05)
 			end
@@ -3488,42 +3473,39 @@ function Criminality.StartMenuMusicEarly(S)
 	if not Criminality.IsCriminality() then
 		return
 	end
-	if S and S.CrimMenuMusic == nil then
+	if S then
 		S.CrimMenuMusic = true
+		S.CrimMenuMusicTrack = menuMus.DEFAULT
 	end
-	if S and S.CrimMenuMusicTrack == nil then
-		S.CrimMenuMusicTrack = "Wegorz"
-	end
-	if S and S.CrimMenuMusic == true then
-		startIntroMusicSwap(S)
-	end
+	menuMus.start(S)
 end
 
 -- ── CUSTOM HIT SOUNDS (CoreGUI HeadshotSound / HitmarkerSound) ───────────────
--- Packed into one table to stay under Luau's 200-local limit.
+-- Packed into snd.* methods — no extra chunk locals (200-register limit).
 local snd = {
 	orig = {},
 	HITMARKER = "rbxassetid://4868633804",
-	-- Presets for HeadshotSound only
 	PRESETS = {
-		CS = "rbxassetid://5764885315",           -- CS:GO helmet dink
-		UT = "rbxassetid://92457871987705",       -- UT Announcer "HEADSHOT!"
+		CS = "rbxassetid://5764885315",
+		UT = "rbxassetid://92457871987705",
 	},
 }
 
-local function resolveHeadshotId(S)
+function snd.resolveHeadshotId(S)
 	local preset = (S and S.CrimHitSoundPreset) or "UT"
 	return snd.PRESETS[preset] or snd.PRESETS.UT
 end
 
-local function applyCrimHitSounds(on, S)
+function snd.apply(on, S)
 	S = S or _G.__VG_S
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local core = pg and (pg:FindFirstChild("CoreGUI") or pg:FindFirstChild("CoreGui"))
-	if not core then return end
+	if not core then
+		return
+	end
 	local map = {
-		HeadshotSound = resolveHeadshotId(S),
+		HeadshotSound = snd.resolveHeadshotId(S),
 		HitmarkerSound = snd.HITMARKER,
 	}
 	for name, id in pairs(map) do
@@ -3546,22 +3528,21 @@ local function applyCrimHitSounds(on, S)
 	end
 end
 
-local function startCrimHitSounds()
-	applyCrimHitSounds(true, _G.__VG_S)
+function snd.start()
+	snd.apply(true, _G.__VG_S)
 end
 
-local function stopCrimHitSounds()
-	applyCrimHitSounds(false, _G.__VG_S)
+function snd.stop()
+	snd.apply(false, _G.__VG_S)
 end
 
 _G.__VG_ReapplyHitSounds = function()
 	if _G.__VG_S and _G.__VG_S.CrimHitSoundSwap then
-		applyCrimHitSounds(true, _G.__VG_S)
+		snd.apply(true, _G.__VG_S)
 	end
 end
 
--- List ALL Sound instances by class — fills in-menu scroll list (not F9 dump).
-local function listGameSounds()
+function snd.listGameSounds()
 	task.spawn(function()
 		local header = _G.__VG_SoundHeader
 		if header then
@@ -3641,7 +3622,6 @@ local function listGameSounds()
 		for id in pairs(byId) do
 			table.insert(unique, id)
 		end
-		-- Build primary name for each id, then sort alphabetically by name (then id)
 		local primaryName = {}
 		for id, g in pairs(byId) do
 			local best, bestCnt = nil, -1
@@ -3669,7 +3649,6 @@ local function listGameSounds()
 				table.insert(nameList, cnt > 1 and (name .. "×" .. cnt) or name)
 			end
 			table.sort(nameList)
-			-- cap name list for UI width
 			local namesStr = table.concat(nameList, ", ")
 			if #namesStr > 72 then
 				namesStr = string.sub(namesStr, 1, 69) .. "…"
@@ -3690,8 +3669,7 @@ local function listGameSounds()
 	end)
 end
 
--- ── AUTO RESPAWN ─────────────────────────────────────────────────────────────
--- On death, keep InvokeServer DeathRespawn on an interval until we actually respawn.
+-- ── AUTO RESPAWN (packed into autoRespawn.* — saves chunk locals) ───────────
 local autoRespawn = {
 	conns = {},
 	charConns = {},
@@ -3701,14 +3679,14 @@ local autoRespawn = {
 	INTERVAL = 0.6,
 }
 
-local function isAliveNow()
+function autoRespawn.isAlive()
 	local lp = getLP()
 	local char = lp and lp.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	return hum ~= nil and hum.Health > 0 and hum:IsDescendantOf(workspace)
 end
 
-local function invokeDeathRespawnOnce()
+function autoRespawn.invokeOnce()
 	pcall(function()
 		local events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
 		local rem = events and events:FindFirstChild("DeathRespawn")
@@ -3718,11 +3696,11 @@ local function invokeDeathRespawnOnce()
 	end)
 end
 
-local function stopAutoRespawnLoop()
+function autoRespawn.stopLoop()
 	autoRespawn.loopToken += 1
 end
 
-local function startAutoRespawnLoop()
+function autoRespawn.startLoop()
 	local S = _G.__VG_S
 	if not S or not S.CrimAutoRespawn then
 		return
@@ -3730,8 +3708,7 @@ local function startAutoRespawnLoop()
 	autoRespawn.loopToken += 1
 	local token = autoRespawn.loopToken
 	task.spawn(function()
-		-- First attempt immediately, then every INTERVAL until alive
-		invokeDeathRespawnOnce()
+		autoRespawn.invokeOnce()
 		autoRespawn.lastAt = tick()
 		while token == autoRespawn.loopToken do
 			task.wait(autoRespawn.INTERVAL)
@@ -3742,16 +3719,16 @@ local function startAutoRespawnLoop()
 			if not cur or not cur.CrimAutoRespawn then
 				break
 			end
-			if isAliveNow() then
+			if autoRespawn.isAlive() then
 				break
 			end
 			autoRespawn.lastAt = tick()
-			invokeDeathRespawnOnce()
+			autoRespawn.invokeOnce()
 		end
 	end)
 end
 
-local function clearAutoRespawnCharConns()
+function autoRespawn.clearCharConns()
 	for _, c in ipairs(autoRespawn.charConns) do
 		pcall(function()
 			c:Disconnect()
@@ -3760,14 +3737,13 @@ local function clearAutoRespawnCharConns()
 	autoRespawn.charConns = {}
 end
 
-local function hookAutoRespawnChar(char)
-	clearAutoRespawnCharConns()
+function autoRespawn.hookChar(char)
+	autoRespawn.clearCharConns()
 	if not char then
 		return
 	end
-	-- Fresh character = respawned → stop retry loop
-	if isAliveNow() then
-		stopAutoRespawnLoop()
+	if autoRespawn.isAlive() then
+		autoRespawn.stopLoop()
 	end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then
@@ -3777,14 +3753,14 @@ local function hookAutoRespawnChar(char)
 				pcall(function()
 					w:Disconnect()
 				end)
-				hookAutoRespawnChar(char)
+				autoRespawn.hookChar(char)
 			end
 		end)
 		table.insert(autoRespawn.charConns, w)
 		return
 	end
 	local function onDead()
-		startAutoRespawnLoop()
+		autoRespawn.startLoop()
 	end
 	table.insert(autoRespawn.charConns, hum.Died:Connect(onDead))
 	table.insert(
@@ -3793,54 +3769,54 @@ local function hookAutoRespawnChar(char)
 			if hp <= 0 then
 				onDead()
 			elseif hp > 0 then
-				stopAutoRespawnLoop()
+				autoRespawn.stopLoop()
 			end
 		end)
 	)
-	-- Already dead when hooked (death screen)
 	if hum.Health <= 0 then
 		onDead()
 	end
 end
 
-local function startAutoRespawn()
+function autoRespawn.start()
 	for _, c in ipairs(autoRespawn.conns) do
 		pcall(function()
 			c:Disconnect()
 		end)
 	end
 	autoRespawn.conns = {}
-	clearAutoRespawnCharConns()
-	stopAutoRespawnLoop()
+	autoRespawn.clearCharConns()
+	autoRespawn.stopLoop()
 	local lp = getLP()
 	if not lp then
 		return
 	end
 	if lp.Character then
-		hookAutoRespawnChar(lp.Character)
+		autoRespawn.hookChar(lp.Character)
 	end
 	table.insert(
 		autoRespawn.conns,
 		lp.CharacterAdded:Connect(function(char)
 			task.defer(function()
 				if _G.__VG_S and _G.__VG_S.CrimAutoRespawn then
-					hookAutoRespawnChar(char)
+					autoRespawn.hookChar(char)
 				end
 			end)
 		end)
 	)
 end
 
-local function stopAutoRespawn()
-	stopAutoRespawnLoop()
+function autoRespawn.stop()
+	autoRespawn.stopLoop()
 	for _, c in ipairs(autoRespawn.conns) do
 		pcall(function()
 			c:Disconnect()
 		end)
 	end
 	autoRespawn.conns = {}
-	clearAutoRespawnCharConns()
+	autoRespawn.clearCharConns()
 end
+
 
 
 -- â”€â”€ MASTER HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -3877,8 +3853,8 @@ local function syncFromConfig(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
-	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
-	syncFeatureToggle("autoRespawn", "CrimAutoRespawn", startAutoRespawn, stopAutoRespawn, S)
+	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
+	syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
 	if crimFlag(S.CrimInfStamina) then
 		refillCrimStamina()
 	end
@@ -3920,8 +3896,8 @@ local function startMaster(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
-	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", startCrimHitSounds, stopCrimHitSounds, S)
-			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", startAutoRespawn, stopAutoRespawn, S)
+	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
+			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
 			pcall(syncRemoteElevator, S)
 		end
 
@@ -3945,7 +3921,7 @@ local function startMaster(S)
 		end
 		if featureRunning.hitSounds and master.frame % 90 == 0 then
 			runHeavy(function()
-				pcall(applyCrimHitSounds, true, _G.__VG_S)
+				pcall(snd.apply, true, _G.__VG_S)
 			end)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
@@ -4086,8 +4062,8 @@ local function stopMaster()
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
-	pcall(stopCrimHitSounds)
-	pcall(stopAutoRespawn)
+	pcall(snd.stop)
+	pcall(autoRespawn.stop)
 	clearAllPickupFx()
 	stopFastPickupInput()
 	if elev.conn then
@@ -4114,10 +4090,10 @@ function Criminality.Init(S)
 
 	-- Menu music as early as Init allows (also started from Main via StartMenuMusicEarly)
 	if S.CrimMenuMusic == true then
-		pcall(startIntroMusicSwap, S)
+		pcall(menuMus.start, S)
 	end
 	S._crimStartMenuMusic = function()
-		pcall(startIntroMusicSwap, S)
+		pcall(menuMus.start, S)
 	end
 
 	S._crimSyncGunESP = function()
@@ -4142,7 +4118,7 @@ function Criminality.Init(S)
 		pcall(teleportToElevator, S)
 	end
 
-	S._crimListGameSounds = listGameSounds
+	S._crimListGameSounds = snd.listGameSounds
 
 	S._configApplyHooks = S._configApplyHooks or {}
 	table.insert(S._configApplyHooks, function()
