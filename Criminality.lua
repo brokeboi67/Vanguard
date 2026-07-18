@@ -2441,59 +2441,22 @@ local function tickAutoReload(S)
 	if not S or not S.CrimAutoReload then
 		return
 	end
-	local now = tick()
-	local char = getChar()
-	local tool = char and char:FindFirstChildOfClass("Tool")
-	local toolName = tool and tool.Name or nil
-	local current, stored, dbg = getGunGuiAmmo(toolName)
-	dbg = dbg or {}
-
-	if now - (gunMod.lastReloadDbgAt or 0) >= 1.0 then
-		gunMod.lastReloadDbgAt = now
-		local action = "idle"
-		if not tool then
-			action = "no-tool"
-		elseif dbg.enabled == false then
-			action = "gui-off"
-		elseif dbg.titleOk == false then
-			action = "stale-hud"
-		elseif current == nil or stored == nil then
-			action = "bad-read"
-		elseif current ~= 0 then
-			action = "mag-ok"
-		elseif stored < 1 then
-			action = "no-reserve(0/0)"
-		elseif gunMod.reloadBusy then
-			action = "busy"
-		elseif now - gunMod.lastReloadAt < 1.35 then
-			action = "cooldown"
-		else
-			action = "WILL-RELOAD"
-		end
-		print(string.format(
-			"[VG:AutoReload] action=%s path=%s tool=%s title=%q titleOk=%s enabled=%s curRaw=%q cur=%s stoRaw=%q sto=%s",
-			action,
-			tostring(dbg.path),
-			toolName or "nil",
-			tostring(dbg.title),
-			tostring(dbg.titleOk),
-			tostring(dbg.enabled),
-			tostring(dbg.curRaw),
-			tostring(current),
-			tostring(dbg.stoRaw),
-			tostring(stored)
-		))
-	end
-
 	if gunMod.reloadBusy then
 		return
 	end
+	local now = tick()
 	if now - gunMod.lastReloadAt < 1.35 then
 		return
 	end
+
+	local char = getChar()
+	local tool = char and char:FindFirstChildOfClass("Tool")
 	if not tool then
 		return
 	end
+
+	local current, stored, dbg = getGunGuiAmmo(tool.Name)
+	dbg = dbg or {}
 	if dbg.titleOk == false or dbg.enabled == false then
 		return
 	end
@@ -2509,10 +2472,8 @@ local function tickAutoReload(S)
 
 	gunMod.reloadBusy = true
 	gunMod.lastReloadAt = now
-	print("[VG:AutoReload] >>> pressing R  current=0 stored=" .. tostring(stored) .. " tool=" .. tostring(toolName))
 	task.spawn(function()
-		local ok = pressReloadKey()
-		print("[VG:AutoReload] R sent ok=" .. tostring(ok))
+		pressReloadKey()
 		task.wait(0.4)
 		gunMod.reloadBusy = false
 	end)
