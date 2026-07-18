@@ -352,7 +352,7 @@ do
 		card.Name = "Card"
 		card.AnchorPoint = Vector2.new(0.5, 1)
 		card.Position = UDim2.new(0.5, 0, 1, -20)
-		card.Size = UDim2.new(0, 340, 0, 108)
+		card.Size = UDim2.new(0, 340, 0, 132)
 		card.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
 		card.BackgroundTransparency = 0.04
 		card.BorderSizePixel = 0
@@ -412,7 +412,7 @@ do
 
 		local track = Instance.new("Frame")
 		track.Size = UDim2.new(1, -28, 0, 4)
-		track.Position = UDim2.new(0, 14, 1, -22)
+		track.Position = UDim2.new(0, 14, 0, 72)
 		track.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
 		track.BorderSizePixel = 0
 		track.Parent = card
@@ -426,8 +426,8 @@ do
 		Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
 
 		local countLbl = Instance.new("TextLabel")
-		countLbl.Size = UDim2.new(1, -28, 0, 12)
-		countLbl.Position = UDim2.new(0, 14, 1, -14)
+		countLbl.Size = UDim2.new(1, -100, 0, 12)
+		countLbl.Position = UDim2.new(0, 14, 0, 82)
 		countLbl.BackgroundTransparency = 1
 		countLbl.Font = Enum.Font.Gotham
 		countLbl.TextSize = 8
@@ -435,6 +435,26 @@ do
 		countLbl.TextXAlignment = Enum.TextXAlignment.Left
 		countLbl.Text = ""
 		countLbl.Parent = card
+
+		local retryBtn = Instance.new("TextButton")
+		retryBtn.Name = "Retry"
+		retryBtn.Size = UDim2.new(0, 72, 0, 22)
+		retryBtn.Position = UDim2.new(1, -86, 1, -30)
+		retryBtn.BackgroundColor3 = Color3.fromRGB(32, 36, 42)
+		retryBtn.BorderSizePixel = 0
+		retryBtn.Font = Enum.Font.GothamBold
+		retryBtn.TextSize = 10
+		retryBtn.TextColor3 = Color3.fromRGB(230, 230, 240)
+		retryBtn.Text = "Retry"
+		retryBtn.Visible = false
+		retryBtn.AutoButtonColor = true
+		retryBtn.Parent = card
+		Instance.new("UICorner", retryBtn).CornerRadius = UDim.new(0, 6)
+		local retryStroke = Instance.new("UIStroke")
+		retryStroke.Color = ACC
+		retryStroke.Thickness = 1
+		retryStroke.Transparency = 0.45
+		retryStroke.Parent = retryBtn
 
 		card.BackgroundTransparency = 1
 		title.TextTransparency = 1
@@ -453,6 +473,7 @@ do
 
 		local lastPct = 0
 		local activeCreep = nil
+		local retryWaiters = {}
 		local function setFillPct(pct, animate)
 			pct = math.clamp(pct or 0, 0, 1)
 			if animate then
@@ -479,6 +500,35 @@ do
 					setFillPct(pct, animate == true)
 				end
 			end,
+			setStatus = function(text)
+				sub.Text = tostring(text or "Uruchamianie...")
+			end,
+			showRetry = function(visible, statusText)
+				retryBtn.Visible = visible == true
+				if statusText then
+					sub.Text = tostring(statusText)
+				elseif not visible then
+					sub.Text = "Uruchamianie..."
+				end
+			end,
+			waitRetry = function()
+				local done = false
+				local waiter = function()
+					done = true
+				end
+				table.insert(retryWaiters, waiter)
+				retryBtn.Visible = true
+				while not done and gui.Parent do
+					task.wait()
+				end
+				for i = #retryWaiters, 1, -1 do
+					if retryWaiters[i] == waiter then
+						table.remove(retryWaiters, i)
+						break
+					end
+				end
+				retryBtn.Visible = #retryWaiters > 0
+			end,
 			startDownloadCreep = function(fromPct, toPct)
 				activeCreep = {}
 				local token = activeCreep
@@ -500,6 +550,10 @@ do
 				if not gui.Parent then
 					return
 				end
+				for _, w in ipairs(retryWaiters) do
+					pcall(w)
+				end
+				table.clear(retryWaiters)
 				TS:Create(card, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 					Position = UDim2.new(0.5, 0, 1, 40),
 					BackgroundTransparency = 1,
@@ -516,6 +570,18 @@ do
 				end)
 			end,
 		}
+		retryBtn.MouseButton1Click:Connect(function()
+			local copy = {}
+			for i, w in ipairs(retryWaiters) do
+				copy[i] = w
+			end
+			table.clear(retryWaiters)
+			retryBtn.Visible = false
+			sub.Text = "Ponawiam..."
+			for _, w in ipairs(copy) do
+				pcall(w)
+			end
+		end)
 		_G.VG_BOOT.update("Start", 0.01)
 	end
 end
@@ -566,6 +632,31 @@ local function fetchUrl(url)
 	return nil
 end
 
+-- Don't hang forever on a single HttpGet (common cause of stuck 28/29).
+local function fetchUrlTimed(url, timeoutSec)
+	timeoutSec = timeoutSec or 8
+	local result = nil
+	local done = false
+	task.spawn(function()
+		local ok, body = pcall(fetchUrl, url)
+		if ok then
+			result = body
+		end
+		done = true
+	end)
+	local t0 = tick()
+	while not done and (tick() - t0) < timeoutSec do
+		task.wait()
+	end
+	if not done then
+		return nil
+	end
+	if typeof(result) == "string" and result ~= "" then
+		return result
+	end
+	return nil
+end
+
 -- Fetch independent module sources concurrently. Execution remains ordered below,
 -- but network latency no longer stacks across 29–33 sequential GitHub requests.
 local MODULE_FILES = {
@@ -583,38 +674,105 @@ if isCriminality then
 end
 
 local MODULE_SOURCES = {}
-local function prefetchModuleSources()
+
+local function listMissingModules()
+	local missing = {}
+	for _, file in ipairs(MODULE_FILES) do
+		if not _G.VG_MODULE_CACHE[file] and (not MODULE_SOURCES[file] or MODULE_SOURCES[file] == "") then
+			table.insert(missing, file)
+		end
+	end
+	return missing
+end
+
+local function prefetchRound(files)
+	if #files == 0 then
+		return
+	end
 	bootProgress("Pobieranie modułów", 0.03, "0 / " .. LOAD_TOTAL .. " modułów", false)
 	local nextIndex = 1
 	local completed = 0
-	local workers = math.min(8, #MODULE_FILES)
+	local lastProgressAt = tick()
+	local workers = math.min(8, #files)
 	for _ = 1, workers do
 		task.spawn(function()
 			while true do
 				local index = nextIndex
 				nextIndex += 1
-				local file = MODULE_FILES[index]
+				local file = files[index]
 				if not file then
 					break
 				end
-				if not _G.VG_MODULE_CACHE[file] then
-					local ok, body = pcall(fetchUrl, REPO_BASE .. file)
-					if ok and body and body ~= "" then
+				if not _G.VG_MODULE_CACHE[file] and not MODULE_SOURCES[file] then
+					local body = fetchUrlTimed(REPO_BASE .. file, 8)
+					if (not body or body == "") then
+						body = fetchUrlTimed(REPO_BASE .. file, 10)
+					end
+					if body and body ~= "" then
 						MODULE_SOURCES[file] = body
 					end
 				end
 				completed += 1
+				lastProgressAt = tick()
+				local have = LOAD_TOTAL - #listMissingModules()
 				bootProgress(
 					"Pobieranie modułów",
-					math.max(0.03, completed / LOAD_TOTAL * 0.62),
-					completed .. " / " .. LOAD_TOTAL .. " modułów",
+					math.max(0.03, have / LOAD_TOTAL * 0.62),
+					have .. " / " .. LOAD_TOTAL .. " modułów",
 					true
 				)
 			end
 		end)
 	end
-	while completed < #MODULE_FILES do
+	while completed < #files do
+		-- Stall watchdog: if no progress for 12s, stop waiting this round
+		if (tick() - lastProgressAt) > 12 and completed > 0 then
+			break
+		end
 		task.wait()
+	end
+end
+
+local function prefetchModuleSources()
+	local round = 0
+	while true do
+		local missing = listMissingModules()
+		if #missing == 0 then
+			if _G.VG_BOOT and _G.VG_BOOT.showRetry then
+				_G.VG_BOOT.showRetry(false, "Uruchamianie...")
+			end
+			return
+		end
+		round += 1
+		if _G.VG_BOOT and _G.VG_BOOT.setStatus then
+			_G.VG_BOOT.setStatus(round == 1 and "Uruchamianie..." or ("Retry #" .. tostring(round - 1)))
+		end
+		prefetchRound(missing)
+		missing = listMissingModules()
+		if #missing == 0 then
+			if _G.VG_BOOT and _G.VG_BOOT.showRetry then
+				_G.VG_BOOT.showRetry(false, "Uruchamianie...")
+			end
+			return
+		end
+		-- Auto-retry once silently, then ask user
+		if round == 1 then
+			task.wait(0.35)
+		else
+			local msg = "Zacięte · brakuje " .. tostring(#missing) .. " · kliknij Retry"
+			bootProgress("Czeka na Retry", math.max(0.03, (LOAD_TOTAL - #missing) / LOAD_TOTAL * 0.62), (LOAD_TOTAL - #missing) .. " / " .. LOAD_TOTAL .. " modułów", false)
+			if _G.VG_BOOT and _G.VG_BOOT.showRetry then
+				_G.VG_BOOT.showRetry(true, msg)
+			end
+			if _G.VG_BOOT and _G.VG_BOOT.waitRetry then
+				_G.VG_BOOT.waitRetry()
+			else
+				task.wait(1.2)
+			end
+			if _G.VG_BOOT and _G.VG_BOOT.showRetry then
+				_G.VG_BOOT.showRetry(false, "Ponawiam...")
+			end
+		end
 	end
 end
 
@@ -642,23 +800,38 @@ local function Get(file)
 	MODULE_SOURCES[file] = nil
 	local lastErr = "empty response"
 	if not src then
-		for attempt = 1, 4 do
-			local ok, body = pcall(fetchUrl, url)
-			if ok and body and body ~= "" then
+		for attempt = 1, 5 do
+			local body = fetchUrlTimed(url, 8 + attempt)
+			if body and body ~= "" then
 				src = body
 				break
 			end
-			lastErr = ok and "empty response" or tostring(body)
-			if attempt < 4 then
-				task.wait(0.25 * attempt)
+			lastErr = "timeout/empty"
+			if attempt < 5 then
+				if _G.VG_BOOT and _G.VG_BOOT.setStatus then
+					_G.VG_BOOT.setStatus("Retry " .. file:gsub("%.lua$", "") .. " #" .. attempt)
+				end
+				task.wait(0.2 * attempt)
 			end
 		end
 	end
-	if not src or src == "" then
-		if _G.__VG_LOG then
-			_G.__VG_LOG("ERROR", "HttpGet failed", file, tostring(lastErr))
+	-- Still missing after timed retries — offer manual Retry instead of hard crash loop
+	while not src or src == "" do
+		if _G.VG_BOOT and _G.VG_BOOT.showRetry then
+			_G.VG_BOOT.showRetry(true, "Brak " .. file:gsub("%.lua$", "") .. " · Retry")
 		end
-		error("[Vanguard] HttpGet failed: " .. file .. " (" .. tostring(lastErr) .. ")", 2)
+		if _G.VG_BOOT and _G.VG_BOOT.waitRetry then
+			_G.VG_BOOT.waitRetry()
+		else
+			task.wait(1)
+		end
+		if _G.VG_BOOT and _G.VG_BOOT.showRetry then
+			_G.VG_BOOT.showRetry(false, "Ponawiam " .. file:gsub("%.lua$", "") .. "...")
+		end
+		src = fetchUrlTimed(url, 12)
+		if not src or src == "" then
+			lastErr = "timeout/empty after retry"
+		end
 	end
 
 	local compile = loadstring or load
