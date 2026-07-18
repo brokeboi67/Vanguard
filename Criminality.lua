@@ -3374,6 +3374,137 @@ _G.__VG_ReapplyHitSounds = function()
 	end
 end
 
+-- List ALL Sound instances by class (not by name) — for discovering swappable IDs.
+local function listGameSounds()
+	task.spawn(function()
+		local roots = {}
+		local function addRoot(inst, label)
+			if inst then
+				table.insert(roots, { inst = inst, label = label })
+			end
+		end
+		addRoot(game:GetService("SoundService"), "SoundService")
+		addRoot(workspace, "Workspace")
+		addRoot(game:GetService("ReplicatedStorage"), "ReplicatedStorage")
+		addRoot(game:GetService("Lighting"), "Lighting")
+		local lp = getLP()
+		if lp then
+			addRoot(lp:FindFirstChild("PlayerGui"), "PlayerGui")
+			addRoot(lp:FindFirstChild("PlayerScripts"), "PlayerScripts")
+			addRoot(lp.Character, "Character")
+		end
+		pcall(function()
+			addRoot(game:GetService("CoreGui"), "CoreGui")
+		end)
+		if typeof(gethui) == "function" then
+			pcall(function()
+				addRoot(gethui(), "gethui")
+			end)
+		end
+
+		local entries = {} -- { id, name, path, playing, vol }
+		local byId = {} -- id -> { count, names = {}, paths = {} }
+		local n = 0
+
+		local function fullPath(inst, rootLabel)
+			local parts = { inst.Name }
+			local cur = inst.Parent
+			local guard = 0
+			while cur and cur ~= game and guard < 24 do
+				table.insert(parts, 1, cur.Name)
+				cur = cur.Parent
+				guard += 1
+			end
+			return rootLabel .. " → " .. table.concat(parts, ".")
+		end
+
+		for _, root in ipairs(roots) do
+			local ok, descs = pcall(function()
+				return root.inst:GetDescendants()
+			end)
+			if ok and type(descs) == "table" then
+				for i, d in ipairs(descs) do
+					if d:IsA("Sound") then
+						n += 1
+						local id = tostring(d.SoundId or "")
+						local path = fullPath(d, root.label)
+						table.insert(entries, {
+							id = id,
+							name = d.Name,
+							path = path,
+							playing = d.IsPlaying,
+							vol = d.Volume,
+						})
+						local g = byId[id]
+						if not g then
+							g = { count = 0, names = {}, sample = path }
+							byId[id] = g
+						end
+						g.count += 1
+						g.names[d.Name] = (g.names[d.Name] or 0) + 1
+						if i % 400 == 0 then
+							task.wait()
+						end
+					end
+				end
+			end
+			task.wait()
+		end
+
+		local unique = {}
+		for id in pairs(byId) do
+			table.insert(unique, id)
+		end
+		table.sort(unique, function(a, b)
+			return byId[a].count > byId[b].count
+		end)
+
+		print(string.format(
+			"[VG:Sounds] === %d Sound instance(s), %d unique SoundId(s) ===",
+			n,
+			#unique
+		))
+		for _, id in ipairs(unique) do
+			local g = byId[id]
+			local nameList = {}
+			for name, cnt in pairs(g.names) do
+				table.insert(nameList, cnt > 1 and (name .. "×" .. cnt) or name)
+			end
+			table.sort(nameList)
+			print(string.format(
+				"[VG:Sounds] %s | x%d | names={%s} | eg: %s",
+				id ~= "" and id or "(empty SoundId)",
+				g.count,
+				table.concat(nameList, ", "),
+				g.sample
+			))
+		end
+		print("[VG:Sounds] --- per-instance (name @ path) ---")
+		table.sort(entries, function(a, b)
+			if a.id ~= b.id then
+				return a.id < b.id
+			end
+			return a.path < b.path
+		end)
+		for i, e in ipairs(entries) do
+			print(string.format(
+				"[VG:Sounds] #%d  %s  vol=%.2f playing=%s  %s  @ %s",
+				i,
+				e.id ~= "" and e.id or "(empty)",
+				tonumber(e.vol) or 0,
+				tostring(e.playing),
+				e.name,
+				e.path
+			))
+			if i % 80 == 0 then
+				task.wait()
+			end
+		end
+		print(string.format("[VG:Sounds] === done (%d) ===", n))
+		crimNotify("Sounds", string.format("%d Sound · %d unique IDs → konsola F9", n, #unique), 5)
+	end)
+end
+
 -- ── AUTO RESPAWN ─────────────────────────────────────────────────────────────
 -- On death, keep InvokeServer DeathRespawn on an interval until we actually respawn.
 local autoRespawn = {
@@ -3817,6 +3948,8 @@ function Criminality.Init(S)
 	S._crimElevatorTeleport = function()
 		pcall(teleportToElevator, S)
 	end
+
+	S._crimListGameSounds = listGameSounds
 
 	S._configApplyHooks = S._configApplyHooks or {}
 	table.insert(S._configApplyHooks, function()

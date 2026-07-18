@@ -2762,7 +2762,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CVIS, "hint_crim_hitsounds", 5)
+		MakeButton(CVIS, nil, 5, function()
+			if S._crimListGameSounds then
+				S._crimListGameSounds()
+			end
+		end, "btn_crim_list_sounds")
+		MakeHint(CVIS, "hint_crim_hitsounds", 6)
 
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
 		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
