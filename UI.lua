@@ -2761,10 +2761,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		MakeChoice(CVIS, "Menu Track", "CrimMenuMusicTrack", {
 			{ label = "Cypis – Biały Węgorz", value = "Wegorz" },
+			{ label = "Cypis – 6 Dzień tygodnia", value = "Dzien6" },
 			{ label = "Young Multi – Plecak", value = "Plecak" },
 			{ label = "Young Multi – Pogba", value = "Pogba" },
+			{ label = "Young Multi – Skrrrt", value = "Skrrrt" },
 			{ label = "YM/Bedoes – Gucci Mane", value = "Gucci" },
+			{ label = "Mata – Patointeligencja", value = "Pato" },
+			{ label = "Białas – CYKA BLYAT", value = "Cyka" },
+			{ label = "Chillwagon – Jolka", value = "Jolka" },
 			{ label = "TACONAFIDE – Tamagotchi", value = "Tamagotchi" },
+			{ label = "Czadomen – Ruda tańczy", value = "Ruda" },
+			{ label = "Golec – Ściernisko", value = "Sciernisko" },
+			{ label = "Żabson – Floyd Mayweather", value = "Floyd" },
 		}, 4, {
 			onChange = function()
 				if S.CrimMenuMusic and S._crimStartMenuMusic then

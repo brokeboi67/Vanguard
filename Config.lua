@@ -574,6 +574,14 @@ function Config.EnforceRules(S)
 			Pogba = true,
 			Gucci = true,
 			Tamagotchi = true,
+			Pato = true,
+			Cyka = true,
+			Dzien6 = true,
+			Jolka = true,
+			Skrrrt = true,
+			Ruda = true,
+			Sciernisko = true,
+			Floyd = true,
 		}
 		if S.CrimMenuMusicTrack == nil or not okTrack[S.CrimMenuMusicTrack] then
 			S.CrimMenuMusicTrack = "Wegorz"

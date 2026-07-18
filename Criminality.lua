@@ -3322,11 +3322,19 @@ local menuMus = {
 	patched = {}, -- [Sound] = true
 	-- Polish meme tracks (IDs from public boombox lists — may die if Roblox nukes audio)
 	PRESETS = {
-		Wegorz = "rbxassetid://5563485991", -- Cypis – Gdzie jest biały węgorz (meme king)
+		Wegorz = "rbxassetid://5563485991", -- Cypis – Gdzie jest biały węgorz
 		Plecak = "rbxassetid://1320048269", -- YOUNG MULTI – Plecak
 		Pogba = "rbxassetid://1807763649", -- YOUNG MULTI – Pogba
 		Gucci = "rbxassetid://3050890100", -- Deemz x Bedoes x Young Multi – Gucci Mane
 		Tamagotchi = "rbxassetid://1928340366", -- TACONAFIDE – Tamagotchi
+		Pato = "rbxassetid://4688680407", -- Mata – Patointeligencja
+		Cyka = "rbxassetid://2879686441", -- BIAŁAS & LANEK – CYKA BLYAT
+		Dzien6 = "rbxassetid://746254038", -- Cypis – 6 Dzień tygodnia
+		Jolka = "rbxassetid://3993530706", -- Chillwagon – Jolka
+		Skrrrt = "rbxassetid://2297002699", -- YOUNG MULTI ft. Beteo – Skrrrt
+		Ruda = "rbxassetid://1361172431", -- Czadomen – Ruda tańczy jak szalona
+		Sciernisko = "rbxassetid://1369849205", -- GOLEC UORKIESTRA – Ściernisko
+		Floyd = "rbxassetid://4504202068", -- Żabson – Floyd Mayweather
 	},
 }
 
