@@ -631,7 +631,7 @@ local function playCrateSpawnFx(entry, rare)
 	if alive(entry.lbl) then
 		local finalText = entry.lbl.Text
 		local finalSize = alive(entry.bg) and entry.bg.Size or nil
-		entry.lbl.Text = rare and "âś¦ RARE SPAWN âś¦" or "â–˛ CRATE SPAWN â–˛"
+		entry.lbl.Text = rare and "\u{2726} RARE SPAWN \u{2726}" or "\u{25B2} CRATE SPAWN \u{25B2}"
 		if alive(entry.bg) then
 			entry.bg.Size = UDim2.new(0, 118, 0, 20)
 		end
