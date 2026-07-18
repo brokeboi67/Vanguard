@@ -2252,12 +2252,10 @@ local function parseAmmoText(text)
 	if typeof(text) ~= "string" then
 		return nil
 	end
-	-- plain number first
-	local n = tonumber(text)
+	local n = tonumber((text:gsub("%s+", "")))
 	if n ~= nil then
 		return math.floor(n)
 	end
-	-- strip junk (" 0 ", "0rds", etc.)
 	local digits = string.match(text, "%-?%d+")
 	if digits then
 		return tonumber(digits)
@@ -2265,39 +2263,109 @@ local function parseAmmoText(text)
 	return nil
 end
 
+local function isAmmoTextObj(inst)
+	return inst ~= nil
+		and (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox"))
+end
+
+local function readAmmoLabel(inst)
+	if not isAmmoTextObj(inst) then
+		return nil, nil
+	end
+	local raw = nil
+	pcall(function()
+		raw = inst.Text
+	end)
+	if raw == nil or raw == "" then
+		pcall(function()
+			raw = inst.ContentText
+		end)
+	end
+	if typeof(raw) ~= "string" then
+		raw = raw ~= nil and tostring(raw) or nil
+	end
+	return raw, parseAmmoText(raw)
+end
+
+-- returns: currentNum, storedNum, debugTbl
 local function getGunGuiAmmo()
+	local dbg = {
+		ok = false,
+		path = "?",
+		curClass = nil,
+		stoClass = nil,
+		curRaw = nil,
+		stoRaw = nil,
+		gg = false,
+		main = false,
+	}
+
+	local function finish(curInst, stoInst, path)
+		dbg.path = path or dbg.path
+		dbg.curClass = curInst and curInst.ClassName or nil
+		dbg.stoClass = stoInst and stoInst.ClassName or nil
+		local curRaw, curNum = readAmmoLabel(curInst)
+		local stoRaw, stoNum = readAmmoLabel(stoInst)
+		dbg.curRaw = curRaw
+		dbg.stoRaw = stoRaw
+		dbg.ok = curNum ~= nil and stoNum ~= nil
+		if isAmmoTextObj(curInst) and isAmmoTextObj(stoInst) then
+			gunMod.gunGui = { current = curInst, stored = stoInst }
+		else
+			gunMod.gunGui = nil
+		end
+		return curNum, stoNum, dbg
+	end
+
 	local cache = gunMod.gunGui
 	if cache and cache.current and cache.current.Parent and cache.stored and cache.stored.Parent then
-		return parseAmmoText(cache.current.Text), parseAmmoText(cache.stored.Text)
+		return finish(cache.current, cache.stored, "cache")
 	end
 
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
-	local gg = pg and pg:FindFirstChild("GunGUI")
+	if not pg then
+		gunMod.gunGui = nil
+		dbg.path = "no PlayerGui"
+		return nil, nil, dbg
+	end
+
+	local gg = pg:FindFirstChild("GunGUI")
+	dbg.gg = gg ~= nil
 	if not gg then
 		gunMod.gunGui = nil
-		return nil, nil
+		dbg.path = "no GunGUI"
+		return nil, nil, dbg
 	end
 
-	-- Canonical path from Cobalt/Explorer: GunGUI.Frame.Main.{Current,Stored}
-	local main = gg:FindFirstChild("Frame")
-	main = main and main:FindFirstChild("Main")
+	-- Canonical: GunGUI.Frame.Main.{Current,Stored}
+	local frame = gg:FindFirstChild("Frame")
+	local main = frame and frame:FindFirstChild("Main")
+	dbg.main = main ~= nil
 	local current = main and main:FindFirstChild("Current")
 	local stored = main and main:FindFirstChild("Stored")
-
-	-- Fallback: some weapons nest labels differently under GunGUI
-	if not current or not stored then
-		current = gg:FindFirstChild("Current", true)
-		stored = gg:FindFirstChild("Stored", true)
+	if isAmmoTextObj(current) and isAmmoTextObj(stored) then
+		return finish(current, stored, "GunGUI.Frame.Main")
 	end
 
-	if not current or not current:IsA("TextLabel") or not stored or not stored:IsA("TextLabel") then
-		gunMod.gunGui = nil
-		return nil, nil
+	-- Alternate: GunGUI.Main
+	main = gg:FindFirstChild("Main")
+	current = main and main:FindFirstChild("Current")
+	stored = main and main:FindFirstChild("Stored")
+	if isAmmoTextObj(current) and isAmmoTextObj(stored) then
+		return finish(current, stored, "GunGUI.Main")
 	end
 
-	gunMod.gunGui = { current = current, stored = stored }
-	return parseAmmoText(current.Text), parseAmmoText(stored.Text)
+	-- Deep search under GunGUI
+	current = gg:FindFirstChild("Current", true)
+	stored = gg:FindFirstChild("Stored", true)
+	if current or stored then
+		return finish(current, stored, "GunGUI/**/deep")
+	end
+
+	gunMod.gunGui = nil
+	dbg.path = "GunGUI found but no Current/Stored"
+	return nil, nil, dbg
 end
 
 local function pressReloadKey()
@@ -2326,28 +2394,80 @@ end
 
 -- Auto Reload: ONLY when Current == 0 and Stored >= 1 (never on 0/0)
 local function tickAutoReload(S)
-	if not S or not S.CrimAutoReload then return end
-	if gunMod.reloadBusy then return end
+	if not S or not S.CrimAutoReload then
+		return
+	end
 	local now = tick()
-	if now - gunMod.lastReloadAt < 1.35 then return end
-
 	local char = getChar()
-	if not char or not char:FindFirstChildOfClass("Tool") then return end
+	local tool = char and char:FindFirstChildOfClass("Tool")
+	local current, stored, dbg = getGunGuiAmmo()
+	dbg = dbg or {}
 
-	local current, stored = getGunGuiAmmo()
-	-- Need both readings — missing Stored means we don't know reserve
-	if current == nil or stored == nil then return end
-	if current ~= 0 then return end
-	if stored < 1 then return end -- 0/0 or empty reserve → no reload
+	-- Console debug ~1/s so we see what HUD returns
+	if now - (gunMod.lastReloadDbgAt or 0) >= 1.0 then
+		gunMod.lastReloadDbgAt = now
+		local action = "idle"
+		if not tool then
+			action = "no-tool"
+		elseif current == nil or stored == nil then
+			action = "bad-read"
+		elseif current ~= 0 then
+			action = "mag-ok"
+		elseif stored < 1 then
+			action = "no-reserve(0/0)"
+		elseif gunMod.reloadBusy then
+			action = "busy"
+		elseif now - gunMod.lastReloadAt < 1.35 then
+			action = "cooldown"
+		else
+			action = "WILL-RELOAD"
+		end
+		print(string.format(
+			"[VG:AutoReload] action=%s path=%s tool=%s gg=%s main=%s curClass=%s stoClass=%s curRaw=%q cur=%s stoRaw=%q sto=%s",
+			action,
+			tostring(dbg.path),
+			tool and tool.Name or "nil",
+			tostring(dbg.gg),
+			tostring(dbg.main),
+			tostring(dbg.curClass),
+			tostring(dbg.stoClass),
+			tostring(dbg.curRaw),
+			tostring(current),
+			tostring(dbg.stoRaw),
+			tostring(stored)
+		))
+	end
+
+	if gunMod.reloadBusy then
+		return
+	end
+	if now - gunMod.lastReloadAt < 1.35 then
+		return
+	end
+	if not tool then
+		return
+	end
+	if current == nil or stored == nil then
+		return
+	end
+	if current ~= 0 then
+		return
+	end
+	if stored < 1 then
+		return
+	end
 
 	gunMod.reloadBusy = true
 	gunMod.lastReloadAt = now
+	print("[VG:AutoReload] >>> pressing R  current=0 stored=" .. tostring(stored))
 	task.spawn(function()
-		pressReloadKey()
+		local ok = pressReloadKey()
+		print("[VG:AutoReload] R sent ok=" .. tostring(ok))
 		task.wait(0.4)
 		gunMod.reloadBusy = false
 	end)
 end
+
 
 local function applyNoRecoil(weapon, orig, on)
 	if on then
