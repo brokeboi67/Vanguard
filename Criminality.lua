@@ -3486,7 +3486,7 @@ function Criminality.StartMenuMusicEarly(S)
 	end
 end
 
--- ── CUSTOM HIT SOUNDS (CoreGUI HeadshotSound / HitmarkerSound) ───────────────
+-- ── CUSTOM HIT SOUNDS (CoreGUI + ReplicatedStorage HitSounds_Head) ───────────
 -- Packed into snd.* methods — no extra chunk locals (200-register limit).
 local snd = {
 	orig = {},
@@ -3495,6 +3495,7 @@ local snd = {
 		CS = "rbxassetid://5764885315",
 		UT = "rbxassetid://92457871987705",
 	},
+	HEAD_NAMES = { "Headshot1", "Headshot2", "Headshot3", "Headshot4" },
 }
 
 function snd.resolveHeadshotId(S)
@@ -3502,33 +3503,49 @@ function snd.resolveHeadshotId(S)
 	return snd.PRESETS[preset] or snd.PRESETS.UT
 end
 
+function snd.patchOne(s, key, id, on)
+	if not s or not s:IsA("Sound") then
+		return
+	end
+	if on then
+		if snd.orig[key] == nil then
+			snd.orig[key] = s.SoundId
+		end
+		if s.SoundId ~= id then
+			s.SoundId = id
+		end
+	elseif snd.orig[key] then
+		s.SoundId = snd.orig[key]
+	end
+end
+
 function snd.apply(on, S)
 	S = S or _G.__VG_S
+	local hsId = snd.resolveHeadshotId(S)
+
+	-- PlayerGui CoreGUI (HUD hitmarkers)
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local core = pg and (pg:FindFirstChild("CoreGUI") or pg:FindFirstChild("CoreGui"))
-	if not core then
-		return
+	if core then
+		snd.patchOne(core:FindFirstChild("HeadshotSound"), "core_HeadshotSound", hsId, on)
+		snd.patchOne(core:FindFirstChild("HitmarkerSound"), "core_HitmarkerSound", snd.HITMARKER, on)
 	end
-	local map = {
-		HeadshotSound = snd.resolveHeadshotId(S),
-		HitmarkerSound = snd.HITMARKER,
-	}
-	for name, id in pairs(map) do
-		local s = core:FindFirstChild(name)
-		if s and s:IsA("Sound") then
-			if on then
-				if snd.orig[name] == nil then
-					snd.orig[name] = s.SoundId
-				end
-				if s.SoundId ~= id then
-					s.SoundId = id
-				end
-			elseif snd.orig[name] then
-				s.SoundId = snd.orig[name]
-			end
+
+	-- Actual Crim headshot SFX: ReplicatedStorage.Storage.HitStuff.Main.HitSounds_Head
+	pcall(function()
+		local storage = RepSt:FindFirstChild("Storage")
+		local hitStuff = storage and storage:FindFirstChild("HitStuff")
+		local main = hitStuff and hitStuff:FindFirstChild("Main")
+		local folder = main and main:FindFirstChild("HitSounds_Head")
+		if not folder then
+			return
 		end
-	end
+		for _, name in ipairs(snd.HEAD_NAMES) do
+			snd.patchOne(folder:FindFirstChild(name), "rs_" .. name, hsId, on)
+		end
+	end)
+
 	if not on then
 		table.clear(snd.orig)
 	end
