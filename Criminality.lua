@@ -213,7 +213,7 @@ local function isReasonableCratePart(part)
 	return sz.X <= crateWatch.MAX_AXIS and sz.Y <= crateWatch.MAX_AXIS and sz.Z <= crateWatch.MAX_AXIS
 end
 
-local function getCrateVisualPart(model)
+local function getCrateVisualPart(model, allowDeep)
 	if not model then
 		return nil
 	end
@@ -252,8 +252,8 @@ local function getCrateVisualPart(model)
 			end
 		end
 	end
-	-- deep fallback â€” crates often stream nested MeshParts a frame late
-	if not best then
+	-- Deep GetDescendants only off hot path (syncCrateESP) — freezes tickESP otherwise
+	if not best and allowDeep then
 		for _, d in ipairs(model:GetDescendants()) do
 			if d:IsA("BasePart") and isReasonableCratePart(d) then
 				local vol = d.Size.X * d.Size.Y * d.Size.Z
@@ -570,7 +570,7 @@ local function getCrateRarityValue(model)
 end
 
 local function getCrateMeshPart(model)
-	return getCrateVisualPart(model)
+	return getCrateVisualPart(model, true)
 end
 
 local function isRareCrate(model)
@@ -665,7 +665,7 @@ local function addCrateESP(model, S, withSpawnFx)
 	end
 	local fill = rare and (S.CrimCrateRareColor or COLORS.crateRare) or (S.CrimCrateColor or COLORS.crateNorm)
 	local label = rare and "RARE CRATE" or "CRATE"
-	local part = getCrateVisualPart(model)
+	local part = getCrateVisualPart(model, true)
 	if not part then
 		return false
 	end
@@ -723,7 +723,7 @@ local function syncCrateESP(S)
 			end
 			-- Rebind visual part if it streamed in late / got replaced
 			if not alive(e.part) or not isReasonableCratePart(e.part) then
-				e.part = getCrateVisualPart(model)
+				e.part = getCrateVisualPart(model, true)
 				if alive(e.part) and alive(e.bg) then
 					e.bg.Adornee = e.part
 				end
@@ -2075,13 +2075,39 @@ local gunMod = {
 	lastApplyAt = 0,
 	lastDeepAt = 0,
 	lastScanAt = 0,
-	reapplyInterval = 8,
-	rescanInterval = 12,
-	deepCooldown = 4,
-	scanCooldown = 2.5,
+	reapplyInterval = 10,
+	rescanInterval = 45, -- rare: getgc is 50–150ms even off-thread
+	deepCooldown = 12,
+	scanCooldown = 4,
 	lastReloadAt = 0,
 	reloadBusy = false,
+	scanning = false,
 }
+
+-- Heavy work MUST leave the Heartbeat frame first. Some executors run
+-- task.defer inline — that put getgc inside Criminality.Main (max~110ms hitch).
+local heavy = { queue = {}, busy = false }
+
+local function runHeavy(fn)
+	if typeof(fn) ~= "function" then
+		return
+	end
+	table.insert(heavy.queue, fn)
+	if heavy.busy then
+		return
+	end
+	heavy.busy = true
+	task.spawn(function()
+		while #heavy.queue > 0 do
+			local job = table.remove(heavy.queue, 1)
+			task.wait() -- next frame — guaranteed off Heartbeat
+			pcall(job)
+			task.wait() -- breathe so consecutive getgc/ESP scans don't stack hitch
+		end
+		heavy.busy = false
+	end)
+end
+
 -- `orig` is keyed by live getgc() weapon tables. Firing/reloading makes some
 -- games re-create their weapon stat table, so getgc scans can pick up a
 -- steady trickle of *different* table identities over a play session. Regular
@@ -2426,14 +2452,36 @@ local function refreshGunMods(S, preferDeep, force)
 	if not gunModsWant(S) then
 		return
 	end
-	local now = tick()
-	local wantDeep = preferDeep == true and (force == true or (now - gunMod.lastDeepAt >= gunMod.deepCooldown))
-	cacheWeapons(wantDeep, force == true)
-	if wantDeep then
-		gunMod.lastDeepAt = now
+	if gunMod.scanning and not force then
+		return
 	end
-	applyGunMods(S)
-	gunMod.lastApplyAt = now
+	gunMod.scanning = true
+	local ok, err = pcall(function()
+		local now = tick()
+		local wantDeep = preferDeep == true and (force == true or (now - gunMod.lastDeepAt >= gunMod.deepCooldown))
+		cacheWeapons(wantDeep, force == true)
+		if wantDeep then
+			gunMod.lastDeepAt = now
+		end
+		applyGunMods(S)
+		gunMod.lastApplyAt = now
+	end)
+	gunMod.scanning = false
+	if not ok then
+		warn("[VG] refreshGunMods", err)
+	end
+end
+
+local function refreshGunModsAsync(S, preferDeep, force)
+	if not gunModsWant(S) or gunMod.scanning then
+		return
+	end
+	runHeavy(function()
+		local cur = S or _G.__VG_S
+		if gunModsWant(cur) then
+			refreshGunMods(cur, preferDeep, force)
+		end
+	end)
 end
 
 local function scheduleGunModRefresh(preferDeep, delaySec, force)
@@ -2447,23 +2495,28 @@ local function scheduleGunModRefresh(preferDeep, delaySec, force)
 		if not gunModsWant(S) then
 			return
 		end
-		refreshGunMods(S, preferDeep, force)
+		runHeavy(function()
+			if token ~= gunMod.scanToken then
+				return
+			end
+			refreshGunMods(S, preferDeep, force)
+		end)
 	end)
 end
 
 -- New Tool in EQ / equip: force rescan (cooldown bypass) + delayed follow-up
 -- because Criminality often builds the weapon stat table a moment after the Tool appears.
 local function onGunToolChanged()
-	scheduleGunModRefresh(true, 0.35, true)
+	scheduleGunModRefresh(true, 0.45, true)
 	gunMod.followToken = (gunMod.followToken or 0) + 1
 	local ft = gunMod.followToken
-	task.delay(1.25, function()
+	task.delay(1.4, function()
 		if ft ~= gunMod.followToken then
 			return
 		end
 		local S = _G.__VG_S
 		if gunModsWant(S) then
-			refreshGunMods(S, true, true)
+			refreshGunModsAsync(S, true, true)
 		end
 	end)
 end
@@ -2528,10 +2581,10 @@ local function startGunMods(S)
 	clearGunModCharConns()
 	gunMod.lastDeepAt = 0
 	gunMod.lastScanAt = 0
-	refreshGunMods(S, true, true)
+	-- NEVER getgc on the calling thread (often Heartbeat via syncGunMods)
+	refreshGunModsAsync(S, true, true)
 	local lp = getLP()
 	table.insert(gunMod.conns, lp.CharacterAdded:Connect(onGunModCharacter))
-	-- Backpack can respawn; keep a live watch on player children
 	table.insert(gunMod.conns, lp.ChildAdded:Connect(function(ch)
 		if ch:IsA("Backpack") then
 			watchBackpackForGuns(ch)
@@ -3436,21 +3489,17 @@ local function startMaster(S)
 		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
 			if now - gunMod.lastApplyAt >= gunMod.rescanInterval then
-				-- getgc is 50–150ms — never run it on Heartbeat (causes hitch).
 				gunMod.lastApplyAt = now
-				task.defer(function()
-					local cur = _G.__VG_S
-					if featureRunning.gunMods and gunModsWant(cur) then
-						refreshGunMods(cur, false, false)
-					end
-				end)
+				refreshGunModsAsync(S, false, false)
 			elseif now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
 				gunMod.lastApplyAt = now
 				applyGunMods(S)
 			end
 		end
-		if featureRunning.hitSounds and master.frame % 30 == 0 then
-			pcall(applyCrimHitSounds, true, S)
+		if featureRunning.hitSounds and master.frame % 90 == 0 then
+			runHeavy(function()
+				pcall(applyCrimHitSounds, true, _G.__VG_S)
+			end)
 		end
 		if S.CrimAutoReload and master.frame % 4 == 0 then
 			pcall(tickAutoReload, S)
@@ -3460,35 +3509,47 @@ local function startMaster(S)
 			pcall(tickDoors, S)
 		end
 		if S.CrimSafeESP then
-			if master.frame % 20 == 0 then
-				pcall(syncSafeESP, S)
+			if master.frame % 45 == 0 then
+				runHeavy(function()
+					pcall(syncSafeESP, _G.__VG_S)
+				end)
 			end
 		elseif #ESP.safes > 0 then
 			pcall(clearSafeESP)
 		end
 		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
-			pcall(buildDealerESP, S)
+			runHeavy(function()
+				pcall(buildDealerESP, _G.__VG_S)
+			end)
 		end
 
 		if S.CrimCrateESP then
-			if master.frame % 30 == 0 then
-				pcall(ensureCrateWatch, S)
+			if master.frame % 60 == 0 then
+				runHeavy(function()
+					pcall(ensureCrateWatch, _G.__VG_S)
+				end)
 			end
-			if master.frame % 8 == 0 or tick() - ESP.crateScanAt > 0.35 then
+			if master.frame % 20 == 0 then
 				ESP.crateScanAt = tick()
-				pcall(syncCrateESP, S)
+				runHeavy(function()
+					pcall(syncCrateESP, _G.__VG_S)
+				end)
 			end
 		elseif #ESP.crates > 0 then
 			pcall(clearCrateESP)
 		end
 
 		if S.CrimGunESP then
-			if master.frame % 30 == 0 then
-				pcall(ensureGunWatch, S)
+			if master.frame % 60 == 0 then
+				runHeavy(function()
+					pcall(ensureGunWatch, _G.__VG_S)
+				end)
 			end
-			if master.frame % 15 == 0 or tick() - ESP.gunScanAt > 0.6 then
+			if master.frame % 30 == 0 then
 				ESP.gunScanAt = tick()
-				pcall(syncGunESP, S)
+				runHeavy(function()
+					pcall(syncGunESP, _G.__VG_S)
+				end)
 			end
 		elseif #ESP.guns > 0 then
 			pcall(clearGunESP)
@@ -3502,8 +3563,11 @@ local function startMaster(S)
 					if workspace:FindFirstChild("Map") then break end
 					task.wait(0.5)
 				end
-				if S.CrimSafeESP   then pcall(syncSafeESP,   S) end
-				if S.CrimDealerESP then pcall(buildDealerESP,  S) end
+				runHeavy(function()
+					local cur = _G.__VG_S
+					if cur and cur.CrimSafeESP then pcall(syncSafeESP, cur) end
+					if cur and cur.CrimDealerESP then pcall(buildDealerESP, cur) end
+				end)
 			end)
 		end
 
@@ -3542,9 +3606,14 @@ local function startMaster(S)
 			if not S.CrimGunESP and #ESP.guns > 0 then
 				pcall(clearGunESP)
 			end
+		end
+		-- rare orphan cleanup (was every 2 frames — caused hitch spikes)
+		if master.frame % 120 == 0 then
+			local anyOn = S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
 			if not anyOn then
-				local gui = getGui()
-				if gui then
+				runHeavy(function()
+					local gui = getGui()
+					if not gui then return end
 					for _, ch in ipairs(gui:GetChildren()) do
 						if ch.Name == "VG_CrimESP" or ch.Name == "VG_CratePickupFx" then
 							ch:Destroy()
@@ -3552,7 +3621,7 @@ local function startMaster(S)
 							ch:Destroy()
 						end
 					end
-				end
+				end)
 			end
 		end
 	end))
@@ -3607,7 +3676,7 @@ function Criminality.Init(S)
 		if gunModsWant(S) then
 			pcall(function()
 				syncGunMods(S)
-				refreshGunMods(S, true)
+				refreshGunModsAsync(S, true, true)
 			end)
 		else
 			pcall(syncGunMods, S)
