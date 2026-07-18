@@ -3314,9 +3314,7 @@ local function stopFullBright()
 end
 
 -- ── MENU INTRO MUSIC SWAP (PlayerGui.Intro.music) ────────────────────────────
--- Must start ASAP on execute — Criminality menu music plays before our UI boots.
--- Packed as menuMus.* methods — no extra chunk locals (200-register limit).
--- Track is GLOBAL default: Config always forces Sciernisko (not per-profile).
+-- Only swaps SoundId — game itself still decides when to Play(). Portable via globals.json.
 local menuMus = {
 	started = false,
 	conns = {},
@@ -3349,14 +3347,10 @@ function menuMus.patch(s, id)
 	if not s or not s:IsA("Sound") then
 		return false
 	end
+	-- ID swap only — never Play(); Crim menu starts the sound itself.
 	return (pcall(function()
 		if s.SoundId ~= id then
 			s.SoundId = id
-		end
-		if not s.IsPlaying then
-			s:Play()
-		elseif s.TimePosition < 0.15 then
-			s.TimePosition = 0
 		end
 		if not menuMus.patched[s] then
 			menuMus.patched[s] = true
@@ -3391,12 +3385,14 @@ function menuMus.scan(S)
 	if not intro then
 		return
 	end
+	-- Prefer the real menu track object; fall back to any Sound named music
 	local music = intro:FindFirstChild("music") or intro:FindFirstChild("Music")
-	if music then
+	if music and music:IsA("Sound") then
 		menuMus.patch(music, id)
+		return
 	end
 	for _, d in ipairs(intro:GetDescendants()) do
-		if d:IsA("Sound") then
+		if d:IsA("Sound") and (d.Name == "music" or d.Name == "Music") then
 			menuMus.patch(d, id)
 		end
 	end
