@@ -652,6 +652,11 @@ function Config.EnforceRules(S)
 	if S.CrimHitSoundPreset == nil or (S.CrimHitSoundPreset ~= "UT" and S.CrimHitSoundPreset ~= "CS") then
 		S.CrimHitSoundPreset = "UT"
 	end
+	if typeof(S.CrimHitSoundCooldown) ~= "number" then
+		S.CrimHitSoundCooldown = 180
+	else
+		S.CrimHitSoundCooldown = math.clamp(S.CrimHitSoundCooldown, 0, 800)
+	end
 	if S.CrimCratePickupFx == nil then
 		S.CrimCratePickupFx = true
 	end

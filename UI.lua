@@ -2817,12 +2817,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeButton(CVIS, nil, 8, function()
+		MakeSlider(CVIS, "Headshot Cooldown", "CrimHitSoundCooldown", 0, 500, 8, {
+			suffix = "ms",
+			step = 10,
+		})
+		MakeButton(CVIS, nil, 9, function()
 			if S._crimListGameSounds then
 				S._crimListGameSounds()
 			end
 		end, "btn_crim_list_sounds")
-		MakeHint(CVIS, "hint_crim_hitsounds", 9)
+		MakeHint(CVIS, "hint_crim_hitsounds", 10)
 
 		local SoundHeader = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 18),
@@ -2833,7 +2837,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextColor3 = Color3.fromRGB(130, 130, 140),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
-			LayoutOrder = 10,
+			LayoutOrder = 11,
 			ZIndex = 5,
 			Parent = CVIS,
 		})
@@ -2842,7 +2846,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Size = UDim2.new(1, 0, 0, 320),
 			BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 			BorderSizePixel = 0,
-			LayoutOrder = 11,
+			LayoutOrder = 12,
 			ZIndex = 5,
 			Parent = CVIS,
 		})

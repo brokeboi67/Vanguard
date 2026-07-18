@@ -3484,8 +3484,12 @@ end
 
 -- ── CUSTOM HIT SOUNDS (CoreGUI + ReplicatedStorage HitSounds_Head) ───────────
 -- Packed into snd.* methods — no extra chunk locals (200-register limit).
+-- ── CUSTOM HIT SOUNDS (CoreGUI + ReplicatedStorage HitSounds_Head) ───────────
+-- Packed into snd.* methods — no extra chunk locals (200-register limit).
 local snd = {
 	orig = {},
+	gateConns = {}, -- [Sound] = RBXScriptConnection
+	lastHeadAt = 0,
 	HITMARKER = "rbxassetid://4868633804",
 	PRESETS = {
 		CS = "rbxassetid://5764885315",
@@ -3499,7 +3503,54 @@ function snd.resolveHeadshotId(S)
 	return snd.PRESETS[preset] or snd.PRESETS.UT
 end
 
-function snd.patchOne(s, key, id, on)
+function snd.cooldownSec(S)
+	S = S or _G.__VG_S
+	local ms = S and S.CrimHitSoundCooldown
+	if typeof(ms) ~= "number" then
+		ms = 180
+	end
+	return math.clamp(ms, 0, 800) / 1000
+end
+
+function snd.clearGates()
+	for _, c in pairs(snd.gateConns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	table.clear(snd.gateConns)
+	snd.lastHeadAt = 0
+end
+
+function snd.gateHeadshot(s)
+	if not s or not s:IsA("Sound") or snd.gateConns[s] then
+		return
+	end
+	-- Shared cooldown across all headshot sources (P90 spray spam)
+	snd.gateConns[s] = s:GetPropertyChangedSignal("Playing"):Connect(function()
+		if not s.Playing then
+			return
+		end
+		local cur = _G.__VG_S
+		if not cur or not cur.CrimHitSoundSwap then
+			return
+		end
+		local cd = snd.cooldownSec(cur)
+		if cd <= 0 then
+			return
+		end
+		local now = tick()
+		if now - snd.lastHeadAt < cd then
+			pcall(function()
+				s:Stop()
+			end)
+			return
+		end
+		snd.lastHeadAt = now
+	end)
+end
+
+function snd.patchOne(s, key, id, on, gate)
 	if not s or not s:IsA("Sound") then
 		return
 	end
@@ -3510,6 +3561,9 @@ function snd.patchOne(s, key, id, on)
 		if s.SoundId ~= id then
 			s.SoundId = id
 		end
+		if gate then
+			snd.gateHeadshot(s)
+		end
 	elseif snd.orig[key] then
 		s.SoundId = snd.orig[key]
 	end
@@ -3519,13 +3573,17 @@ function snd.apply(on, S)
 	S = S or _G.__VG_S
 	local hsId = snd.resolveHeadshotId(S)
 
+	if not on then
+		snd.clearGates()
+	end
+
 	-- PlayerGui CoreGUI (HUD hitmarkers)
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local core = pg and (pg:FindFirstChild("CoreGUI") or pg:FindFirstChild("CoreGui"))
 	if core then
-		snd.patchOne(core:FindFirstChild("HeadshotSound"), "core_HeadshotSound", hsId, on)
-		snd.patchOne(core:FindFirstChild("HitmarkerSound"), "core_HitmarkerSound", snd.HITMARKER, on)
+		snd.patchOne(core:FindFirstChild("HeadshotSound"), "core_HeadshotSound", hsId, on, true)
+		snd.patchOne(core:FindFirstChild("HitmarkerSound"), "core_HitmarkerSound", snd.HITMARKER, on, false)
 	end
 
 	-- Actual Crim headshot SFX: ReplicatedStorage.Storage.HitStuff.Main.HitSounds_Head
@@ -3538,7 +3596,7 @@ function snd.apply(on, S)
 			return
 		end
 		for _, name in ipairs(snd.HEAD_NAMES) do
-			snd.patchOne(folder:FindFirstChild(name), "rs_" .. name, hsId, on)
+			snd.patchOne(folder:FindFirstChild(name), "rs_" .. name, hsId, on, true)
 		end
 	end)
 
@@ -3548,7 +3606,7 @@ function snd.apply(on, S)
 		local guis = storage and storage:FindFirstChild("GUIs")
 		local mouseGui = guis and guis:FindFirstChild("MouseGUI")
 		local hs = mouseGui and mouseGui:FindFirstChild("HeadshotSound")
-		snd.patchOne(hs, "rs_MouseGUI_HeadshotSound", hsId, on)
+		snd.patchOne(hs, "rs_MouseGUI_HeadshotSound", hsId, on, true)
 	end)
 
 	if not on then
