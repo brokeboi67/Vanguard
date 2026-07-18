@@ -105,6 +105,7 @@ local STR = {
 		hint_crim_money = "SpawnedBread + CZDPZUS. Zbiera kasę w Money Pickup Distance. Bez autofarma.",
 		hint_crim_allowance = "CLMZALOW gdy Claim=true. Gdy allowance gotowe — podświetla najbliższy bankomat.",
 		hint_crim_fullbright = "Wymusza jasne oświetlenie i usuwa mgłę (tylko Criminality).",
+		hint_crim_menu_music = "Podmienia PlayerGui.Intro.music zaraz po execute (menu Crim). Domyślnie Cypis – Biały Węgorz. Roblox może wyciąć stare audio ID.",
 		hint_crim_norecoil = "Lokalne tabele broni (getgc): zeruje Recoil, kąty Angle*, CameraRecoil oraz pola Kick/Shake/WalkSpread — działa też w 3. osobie na kick klienta.",
 		hint_crim_autorespawn = "Po śmierci spamuje DeathRespawn co ~0.6s aż faktycznie zrespisz.",
 		hint_crim_nospread = "Osobno zeruje Spread (+ Hip/Aim/WalkSpread jeśli są w tabeli). Możesz włączyć bez No Recoil.",

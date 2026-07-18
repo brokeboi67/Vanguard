@@ -3313,6 +3313,184 @@ local function stopFullBright()
 	end
 end
 
+-- ── MENU INTRO MUSIC SWAP (PlayerGui.Intro.music) ────────────────────────────
+-- Must start ASAP on execute — Criminality menu music plays before our UI boots.
+-- Packed into one table to stay under Luau's 200-local limit.
+local menuMus = {
+	started = false,
+	conns = {},
+	patched = {}, -- [Sound] = true
+	-- Polish meme tracks (IDs from public boombox lists — may die if Roblox nukes audio)
+	PRESETS = {
+		Wegorz = "rbxassetid://5563485991", -- Cypis – Gdzie jest biały węgorz (meme king)
+		Plecak = "rbxassetid://1320048269", -- YOUNG MULTI – Plecak
+		Pogba = "rbxassetid://1807763649", -- YOUNG MULTI – Pogba
+		Gucci = "rbxassetid://3050890100", -- Deemz x Bedoes x Young Multi – Gucci Mane
+		Tamagotchi = "rbxassetid://1928340366", -- TACONAFIDE – Tamagotchi
+	},
+}
+
+local function resolveMenuMusicId(S)
+	S = S or _G.__VG_S
+	local key = (S and S.CrimMenuMusicTrack) or "Wegorz"
+	return menuMus.PRESETS[key] or menuMus.PRESETS.Wegorz
+end
+
+local function patchMenuSound(s, id)
+	if not s or not s:IsA("Sound") then
+		return false
+	end
+	local ok = pcall(function()
+		if s.SoundId ~= id then
+			s.SoundId = id
+		end
+		-- Menu track should actually play the meme
+		if not s.Playing and not s.IsPlaying then
+			s:Play()
+		elseif s.IsPlaying and s.TimePosition < 0.15 then
+			-- just swapped mid-start — keep playing from beginning of new track
+			s.TimePosition = 0
+		end
+		-- Re-assert if game writes original ID back
+		if not menuMus.patched[s] then
+			menuMus.patched[s] = true
+			table.insert(
+				menuMus.conns,
+				s:GetPropertyChangedSignal("SoundId"):Connect(function()
+					local cur = _G.__VG_S
+					if not cur or cur.CrimMenuMusic ~= true then
+						return
+					end
+					local want = resolveMenuMusicId(cur)
+					if s.SoundId ~= want then
+						s.SoundId = want
+					end
+				end)
+			)
+		end
+	end)
+	return ok
+end
+
+local function scanAndPatchIntro(S)
+	if not S or S.CrimMenuMusic ~= true then
+		return
+	end
+	local id = resolveMenuMusicId(S)
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChild("PlayerGui")
+	if not pg then
+		return
+	end
+	local intro = pg:FindFirstChild("Intro")
+	if not intro then
+		return
+	end
+	local music = intro:FindFirstChild("music") or intro:FindFirstChild("Music")
+	if music then
+		patchMenuSound(music, id)
+	end
+	for _, d in ipairs(intro:GetDescendants()) do
+		if d:IsA("Sound") then
+			patchMenuSound(d, id)
+		end
+	end
+end
+
+local function startIntroMusicSwap(S)
+	S = S or _G.__VG_S
+	if not S then
+		return
+	end
+	-- Always keep settings ref fresh for early Main.lua call
+	_G.__VG_S = S
+
+	-- Immediate attempt (menu may already be up)
+	pcall(scanAndPatchIntro, S)
+
+	if menuMus.started then
+		return
+	end
+	menuMus.started = true
+
+	local lp = getLP()
+	if not lp then
+		return
+	end
+
+	local function hookPlayerGui(pg)
+		if not pg then
+			return
+		end
+		-- Hot path: Intro / music appear
+		table.insert(
+			menuMus.conns,
+			pg.DescendantAdded:Connect(function(inst)
+				local cur = _G.__VG_S
+				if not cur or cur.CrimMenuMusic ~= true then
+					return
+				end
+				if inst:IsA("Sound") then
+					local p = inst.Parent
+					if p and (p.Name == "Intro" or (p.Parent and p.Parent.Name == "Intro") or inst.Name == "music" or inst.Name == "Music") then
+						patchMenuSound(inst, resolveMenuMusicId(cur))
+					end
+					-- Also: any Sound under Intro
+					local intro = pg:FindFirstChild("Intro")
+					if intro and inst:IsDescendantOf(intro) then
+						patchMenuSound(inst, resolveMenuMusicId(cur))
+					end
+				elseif inst.Name == "Intro" then
+					task.defer(function()
+						scanAndPatchIntro(cur)
+					end)
+				elseif (inst.Name == "music" or inst.Name == "Music") and inst:IsA("Sound") then
+					patchMenuSound(inst, resolveMenuMusicId(cur))
+				end
+			end)
+		)
+		-- Burst re-patch for a few seconds (game often sets SoundId a frame late)
+		task.spawn(function()
+			for _ = 1, 40 do
+				local cur = _G.__VG_S
+				if cur and cur.CrimMenuMusic == true then
+					scanAndPatchIntro(cur)
+				end
+				task.wait(0.05)
+			end
+		end)
+	end
+
+	local pg = lp:FindFirstChild("PlayerGui")
+	if pg then
+		hookPlayerGui(pg)
+	else
+		table.insert(
+			menuMus.conns,
+			lp.ChildAdded:Connect(function(ch)
+				if ch:IsA("PlayerGui") or ch.Name == "PlayerGui" then
+					hookPlayerGui(ch)
+				end
+			end)
+		)
+	end
+end
+
+function Criminality.StartMenuMusicEarly(S)
+	if not Criminality.IsCriminality() then
+		return
+	end
+	if S and S.CrimMenuMusic == nil then
+		S.CrimMenuMusic = true
+	end
+	if S and S.CrimMenuMusicTrack == nil then
+		S.CrimMenuMusicTrack = "Wegorz"
+	end
+	if S and S.CrimMenuMusic == true then
+		startIntroMusicSwap(S)
+	end
+end
+
 -- ── CUSTOM HIT SOUNDS (CoreGUI HeadshotSound / HitmarkerSound) ───────────────
 -- Packed into one table to stay under Luau's 200-local limit.
 local snd = {
@@ -3925,6 +4103,14 @@ end
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
+
+	-- Menu music as early as Init allows (also started from Main via StartMenuMusicEarly)
+	if S.CrimMenuMusic == true then
+		pcall(startIntroMusicSwap, S)
+	end
+	S._crimStartMenuMusic = function()
+		pcall(startIntroMusicSwap, S)
+	end
 
 	S._crimSyncGunESP = function()
 		if crimFlag(S.CrimGunESP) then

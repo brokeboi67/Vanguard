@@ -722,6 +722,10 @@ local GameSupport = Get("GameSupport.lua")
 local Criminality = nil
 if isCriminality then
 	Criminality = Get("Criminality.lua")
+	-- Swap Intro.music ASAP (before UI boot) — menu BGM is already playing
+	if Criminality and Criminality.StartMenuMusicEarly then
+		pcall(Criminality.StartMenuMusicEarly, Settings)
+	end
 end
 
 _G.__VG_LOADING = false

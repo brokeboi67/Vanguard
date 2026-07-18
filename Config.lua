@@ -564,6 +564,21 @@ function Config.EnforceRules(S)
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
+	if S.CrimMenuMusic == nil then
+		S.CrimMenuMusic = true
+	end
+	do
+		local okTrack = {
+			Wegorz = true,
+			Plecak = true,
+			Pogba = true,
+			Gucci = true,
+			Tamagotchi = true,
+		}
+		if S.CrimMenuMusicTrack == nil or not okTrack[S.CrimMenuMusicTrack] then
+			S.CrimMenuMusicTrack = "Wegorz"
+		end
+	end
 	if S.CrimHitSoundSwap == nil then
 		S.CrimHitSoundSwap = false
 	end
