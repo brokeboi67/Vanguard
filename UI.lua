@@ -2842,11 +2842,40 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = CVIS,
 		})
 
+		local SoundSearch = C("TextBox", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+			BorderSizePixel = 0,
+			Text = "",
+			PlaceholderText = "Search sound name, ID or path…",
+			ClearTextOnFocus = false,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 220, 230),
+			PlaceholderColor3 = Color3.fromRGB(100, 100, 112),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 12,
+			ZIndex = 6,
+			Parent = CVIS,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = SoundSearch })
+		C("UIStroke", {
+			Color = Color3.fromRGB(38, 38, 48),
+			Thickness = 1,
+			Transparency = 0.35,
+			Parent = SoundSearch,
+		})
+		C("UIPadding", {
+			PaddingLeft = UDim.new(0, 10),
+			PaddingRight = UDim.new(0, 10),
+			Parent = SoundSearch,
+		})
+
 		local SoundBox = C("Frame", {
 			Size = UDim2.new(1, 0, 0, 320),
 			BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 			BorderSizePixel = 0,
-			LayoutOrder = 12,
+			LayoutOrder = 13,
 			ZIndex = 5,
 			Parent = CVIS,
 		})
@@ -2917,6 +2946,30 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end)
 		end
 
+		local soundTotal = 0
+		local soundUnique = 0
+		local function applySoundSearch()
+			local query = string.lower(SoundSearch.Text or "")
+			local shown = 0
+			for _, ch in ipairs(SoundList:GetChildren()) do
+				if ch:IsA("Frame") and ch.Name == "SoundCard" then
+					local haystack = ch:GetAttribute("SearchText") or ""
+					local visible = query == "" or string.find(haystack, query, 1, true) ~= nil
+					ch.Visible = visible
+					if visible then
+						shown += 1
+					end
+				end
+			end
+			SoundHeader.Text = string.format(
+				"%d Sound · %d/%d shown  |  click = copy · ▶ = play",
+				soundTotal,
+				shown,
+				soundUnique
+			)
+		end
+		SoundSearch:GetPropertyChangedSignal("Text"):Connect(applySoundSearch)
+
 		_G.__VG_FillSoundList = function(rows, totalN)
 			stopPreview()
 			for _, ch in ipairs(SoundList:GetChildren()) do
@@ -2925,11 +2978,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end
 			local uniq = type(rows) == "table" and #rows or 0
-			SoundHeader.Text = string.format(
-				"%d Sound · %d unique  |  click row = copy ID  ·  ▶ = play",
-				tonumber(totalN) or 0,
-				uniq
-			)
+			soundTotal = tonumber(totalN) or 0
+			soundUnique = uniq
+			applySoundSearch()
 
 			if uniq == 0 then
 				local empty = C("TextLabel", {
@@ -2953,6 +3004,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					local playingTag = (row.playing or 0) > 0 and " ●PLAYING" or ""
 
 					local card = C("Frame", {
+						Name = "SoundCard",
 						Size = UDim2.new(1, 0, 0, 52),
 						BackgroundColor3 = Color3.fromRGB(20, 20, 26),
 						BorderSizePixel = 0,
@@ -2960,6 +3012,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 						ZIndex = 7,
 						Parent = SoundList,
 					})
+					card:SetAttribute(
+						"SearchText",
+						string.lower(table.concat({
+							tostring(row.names or ""),
+							idShow,
+							tostring(row.sample or ""),
+						}, " "))
+					)
+					local query = string.lower(SoundSearch.Text or "")
+					card.Visible = query == ""
+						or string.find(card:GetAttribute("SearchText"), query, 1, true) ~= nil
 					C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = card })
 
 					local hit = C("TextButton", {
@@ -3036,9 +3099,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					end)
 
 					if i % 40 == 0 then
+						applySoundSearch()
 						task.wait()
 					end
 				end
+				applySoundSearch()
 			end)
 		end
 
