@@ -2075,13 +2075,15 @@ local gunMod = {
 	lastApplyAt = 0,
 	lastDeepAt = 0,
 	lastScanAt = 0,
-	reapplyInterval = 10,
-	rescanInterval = 45, -- rare: getgc is 50–150ms even off-thread
-	deepCooldown = 12,
-	scanCooldown = 4,
+	reapplyInterval = 15,
+	rescanInterval = 90, -- rare: getgc is 50–250ms even off-thread
+	deepCooldown = 18,
+	scanCooldown = 6,
 	lastReloadAt = 0,
 	reloadBusy = false,
 	scanning = false,
+	toolChangeAt = 0,
+	lastApplyOnlyAt = 0,
 }
 
 -- Heavy work MUST leave the Heartbeat frame first. Some executors run
@@ -2635,19 +2637,25 @@ local function scheduleGunModRefresh(preferDeep, delaySec, force)
 	end)
 end
 
--- New Tool in EQ / equip: force rescan (cooldown bypass) + delayed follow-up
--- because Criminality often builds the weapon stat table a moment after the Tool appears.
+-- New Tool in EQ / equip: debounced rescan (spray/reload used to force deep getgc every shot → freezes).
 local function onGunToolChanged()
-	scheduleGunModRefresh(true, 0.45, true)
+	local now = tick()
+	-- Soft path: re-apply cached tables only (no getgc) while spraying
+	if now - (gunMod.toolChangeAt or 0) < 2.8 then
+		scheduleGunModRefresh(false, 0.9, false)
+		return
+	end
+	gunMod.toolChangeAt = now
+	scheduleGunModRefresh(true, 0.55, true)
 	gunMod.followToken = (gunMod.followToken or 0) + 1
 	local ft = gunMod.followToken
-	task.delay(1.4, function()
+	task.delay(2.0, function()
 		if ft ~= gunMod.followToken then
 			return
 		end
 		local S = _G.__VG_S
 		if gunModsWant(S) then
-			refreshGunModsAsync(S, true, true)
+			refreshGunModsAsync(S, false, false)
 		end
 	end)
 end
@@ -2752,7 +2760,9 @@ local function syncGunMods(S)
 			local combo = gunModCombo(S)
 			if combo ~= gunMod.lastCombo then
 				gunMod.lastCombo = combo
-				pcall(function() applyGunMods(S) end)
+				runHeavy(function()
+					applyGunMods(_G.__VG_S or S)
+				end)
 			end
 		end
 		return
@@ -2772,12 +2782,7 @@ local function stopNoRecoil()
 	stopGunMods()
 end
 
--- legacy names for stopMaster
-local function stopNoRecoil()
-	stopGunMods()
-end
-
--- â”€â”€ STAFF DETECTOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+-- ── STAFF DETECTOR ───────────────────────────────────────────────────────────
 -- Packed into one table to stay under Luau's 200-local limit.
 local staff = { conn = nil }
 
@@ -3973,16 +3978,15 @@ local function startMaster(S)
 	master.conn = RS.Heartbeat:Connect(perfWrap("Criminality.Main", function()
 		master.frame = master.frame + 1
 
-		-- Toggle-sync is cheap but not latency-sensitive: run every 6 frames (~0.1s)
-		-- to cut per-frame function-call overhead and reduce Criminality tab CPU cost.
-		if master.frame % 6 == 0 then
+		-- Toggle-sync is cheap but not latency-sensitive: run every 12 frames (~0.2s)
+		if master.frame % 12 == 0 then
 			syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 			syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 			syncGunMods(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
-	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
+			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
 			pcall(syncRemoteElevator, S)
 		end
@@ -3991,34 +3995,39 @@ local function startMaster(S)
 			setupCrimStaminaHook()
 		end
 		crimStamina.active = crimFlag(S.CrimInfStamina)
-		if crimStamina.active and master.frame % 8 == 0 then
+		if crimStamina.active and master.frame % 15 == 0 then
 			refillCrimStamina()
 		end
 
+		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
 		if featureRunning.gunMods and gunModsWant(S) then
 			local now = tick()
-			if now - gunMod.lastApplyAt >= gunMod.rescanInterval then
-				gunMod.lastApplyAt = now
+			if now - (gunMod.lastScanAt or 0) >= gunMod.rescanInterval then
 				refreshGunModsAsync(S, false, false)
-			elseif now - gunMod.lastApplyAt >= gunMod.reapplyInterval then
-				gunMod.lastApplyAt = now
-				applyGunMods(S)
+			elseif now - (gunMod.lastApplyOnlyAt or 0) >= gunMod.reapplyInterval then
+				gunMod.lastApplyOnlyAt = now
+				runHeavy(function()
+					local cur = _G.__VG_S
+					if gunModsWant(cur) then
+						applyGunMods(cur)
+					end
+				end)
 			end
 		end
-		if featureRunning.hitSounds and master.frame % 90 == 0 then
+		if featureRunning.hitSounds and master.frame % 180 == 0 then
 			runHeavy(function()
 				pcall(snd.apply, true, _G.__VG_S)
 			end)
 		end
-		if S.CrimAutoReload and master.frame % 4 == 0 then
+		if S.CrimAutoReload and master.frame % 6 == 0 then
 			pcall(tickAutoReload, S)
 		end
 
-		if S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors then
+		if (S.CrimAutoOpenDoors or S.CrimAutoUnlockDoors) and master.frame % 4 == 0 then
 			pcall(tickDoors, S)
 		end
 		if S.CrimSafeESP then
-			if master.frame % 45 == 0 then
+			if master.frame % 75 == 5 then
 				runHeavy(function()
 					pcall(syncSafeESP, _G.__VG_S)
 				end)
@@ -4027,18 +4036,20 @@ local function startMaster(S)
 			pcall(clearSafeESP)
 		end
 		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
-			runHeavy(function()
-				pcall(buildDealerESP, _G.__VG_S)
-			end)
+			if master.frame % 90 == 0 then
+				runHeavy(function()
+					pcall(buildDealerESP, _G.__VG_S)
+				end)
+			end
 		end
 
 		if S.CrimCrateESP then
-			if master.frame % 60 == 0 then
+			if master.frame % 90 == 10 then
 				runHeavy(function()
 					pcall(ensureCrateWatch, _G.__VG_S)
 				end)
 			end
-			if master.frame % 20 == 0 then
+			if master.frame % 45 == 20 then
 				ESP.crateScanAt = tick()
 				runHeavy(function()
 					pcall(syncCrateESP, _G.__VG_S)
@@ -4049,12 +4060,12 @@ local function startMaster(S)
 		end
 
 		if S.CrimGunESP then
-			if master.frame % 60 == 0 then
+			if master.frame % 90 == 30 then
 				runHeavy(function()
 					pcall(ensureGunWatch, _G.__VG_S)
 				end)
 			end
-			if master.frame % 30 == 0 then
+			if master.frame % 50 == 35 then
 				ESP.gunScanAt = tick()
 				runHeavy(function()
 					pcall(syncGunESP, _G.__VG_S)
@@ -4084,26 +4095,27 @@ local function startMaster(S)
 			tickMelee(S)
 		end
 
-		if S.CrimCratePickup and master.frame % 3 == 0 then
+		if S.CrimCratePickup and master.frame % 5 == 0 then
 			pcall(tickCratePickup, S)
 		end
-		if S.CrimMoneyPickup and master.frame % 3 == 0 then
+		if S.CrimMoneyPickup and master.frame % 5 == 1 then
 			pcall(tickMoneyPickup, S)
 		end
 
-		if S.CrimAllowanceClaim and master.frame % 3 == 0 then
+		if S.CrimAllowanceClaim and master.frame % 8 == 2 then
 			pcall(syncAllowanceAtmESP, S)
 		end
 
-		if S.CrimAllowanceClaim and master.frame % 15 == 0 then
+		if S.CrimAllowanceClaim and master.frame % 20 == 0 then
 			pcall(tickAllowanceClaim, S)
 		end
 
-		if S.CrimFastPickup and master.frame % 4 == 0 then
+		if S.CrimFastPickup and master.frame % 6 == 3 then
 			pcall(tickFastPickup, S)
 		end
 
-		if master.frame % 2 == 0 then
+		-- ESP distance fade: every 4 frames (was 2) — big win with Safe+Gun+Crate on
+		if master.frame % 4 == 0 then
 			local anyOn = S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
 			local hasCached = #ESP.safes > 0 or #ESP.dealers > 0 or #ESP.crates > 0 or #ESP.guns > 0
 			if anyOn or hasCached then
@@ -4116,8 +4128,8 @@ local function startMaster(S)
 				pcall(clearGunESP)
 			end
 		end
-		-- rare orphan cleanup (was every 2 frames — caused hitch spikes)
-		if master.frame % 120 == 0 then
+		-- rare orphan cleanup
+		if master.frame % 180 == 0 then
 			local anyOn = S.CrimSafeESP or S.CrimDealerESP or S.CrimCrateESP or S.CrimGunESP
 			if not anyOn then
 				runHeavy(function()
