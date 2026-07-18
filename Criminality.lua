@@ -3321,21 +3321,23 @@ local menuMus = {
 	started = false,
 	conns = {},
 	patched = {},
-	DEFAULT = "Wegorz",
+	DEFAULT = "Polka",
 	PRESETS = {
-		Wegorz = "rbxassetid://5563485991",
-		Plecak = "rbxassetid://1320048269",
-		Pogba = "rbxassetid://1807763649",
-		Gucci = "rbxassetid://3050890100",
-		Tamagotchi = "rbxassetid://1928340366",
-		Pato = "rbxassetid://4688680407",
-		Cyka = "rbxassetid://2879686441",
-		Dzien6 = "rbxassetid://746254038",
-		Jolka = "rbxassetid://3993530706",
-		Skrrrt = "rbxassetid://2297002699",
-		Ruda = "rbxassetid://1361172431",
-		Sciernisko = "rbxassetid://1369849205",
-		Floyd = "rbxassetid://4504202068",
+		-- Only IsPublicDomain=true assets (checked 2026-07-18). Old Cypis/Multi/etc. IDs are all 403.
+		Polka = "rbxassetid://1845005853", -- Polish Accordion Polka
+		Panpipe = "rbxassetid://129323914286343", -- Panpipe Polka
+		Crab = "rbxassetid://75093051757850", -- Crab Rave Party
+		Disco = "rbxassetid://139838794512700", -- Nu Disco Groove
+		Tung = "rbxassetid://125329517369659", -- Tung Tung Tung Sahur
+		Brainrot = "rbxassetid://133664122932845", -- Brainrot Skibidi Sigma
+		FunnyDance = "rbxassetid://138915681911522", -- Funny Dance
+		Tom = "rbxassetid://139694892021582", -- Tom scream MEME
+		Cat = "rbxassetid://133312610824902", -- Cat laughing meme
+		Bell = "rbxassetid://139726388352120", -- old church bell meme
+		Boom = "rbxassetid://139771888058836", -- Meme Explosion
+		Happy = "rbxassetid://1841476350", -- Happy-Go-Lively
+		Workout = "rbxassetid://1837324500", -- Sunrise Workout
+		Chill = "rbxassetid://9044426200", -- Great Days Out
 	},
 }
 
