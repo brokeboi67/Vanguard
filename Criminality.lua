@@ -3542,6 +3542,15 @@ function snd.apply(on, S)
 		end
 	end)
 
+	-- MouseGUI headshot tick: ReplicatedStorage.Storage.GUIs.MouseGUI.HeadshotSound
+	pcall(function()
+		local storage = RepSt:FindFirstChild("Storage")
+		local guis = storage and storage:FindFirstChild("GUIs")
+		local mouseGui = guis and guis:FindFirstChild("MouseGUI")
+		local hs = mouseGui and mouseGui:FindFirstChild("HeadshotSound")
+		snd.patchOne(hs, "rs_MouseGUI_HeadshotSound", hsId, on)
+	end)
+
 	if not on then
 		table.clear(snd.orig)
 	end

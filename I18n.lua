@@ -148,7 +148,7 @@ local STR = {
 		crim_tab_bounty = "Bounty",
 		crim_sub_bounty = "Śledzenie bounty",
 		hint_crim_bounty = "Czyta CoreGUI.NotificationFrame → Template_Button (NotificationTitle/Text): Bounty Alert dodaje, Bounty Claimed usuwa.",
-		hint_crim_hitsounds = "Podmienia CoreGUI + ReplicatedStorage HitSounds_Head (Headshot1–4). List = skan Sound → lista w menu (klik = copy ID, ▶ = play).",
+		hint_crim_hitsounds = "Podmienia CoreGUI + HitSounds_Head (1–4) + MouseGUI.HeadshotSound. List = skan Sound → lista w menu (klik = copy ID, ▶ = play).",
 		btn_crim_list_sounds = "Scan / Refresh Sound List",
 		hint_crim_bounty_protect = "Co ~4 s odświeża combat tag — bounty przestaje drenować kiedy jesteś poza walką. Próbuje ustawić atrybuty CombatTag i wykonuje cios melee (bez broni = pięść w powietrze).",
 		hint_crim_fastpickup = "PIC_TLO + Q — broń/melee (WeaponHandle) i hełm/kamza (OriginPart). Zasięg jak gra E.",
