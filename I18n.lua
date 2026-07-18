@@ -365,6 +365,7 @@ local STR = {
 		hint_crim_money = "SpawnedBread + CZDPZUS. Picks up cash in Money Pickup Distance. No autofarm.",
 		hint_crim_allowance = "CLMZALOW when Claim=true. Highlights nearest ATM while allowance is ready.",
 		hint_crim_fullbright = "Forces bright lighting and removes fog (Criminality only).",
+		hint_crim_menu_music = "Replaces PlayerGui.Intro.music ASAP on execute (Crim menu). Default: Cypis – Biały Węgorz. Old Roblox audio IDs may be dead.",
 		hint_crim_norecoil = "Local weapon tables (getgc): zeros Recoil, Angle*, CameraRecoil and Kick/Shake/WalkSpread fields — also helps 3rd-person client kick.",
 		hint_crim_autorespawn = "On death, spams DeathRespawn every ~0.6s until you actually respawn.",
 		hint_crim_nospread = "Separately zeros Spread (+ Hip/Aim/WalkSpread when present). Can be enabled without No Recoil.",
