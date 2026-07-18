@@ -103,6 +103,165 @@ local function stopNoSpike()
 	end
 end
 
+-- ── NO RAGDOLL (client: cancel PlatformStand / Ragdoll / Physics + restore joints) ──
+misc.noRagdoll = { conns = {}, charConns = {} }
+
+function misc.clearNoRagdollChar()
+	for _, c in ipairs(misc.noRagdoll.charConns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.noRagdoll.charConns = {}
+end
+
+function misc.unragdollChar(char)
+	if not char then
+		return
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then
+		return
+	end
+	pcall(function()
+		hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+		if hum.PlatformStand then
+			hum.PlatformStand = false
+		end
+		local st = hum:GetState()
+		if st == Enum.HumanoidStateType.Ragdoll
+			or st == Enum.HumanoidStateType.Physics
+			or st == Enum.HumanoidStateType.FallingDown
+			or st == Enum.HumanoidStateType.PlatformStanding then
+			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
+	end)
+	for _, d in ipairs(char:GetDescendants()) do
+		if d:IsA("BallSocketConstraint") then
+			pcall(function()
+				d:Destroy()
+			end)
+		elseif d:IsA("Motor6D") and not d.Enabled then
+			pcall(function()
+				d.Enabled = true
+			end)
+		end
+	end
+end
+
+function misc.hookNoRagdollChar(char)
+	misc.clearNoRagdollChar()
+	if not char then
+		return
+	end
+	misc.unragdollChar(char)
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		local w
+		w = char.ChildAdded:Connect(function(ch)
+			if ch:IsA("Humanoid") then
+				pcall(function()
+					w:Disconnect()
+				end)
+				misc.hookNoRagdollChar(char)
+			end
+		end)
+		table.insert(misc.noRagdoll.charConns, w)
+		return
+	end
+	pcall(function()
+		hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	end)
+	table.insert(
+		misc.noRagdoll.charConns,
+		hum.StateChanged:Connect(function(_, new)
+			if not (_G.__VG_S and _G.__VG_S.CrimNoRagdoll) then
+				return
+			end
+			if new == Enum.HumanoidStateType.Ragdoll
+				or new == Enum.HumanoidStateType.Physics
+				or new == Enum.HumanoidStateType.FallingDown
+				or new == Enum.HumanoidStateType.PlatformStanding then
+				task.defer(function()
+					misc.unragdollChar(char)
+				end)
+			end
+		end)
+	)
+	table.insert(
+		misc.noRagdoll.charConns,
+		hum:GetPropertyChangedSignal("PlatformStand"):Connect(function()
+			if _G.__VG_S and _G.__VG_S.CrimNoRagdoll and hum.PlatformStand then
+				hum.PlatformStand = false
+				task.defer(function()
+					misc.unragdollChar(char)
+				end)
+			end
+		end)
+	)
+	table.insert(
+		misc.noRagdoll.charConns,
+		char.DescendantAdded:Connect(function(d)
+			if not (_G.__VG_S and _G.__VG_S.CrimNoRagdoll) then
+				return
+			end
+			if d:IsA("BallSocketConstraint") then
+				task.defer(function()
+					pcall(function()
+						d:Destroy()
+					end)
+				end)
+			end
+		end)
+	)
+end
+
+local function startNoRagdoll()
+	for _, c in ipairs(misc.noRagdoll.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.noRagdoll.conns = {}
+	misc.clearNoRagdollChar()
+	local lp = getLP()
+	if not lp then
+		return
+	end
+	if lp.Character then
+		misc.hookNoRagdollChar(lp.Character)
+	end
+	table.insert(
+		misc.noRagdoll.conns,
+		lp.CharacterAdded:Connect(function(char)
+			task.defer(function()
+				if _G.__VG_S and _G.__VG_S.CrimNoRagdoll then
+					misc.hookNoRagdollChar(char)
+				end
+			end)
+		end)
+	)
+end
+
+local function stopNoRagdoll()
+	for _, c in ipairs(misc.noRagdoll.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.noRagdoll.conns = {}
+	misc.clearNoRagdollChar()
+	local hum = getHum()
+	if hum then
+		pcall(function()
+			hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+		end)
+	end
+end
+
 
 -- â”€â”€ MELEE AURA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
@@ -2059,6 +2218,7 @@ end
 local featureRunning = {
 	noFall = false,
 	noSpike = false,
+	noRagdoll = false,
 	gunMods = false,
 	staffDetect = false,
 	noFailLockpick = false,
@@ -3953,6 +4113,7 @@ local function syncFromConfig(S)
 	crimStamina.active = crimFlag(S.CrimInfStamina)
 	syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 	syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
+	syncFeatureToggle("noRagdoll", "CrimNoRagdoll", startNoRagdoll, stopNoRagdoll, S)
 	syncGunMods(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
@@ -3995,6 +4156,7 @@ local function startMaster(S)
 		if master.frame % 12 == 0 then
 			syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 			syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
+			syncFeatureToggle("noRagdoll", "CrimNoRagdoll", startNoRagdoll, stopNoRagdoll, S)
 			syncGunMods(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
@@ -4010,6 +4172,12 @@ local function startMaster(S)
 		crimStamina.active = crimFlag(S.CrimInfStamina)
 		if crimStamina.active and master.frame % 15 == 0 then
 			refillCrimStamina()
+		end
+		if featureRunning.noRagdoll and master.frame % 6 == 0 then
+			local char = getChar()
+			if char then
+				misc.unragdollChar(char)
+			end
 		end
 
 		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
@@ -4170,6 +4338,7 @@ local function stopMaster()
 	if gunWatch.removeConn then gunWatch.removeConn:Disconnect(); gunWatch.removeConn=nil end
 	if gunWatch.folderWatch then gunWatch.folderWatch:Disconnect(); gunWatch.folderWatch=nil end
 	pcall(stopNoRecoil)
+	pcall(stopNoRagdoll)
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)

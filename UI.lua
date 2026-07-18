@@ -2483,10 +2483,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
-		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 3, { flat = true })
-		MakeHint(CSurv, "hint_crim_stamina", 4)
-		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 5, { flat = true })
-		MakeHint(CSurv, "hint_crim_autorespawn", 6)
+		MakeTog(CSurv, "No Ragdoll", "CrimNoRagdoll", 3, { flat = true })
+		MakeHint(CSurv, "hint_crim_noragdoll", 4)
+		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 5, { flat = true })
+		MakeHint(CSurv, "hint_crim_stamina", 6)
+		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 7, { flat = true })
+		MakeHint(CSurv, "hint_crim_autorespawn", 8)
 
 		MakeSection(CCrate, L("crim_sub_pickup_crates"), 1)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 2, {

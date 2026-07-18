@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.62",
+	Version = "2.52.63",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -201,6 +201,7 @@ local Settings = {
 	-- CRIMINALITY (only active when game.GameId == 1494262959)
 	CrimNoFall = false,
 	CrimNoSpike = false,
+	CrimNoRagdoll = false,
 	CrimMeleeAura = false,
 	CrimMeleeRange = 5,
 	CrimSafeESP = false,
