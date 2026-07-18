@@ -3164,29 +3164,62 @@ _G.__VG_ReapplyHitSounds = function()
 end
 
 -- ── AUTO RESPAWN ─────────────────────────────────────────────────────────────
--- On death, InvokeServer DeathRespawn (Cobalt dump).
+-- On death, keep InvokeServer DeathRespawn on an interval until we actually respawn.
 local autoRespawn = {
 	conns = {},
 	charConns = {},
 	lastAt = 0,
+	loopToken = 0,
 	KEY = "KMG4R904",
+	INTERVAL = 0.6,
 }
 
-local function invokeDeathRespawn()
-	local S = _G.__VG_S
-	if not S or not S.CrimAutoRespawn then
-		return
-	end
-	local now = tick()
-	if now - autoRespawn.lastAt < 1.25 then
-		return
-	end
-	autoRespawn.lastAt = now
+local function isAliveNow()
+	local lp = getLP()
+	local char = lp and lp.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	return hum ~= nil and hum.Health > 0 and hum:IsDescendantOf(workspace)
+end
+
+local function invokeDeathRespawnOnce()
 	pcall(function()
 		local events = game:GetService("ReplicatedStorage"):FindFirstChild("Events")
 		local rem = events and events:FindFirstChild("DeathRespawn")
 		if rem then
 			rem:InvokeServer(autoRespawn.KEY, nil)
+		end
+	end)
+end
+
+local function stopAutoRespawnLoop()
+	autoRespawn.loopToken += 1
+end
+
+local function startAutoRespawnLoop()
+	local S = _G.__VG_S
+	if not S or not S.CrimAutoRespawn then
+		return
+	end
+	autoRespawn.loopToken += 1
+	local token = autoRespawn.loopToken
+	task.spawn(function()
+		-- First attempt immediately, then every INTERVAL until alive
+		invokeDeathRespawnOnce()
+		autoRespawn.lastAt = tick()
+		while token == autoRespawn.loopToken do
+			task.wait(autoRespawn.INTERVAL)
+			if token ~= autoRespawn.loopToken then
+				break
+			end
+			local cur = _G.__VG_S
+			if not cur or not cur.CrimAutoRespawn then
+				break
+			end
+			if isAliveNow() then
+				break
+			end
+			autoRespawn.lastAt = tick()
+			invokeDeathRespawnOnce()
 		end
 	end)
 end
@@ -3205,6 +3238,10 @@ local function hookAutoRespawnChar(char)
 	if not char then
 		return
 	end
+	-- Fresh character = respawned → stop retry loop
+	if isAliveNow() then
+		stopAutoRespawnLoop()
+	end
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then
 		local w
@@ -3219,20 +3256,24 @@ local function hookAutoRespawnChar(char)
 		table.insert(autoRespawn.charConns, w)
 		return
 	end
-	table.insert(
-		autoRespawn.charConns,
-		hum.Died:Connect(function()
-			task.defer(invokeDeathRespawn)
-		end)
-	)
+	local function onDead()
+		startAutoRespawnLoop()
+	end
+	table.insert(autoRespawn.charConns, hum.Died:Connect(onDead))
 	table.insert(
 		autoRespawn.charConns,
 		hum.HealthChanged:Connect(function(hp)
 			if hp <= 0 then
-				task.defer(invokeDeathRespawn)
+				onDead()
+			elseif hp > 0 then
+				stopAutoRespawnLoop()
 			end
 		end)
 	)
+	-- Already dead when hooked (death screen)
+	if hum.Health <= 0 then
+		onDead()
+	end
 end
 
 local function startAutoRespawn()
@@ -3243,6 +3284,7 @@ local function startAutoRespawn()
 	end
 	autoRespawn.conns = {}
 	clearAutoRespawnCharConns()
+	stopAutoRespawnLoop()
 	local lp = getLP()
 	if not lp then
 		return
@@ -3263,6 +3305,7 @@ local function startAutoRespawn()
 end
 
 local function stopAutoRespawn()
+	stopAutoRespawnLoop()
 	for _, c in ipairs(autoRespawn.conns) do
 		pcall(function()
 			c:Disconnect()
