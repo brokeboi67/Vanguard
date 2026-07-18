@@ -408,7 +408,7 @@ local STR = {
 		crim_tab_bounty = "Bounty",
 		crim_sub_bounty = "Bounty tracker",
 		hint_crim_bounty = "Reads CoreGUI.NotificationFrame → Template_Button (NotificationTitle/Text): Bounty Alert adds, Bounty Claimed removes.",
-		hint_crim_hitsounds = "Replaces CoreGUI + ReplicatedStorage HitSounds_Head (Headshot1–4). List = scan Sounds → in-menu list (click = copy ID, ▶ = play).",
+		hint_crim_hitsounds = "Replaces CoreGUI + HitSounds_Head (1–4) + MouseGUI.HeadshotSound. List = scan Sounds → in-menu list (click = copy ID, ▶ = play).",
 		btn_crim_list_sounds = "Scan / Refresh Sound List",
 		hint_crim_fastpickup = "PIC_TLO + Q — guns/melee (WeaponHandle) and helmet/vest (OriginPart). Range similar to game E.",
 		hint_vtarget = "Type username or display name — pick from suggestions. Target clears on death or leave.",
