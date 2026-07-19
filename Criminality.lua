@@ -327,7 +327,7 @@ end
 -- Safes/dealers: one build pass. Crates: dynamic (SpawnedPiles).
 -- Per-frame: only reads cached .part.Position and sets .Enabled.
 
-local ESP = { safes={}, dealers={}, crates={}, guns={}, safeByModel={}, crateScanAt=0, gunScanAt=0 }
+local ESP = { safes={}, dealers={}, crates={}, guns={}, safeByModel={}, dealerByModel={}, crateScanAt=0, gunScanAt=0 }
 local espBuilt = { safes=false, dealers=false }
 local crateByModel = {}
 -- Packed into one table to stay under Luau's 200-local limit.
@@ -645,16 +645,66 @@ local function syncSafeESP(S)
 	espBuilt.safes = true
 end
 
-local function buildDealerESP(S)
-	if espBuilt.dealers then return end
-	local map   = workspace:FindFirstChild("Map"); if not map then return end
-	local shops = map:FindFirstChild("Shopz"); if not shops then return end
-	local color = S.CrimDealerColor or Color3.fromRGB(100,200,255)
-	for _, shop in ipairs(shops:GetChildren()) do
-		local ok, entry = pcall(makeEntry, shop, color, Color3.fromRGB(255,255,255), "DEALER", nil)
-		if ok and entry then table.insert(ESP.dealers, entry) end
+local function dealerEspMeta(shop, S)
+	local name = tostring(shop and shop.Name or "")
+	local lower = string.lower(name)
+	if string.find(lower, "rebel", 1, true) then
+		local col = S.CrimRebelDealerColor or Color3.fromRGB(255, 90, 70)
+		return col, "REBEL DEALER"
 	end
-	espBuilt.dealers = true
+	local col = S.CrimDealerColor or Color3.fromRGB(100, 200, 255)
+	return col, "DEALER"
+end
+
+local function clearDealerESP()
+	for _, e in ipairs(ESP.dealers) do
+		if alive(e.h) then e.h:Destroy() end
+		if alive(e.bg) then e.bg:Destroy() end
+	end
+	table.clear(ESP.dealers)
+	table.clear(ESP.dealerByModel)
+	espBuilt.dealers = false
+end
+
+local function syncDealerESP(S)
+	if not S.CrimDealerESP then
+		if #ESP.dealers > 0 then
+			clearDealerESP()
+		end
+		return
+	end
+	local map = workspace:FindFirstChild("Map")
+	if not map then return end
+	local shops = map:FindFirstChild("Shopz")
+	if not shops then return end
+
+	for i = #ESP.dealers, 1, -1 do
+		local e = ESP.dealers[i]
+		local model = e.model
+		if not alive(model) or model.Parent ~= shops then
+			ESP.dealerByModel[model] = nil
+			if alive(e.h) then e.h:Destroy() end
+			if alive(e.bg) then e.bg:Destroy() end
+			table.remove(ESP.dealers, i)
+		end
+	end
+
+	for _, shop in ipairs(shops:GetChildren()) do
+		if not ESP.dealerByModel[shop] then
+			local color, label = dealerEspMeta(shop, S)
+			local ok, entry = pcall(makeEntry, shop, color, Color3.fromRGB(255, 255, 255), label, nil)
+			if ok and entry then
+				ESP.dealerByModel[shop] = entry
+				table.insert(ESP.dealers, entry)
+			end
+		end
+	end
+	espBuilt.dealers = #ESP.dealers > 0
+end
+
+-- One-shot alias kept for older call sites / init race
+local function buildDealerESP(S)
+	syncDealerESP(S)
 end
 
 local function clearESP(tbl)
@@ -4134,6 +4184,11 @@ local function syncFromConfig(S)
 	elseif #ESP.safes > 0 then
 		pcall(clearSafeESP)
 	end
+	if crimFlag(S.CrimDealerESP) then
+		pcall(syncDealerESP, S)
+	elseif #ESP.dealers > 0 then
+		pcall(clearDealerESP)
+	end
 	if crimFlag(S.CrimGunESP) then
 		pcall(ensureGunWatch, S)
 		pcall(syncGunESP, S)
@@ -4216,12 +4271,14 @@ local function startMaster(S)
 		elseif #ESP.safes > 0 then
 			pcall(clearSafeESP)
 		end
-		if S.CrimDealerESP and not espBuilt.dealers and workspace:FindFirstChild("Map") then
+		if S.CrimDealerESP then
 			if master.frame % 90 == 0 then
 				runHeavy(function()
-					pcall(buildDealerESP, _G.__VG_S)
+					pcall(syncDealerESP, _G.__VG_S)
 				end)
 			end
+		elseif #ESP.dealers > 0 then
+			pcall(clearDealerESP)
 		end
 
 		if S.CrimCrateESP then
@@ -4267,7 +4324,7 @@ local function startMaster(S)
 				runHeavy(function()
 					local cur = _G.__VG_S
 					if cur and cur.CrimSafeESP then pcall(syncSafeESP, cur) end
-					if cur and cur.CrimDealerESP then pcall(buildDealerESP, cur) end
+					if cur and cur.CrimDealerESP then pcall(syncDealerESP, cur) end
 				end)
 			end)
 		end
@@ -4355,6 +4412,7 @@ local function stopMaster()
 	clearCrateESP()
 	clearGunESP()
 	clearSafeESP()
+	clearDealerESP()
 	if allow.atm then
 		if alive(allow.atm.h) then allow.atm.h:Destroy() end
 		if alive(allow.atm.bg) then allow.atm.bg:Destroy() end

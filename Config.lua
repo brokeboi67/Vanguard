@@ -523,6 +523,12 @@ function Config.EnforceRules(S)
 	if S.CrimCrateESP == nil then
 		S.CrimCrateESP = false
 	end
+	if S.CrimDealerESP == nil then
+		S.CrimDealerESP = false
+	end
+	if typeof(S.CrimRebelDealerColor) ~= "Color3" then
+		S.CrimRebelDealerColor = Color3.fromRGB(255, 90, 70)
+	end
 	if S.CrimSafeShowBroken == nil then
 		S.CrimSafeShowBroken = false
 	end
