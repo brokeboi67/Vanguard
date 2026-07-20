@@ -624,6 +624,12 @@ function Config.EnforceRules(S)
 	if S.CrimWallbangLive == nil then
 		S.CrimWallbangLive = false
 	end
+	if S.CrimWallbangRefreshKey == nil or S.CrimWallbangRefreshKey == "" then
+		S.CrimWallbangRefreshKey = "V"
+	end
+	if S.CrimWallbangPickKey == nil or S.CrimWallbangPickKey == "" then
+		S.CrimWallbangPickKey = "None"
+	end
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false
 	end

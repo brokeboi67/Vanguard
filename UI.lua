@@ -2482,7 +2482,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CCombat, "hint_crim_prediction", 13)
 		MakeSection(CCombat, L("crim_sub_wallbang"), 14)
 		local wbTargetLbl = C("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 22),
+			Size = UDim2.new(1, 0, 0, 20),
 			BackgroundTransparency = 1,
 			Text = L("crim_wallbang_none"),
 			Font = Enum.Font.GothamMedium,
@@ -2505,27 +2505,240 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 		S._wallbangTargetChanged = refreshWbTargetLbl
 		refreshWbTargetLbl(S.CrimWallbangTargetName)
-		MakeButton(CCombat, nil, 16, function()
+
+		local wbSearchHost = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 34),
+			BackgroundTransparency = 1,
+			LayoutOrder = 16,
+			ZIndex = 6,
+			Parent = CCombat,
+		})
+		local wbSearchRow = C("Frame", {
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundColor3 = Color3.fromRGB(17, 17, 21),
+			BorderSizePixel = 0,
+			ZIndex = 7,
+			Parent = wbSearchHost,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = wbSearchRow })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = wbSearchRow })
+		local WbSearch = C("TextBox", {
+			Size = UDim2.new(1, -8, 1, 0),
+			Position = UDim2.new(0, 8, 0, 0),
+			BackgroundTransparency = 1,
+			Text = "",
+			PlaceholderText = L("crim_wallbang_search_ph"),
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(210, 210, 220),
+			PlaceholderColor3 = Color3.fromRGB(95, 95, 105),
+			ClearTextOnFocus = false,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 8,
+			Parent = wbSearchRow,
+		})
+
+		local wbList = C("ScrollingFrame", {
+			Size = UDim2.new(1, 0, 0, 132),
+			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+			BorderSizePixel = 0,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = Color3.fromRGB(80, 80, 95),
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			LayoutOrder = 17,
+			ZIndex = 5,
+			Parent = CCombat,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = wbList })
+		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = wbList })
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 4),
+			PaddingBottom = UDim.new(0, 4),
+			PaddingLeft = UDim.new(0, 4),
+			PaddingRight = UDim.new(0, 4),
+			Parent = wbList,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 3),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = wbList,
+		})
+
+		local function wbResolveFromText(text)
+			text = string.lower((text or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+			if text == "" then
+				return nil
+			end
+			local PlayersSvc = game:GetService("Players")
+			local localPlr = PlayersSvc.LocalPlayer
+			local exact, partial
+			for _, plr in ipairs(PlayersSvc:GetPlayers()) do
+				if plr ~= localPlr then
+					local name = string.lower(plr.Name)
+					local disp = string.lower(plr.DisplayName or "")
+					if name == text or disp == text then
+						exact = plr
+						break
+					end
+					if not partial and (name:find(text, 1, true) or disp:find(text, 1, true)) then
+						partial = plr
+					end
+				end
+			end
+			return exact or partial
+		end
+
+		local function wbSelectPlayer(plr)
+			if not plr then
+				return
+			end
+			if S._clientWallbangSetTarget then
+				S._clientWallbangSetTarget(plr)
+			else
+				S.CrimWallbangTargetUserId = plr.UserId
+				S.CrimWallbangTargetName = (plr.DisplayName ~= "" and plr.DisplayName) or plr.Name
+				refreshWbTargetLbl(S.CrimWallbangTargetName)
+			end
+			WbSearch.Text = (plr.DisplayName ~= "" and plr.DisplayName) or plr.Name
+		end
+
+		local function rebuildWbPlayerList(filter)
+			for _, ch in ipairs(wbList:GetChildren()) do
+				if ch:IsA("GuiObject") and not ch:IsA("UIListLayout") and not ch:IsA("UIPadding") and not ch:IsA("UICorner") and not ch:IsA("UIStroke") then
+					ch:Destroy()
+				end
+			end
+			filter = string.lower((filter or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+			local PlayersSvc = game:GetService("Players")
+			local localPlr = PlayersSvc.LocalPlayer
+			local cam = workspace.CurrentCamera
+			local origin = cam and cam.CFrame.Position or Vector3.zero
+			local rows = {}
+			for _, plr in ipairs(PlayersSvc:GetPlayers()) do
+				if plr ~= localPlr then
+					local name = plr.Name
+					local disp = plr.DisplayName or ""
+					local lowN, lowD = string.lower(name), string.lower(disp)
+					if filter == "" or lowN:find(filter, 1, true) or lowD:find(filter, 1, true) then
+						local part = plr.Character
+							and (plr.Character:FindFirstChild("HumanoidRootPart") or plr.Character:FindFirstChild("Head"))
+						local dist = part and (part.Position - origin).Magnitude or 1e9
+						table.insert(rows, { plr = plr, dist = dist, name = name, disp = disp })
+					end
+				end
+			end
+			table.sort(rows, function(a, b)
+				return a.dist < b.dist
+			end)
+			local selectedUid = tonumber(S.CrimWallbangTargetUserId) or 0
+			for i, row in ipairs(rows) do
+				if i > 24 then
+					break
+				end
+				local selected = row.plr.UserId == selectedUid
+				local label = row.disp ~= "" and row.disp ~= row.name and (row.disp .. "  ·  @" .. row.name) or row.name
+				local distTxt = row.dist < 1e8 and string.format("  %.0fst", row.dist) or ""
+				local btn = C("TextButton", {
+					Size = UDim2.new(1, 0, 0, 26),
+					BackgroundColor3 = selected and Color3.fromRGB(42, 22, 26) or Color3.fromRGB(20, 20, 26),
+					Text = label .. distTxt,
+					Font = Enum.Font.GothamMedium,
+					TextSize = 10,
+					TextColor3 = selected and Color3.fromRGB(255, 140, 150) or Color3.fromRGB(190, 190, 200),
+					TextXAlignment = Enum.TextXAlignment.Left,
+					AutoButtonColor = false,
+					BorderSizePixel = 0,
+					LayoutOrder = i,
+					ZIndex = 6,
+					Parent = wbList,
+				})
+				C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = btn })
+				C("UIPadding", { PaddingLeft = UDim.new(0, 8), Parent = btn })
+				btn.MouseEnter:Connect(function()
+					if row.plr.UserId ~= (tonumber(S.CrimWallbangTargetUserId) or 0) then
+						btn.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
+					end
+				end)
+				btn.MouseLeave:Connect(function()
+					local sel = row.plr.UserId == (tonumber(S.CrimWallbangTargetUserId) or 0)
+					btn.BackgroundColor3 = sel and Color3.fromRGB(42, 22, 26) or Color3.fromRGB(20, 20, 26)
+				end)
+				btn.MouseButton1Click:Connect(function()
+					wbSelectPlayer(row.plr)
+					rebuildWbPlayerList(WbSearch.Text)
+				end)
+			end
+			if #rows == 0 then
+				C("TextLabel", {
+					Size = UDim2.new(1, 0, 0, 24),
+					BackgroundTransparency = 1,
+					Text = L("crim_wallbang_list_empty"),
+					Font = Enum.Font.Gotham,
+					TextSize = 10,
+					TextColor3 = Color3.fromRGB(110, 110, 120),
+					LayoutOrder = 1,
+					ZIndex = 6,
+					Parent = wbList,
+				})
+			end
+		end
+
+		WbSearch:GetPropertyChangedSignal("Text"):Connect(function()
+			rebuildWbPlayerList(WbSearch.Text)
+		end)
+		WbSearch.FocusLost:Connect(function(enter)
+			if enter then
+				local plr = wbResolveFromText(WbSearch.Text)
+				if plr then
+					wbSelectPlayer(plr)
+					rebuildWbPlayerList("")
+				end
+			end
+		end)
+		rebuildWbPlayerList("")
+
+		MakeButton(CCombat, nil, 18, function()
+			rebuildWbPlayerList(WbSearch.Text)
+		end, "btn_crim_wallbang_refresh_list")
+		MakeButton(CCombat, nil, 19, function()
 			if S._clientWallbangPick then
 				S._clientWallbangPick()
+				rebuildWbPlayerList(WbSearch.Text)
 			end
 		end, "btn_crim_wallbang_pick")
-		MakeButton(CCombat, nil, 17, function()
+		MakeButton(CCombat, nil, 20, function()
 			if S._clientWallbangClearTarget then
 				S._clientWallbangClearTarget()
 			end
+			WbSearch.Text = ""
+			rebuildWbPlayerList("")
 		end, "btn_crim_wallbang_clear")
-		MakeButton(CCombat, nil, 18, function()
+		MakeButton(CCombat, nil, 21, function()
 			if S._clientWallbangApply then
 				S._clientWallbangApply()
 			end
 		end, "btn_crim_wallbang_open")
-		MakeButton(CCombat, nil, 19, function()
+		MakeButton(CCombat, nil, 22, function()
 			if S._clientWallbangRestore then
 				S._clientWallbangRestore()
 			end
 		end, "btn_crim_wallbang_restore")
-		MakeTog(CCombat, "Live Line Refresh", "CrimWallbangLive", 20, {
+		MakeBind(CCombat, "Refresh Line Key", "CrimWallbangRefreshKey", 23, {
+			onChange = function()
+				if S._clientWallbangRebind then
+					S._clientWallbangRebind()
+				end
+			end,
+		})
+		MakeBind(CCombat, "Pick Crosshair Key", "CrimWallbangPickKey", 24, {
+			onChange = function()
+				if S._clientWallbangRebind then
+					S._clientWallbangRebind()
+				end
+			end,
+		})
+		MakeTog(CCombat, "Live Line Refresh", "CrimWallbangLive", 25, {
 			flat = true,
 			onChange = function(on)
 				if S._clientWallbangSetLive then
@@ -2533,7 +2746,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_wallbang", 21)
+		MakeHint(CCombat, "hint_crim_wallbang", 26)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })

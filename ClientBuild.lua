@@ -19,6 +19,7 @@ local wb = {
 	parts = {}, -- [part] = { canCollide, canQuery, transparency }
 	order = {},
 	liveConn = nil,
+	keyConn = nil,
 	beam = nil,
 	settings = nil,
 }
@@ -469,6 +470,40 @@ function ClientBuild.WallbangApply()
 	end
 end
 
+function ClientBuild.WallbangSetTarget(plrOrId, displayName)
+	local uid, name = 0, ""
+	if typeof(plrOrId) == "Instance" and plrOrId:IsA("Player") then
+		uid = plrOrId.UserId
+		name = displayName
+			or ((plrOrId.DisplayName ~= "" and plrOrId.DisplayName) or plrOrId.Name)
+	else
+		uid = tonumber(plrOrId) or 0
+		name = tostring(displayName or "")
+		if name == "" and uid > 0 then
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr.UserId == uid then
+					name = (plr.DisplayName ~= "" and plr.DisplayName) or plr.Name
+					break
+				end
+			end
+		end
+	end
+	wb.targetUserId = uid
+	local S = wb.settings
+	if S then
+		S.CrimWallbangTargetUserId = uid
+		S.CrimWallbangTargetName = name
+		if S._wallbangTargetChanged then
+			pcall(S._wallbangTargetChanged, name)
+		end
+	end
+	if uid > 0 then
+		notify("Wallbang", "Cel: " .. name)
+	else
+		notify("Wallbang", "Cel wyczyszczony")
+	end
+end
+
 function ClientBuild.WallbangPickClosest()
 	local cam = workspace.CurrentCamera
 	local me = lp()
@@ -499,29 +534,11 @@ function ClientBuild.WallbangPickClosest()
 		notify("Wallbang", "Brak gracza w celowniku")
 		return
 	end
-	wb.targetUserId = best.UserId
-	local S = wb.settings
-	if S then
-		S.CrimWallbangTargetUserId = best.UserId
-		S.CrimWallbangTargetName = best.DisplayName ~= "" and best.DisplayName or best.Name
-		if S._wallbangTargetChanged then
-			pcall(S._wallbangTargetChanged, S.CrimWallbangTargetName)
-		end
-	end
-	notify("Wallbang", "Cel: " .. (best.DisplayName ~= "" and best.DisplayName or best.Name))
+	ClientBuild.WallbangSetTarget(best)
 end
 
 function ClientBuild.WallbangClearTarget()
-	wb.targetUserId = 0
-	local S = wb.settings
-	if S then
-		S.CrimWallbangTargetUserId = 0
-		S.CrimWallbangTargetName = ""
-		if S._wallbangTargetChanged then
-			pcall(S._wallbangTargetChanged, "")
-		end
-	end
-	notify("Wallbang", "Cel wyczyszczony")
+	ClientBuild.WallbangSetTarget(0, "")
 end
 
 local function wbStopLive()
@@ -529,6 +546,62 @@ local function wbStopLive()
 		wb.liveConn:Disconnect()
 		wb.liveConn = nil
 	end
+end
+
+local function wbStopKey()
+	if wb.keyConn then
+		wb.keyConn:Disconnect()
+		wb.keyConn = nil
+	end
+end
+
+local function wbMatchKey(input, keyName)
+	keyName = tostring(keyName or "")
+	if keyName == "" or keyName == "None" then
+		return false
+	end
+	if keyName == "MouseButton1" then
+		return input.UserInputType == Enum.UserInputType.MouseButton1
+	elseif keyName == "MouseButton2" then
+		return input.UserInputType == Enum.UserInputType.MouseButton2
+	elseif keyName == "MouseButton3" then
+		return input.UserInputType == Enum.UserInputType.MouseButton3
+	end
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return false
+	end
+	local ok, key = pcall(function()
+		return Enum.KeyCode[keyName]
+	end)
+	return ok and key ~= nil and input.KeyCode == key
+end
+
+function ClientBuild.WallbangBindKeys()
+	wbStopKey()
+	wb.keyConn = UIS.InputBegan:Connect(function(input, gp)
+		if gp then
+			return
+		end
+		local S = wb.settings
+		if not S then
+			return
+		end
+		-- Refresh / open line along current camera → target
+		if wbMatchKey(input, S.CrimWallbangRefreshKey or "V") then
+			local n, err = wbApplyLine()
+			if err == "notarget" then
+				notify("Wallbang", "Najpierw wybierz cel")
+			elseif err then
+				-- quiet for transient errors while holding
+			else
+				notify("Wallbang", string.format("Linia @%s (%d)", S.CrimWallbangRefreshKey or "V", n or 0))
+			end
+		end
+		-- Optional: pick closest to crosshair
+		if wbMatchKey(input, S.CrimWallbangPickKey or "None") then
+			ClientBuild.WallbangPickClosest()
+		end
+	end)
 end
 
 function ClientBuild.WallbangSetLive(on)
@@ -558,6 +631,7 @@ end
 function ClientBuild.Stop()
 	stopMode()
 	wbStopLive()
+	wbStopKey()
 end
 
 function ClientBuild.Init(S)
@@ -573,9 +647,12 @@ function ClientBuild.Init(S)
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
 	S._clientWallbangPick = ClientBuild.WallbangPickClosest
 	S._clientWallbangClearTarget = ClientBuild.WallbangClearTarget
+	S._clientWallbangSetTarget = ClientBuild.WallbangSetTarget
 	S._clientWallbangApply = ClientBuild.WallbangApply
 	S._clientWallbangRestore = ClientBuild.WallbangRestore
 	S._clientWallbangSetLive = ClientBuild.WallbangSetLive
+	S._clientWallbangRebind = ClientBuild.WallbangBindKeys
+	ClientBuild.WallbangBindKeys()
 	if S.CrimWallbangLive == true then
 		ClientBuild.WallbangSetLive(true)
 	end
