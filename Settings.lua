@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.64",
+	Version = "2.52.65",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -204,6 +204,9 @@ local Settings = {
 	CrimNoRagdoll = false,
 	CrimMeleeAura = false,
 	CrimMeleeRange = 5,
+	CrimWallbangTargetUserId = 0,
+	CrimWallbangTargetName = "",
+	CrimWallbangLive = false,
 	CrimSafeESP = false,
 	CrimSafeShowBroken = false,
 	CrimSafeColor = Color3.fromRGB(255, 220, 50),

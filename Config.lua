@@ -610,11 +610,20 @@ function Config.EnforceRules(S)
 	if S.CrimAutoRespawn == nil then
 		S.CrimAutoRespawn = false
 	end
-	-- Removed: wallbang / bullet tracers / server-validated gun mods
+	-- Legacy one-shot wallbang toggle removed; use Combat corridor buttons
 	S.CrimWallbang = nil
 	S.CrimBulletTracers = nil
 	S.CrimFastReload = nil
 	S.CrimRapidFire = nil
+	if S.CrimWallbangTargetUserId == nil then
+		S.CrimWallbangTargetUserId = 0
+	end
+	if S.CrimWallbangTargetName == nil then
+		S.CrimWallbangTargetName = ""
+	end
+	if S.CrimWallbangLive == nil then
+		S.CrimWallbangLive = false
+	end
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false
 	end

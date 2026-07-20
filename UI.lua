@@ -2480,6 +2480,60 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeHint(CCombat, "hint_crim_prediction", 13)
+		MakeSection(CCombat, L("crim_sub_wallbang"), 14)
+		local wbTargetLbl = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 22),
+			BackgroundTransparency = 1,
+			Text = L("crim_wallbang_none"),
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(160, 160, 175),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 15,
+			ZIndex = 5,
+			Parent = CCombat,
+		})
+		local function refreshWbTargetLbl(name)
+			name = tostring(name or S.CrimWallbangTargetName or "")
+			if name == "" then
+				wbTargetLbl.Text = L("crim_wallbang_none")
+				wbTargetLbl.TextColor3 = Color3.fromRGB(160, 160, 175)
+			else
+				wbTargetLbl.Text = L("crim_wallbang_target", name)
+				wbTargetLbl.TextColor3 = Color3.fromRGB(255, 120, 130)
+			end
+		end
+		S._wallbangTargetChanged = refreshWbTargetLbl
+		refreshWbTargetLbl(S.CrimWallbangTargetName)
+		MakeButton(CCombat, nil, 16, function()
+			if S._clientWallbangPick then
+				S._clientWallbangPick()
+			end
+		end, "btn_crim_wallbang_pick")
+		MakeButton(CCombat, nil, 17, function()
+			if S._clientWallbangClearTarget then
+				S._clientWallbangClearTarget()
+			end
+		end, "btn_crim_wallbang_clear")
+		MakeButton(CCombat, nil, 18, function()
+			if S._clientWallbangApply then
+				S._clientWallbangApply()
+			end
+		end, "btn_crim_wallbang_open")
+		MakeButton(CCombat, nil, 19, function()
+			if S._clientWallbangRestore then
+				S._clientWallbangRestore()
+			end
+		end, "btn_crim_wallbang_restore")
+		MakeTog(CCombat, "Live Line Refresh", "CrimWallbangLive", 20, {
+			flat = true,
+			onChange = function(on)
+				if S._clientWallbangSetLive then
+					S._clientWallbangSetLive(on == true)
+				end
+			end,
+		})
+		MakeHint(CCombat, "hint_crim_wallbang", 21)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })

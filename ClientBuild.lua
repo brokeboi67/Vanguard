@@ -1,16 +1,27 @@
--- ClientBuild.lua  v2.52.34
--- Local client bridge / delete only (no wallbang).
+-- ClientBuild.lua  v2.52.65
+-- Local client bridge / delete / wallbang corridor (camera → target).
 
 local ClientBuild = {}
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
 
 local FOLDER = "VG_ClientBuild"
 local mode, bridgeA, inputConn = nil, nil, nil
 local markerA, markerB = nil, nil
 local bridges = {}
 local hidden = {}
+
+-- Wallbang corridor (local CanCollide / CanQuery only)
+local wb = {
+	targetUserId = 0,
+	parts = {}, -- [part] = { canCollide, canQuery, transparency }
+	order = {},
+	liveConn = nil,
+	beam = nil,
+	settings = nil,
+}
 
 local function notify(msg, sub)
 	pcall(function()
@@ -257,8 +268,296 @@ function ClientBuild.RestoreHidden()
 	notify("Delete", "Przywrócono assety")
 end
 
+-- ── Wallbang corridor ───────────────────────────────────────────────────────
+
+local function wbClearBeam()
+	if wb.beam then
+		pcall(function()
+			wb.beam:Destroy()
+		end)
+		wb.beam = nil
+	end
+end
+
+local function wbDrawBeam(a, b)
+	wbClearBeam()
+	local dist = (b - a).Magnitude
+	if dist < 1 then
+		return
+	end
+	local p = Instance.new("Part")
+	p.Name = "VG_WbBeam"
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Material = Enum.Material.Neon
+	p.Color = Color3.fromRGB(255, 70, 90)
+	p.Transparency = 0.55
+	p.Size = Vector3.new(0.12, 0.12, dist)
+	p.CFrame = CFrame.lookAt((a + b) * 0.5, b)
+	p.Parent = ensureFolder()
+	wb.beam = p
+end
+
+local function wbShouldPunch(part)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	if part:IsA("Terrain") then
+		return false
+	end
+	if part:IsDescendantOf(ensureFolder()) then
+		return false
+	end
+	if part:FindFirstAncestorOfClass("Accessory") then
+		return false
+	end
+	local model = part:FindFirstAncestorOfClass("Model")
+	if model and model:FindFirstChildOfClass("Humanoid") then
+		return false
+	end
+	return true
+end
+
+local function wbPunchPart(part)
+	if not wbShouldPunch(part) then
+		return false
+	end
+	if wb.parts[part] then
+		return false
+	end
+	wb.parts[part] = {
+		canCollide = part.CanCollide,
+		canQuery = part.CanQuery,
+		transparency = part.Transparency,
+	}
+	table.insert(wb.order, part)
+	pcall(function()
+		part.CanCollide = false
+		part.CanQuery = false
+		-- slight fade so the corridor is visible locally
+		if part.Transparency < 0.35 then
+			part.Transparency = 0.35
+		end
+	end)
+	return true
+end
+
+local function wbGetTarget()
+	local uid = tonumber(wb.targetUserId) or 0
+	if uid <= 0 then
+		return nil
+	end
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr.UserId == uid then
+			return plr
+		end
+	end
+	return nil
+end
+
+local function wbTargetPart(plr)
+	local char = plr and plr.Character
+	if not char then
+		return nil
+	end
+	return char:FindFirstChild("HumanoidRootPart")
+		or char:FindFirstChild("Head")
+		or char:FindFirstChildWhichIsA("BasePart")
+end
+
+local function wbApplyLine()
+	local cam = workspace.CurrentCamera
+	local me = lp()
+	local target = wbGetTarget()
+	if not cam or not me then
+		return 0, "camera"
+	end
+	if not target then
+		return 0, "notarget"
+	end
+	local goalPart = wbTargetPart(target)
+	if not goalPart then
+		return 0, "nochar"
+	end
+
+	local origin = cam.CFrame.Position
+	local goal = goalPart.Position
+	local delta = goal - origin
+	local dist = delta.Magnitude
+	if dist < 2 then
+		return 0, "close"
+	end
+	if dist > 1200 then
+		dist = 1200
+		goal = origin + delta.Unit * dist
+		delta = goal - origin
+	end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	local exclude = { ensureFolder() }
+	if me.Character then
+		table.insert(exclude, me.Character)
+	end
+	if target.Character then
+		table.insert(exclude, target.Character)
+	end
+	params.FilterDescendantsInstances = exclude
+
+	local unit = delta.Unit
+	local cursor = origin
+	local remaining = dist
+	local punched = 0
+	local safety = 0
+
+	while remaining > 0.4 and safety < 80 do
+		safety = safety + 1
+		local hit = workspace:Raycast(cursor, unit * remaining, params)
+		if not hit then
+			break
+		end
+		local inst = hit.Instance
+		if wbPunchPart(inst) then
+			punched = punched + 1
+		end
+		-- advance past this hit so the next ray continues toward the target
+		table.insert(exclude, inst)
+		params.FilterDescendantsInstances = exclude
+		cursor = hit.Position + unit * 0.08
+		remaining = (goal - cursor):Dot(unit)
+		if remaining < 0 then
+			break
+		end
+	end
+
+	wbDrawBeam(origin, goal)
+	return punched, nil
+end
+
+function ClientBuild.WallbangRestore()
+	for _, part in ipairs(wb.order) do
+		local e = wb.parts[part]
+		if e and part and part.Parent then
+			pcall(function()
+				part.CanCollide = e.canCollide
+				part.CanQuery = e.canQuery
+				part.Transparency = e.transparency
+			end)
+		end
+	end
+	table.clear(wb.parts)
+	table.clear(wb.order)
+	wbClearBeam()
+	notify("Wallbang", "Przywrócono ściany")
+end
+
+function ClientBuild.WallbangApply()
+	local n, err = wbApplyLine()
+	if err == "notarget" then
+		notify("Wallbang", "Najpierw wybierz cel")
+	elseif err == "nochar" then
+		notify("Wallbang", "Cel bez postaci")
+	elseif err == "close" then
+		notify("Wallbang", "Za blisko")
+	elseif err == "camera" then
+		notify("Wallbang", "Brak kamery")
+	else
+		notify("Wallbang", string.format("Linia otwarta (%d parts)", n or 0))
+	end
+end
+
+function ClientBuild.WallbangPickClosest()
+	local cam = workspace.CurrentCamera
+	local me = lp()
+	if not cam or not me then
+		notify("Wallbang", "Brak kamery")
+		return
+	end
+	local look = cam.CFrame.LookVector
+	local origin = cam.CFrame.Position
+	local best, bestScore = nil, -1
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= me then
+			local part = wbTargetPart(plr)
+			if part then
+				local to = part.Position - origin
+				local dist = to.Magnitude
+				if dist > 3 and dist < 900 then
+					local score = to.Unit:Dot(look)
+					if score > 0.35 and score > bestScore then
+						bestScore = score
+						best = plr
+					end
+				end
+			end
+		end
+	end
+	if not best then
+		notify("Wallbang", "Brak gracza w celowniku")
+		return
+	end
+	wb.targetUserId = best.UserId
+	local S = wb.settings
+	if S then
+		S.CrimWallbangTargetUserId = best.UserId
+		S.CrimWallbangTargetName = best.DisplayName ~= "" and best.DisplayName or best.Name
+		if S._wallbangTargetChanged then
+			pcall(S._wallbangTargetChanged, S.CrimWallbangTargetName)
+		end
+	end
+	notify("Wallbang", "Cel: " .. (best.DisplayName ~= "" and best.DisplayName or best.Name))
+end
+
+function ClientBuild.WallbangClearTarget()
+	wb.targetUserId = 0
+	local S = wb.settings
+	if S then
+		S.CrimWallbangTargetUserId = 0
+		S.CrimWallbangTargetName = ""
+		if S._wallbangTargetChanged then
+			pcall(S._wallbangTargetChanged, "")
+		end
+	end
+	notify("Wallbang", "Cel wyczyszczony")
+end
+
+local function wbStopLive()
+	if wb.liveConn then
+		wb.liveConn:Disconnect()
+		wb.liveConn = nil
+	end
+end
+
+function ClientBuild.WallbangSetLive(on)
+	wbStopLive()
+	if not on then
+		return
+	end
+	local acc = 0
+	wb.liveConn = RS.Heartbeat:Connect(function(dt)
+		acc = acc + dt
+		if acc < 0.35 then
+			return
+		end
+		acc = 0
+		local S = wb.settings
+		if not S or S.CrimWallbangLive ~= true then
+			wbStopLive()
+			return
+		end
+		if (tonumber(wb.targetUserId) or 0) <= 0 then
+			return
+		end
+		wbApplyLine()
+	end)
+end
+
 function ClientBuild.Stop()
 	stopMode()
+	wbStopLive()
 end
 
 function ClientBuild.Init(S)
@@ -266,12 +565,20 @@ function ClientBuild.Init(S)
 	if not S then
 		return
 	end
+	wb.settings = S
+	wb.targetUserId = tonumber(S.CrimWallbangTargetUserId) or 0
 	S._clientBridgeStart = ClientBuild.StartBridge
 	S._clientDeleteStart = ClientBuild.StartDelete
 	S._clientBridgeClear = ClientBuild.ClearBridges
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
-	S._clientWallbangSet = nil
-	S._clientWallbangHeal = nil
+	S._clientWallbangPick = ClientBuild.WallbangPickClosest
+	S._clientWallbangClearTarget = ClientBuild.WallbangClearTarget
+	S._clientWallbangApply = ClientBuild.WallbangApply
+	S._clientWallbangRestore = ClientBuild.WallbangRestore
+	S._clientWallbangSetLive = ClientBuild.WallbangSetLive
+	if S.CrimWallbangLive == true then
+		ClientBuild.WallbangSetLive(true)
+	end
 end
 
 return ClientBuild
