@@ -537,6 +537,98 @@ function ClientBuild.WallbangPickClosest()
 	ClientBuild.WallbangSetTarget(best)
 end
 
+-- Alt+Click: ray only hits player characters (goes through walls/map)
+function ClientBuild.WallbangAltClick()
+	local cam = workspace.CurrentCamera
+	local me = lp()
+	if not cam or not me then
+		return
+	end
+	local mouse = UIS:GetMouseLocation()
+	local ray = cam:ViewportPointToRay(mouse.X, mouse.Y)
+	local chars = {}
+	local partToPlr = {}
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= me and plr.Character then
+			table.insert(chars, plr.Character)
+			for _, d in ipairs(plr.Character:GetDescendants()) do
+				if d:IsA("BasePart") then
+					partToPlr[d] = plr
+				end
+			end
+			partToPlr[plr.Character] = plr
+		end
+	end
+	if #chars == 0 then
+		notify("Wallbang", "Brak graczy")
+		return
+	end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Include
+	params.FilterDescendantsInstances = chars
+	params.IgnoreWater = true
+
+	local hit = workspace:Raycast(ray.Origin, ray.Direction * 2500, params)
+	local chosen = nil
+	if hit and hit.Instance then
+		chosen = partToPlr[hit.Instance]
+		if not chosen then
+			local model = hit.Instance:FindFirstAncestorOfClass("Model")
+			if model then
+				chosen = Players:GetPlayerFromCharacter(model)
+			end
+		end
+	end
+
+	-- Fallback: closest player to the mouse ray (still through walls)
+	if not chosen then
+		local best, bestDist = nil, 3.5 -- studs from ray line
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= me then
+				local part = wbTargetPart(plr)
+				if part then
+					local to = part.Position - ray.Origin
+					local along = to:Dot(ray.Direction)
+					if along > 2 and along < 2500 then
+						local closest = ray.Origin + ray.Direction * along
+						local lateral = (part.Position - closest).Magnitude
+						if lateral < bestDist then
+							bestDist = lateral
+							best = plr
+						end
+					end
+				end
+			end
+		end
+		chosen = best
+	end
+
+	if not chosen then
+		notify("Wallbang", "Alt+Click: nic nie trafiono")
+		return
+	end
+	ClientBuild.WallbangSetTarget(chosen)
+	local S = wb.settings
+	if S and S._wallbangAfterPick then
+		pcall(S._wallbangAfterPick)
+	end
+end
+
+local function wbPickModeAllows(mode, kind)
+	mode = tostring(mode or "Both")
+	if mode == "Both" then
+		return true
+	end
+	if kind == "menu" then
+		return mode == "Menu"
+	end
+	if kind == "alt" then
+		return mode == "AltClick"
+	end
+	return false
+end
+
 function ClientBuild.WallbangClearTarget()
 	ClientBuild.WallbangSetTarget(0, "")
 end
@@ -579,13 +671,24 @@ end
 function ClientBuild.WallbangBindKeys()
 	wbStopKey()
 	wb.keyConn = UIS.InputBegan:Connect(function(input, gp)
-		if gp then
-			return
-		end
 		local S = wb.settings
 		if not S then
 			return
 		end
+
+		-- Alt + LMB: pick player through walls (world click only)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			local alt = UIS:IsKeyDown(Enum.KeyCode.LeftAlt) or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
+			if alt and not gp and wbPickModeAllows(S.CrimWallbangPickMode, "alt") then
+				ClientBuild.WallbangAltClick()
+				return
+			end
+		end
+
+		if gp then
+			return
+		end
+
 		-- Refresh / open line along current camera → target
 		if wbMatchKey(input, S.CrimWallbangRefreshKey or "V") then
 			local n, err = wbApplyLine()
@@ -597,9 +700,14 @@ function ClientBuild.WallbangBindKeys()
 				notify("Wallbang", string.format("Linia @%s (%d)", S.CrimWallbangRefreshKey or "V", n or 0))
 			end
 		end
-		-- Optional: pick closest to crosshair
+		-- Optional: pick closest to crosshair (menu modes)
 		if wbMatchKey(input, S.CrimWallbangPickKey or "None") then
-			ClientBuild.WallbangPickClosest()
+			if wbPickModeAllows(S.CrimWallbangPickMode, "menu") or tostring(S.CrimWallbangPickMode or "Both") == "Both" then
+				ClientBuild.WallbangPickClosest()
+				if S._wallbangAfterPick then
+					pcall(S._wallbangAfterPick)
+				end
+			end
 		end
 	end)
 end
@@ -646,6 +754,7 @@ function ClientBuild.Init(S)
 	S._clientBridgeClear = ClientBuild.ClearBridges
 	S._clientDeleteRestore = ClientBuild.RestoreHidden
 	S._clientWallbangPick = ClientBuild.WallbangPickClosest
+	S._clientWallbangAltClick = ClientBuild.WallbangAltClick
 	S._clientWallbangClearTarget = ClientBuild.WallbangClearTarget
 	S._clientWallbangSetTarget = ClientBuild.WallbangSetTarget
 	S._clientWallbangApply = ClientBuild.WallbangApply

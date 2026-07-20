@@ -630,6 +630,9 @@ function Config.EnforceRules(S)
 	if S.CrimWallbangPickKey == nil or S.CrimWallbangPickKey == "" then
 		S.CrimWallbangPickKey = "None"
 	end
+	if S.CrimWallbangPickMode == nil or S.CrimWallbangPickMode == "" then
+		S.CrimWallbangPickMode = "Both"
+	end
 	if S.CrimAimPrediction == nil then
 		S.CrimAimPrediction = false
 	end

@@ -2481,6 +2481,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		MakeHint(CCombat, "hint_crim_prediction", 13)
 		MakeSection(CCombat, L("crim_sub_wallbang"), 14)
+		MakeChoice(CCombat, "Target Pick Mode", "CrimWallbangPickMode", {
+			{ label = "Menu list", value = "Menu" },
+			{ label = "Alt+Click", value = "AltClick" },
+			{ label = "Both", value = "Both" },
+		}, 15, {
+			labelKey = "crim_wallbang_pick_mode",
+			onChange = function()
+				if S._wallbangSyncPickMode then
+					pcall(S._wallbangSyncPickMode)
+				end
+			end,
+		})
 		local wbTargetLbl = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 20),
 			BackgroundTransparency = 1,
@@ -2489,7 +2501,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextSize = 11,
 			TextColor3 = Color3.fromRGB(160, 160, 175),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = 15,
+			LayoutOrder = 16,
 			ZIndex = 5,
 			Parent = CCombat,
 		})
@@ -2506,12 +2518,26 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		S._wallbangTargetChanged = refreshWbTargetLbl
 		refreshWbTargetLbl(S.CrimWallbangTargetName)
 
+		local wbMenuBlock = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			LayoutOrder = 17,
+			ZIndex = 5,
+			Parent = CCombat,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 6),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = wbMenuBlock,
+		})
+
 		local wbSearchHost = C("Frame", {
 			Size = UDim2.new(1, 0, 0, 34),
 			BackgroundTransparency = 1,
-			LayoutOrder = 16,
+			LayoutOrder = 1,
 			ZIndex = 6,
-			Parent = CCombat,
+			Parent = wbMenuBlock,
 		})
 		local wbSearchRow = C("Frame", {
 			Size = UDim2.new(1, 0, 1, 0),
@@ -2546,9 +2572,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			ScrollBarImageColor3 = Color3.fromRGB(80, 80, 95),
 			CanvasSize = UDim2.new(0, 0, 0, 0),
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
-			LayoutOrder = 17,
+			LayoutOrder = 2,
 			ZIndex = 5,
-			Parent = CCombat,
+			Parent = wbMenuBlock,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = wbList })
 		C("UIStroke", { Color = Color3.fromRGB(32, 32, 40), Thickness = 1, Transparency = 0.5, Parent = wbList })
@@ -2698,47 +2724,99 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end)
 		rebuildWbPlayerList("")
 
-		MakeButton(CCombat, nil, 18, function()
+		local wbMenuBtns = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundTransparency = 1,
+			LayoutOrder = 3,
+			ZIndex = 5,
+			Parent = wbMenuBlock,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 6),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = wbMenuBtns,
+		})
+		MakeButton(wbMenuBtns, nil, 1, function()
 			rebuildWbPlayerList(WbSearch.Text)
 		end, "btn_crim_wallbang_refresh_list")
-		MakeButton(CCombat, nil, 19, function()
+		MakeButton(wbMenuBtns, nil, 2, function()
 			if S._clientWallbangPick then
 				S._clientWallbangPick()
 				rebuildWbPlayerList(WbSearch.Text)
 			end
 		end, "btn_crim_wallbang_pick")
-		MakeButton(CCombat, nil, 20, function()
+
+		local wbAltHint = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 36),
+			BackgroundTransparency = 1,
+			Text = L("hint_crim_wallbang_alt"),
+			Font = Enum.Font.Gotham,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(140, 140, 155),
+			TextWrapped = true,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			LayoutOrder = 18,
+			ZIndex = 5,
+			Parent = CCombat,
+		})
+
+		local function syncWbPickModeUi()
+			local mode = tostring(S.CrimWallbangPickMode or "Both")
+			local showMenu = mode == "Menu" or mode == "Both"
+			local showAlt = mode == "AltClick" or mode == "Both"
+			wbMenuBlock.Visible = showMenu
+			wbAltHint.Visible = showAlt
+			if showMenu then
+				rebuildWbPlayerList(WbSearch.Text)
+			end
+		end
+		S._wallbangSyncPickMode = syncWbPickModeUi
+		S._wallbangAfterPick = function()
+			refreshWbTargetLbl(S.CrimWallbangTargetName)
+			if wbMenuBlock.Visible then
+				local name = tostring(S.CrimWallbangTargetName or "")
+				if name ~= "" then
+					WbSearch.Text = name
+				end
+				rebuildWbPlayerList(WbSearch.Text)
+			end
+		end
+		syncWbPickModeUi()
+
+		MakeButton(CCombat, nil, 19, function()
 			if S._clientWallbangClearTarget then
 				S._clientWallbangClearTarget()
 			end
 			WbSearch.Text = ""
 			rebuildWbPlayerList("")
 		end, "btn_crim_wallbang_clear")
-		MakeButton(CCombat, nil, 21, function()
+		MakeButton(CCombat, nil, 20, function()
 			if S._clientWallbangApply then
 				S._clientWallbangApply()
 			end
 		end, "btn_crim_wallbang_open")
-		MakeButton(CCombat, nil, 22, function()
+		MakeButton(CCombat, nil, 21, function()
 			if S._clientWallbangRestore then
 				S._clientWallbangRestore()
 			end
 		end, "btn_crim_wallbang_restore")
-		MakeBind(CCombat, "Refresh Line Key", "CrimWallbangRefreshKey", 23, {
+		MakeBind(CCombat, "Refresh Line Key", "CrimWallbangRefreshKey", 22, {
 			onChange = function()
 				if S._clientWallbangRebind then
 					S._clientWallbangRebind()
 				end
 			end,
 		})
-		MakeBind(CCombat, "Pick Crosshair Key", "CrimWallbangPickKey", 24, {
+		MakeBind(CCombat, "Pick Crosshair Key", "CrimWallbangPickKey", 23, {
 			onChange = function()
 				if S._clientWallbangRebind then
 					S._clientWallbangRebind()
 				end
 			end,
 		})
-		MakeTog(CCombat, "Live Line Refresh", "CrimWallbangLive", 25, {
+		MakeTog(CCombat, "Live Line Refresh", "CrimWallbangLive", 24, {
 			flat = true,
 			onChange = function(on)
 				if S._clientWallbangSetLive then
@@ -2746,7 +2824,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CCombat, "hint_crim_wallbang", 26)
+		MakeHint(CCombat, "hint_crim_wallbang", 25)
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
