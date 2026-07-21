@@ -592,8 +592,8 @@ _G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
 local CRIM_GAME_ID = 1494262959
 local isCriminality = game.GameId == CRIM_GAME_ID
 
--- Base modules always fetched (Core → GameSupport). +4 Criminality modules when needed.
-local LOAD_TOTAL = 29 + (isCriminality and 4 or 0)
+-- Base modules always fetched (Core → GameSupport). +3 Crim addons when needed (Criminality.lua TEMP disabled).
+local LOAD_TOTAL = 29 + (isCriminality and 3 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -667,7 +667,8 @@ local MODULE_FILES = {
 	"UIConfigMenus.lua", "UIMusic.lua", "UI.lua", "Menus.lua", "GameSupport.lua",
 }
 if isCriminality then
-	table.insert(MODULE_FILES, "Criminality.lua")
+	-- TEMP TEST: skip Criminality.lua load to isolate lobby native crash
+	-- table.insert(MODULE_FILES, "Criminality.lua")
 	table.insert(MODULE_FILES, "PathDisplay.lua")
 	table.insert(MODULE_FILES, "ClientBuild.lua")
 	table.insert(MODULE_FILES, "BountyTracker.lua")
@@ -948,13 +949,16 @@ local GameSupport = Get("GameSupport.lua")
 
 -- Heavy game-specific module: don't HttpGet/compile outside Criminality
 local Criminality = nil
-if isCriminality then
-	Criminality = Get("Criminality.lua")
-	-- Swap Intro.music ASAP (before UI boot) — menu BGM is already playing
-	if Criminality and Criminality.StartMenuMusicEarly then
-		pcall(Criminality.StartMenuMusicEarly, Settings)
-	end
+-- TEMP TEST: Criminality.lua disabled — reinject to check if lobby still crashes without it
+if isCriminality and typeof(_G.__VG_LOG_FILE) == "function" then
+	_G.__VG_LOG_FILE("WARN", "[VG:crim] Criminality.lua load DISABLED (temp test)")
 end
+-- if isCriminality then
+-- 	Criminality = Get("Criminality.lua")
+-- 	if Criminality and Criminality.StartMenuMusicEarly then
+-- 		pcall(Criminality.StartMenuMusicEarly, Settings)
+-- 	end
+-- end
 
 _G.__VG_LOADING = false
 if AntiBypass.onLoadComplete then
