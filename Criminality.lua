@@ -32,7 +32,7 @@ local UIS; pcall(function() UIS = game:GetService("UserInputService") end)
 
 -- â”€â”€ NO FALL DAMAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
-local misc = { noFallConns = {}, noSpikeConn = nil, smoke = { conns = {}, active = false } }
+local misc = { noFallConns = {}, noSpikeConn = nil, smoke = { conns = {}, active = false, hooked = {}, recent = 0, windowAt = 0, pausedUntil = 0 } }
 
 local function addForceField(char)
 	if not char then return end
@@ -104,16 +104,7 @@ local function stopNoSpike()
 end
 
 -- ── REMOVE smoke FX (Debris.SmokeExplosion + PlayerGui SmokeScreenGUI) ───────
--- Opt: only shallow GetChildren + ChildAdded on known folders (no workspace GetDescendants).
-local function smokeDestroy(inst)
-	if not inst then
-		return
-	end
-	pcall(function()
-		inst:Destroy()
-	end)
-end
-
+-- Opt: shallow GetChildren + ChildAdded only. Rate-limit destroys to avoid recreate storms.
 local function smokeClearConns()
 	for _, c in ipairs(misc.smoke.conns) do
 		pcall(function()
@@ -121,10 +112,41 @@ local function smokeClearConns()
 		end)
 	end
 	table.clear(misc.smoke.conns)
+	if misc.smoke.hooked then
+		table.clear(misc.smoke.hooked)
+	end
 end
 
 local function smokeAddConn(conn)
 	table.insert(misc.smoke.conns, conn)
+end
+
+local function smokeDestroy(inst)
+	if not inst or not inst.Parent then
+		return
+	end
+	local sm = misc.smoke
+	local now = os.clock()
+	if now < (sm.pausedUntil or 0) then
+		return
+	end
+	if now - (sm.windowAt or 0) > 1 then
+		sm.windowAt = now
+		sm.recent = 0
+	end
+	sm.recent = (sm.recent or 0) + 1
+	-- Game may recreate SmokeScreenGUI every frame — don't fight forever
+	if sm.recent > 35 then
+		sm.pausedUntil = now + 2.5
+		sm.recent = 0
+		return
+	end
+	pcall(function()
+		if inst:IsA("ScreenGui") or inst:IsA("LayerCollector") then
+			inst.Enabled = false
+		end
+		inst:Destroy()
+	end)
 end
 
 local function smokeSweepChildren(folder, name)
@@ -142,6 +164,14 @@ local function smokeHookName(folder, name)
 	if not folder then
 		return
 	end
+	local sm = misc.smoke
+	sm.hooked = sm.hooked or {}
+	local key = folder
+	if sm.hooked[key] and sm.hooked[key][name] then
+		return
+	end
+	sm.hooked[key] = sm.hooked[key] or {}
+	sm.hooked[key][name] = true
 	smokeAddConn(folder.ChildAdded:Connect(function(ch)
 		if ch.Name == name then
 			task.defer(smokeDestroy, ch)
@@ -153,7 +183,6 @@ local function smokeHookGui(pg)
 	if not pg then
 		return
 	end
-	-- Dex: PlayerGui.SmokeScreenGUI and PlayerGui.CoreGUI.SmokeScreenGUI
 	smokeSweepChildren(pg, "SmokeScreenGUI")
 	smokeHookName(pg, "SmokeScreenGUI")
 	local core = pg:FindFirstChild("CoreGUI")
@@ -179,6 +208,9 @@ local function startRemoveSmokeExplosion()
 		return
 	end
 	misc.smoke.active = true
+	misc.smoke.recent = 0
+	misc.smoke.windowAt = 0
+	misc.smoke.pausedUntil = 0
 	smokeClearConns()
 
 	local debris = workspace:FindFirstChild("Debris")
@@ -3752,38 +3784,55 @@ function menuMus.start(S)
 		return
 	end
 
-	local function hookPlayerGui(pg)
-		if not pg then
+	-- IMPORTANT: do NOT use PlayerGui.DescendantAdded — Criminality lobby streams
+	-- thousands of Intro UI instances and that callback storm freezes/crashes the client.
+	local function hookIntro(intro)
+		if not intro or menuMus.patched[intro] then
 			return
 		end
+		menuMus.patched[intro] = true
+		pcall(menuMus.scan, _G.__VG_S)
 		table.insert(
 			menuMus.conns,
-			pg.DescendantAdded:Connect(function(inst)
+			intro.ChildAdded:Connect(function(ch)
 				local cur = _G.__VG_S
 				if not cur or cur.CrimMenuMusic ~= true then
 					return
 				end
-				if inst:IsA("Sound") then
-					local intro = pg:FindFirstChild("Intro")
-					if intro and inst:IsDescendantOf(intro) then
-						menuMus.patch(inst, menuMus.resolveId(cur))
-					elseif inst.Name == "music" or inst.Name == "Music" then
-						menuMus.patch(inst, menuMus.resolveId(cur))
-					end
-				elseif inst.Name == "Intro" then
+				if ch:IsA("Sound") and (ch.Name == "music" or ch.Name == "Music") then
+					menuMus.patch(ch, menuMus.resolveId(cur))
+				elseif ch.Name == "music" or ch.Name == "Music" then
 					task.defer(function()
 						menuMus.scan(cur)
 					end)
 				end
 			end)
 		)
+	end
+
+	local function hookPlayerGui(pg)
+		if not pg then
+			return
+		end
+		local intro = pg:FindFirstChild("Intro")
+		if intro then
+			hookIntro(intro)
+		end
+		table.insert(
+			menuMus.conns,
+			pg.ChildAdded:Connect(function(ch)
+				if ch.Name == "Intro" then
+					hookIntro(ch)
+				end
+			end)
+		)
 		task.spawn(function()
-			for _ = 1, 40 do
+			for _ = 1, 30 do
 				local cur = _G.__VG_S
 				if cur and cur.CrimMenuMusic == true then
 					menuMus.scan(cur)
 				end
-				task.wait(0.05)
+				task.wait(0.15)
 			end
 		end)
 	end
@@ -3816,7 +3865,11 @@ function Criminality.StartMenuMusicEarly(S)
 		end
 	end
 	if not S or S.CrimMenuMusic == true then
-		menuMus.start(S)
+		-- Defer past lobby GUI flood / Adonis boot — early Descendant hooks were crashing clients
+		task.defer(function()
+			task.wait(0.75)
+			pcall(menuMus.start, S or _G.__VG_S)
+		end)
 	end
 end
 
@@ -4541,7 +4594,10 @@ function Criminality.Init(S)
 
 	-- Menu music as early as Init allows (also started from Main via StartMenuMusicEarly)
 	if S.CrimMenuMusic == true then
-		pcall(menuMus.start, S)
+		task.defer(function()
+			task.wait(0.2)
+			pcall(menuMus.start, S)
+		end)
 	end
 	S._crimStartMenuMusic = function()
 		pcall(menuMus.start, S)
@@ -4576,10 +4632,14 @@ function Criminality.Init(S)
 		syncFromConfig(S)
 	end)
 
-	setupCrimStaminaHook()
+	-- Defer hooks/config past lobby UI stream + Adonis — sync stamina/getupvalue early was risky
 	startFastPickupInput()
 	startMaster(S)
-	syncFromConfig(S)
+	task.defer(function()
+		task.wait(0.6)
+		pcall(setupCrimStaminaHook)
+		pcall(syncFromConfig, S)
+	end)
 end
 
 return Criminality
