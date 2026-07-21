@@ -79,11 +79,13 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
--- EARLY Adonis shield: "Disallowed Services Detected" (MainDetection)
--- Adonis: if FindService(ServerStorage|ServerScriptService) then Detected("crash", ...)
--- Executors often expose these to the client; must return nil BEFORE Adonis MainDetection runs.
--- Safe at boot (no getgc / no yield / no Detected hook).
-do
+-- EARLY Adonis shield: "Disallowed Services Detected"
+-- ONLY install when Adonis is present — hookfunction(FindService) crashes some executors
+-- in plain games. NEVER use hookmetamethod(__namecall).
+_G.__VG_INSTALL_FINDSERVICE_SHIELD = function()
+	if _G.__VG_FINDSERVICE_SHIELD then
+		return true
+	end
 	local BLOCKED = {
 		ServerStorage = true,
 		ServerScriptService = true,
@@ -91,55 +93,76 @@ do
 	local function isBlockedName(v)
 		return typeof(v) == "string" and BLOCKED[v] == true
 	end
+	if typeof(hookfunction) ~= "function" then
+		return false
+	end
+	local ok = pcall(function()
+		local oldFS = game.FindService
+		if typeof(oldFS) ~= "function" then
+			return
+		end
+		-- Plain Lua wrap only (no newcclosure) — safer on Potassium/etc.
+		hookfunction(oldFS, function(a, b, ...)
+			if isBlockedName(a) or isBlockedName(b) then
+				return nil
+			end
+			return oldFS(a, b, ...)
+		end)
+		_G.__VG_FINDSERVICE_SHIELD = true
+	end)
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield=" .. tostring(ok and _G.__VG_FINDSERVICE_SHIELD == true))
+	end
+	return ok and _G.__VG_FINDSERVICE_SHIELD == true
+end
 
-	local function makeCC(f)
-		if typeof(newcclosure) == "function" then
-			local ok, w = pcall(newcclosure, f)
-			if ok and w then
-				return w
+do
+	local function likelyAdonis()
+		local ok, rs = pcall(function()
+			return game:GetService("ReplicatedStorage")
+		end)
+		if not ok or not rs then
+			return false
+		end
+		for _, ch in ipairs(rs:GetChildren()) do
+			local n = string.lower(tostring(ch.Name))
+			if string.find(n, "adonis", 1, true) then
+				return true
 			end
 		end
-		return f
+		return false
 	end
 
-	local hooked = false
-	if typeof(hookfunction) == "function" then
-		pcall(function()
-			local oldFS = game.FindService
-			if typeof(oldFS) ~= "function" then
+	if likelyAdonis() then
+		pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
+	elseif typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield skipped (no Adonis in RS)")
+	end
+
+	-- If Adonis loads late, install as soon as we see it in logs / RS
+	pcall(function()
+		local LogService = game:GetService("LogService")
+		LogService.MessageOut:Connect(function(message)
+			if _G.__VG_FINDSERVICE_SHIELD then
 				return
 			end
-			-- Adonis calls unbound: FindService("ServerStorage", DataModel) AND normal :FindService(name)
-			hookfunction(oldFS, makeCC(function(a, b, ...)
-				if isBlockedName(a) or isBlockedName(b) then
-					return nil
-				end
-				return oldFS(a, b, ...)
-			end))
-			hooked = true
+			if typeof(message) == "string" and string.find(message, "Adonis", 1, true) then
+				pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
+			end
 		end)
-	end
-
-	if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" then
-		pcall(function()
-			local oldNc
-			oldNc = hookmetamethod(game, "__namecall", makeCC(function(self, ...)
-				local method = getnamecallmethod()
-				if method == "FindService" or method == "findService" then
-					local name = ...
-					if isBlockedName(name) then
-						return nil
-					end
-				end
-				return oldNc(self, ...)
-			end))
-			hooked = true
+	end)
+	pcall(function()
+		local rs = game:GetService("ReplicatedStorage")
+		rs.ChildAdded:Connect(function(ch)
+			if _G.__VG_FINDSERVICE_SHIELD then
+				return
+			end
+			local n = string.lower(tostring(ch.Name))
+			if string.find(n, "adonis", 1, true) then
+				pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
+			end
 		end)
-	end
-
-	if typeof(_G.__VG_LOG_FILE) == "function" then
-		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield=" .. tostring(hooked) .. " (ServerStorage/SSS)")
-	end
+	end)
 end
 
 -- ADONIS BYPASS — based on Anti.luau source analysis:
@@ -1221,6 +1244,7 @@ if Settings.AntiBypass ~= false then
 		if typeof(_G.__VG_LOG_FILE) == "function" then
 			_G.__VG_LOG_FILE("INFO", "[VG:bypass] starting deferred Adonis bypass")
 		end
+		pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
 		if typeof(_G.__VG_START_ADONIS_BYPASS) == "function" then
 			pcall(_G.__VG_START_ADONIS_BYPASS)
 		end
