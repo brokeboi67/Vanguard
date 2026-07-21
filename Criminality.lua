@@ -32,7 +32,7 @@ local UIS; pcall(function() UIS = game:GetService("UserInputService") end)
 
 -- â”€â”€ NO FALL DAMAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
-local misc = { noFallConns = {}, noSpikeConn = nil }
+local misc = { noFallConns = {}, noSpikeConn = nil, smoke = { conns = {}, active = false } }
 
 local function addForceField(char)
 	if not char then return end
@@ -101,6 +101,46 @@ local function stopNoSpike()
 			if d:IsA("BasePart") then pcall(function() d.CanTouch=true end) end
 		end
 	end
+end
+
+-- ── REMOVE smokeExplosion (client destroy by exact Dex name) ─────────────────
+local function nukeSmokeExplosion(inst)
+	if inst and inst.Name == "smokeExplosion" then
+		pcall(function()
+			inst:Destroy()
+		end)
+		return true
+	end
+	return false
+end
+
+local function sweepSmokeExplosions()
+	for _, d in ipairs(workspace:GetDescendants()) do
+		nukeSmokeExplosion(d)
+	end
+end
+
+local function startRemoveSmokeExplosion()
+	if misc.smoke.active then
+		return
+	end
+	misc.smoke.active = true
+	pcall(sweepSmokeExplosions)
+	table.insert(misc.smoke.conns, workspace.DescendantAdded:Connect(function(d)
+		if d.Name == "smokeExplosion" then
+			task.defer(nukeSmokeExplosion, d)
+		end
+	end))
+end
+
+local function stopRemoveSmokeExplosion()
+	for _, c in ipairs(misc.smoke.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.smoke.conns = {}
+	misc.smoke.active = false
 end
 
 -- ── NO RAGDOLL (client: cancel PlatformStand / Ragdoll / Physics + restore joints) ──
@@ -2275,6 +2315,7 @@ local featureRunning = {
 	fullBright = false,
 	hitSounds = false,
 	autoRespawn = false,
+	removeSmoke = false,
 }
 local gunMod = {
 	conns = {},
@@ -4168,6 +4209,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+	syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 	syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
 	if crimFlag(S.CrimInfStamina) then
@@ -4216,6 +4258,7 @@ local function startMaster(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
 			pcall(syncRemoteElevator, S)
@@ -4399,6 +4442,7 @@ local function stopMaster()
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
+	pcall(stopRemoveSmokeExplosion)
 	pcall(snd.stop)
 	pcall(autoRespawn.stop)
 	clearAllPickupFx()

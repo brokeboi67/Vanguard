@@ -642,6 +642,9 @@ function Config.EnforceRules(S)
 	if S.CrimStaffDetect == nil then
 		S.CrimStaffDetect = false
 	end
+	if S.CrimRemoveSmokeExplosion == nil then
+		S.CrimRemoveSmokeExplosion = false
+	end
 	if S.CrimNoFailLockpick == nil then
 		S.CrimNoFailLockpick = false
 	end
