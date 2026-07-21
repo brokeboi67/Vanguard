@@ -1928,18 +1928,35 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = KeyLbl })
 
 		local listenConn
-		local function finishBind(name)
-			S[key] = name
-			KeyLbl.Text = formatBindName(name)
-			KeyLbl.TextColor3 = ACC
+		local function stopListen()
 			bindListening = false
 			if listenConn then
 				listenConn:Disconnect()
 				listenConn = nil
 			end
+		end
+
+		local function finishBind(name)
+			S[key] = name
+			KeyLbl.Text = formatBindName(name)
+			KeyLbl.TextColor3 = ACC
+			stopListen()
 			if opts.onChange then
 				pcall(opts.onChange, name)
 			end
+		end
+
+		local function cancelBind()
+			KeyLbl.Text = formatBindName(S[key])
+			KeyLbl.TextColor3 = ACC
+			stopListen()
+		end
+
+		local function isMouseBind(input)
+			local t = input.UserInputType
+			return t == Enum.UserInputType.MouseButton1
+				or t == Enum.UserInputType.MouseButton2
+				or t == Enum.UserInputType.MouseButton3
 		end
 
 		Row.MouseButton1Click:Connect(function()
@@ -1949,19 +1966,39 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			bindListening = true
 			KeyLbl.Text = "…"
 			KeyLbl.TextColor3 = Color3.fromRGB(200, 200, 120)
-			listenConn = UIS.InputBegan:Connect(function(input, processed)
-				if processed then
+			-- Defer so the LMB that opened this row is not captured as the bind
+			task.defer(function()
+				if not bindListening then
 					return
 				end
-				if input.KeyCode ~= Enum.KeyCode.Unknown then
-					finishBind(input.KeyCode.Name)
-				elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-					finishBind("MouseButton1")
-				elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-					finishBind("MouseButton2")
-				elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
-					finishBind("MouseButton3")
-				end
+				listenConn = UIS.InputBegan:Connect(function(input, processed)
+					if not bindListening then
+						return
+					end
+					-- Esc = cancel
+					if input.KeyCode == Enum.KeyCode.Escape then
+						cancelBind()
+						return
+					end
+					-- Mouse: always accept while rebinding (GUI marks clicks as processed)
+					if isMouseBind(input) then
+						if input.UserInputType == Enum.UserInputType.MouseButton1 then
+							finishBind("MouseButton1")
+						elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+							finishBind("MouseButton2")
+						elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+							finishBind("MouseButton3")
+						end
+						return
+					end
+					-- Keyboard: ignore chat/IME when processed, else take KeyCode
+					if processed then
+						return
+					end
+					if input.KeyCode ~= Enum.KeyCode.Unknown then
+						finishBind(input.KeyCode.Name)
+					end
+				end)
 			end)
 		end)
 		bindRegistry[key] = KeyLbl
