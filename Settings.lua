@@ -250,6 +250,7 @@ local Settings = {
 	CrimAutoReload = false,
 	CrimAutoRespawn = false,
 	CrimStaffDetect = false,
+	CrimRemoveSmokeExplosion = false,
 	CrimNoFailLockpick = false,
 	CrimAutoOpenDoors = false,
 	CrimAutoUnlockDoors = false,
