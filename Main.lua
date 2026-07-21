@@ -2,6 +2,10 @@
 local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
 _G.__VG_LOADING = true
+-- Default ON: Adonis games currently native-crash on many executors (incl. Potassium) when
+-- any FindService/PreloadAsync/getgc/debug.info hooks run. Cobalt crashing too = executor issue.
+-- Set Settings.AdonisNoHooks = false only after your executor is fixed.
+_G.__VG_ADONIS_NO_HOOKS = true
 
 -- File logger: capture full console to Vanguard/logs/vanguard.log
 do
@@ -83,6 +87,12 @@ end
 -- ONLY install when Adonis is present — hookfunction(FindService) crashes some executors
 -- in plain games. NEVER use hookmetamethod(__namecall).
 _G.__VG_INSTALL_FINDSERVICE_SHIELD = function()
+	if _G.__VG_ADONIS_NO_HOOKS then
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("WARN", "[VG:bypass] FindService shield BLOCKED (AdonisNoHooks)")
+		end
+		return false
+	end
 	if _G.__VG_FINDSERVICE_SHIELD then
 		return true
 	end
@@ -117,52 +127,57 @@ _G.__VG_INSTALL_FINDSERVICE_SHIELD = function()
 end
 
 do
-	local function likelyAdonis()
-		local ok, rs = pcall(function()
-			return game:GetService("ReplicatedStorage")
-		end)
-		if not ok or not rs then
+	if _G.__VG_ADONIS_NO_HOOKS then
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("WARN", "[VG:bypass] AdonisNoHooks ON — skipping all early Adonis shields")
+		end
+	else
+		local function likelyAdonis()
+			local ok, rs = pcall(function()
+				return game:GetService("ReplicatedStorage")
+			end)
+			if not ok or not rs then
+				return false
+			end
+			for _, ch in ipairs(rs:GetChildren()) do
+				local n = string.lower(tostring(ch.Name))
+				if string.find(n, "adonis", 1, true) then
+					return true
+				end
+			end
 			return false
 		end
-		for _, ch in ipairs(rs:GetChildren()) do
-			local n = string.lower(tostring(ch.Name))
-			if string.find(n, "adonis", 1, true) then
-				return true
-			end
+
+		if likelyAdonis() then
+			pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
+		elseif typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield skipped (no Adonis in RS)")
 		end
-		return false
-	end
 
-	if likelyAdonis() then
-		pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
-	elseif typeof(_G.__VG_LOG_FILE) == "function" then
-		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield skipped (no Adonis in RS)")
+		pcall(function()
+			local LogService = game:GetService("LogService")
+			LogService.MessageOut:Connect(function(message)
+				if _G.__VG_FINDSERVICE_SHIELD or _G.__VG_ADONIS_NO_HOOKS then
+					return
+				end
+				if typeof(message) == "string" and string.find(message, "Adonis", 1, true) then
+					pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
+				end
+			end)
+		end)
+		pcall(function()
+			local rs = game:GetService("ReplicatedStorage")
+			rs.ChildAdded:Connect(function(ch)
+				if _G.__VG_FINDSERVICE_SHIELD or _G.__VG_ADONIS_NO_HOOKS then
+					return
+				end
+				local n = string.lower(tostring(ch.Name))
+				if string.find(n, "adonis", 1, true) then
+					pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
+				end
+			end)
+		end)
 	end
-
-	-- If Adonis loads late, install as soon as we see it in logs / RS
-	pcall(function()
-		local LogService = game:GetService("LogService")
-		LogService.MessageOut:Connect(function(message)
-			if _G.__VG_FINDSERVICE_SHIELD then
-				return
-			end
-			if typeof(message) == "string" and string.find(message, "Adonis", 1, true) then
-				pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
-			end
-		end)
-	end)
-	pcall(function()
-		local rs = game:GetService("ReplicatedStorage")
-		rs.ChildAdded:Connect(function(ch)
-			if _G.__VG_FINDSERVICE_SHIELD then
-				return
-			end
-			local n = string.lower(tostring(ch.Name))
-			if string.find(n, "adonis", 1, true) then
-				pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
-			end
-		end)
-	end)
 end
 
 -- ADONIS BYPASS — based on Anti.luau source analysis:
@@ -259,6 +274,12 @@ do
 
 	-- Registered starter — Main calls this AFTER UI ready (never at bootstrap).
 	_G.__VG_START_ADONIS_BYPASS = function()
+		if _G.__VG_ADONIS_NO_HOOKS then
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("WARN", "[VG:bypass] post-UI Adonis scan BLOCKED (AdonisNoHooks)")
+			end
+			return
+		end
 		if _G.__VG_ADONIS_BYPASS_STARTED then
 			return
 		end
@@ -291,7 +312,7 @@ do
 				task.spawn(function()
 					for _ = 1, 12 do
 						task.wait(3)
-						if _G.__VG_DBG_HOOKED then break end
+						if _G.__VG_DBG_HOOKED or _G.__VG_ADONIS_NO_HOOKS then break end
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
 						local d, k = timedBypassScan(false)
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
@@ -310,8 +331,9 @@ do
 	end
 end
 
--- Block Adonis CoreGui scan via PreloadAsync
+-- Block Adonis CoreGui scan via PreloadAsync (skipped under AdonisNoHooks — hookfunction crashes Potassium)
 pcall(function()
+	if _G.__VG_ADONIS_NO_HOOKS then return end
 	if typeof(hookfunction) ~= "function" then return end
 	local CoreGui = game:GetService("CoreGui")
 	local function isCoreScan(assets)
@@ -981,6 +1003,15 @@ end)
 Stealth.Init(AntiBypass)
 
 local Settings = Get("Settings.lua")
+if Settings.AdonisNoHooks == false then
+	_G.__VG_ADONIS_NO_HOOKS = false
+else
+	_G.__VG_ADONIS_NO_HOOKS = true
+	Settings.AdonisNoHooks = true
+end
+if typeof(_G.__VG_LOG_FILE) == "function" then
+	_G.__VG_LOG_FILE("INFO", "[VG:bypass] AdonisNoHooks=" .. tostring(_G.__VG_ADONIS_NO_HOOKS))
+end
 local Logger = Get("Logger.lua")
 local Perf = Get("Perf.lua")
 _G.__VG_PERF = Perf
@@ -1223,8 +1254,8 @@ end
 
 bootProgress("Interfejs", 0.86)
 
--- Adonis getgc/hooks ONLY after UI ready — boot-time hooks crash Adonis clients (native AV).
-if Settings.AntiBypass ~= false then
+-- Adonis getgc/hooks ONLY after UI ready — skipped entirely when AdonisNoHooks (executor crash).
+if Settings.AntiBypass ~= false and not _G.__VG_ADONIS_NO_HOOKS then
 	task.spawn(function()
 		local deadline = os.clock() + 20
 		while os.clock() < deadline do
@@ -1238,7 +1269,7 @@ if Settings.AntiBypass ~= false then
 		end
 		-- Extra settle time after loader teardown (Adonis Anti may still be initializing).
 		task.wait(isCriminality and 2.5 or 1.0)
-		if Settings.Unloaded then
+		if Settings.Unloaded or _G.__VG_ADONIS_NO_HOOKS then
 			return
 		end
 		if typeof(_G.__VG_LOG_FILE) == "function" then
@@ -1253,6 +1284,8 @@ if Settings.AntiBypass ~= false then
 		AntiBypass.waitForAdonis(2)
 		AntiBypass.logAdonisDiagnostics("bypass", Settings)
 	end)
+elseif typeof(_G.__VG_LOG_FILE) == "function" then
+	_G.__VG_LOG_FILE("WARN", "[VG:bypass] deferred Adonis bypass DISABLED (AdonisNoHooks)")
 end
 
 task.spawn(function()

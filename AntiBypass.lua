@@ -724,6 +724,9 @@ function AntiBypass.waitForAdonis(timeoutSec)
 end
 
 function AntiBypass.unlockAdonisHooks(S)
+	if _G.__VG_ADONIS_NO_HOOKS or (S and S.AdonisNoHooks) then
+		return false
+	end
 	if S and S.AntiBypass == false then
 		return false
 	end
@@ -790,6 +793,12 @@ end
 
 function AntiBypass.installShield(S)
 	if S and S.AntiBypass == false then
+		return false
+	end
+	if _G.__VG_ADONIS_NO_HOOKS or (S and S.AdonisNoHooks) then
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("WARN", "[VG:bypass] installShield skipped (AdonisNoHooks)")
+		end
 		return false
 	end
 

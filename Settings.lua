@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.80",
+	Version = "2.52.81",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -291,6 +291,9 @@ local Settings = {
 	MiscAffectFriends = false,
 	MiscBots = true,
 	AntiBypass = true,
+	-- When true: ZERO Adonis hooks (no FindService/PreloadAsync/getgc/debug.info).
+	-- Use if Adonis games native-crash even with Cobalt — usually broken executor (e.g. Potassium).
+	AdonisNoHooks = true,
 	DebugAdonis = false,
 	LogToFile = true,
 	TransferScript = false,
