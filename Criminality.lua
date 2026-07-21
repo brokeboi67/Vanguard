@@ -103,45 +103,75 @@ local function stopNoSpike()
 	end
 end
 
--- ── REMOVE SmokeExplosion (Workspace.Debris — exact Dex name) ────────────────
-local function nukeSmokeExplosion(inst)
-	if inst and inst.Name == "SmokeExplosion" then
-		pcall(function()
-			inst:Destroy()
-		end)
-		return true
-	end
-	return false
-end
-
-local function sweepSmokeExplosions()
-	local debris = workspace:FindFirstChild("Debris")
-	if debris then
-		for _, ch in ipairs(debris:GetChildren()) do
-			nukeSmokeExplosion(ch)
-		end
+-- ── REMOVE smoke FX (Debris.SmokeExplosion + PlayerGui SmokeScreenGUI) ───────
+-- Opt: only shallow GetChildren + ChildAdded on known folders (no workspace GetDescendants).
+local function smokeDestroy(inst)
+	if not inst then
 		return
 	end
-	for _, d in ipairs(workspace:GetDescendants()) do
-		nukeSmokeExplosion(d)
-	end
+	pcall(function()
+		inst:Destroy()
+	end)
 end
 
-local function hookSmokeDebrisFolder(folder)
-	if not folder then
-		return
-	end
+local function smokeClearConns()
 	for _, c in ipairs(misc.smoke.conns) do
 		pcall(function()
 			c:Disconnect()
 		end)
 	end
-	misc.smoke.conns = {}
-	table.insert(misc.smoke.conns, folder.ChildAdded:Connect(function(ch)
-		if ch.Name == "SmokeExplosion" then
-			task.defer(nukeSmokeExplosion, ch)
+	table.clear(misc.smoke.conns)
+end
+
+local function smokeAddConn(conn)
+	table.insert(misc.smoke.conns, conn)
+end
+
+local function smokeSweepChildren(folder, name)
+	if not folder then
+		return
+	end
+	for _, ch in ipairs(folder:GetChildren()) do
+		if ch.Name == name then
+			smokeDestroy(ch)
+		end
+	end
+end
+
+local function smokeHookName(folder, name)
+	if not folder then
+		return
+	end
+	smokeAddConn(folder.ChildAdded:Connect(function(ch)
+		if ch.Name == name then
+			task.defer(smokeDestroy, ch)
 		end
 	end))
+end
+
+local function smokeHookGui(pg)
+	if not pg then
+		return
+	end
+	-- Dex: PlayerGui.SmokeScreenGUI and PlayerGui.CoreGUI.SmokeScreenGUI
+	smokeSweepChildren(pg, "SmokeScreenGUI")
+	smokeHookName(pg, "SmokeScreenGUI")
+	local core = pg:FindFirstChild("CoreGUI")
+	if core then
+		smokeSweepChildren(core, "SmokeScreenGUI")
+		smokeHookName(core, "SmokeScreenGUI")
+	end
+	smokeAddConn(pg.ChildAdded:Connect(function(ch)
+		if ch.Name == "CoreGUI" then
+			smokeSweepChildren(ch, "SmokeScreenGUI")
+			smokeHookName(ch, "SmokeScreenGUI")
+		end
+	end))
+end
+
+local function smokeHookDebris(folder)
+	smokeSweepChildren(folder, "SmokeExplosion")
+	smokeHookName(folder, "SmokeExplosion")
 end
 
 local function startRemoveSmokeExplosion()
@@ -149,29 +179,36 @@ local function startRemoveSmokeExplosion()
 		return
 	end
 	misc.smoke.active = true
-	pcall(sweepSmokeExplosions)
+	smokeClearConns()
+
 	local debris = workspace:FindFirstChild("Debris")
 	if debris then
-		hookSmokeDebrisFolder(debris)
+		smokeHookDebris(debris)
 	else
-		table.insert(misc.smoke.conns, workspace.ChildAdded:Connect(function(ch)
+		smokeAddConn(workspace.ChildAdded:Connect(function(ch)
 			if ch.Name == "Debris" then
-				pcall(sweepSmokeExplosions)
-				hookSmokeDebrisFolder(ch)
-			elseif ch.Name == "SmokeExplosion" then
-				task.defer(nukeSmokeExplosion, ch)
+				smokeHookDebris(ch)
 			end
 		end))
+	end
+
+	local lp = getLP()
+	if lp then
+		local pg = lp:FindFirstChild("PlayerGui")
+		if pg then
+			smokeHookGui(pg)
+		else
+			smokeAddConn(lp.ChildAdded:Connect(function(ch)
+				if ch.Name == "PlayerGui" or ch:IsA("PlayerGui") then
+					smokeHookGui(ch)
+				end
+			end))
+		end
 	end
 end
 
 local function stopRemoveSmokeExplosion()
-	for _, c in ipairs(misc.smoke.conns) do
-		pcall(function()
-			c:Disconnect()
-		end)
-	end
-	misc.smoke.conns = {}
+	smokeClearConns()
 	misc.smoke.active = false
 end
 
