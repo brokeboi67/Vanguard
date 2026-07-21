@@ -22,6 +22,7 @@ local MAX_DEEP_SCAN_ATTEMPTS = 2       -- give up after 2 attempts (no Adonis = 
 local adonisWatcherStop = false
 local debugInfoHooked = false
 local uiBuilding = false
+local adonisHooksUnlocked = false
 local adonisKillAttempts = 0
 local adonisKillGraceEnd = 0
 local playerKickAttempts = 0
@@ -316,6 +317,9 @@ local function installAdonisLogTrigger()
 	pcall(function()
 		local LogService = game:GetService("LogService")
 		LogService.MessageOut:Connect(function(message)
+			if not adonisHooksUnlocked then
+				return
+			end
 			if typeof(message) ~= "string" or not message:find("Adonis", 1, true) then
 				return
 			end
@@ -327,13 +331,7 @@ local function installAdonisLogTrigger()
 					AntiBypass.neutralizeAdonisDetectors(false)
 					AntiBypass.scanAdonis({ deep = false })
 					ensureDebugInfoHook()
-					if not isLoadPhase() and not uiBuilding then
-						task.delay(1.5, function()
-							AntiBypass.neutralizeAdonisDetectors(true)
-							AntiBypass.scanAdonis({ deep = true })
-							ensureDebugInfoHook()
-						end)
-					end
+					-- Deep getgc during lobby = native crash risk; light only from log trigger.
 				end)
 			end
 		end)
@@ -383,7 +381,15 @@ local function ensureDebugInfoHook()
 	local detRef = adonisDetectedRef
 	local wrap = makeCclosure(function(fn, ...)
 		if fn == detRef then
-			return coroutine.yield(coroutine.running())
+			local canYield = true
+			pcall(function()
+				if typeof(coroutine.isyieldable) == "function" then
+					canYield = coroutine.isyieldable()
+				end
+			end)
+			if canYield then
+				return coroutine.yield(coroutine.running())
+			end
 		end
 		return oldInfo(fn, ...)
 	end)
@@ -420,10 +426,8 @@ local function hookDetectedFn(fn, tbl, key)
 	if not adonisDetectedRef then
 		adonisDetectedRef = fn
 	end
-	if typeof(hookfunction) == "function" then
-		pcall(hookfunction, fn, blankDetected)
-	end
-	-- No rawset/replaceTableFn — modifying Adonis table entries breaks its internal refs
+	-- Do NOT hookfunction(Detected) — Adonis Anti checks closure identity via debug.info.
+	-- Rely on debug.info yield + Kill/Send hooks. Marking Detected as "seen" is enough for status.
 	adonisHookCount += 1
 	adonisDetectedHooked += 1
 	ensureDebugInfoHook()
@@ -622,6 +626,9 @@ local function scheduleDeepScan(delaySec)
 end
 
 function AntiBypass.scanAdonis(opts)
+	if not adonisHooksUnlocked then
+		return adonisHookCount > 0
+	end
 	if typeof(getgc) ~= "function" then
 		return adonisHookCount > 0
 	end
@@ -694,27 +701,18 @@ function AntiBypass.startAdonisWatcher()
 end
 
 function AntiBypass.onLoadComplete()
-	if isLoadPhase() then
-		return
-	end
-	task.defer(function()
-		task.wait(0.3)
-		if isLoadPhase() or adonisWatcherStop or _G.__VG_DBG_HOOKED then
-			return
-		end
-		AntiBypass.neutralizeAdonisDetectors(true)
-		-- Light scan only — deep scan (getgc true) takes 14-60s in large games.
-		AntiBypass.scanAdonis({ deep = false })
-		ensureDebugInfoHook()
-	end)
+	-- Adonis getgc/hooks deferred until unlockAdonisHooks (after UI).
+	return
 end
 
 function AntiBypass.waitForAdonis(timeoutSec)
+	if not adonisHooksUnlocked then
+		return false
+	end
 	timeoutSec = math.min(timeoutSec or 3, 4)
 	local deadline = os.clock() + timeoutSec
 	repeat
 		AntiBypass.neutralizeAdonisDetectors(false)
-		-- Light scan only in the wait loop — deep scans take too long.
 		AntiBypass.scanAdonis({ deep = false })
 		ensureDebugInfoHook()
 		if isFullyHooked() then
@@ -723,6 +721,25 @@ function AntiBypass.waitForAdonis(timeoutSec)
 		task.wait(0.35)
 	until os.clock() >= deadline
 	return adonisHookCount > 0
+end
+
+function AntiBypass.unlockAdonisHooks(S)
+	if S and S.AntiBypass == false then
+		return false
+	end
+	if adonisHooksUnlocked then
+		AntiBypass.scanAdonis({ deep = false })
+		ensureDebugInfoHook()
+		return true
+	end
+	adonisHooksUnlocked = true
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:bypass] Adonis hooks UNLOCKED (post-UI)")
+	end
+	AntiBypass.scanAdonis({ deep = false })
+	ensureDebugInfoHook()
+	AntiBypass.startAdonisWatcher()
+	return true
 end
 
 function AntiBypass.setUiBuilding(active)
@@ -736,7 +753,7 @@ function AntiBypass.logAdonisDiagnostics(tag, S)
 	local st = AntiBypass.getAdonisStatus()
 	local early = _G.__VG_EARLY_ADONIS
 	local msg = string.format(
-		"[VG:%s] hooked=%s count=%d det=%d kill=%d detectors=%d debugInfo=%s hidden=%s uiBuilding=%s loading=%s",
+		"[VG:%s] hooked=%s count=%d det=%d kill=%d detectors=%d debugInfo=%s hidden=%s uiBuilding=%s loading=%s unlocked=%s",
 		tostring(tag or "?"),
 		tostring(st.hooked),
 		st.count,
@@ -746,7 +763,8 @@ function AntiBypass.logAdonisDiagnostics(tag, S)
 		tostring(st.debugInfoHooked),
 		tostring(st.hasHiddenGui),
 		tostring(uiBuilding),
-		tostring(isLoadPhase())
+		tostring(isLoadPhase()),
+		tostring(adonisHooksUnlocked)
 	)
 	if early then
 		msg ..= string.format(
@@ -795,9 +813,8 @@ function AntiBypass.installShield(S)
 		shieldInstalled = true
 	end
 
-	AntiBypass.scanAdonis({ deep = false })
-	ensureDebugInfoHook()
-	AntiBypass.startAdonisWatcher()
+	-- Do NOT scan/watcher here — getgc+hooks during boot crash Adonis games (native AV).
+	-- Call unlockAdonisHooks after UI ready.
 	return true
 end
 

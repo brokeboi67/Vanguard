@@ -80,10 +80,11 @@ do
 end
 
 -- ADONIS BYPASS — based on Anti.luau source analysis:
--- Anti runs: debug.info(Detected,"slanf") → if closure≠Detected → "while true do end" (line 427)
+-- Anti runs: debug.info(Detected,"slanf") → if closure≠Detected → "while true do end"
 -- hookfunction(Detected) changes closure identity → freeze. DO NOT hookfunction Detected.
--- CORRECT approach: hook debug.info with coroutine.yield → suspends entire anti-cheat routine.
--- Sources: github.com/Epix-Incorporated/Adonis Anti.luau + scripthub bypass script
+-- Yield suspends Anti — but yielding from a non-yieldable engine context = native AV (c0000005).
+-- CRITICAL: defer ALL getgc/hooks until AFTER UI ready. Boot-time Adonis hooks crash Adonis games.
+-- Sources: github.com/Epix-Incorporated/Adonis Anti.luau
 do
 	local function makeCC(f)
 		if typeof(newcclosure) == "function" then
@@ -92,8 +93,6 @@ do
 		return f
 	end
 
-	-- Shared state used by both the initial pass and the retry watcher.
-	local _bypassDetected = nil
 	local _bypassOldDbgInfo = nil
 
 	local function installDebugInfoHook(Detected)
@@ -106,13 +105,19 @@ do
 		local detRef = Detected
 		local wrap = makeCC(function(fn, ...)
 			if fn == detRef then
-				-- Yield Adonis's tamper-check coroutine forever.
-				-- This suspends the entire anti-cheat routine — no detectors run.
-				return coroutine.yield(coroutine.running())
+				-- Only yield when safe — otherwise pass-through (freeze risk, not native crash).
+				local canYield = true
+				pcall(function()
+					if typeof(coroutine.isyieldable) == "function" then
+						canYield = coroutine.isyieldable()
+					end
+				end)
+				if canYield then
+					return coroutine.yield(coroutine.running())
+				end
 			end
 			return _bypassOldDbgInfo(fn, ...)
 		end)
-		-- Direct assignment preferred — hookfunction on debug.info fails in Potassium.
 		local ok = pcall(function() renv.debug.info = wrap end)
 		if not ok then
 			ok = pcall(hookfunction, oldInfo, wrap)
@@ -126,13 +131,11 @@ do
 	local function scanForAdonis(deep)
 		if typeof(getgc) ~= "function" then return nil, nil end
 		local Detected, Kill
-		-- Yield every 400 items to prevent blocking the scheduler in large games
-		-- (e.g. Rivals with 200k+ concurrent players has a massive GC heap).
 		local i = 0
 		for _, v in getgc(deep) do
 			i = i + 1
 			if i % 400 == 0 then
-				task.wait()   -- give the scheduler a breath
+				task.wait()
 			end
 			if typeof(v) == "table" then
 				if not Detected then
@@ -153,13 +156,9 @@ do
 
 	local function applyBypass(Detected, Kill)
 		if not Detected then return false end
-		_bypassDetected = Detected
 		local dbgHooked = installDebugInfoHook(Detected)
-		-- Hook Detected to return true for the sanity check Detected("_","_",true).
-		-- Safe to do AFTER debug.info is hooked (tamper-check coroutine is now suspended).
-		if dbgHooked then
-			pcall(hookfunction, Detected, makeCC(function() return true end))
-		end
+		-- NEVER hookfunction(Detected) — breaks Anti identity check → freeze/crash.
+		-- Yield on debug.info(Detected) suspends the Anti loop instead.
 		if Kill then
 			pcall(hookfunction, Kill, makeCC(function() end))
 		end
@@ -172,11 +171,19 @@ do
 		return dbgHooked
 	end
 
-	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
-		-- Run in task.spawn to avoid blocking the scheduler (no freeze).
-		-- Adonis tamper-check fires every 5 s — we have plenty of time to hook.
+	-- Registered starter — Main calls this AFTER UI ready (never at bootstrap).
+	_G.__VG_START_ADONIS_BYPASS = function()
+		if _G.__VG_ADONIS_BYPASS_STARTED then
+			return
+		end
+		_G.__VG_ADONIS_BYPASS_STARTED = true
+		if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then
+			return
+		end
 		task.spawn(function()
-			if not game:IsLoaded() then pcall(function() game.Loaded:Wait() end) end
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("INFO", "[VG:bypass] post-UI Adonis scan start")
+			end
 			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
 
 			local function timedBypassScan(deep)
@@ -185,31 +192,21 @@ do
 				return wrap("Main.BypassScan", scanForAdonis)(deep)
 			end
 
-			-- Fast light scan first (getgc false) — works if Adonis is already loaded.
+			-- Light scan only at first — getgc(true) during lobby boot caused native AV.
 			local Detected, Kill = timedBypassScan(false)
-
-			-- Deep scan fallback if light scan missed it (Adonis tables may not be in light GC).
-			if not Detected then
-				Detected, Kill = timedBypassScan(true)
-			end
-
 			local installed = applyBypass(Detected, Kill)
 
 			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
 
-			-- RETRY WATCHER: for games where Adonis loads AFTER our script (e.g. Criminality).
-			-- Polls every 3 s for up to 30 s (10 attempts). Stops as soon as hook confirmed.
-			-- Uses light scan (getgc false) first to avoid blocking scheduler in big games.
 			if not installed then
 				if typeof(_G.__VG_LOG_FILE) == "function" then
-					_G.__VG_LOG_FILE("WARN", "[VG:bypass] Det not found — starting retry watcher (Adonis may load late)")
+					_G.__VG_LOG_FILE("WARN", "[VG:bypass] Det not found — light retry watcher")
 				end
 				task.spawn(function()
-					for _ = 1, 10 do      -- max 10 × 3s = 30 s
+					for _ = 1, 12 do
 						task.wait(3)
 						if _G.__VG_DBG_HOOKED then break end
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
-						-- Light scan only — avoids the heavy getgc(true) causing stutters
 						local d, k = timedBypassScan(false)
 						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
 						if d then
@@ -220,6 +217,10 @@ do
 				end)
 			end
 		end)
+	end
+
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:bypass] early Adonis hooks DEFERRED until UI ready")
 	end
 end
 
@@ -592,8 +593,8 @@ _G.VG_MODULE_CACHE = _G.VG_MODULE_CACHE or {}
 local CRIM_GAME_ID = 1494262959
 local isCriminality = game.GameId == CRIM_GAME_ID
 
--- Base modules always fetched (Core → GameSupport). +3 Crim addons when needed (Criminality.lua TEMP disabled).
-local LOAD_TOTAL = 29 + (isCriminality and 3 or 0)
+-- Base modules always fetched (Core → GameSupport). +4 Criminality modules when needed.
+local LOAD_TOTAL = 29 + (isCriminality and 4 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -667,8 +668,7 @@ local MODULE_FILES = {
 	"UIConfigMenus.lua", "UIMusic.lua", "UI.lua", "Menus.lua", "GameSupport.lua",
 }
 if isCriminality then
-	-- TEMP TEST: skip Criminality.lua load to isolate lobby native crash
-	-- table.insert(MODULE_FILES, "Criminality.lua")
+	table.insert(MODULE_FILES, "Criminality.lua")
 	table.insert(MODULE_FILES, "PathDisplay.lua")
 	table.insert(MODULE_FILES, "ClientBuild.lua")
 	table.insert(MODULE_FILES, "BountyTracker.lua")
@@ -949,16 +949,12 @@ local GameSupport = Get("GameSupport.lua")
 
 -- Heavy game-specific module: don't HttpGet/compile outside Criminality
 local Criminality = nil
--- TEMP TEST: Criminality.lua disabled — reinject to check if lobby still crashes without it
-if isCriminality and typeof(_G.__VG_LOG_FILE) == "function" then
-	_G.__VG_LOG_FILE("WARN", "[VG:crim] Criminality.lua load DISABLED (temp test)")
+if isCriminality then
+	Criminality = Get("Criminality.lua")
+	if Criminality and Criminality.StartMenuMusicEarly then
+		pcall(Criminality.StartMenuMusicEarly, Settings)
+	end
 end
--- if isCriminality then
--- 	Criminality = Get("Criminality.lua")
--- 	if Criminality and Criminality.StartMenuMusicEarly then
--- 		pcall(Criminality.StartMenuMusicEarly, Settings)
--- 	end
--- end
 
 _G.__VG_LOADING = false
 if AntiBypass.onLoadComplete then
@@ -1141,28 +1137,32 @@ end
 
 bootProgress("Interfejs", 0.86)
 
--- Bypass scans in background — do NOT block UI.Init
--- On Criminality: wait until UI loader finishes — Adonis getgc during loader was a crash suspect
+-- Adonis getgc/hooks ONLY after UI ready — boot-time hooks crash Adonis clients (native AV).
 if Settings.AntiBypass ~= false then
 	task.spawn(function()
-		if isCriminality then
-			local deadline = os.clock() + 15
-			while os.clock() < deadline do
-				if Settings._vgUiReady or Settings.Unloaded then
-					break
-				end
-				task.wait(0.25)
+		local deadline = os.clock() + 20
+		while os.clock() < deadline do
+			if Settings._vgUiReady or Settings.Unloaded then
+				break
 			end
-			task.wait(1.5)
-			if Settings.Unloaded then
-				return
-			end
-			if typeof(_G.__VG_LOG_FILE) == "function" then
-				_G.__VG_LOG_FILE("INFO", "[VG:bypass] delayed Adonis wait (Criminality)")
-			end
-		else
-			task.wait(0.3)
+			task.wait(0.25)
 		end
+		if Settings.Unloaded then
+			return
+		end
+		-- Extra settle time after loader teardown (Adonis Anti may still be initializing).
+		task.wait(isCriminality and 2.5 or 1.0)
+		if Settings.Unloaded then
+			return
+		end
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("INFO", "[VG:bypass] starting deferred Adonis bypass")
+		end
+		if typeof(_G.__VG_START_ADONIS_BYPASS) == "function" then
+			pcall(_G.__VG_START_ADONIS_BYPASS)
+		end
+		pcall(AntiBypass.unlockAdonisHooks, Settings)
+		task.wait(0.5)
 		AntiBypass.waitForAdonis(2)
 		AntiBypass.logAdonisDiagnostics("bypass", Settings)
 	end)
