@@ -675,7 +675,10 @@ function Config.EnforceRules(S)
 	end
 	-- Menu music is portable (globals.json) — only fill defaults when missing
 	if S.CrimMenuMusic == nil then
-		S.CrimMenuMusic = true
+		S.CrimMenuMusic = false
+	end
+	if S.CrimLiteBoot == nil then
+		S.CrimLiteBoot = true
 	end
 	if S.CrimMenuMusicTrack == nil or not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
 		S.CrimMenuMusicTrack = "PolskiePola"

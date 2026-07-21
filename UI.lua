@@ -315,7 +315,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end)
 	end
 
-	refreshLoaderGameInfo()
+	-- Avoid Marketplace/thumbnail during UI build on Criminality (crash window after UI.Init)
+	if game.GameId ~= 1494262959 then
+		refreshLoaderGameInfo()
+	else
+		LoaderGameName.Text = game.Name ~= "" and game.Name or "Criminality"
+		LoaderSupportBadge.Text = "CRIM"
+		LoaderSupportNote.Text = ""
+		LoaderGameIcon.Image = ""
+	end
 
 	task.wait()
 
@@ -3515,61 +3523,63 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
-		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
-		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
-		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4, { flat = true })
-		MakeTog(CUtil, "Remove Smoke Explosion", "CrimRemoveSmokeExplosion", 5, { flat = true })
-		MakeSection(CUtil, "INVISIBILITY", 6)
-		MakeTog(CUtil, "Invisibility", "Invisibility", 7, { flat = true })
-		MakeTog(CUtil, "Visible Warning", "InvisShowWarning", 8, {
+		MakeTog(CUtil, "Crim Lite Boot (safe)", "CrimLiteBoot", 2, { flat = true })
+		MakeHint(CUtil, "hint_crim_lite_boot", 3)
+		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 4, { flat = true })
+		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 5, { flat = true })
+		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 6, { flat = true })
+		MakeTog(CUtil, "Remove Smoke Explosion", "CrimRemoveSmokeExplosion", 7, { flat = true })
+		MakeSection(CUtil, "INVISIBILITY", 8)
+		MakeTog(CUtil, "Invisibility", "Invisibility", 9, { flat = true })
+		MakeTog(CUtil, "Visible Warning", "InvisShowWarning", 10, {
 			flat = true,
 			requires = "Invisibility",
 		})
-		MakeSlider(CUtil, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 9, {
+		MakeSlider(CUtil, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 11, {
 			suffix = "",
 			step = 1,
 			fmt = function(v) return string.format("%d", v) end,
 		})
-		MakeBind(CUtil, "Visibility Key", "InvisKey", 10, { requires = "Invisibility" })
-		MakeHint(CUtil, "hint_invis", 11)
-		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 12, { flat = true })
-		MakeButton(CUtil, nil, 13, function()
+		MakeBind(CUtil, "Visibility Key", "InvisKey", 12, { requires = "Invisibility" })
+		MakeHint(CUtil, "hint_invis", 13)
+		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 14, { flat = true })
+		MakeButton(CUtil, nil, 15, function()
 			if S._crimElevatorTeleport then
 				S._crimElevatorTeleport()
 			end
 		end, "btn_crim_elevator_tp")
-		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 14, {
+		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 16, {
 			requires = "CrimRemoteElevator",
 		})
-		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 15, {
+		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 17, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CUtil, "hint_crim_elevator", 16)
-		MakeSection(CUtil, L("crim_sub_clientbuild"), 17)
-		MakeButton(CUtil, nil, 18, function()
+		MakeHint(CUtil, "hint_crim_elevator", 18)
+		MakeSection(CUtil, L("crim_sub_clientbuild"), 19)
+		MakeButton(CUtil, nil, 20, function()
 			if S._clientBridgeStart then
 				S._clientBridgeStart()
 			end
 		end, "btn_crim_bridge")
-		MakeButton(CUtil, nil, 19, function()
+		MakeButton(CUtil, nil, 21, function()
 			if S._clientBridgeClear then
 				S._clientBridgeClear()
 			end
 		end, "btn_crim_bridge_clear")
-		MakeButton(CUtil, nil, 20, function()
+		MakeButton(CUtil, nil, 22, function()
 			if S._clientDeleteStart then
 				S._clientDeleteStart()
 			end
 		end, "btn_crim_delete")
-		MakeButton(CUtil, nil, 21, function()
+		MakeButton(CUtil, nil, 23, function()
 			if S._clientDeleteRestore then
 				S._clientDeleteRestore()
 			end
 		end, "btn_crim_delete_restore")
-		MakeHint(CUtil, "hint_crim_clientbuild", 22)
-		MakeHint(CUtil, "hint_crim_util", 23)
+		MakeHint(CUtil, "hint_crim_clientbuild", 24)
+		MakeHint(CUtil, "hint_crim_util", 25)
 	end
 
 	local function refreshWorld()
@@ -5068,11 +5078,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	-- // Loading
 	task.spawn(function()
+		local function uiLog(msg)
+			pcall(function()
+				if typeof(_G.__VG_LOG_FILE) == "function" then
+					_G.__VG_LOG_FILE("INFO", "[VG:ui] " .. tostring(msg))
+				end
+			end)
+		end
+		uiLog("loader start")
 		task.wait()
 		if AntiBypassModule then
 			AntiBypassModule.concealGui(ParentGUI)
 		end
 		Loader.Visible = true
+		uiLog("loader visible")
 
 		Fill.Size = UDim2.new(0.72, 0, 1, 0)
 		LoaderPct.Text = "72%"
@@ -5091,31 +5110,46 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 
 		task.wait(0.28)
-		pcall(refreshLoaderGameInfo)
+		uiLog("before game info")
+		-- Skip Marketplace/thumbnail on Criminality lobby — was last error before client death
+		local isCrim = game.GameId == 1494262959
+		if isCrim then
+			LoaderGameName.Text = game.Name ~= "" and game.Name or "Criminality"
+			LoaderSupportBadge.Text = "CRIM"
+			LoaderSupportNote.Text = "Lite boot — thumbnail skipped"
+			LoaderGameIcon.Image = ""
+			uiLog("skipped refreshLoaderGameInfo (Criminality)")
+		else
+			pcall(refreshLoaderGameInfo)
+			uiLog("after game info")
+		end
 
 		LoaderStatus.Text = "Game info"
 		TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Size = UDim2.new(0.78, 0, 1, 0),
 		})
 		LoaderPct.Text = "78%"
-		task.wait(0.35)
+		uiLog("78%")
+		task.wait(0.25)
 
 		local steps = {
-			{ text = "Initializing ESP", pct = 0.88, wait = 0.42 },
-			{ text = "Preparing interface", pct = 0.96, wait = 0.42 },
-			{ text = "Ready", pct = 1, wait = 0.5 },
+			{ text = "Initializing ESP", pct = 0.88, wait = 0.25 },
+			{ text = "Preparing interface", pct = 0.96, wait = 0.25 },
+			{ text = "Ready", pct = 1, wait = 0.3 },
 		}
 
 		for _, step in ipairs(steps) do
 			LoaderStatus.Text = step.text
 			LoaderPct.Text = math.floor(step.pct * 100) .. "%"
-			TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			uiLog("step " .. step.text)
+			TweenPlay(Fill, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				Size = UDim2.new(step.pct, 0, 1, 0),
 			})
 			task.wait(step.wait)
 		end
 
-		task.wait(0.12)
+		task.wait(0.08)
+		uiLog("hiding loader")
 		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
 			Position = UDim2.new(0, 0, 0, -56),
 		})
@@ -5126,11 +5160,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		TweenPlay(Loader, TweenInfo.new(0.28), { BackgroundTransparency = 1 })
 		task.wait(0.28)
 		Loader:Destroy()
+		uiLog("loader destroyed")
 
 		if ConfigModule then
 			refreshConfigList()
 			local autoload = ConfigModule.GetAutoload()
 			if autoload ~= "" then
+				uiLog("autoload " .. tostring(autoload))
 				local ok = ConfigModule.Autoload(S)
 				if ok then
 					refreshAllControls()
@@ -5142,11 +5178,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		-- Signal Criminality deferred boot that UI loader finished (avoids lobby race)
 		S._vgUiReady = true
 		S._vgUiReadyAt = os.clock()
-		pcall(function()
-			if typeof(_G.__VG_LOG_FILE) == "function" then
-				_G.__VG_LOG_FILE("INFO", "[VG:ui] loader complete · uiReady=true")
-			end
-		end)
+		uiLog("loader complete · uiReady=true")
 		if typeof(S._onVgUiReady) == "function" then
 			pcall(S._onVgUiReady)
 		end
@@ -5155,7 +5187,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MenuRoot.Visible = true
 		MenuRoot.GroupTransparency = 1
 		MenuScale.Scale = 0.985
+		uiLog("opening menu")
 		SetMenuOpen(true)
+		uiLog("menu open done")
 	end)
 
 	end

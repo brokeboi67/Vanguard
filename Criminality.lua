@@ -4585,9 +4585,11 @@ function Criminality.Init(S)
 	if S.CrimMenuMusicTrack == nil then
 		S.CrimMenuMusicTrack = menuMus.DEFAULT
 	end
-	-- Safer default after lobby freezes: don't auto-start music unless user enabled it
 	if S.CrimMenuMusic == nil then
 		S.CrimMenuMusic = false
+	end
+	if S.CrimLiteBoot == nil then
+		S.CrimLiteBoot = true -- safe default while diagnosing lobby client crashes
 	end
 
 	local function crimLog(level, msg)
@@ -4611,66 +4613,29 @@ function Criminality.Init(S)
 		return ok
 	end
 
-	-- Ban / kick / error watchers (Criminality "Team Vanguard" ban UI ≠ often as crash)
-	task.spawn(function()
-		local lp = getLP()
-		if not lp then
-			return
-		end
-		crimLog("INFO", "watchers armed place=" .. tostring(game.PlaceId))
-		pcall(function()
-			local gs = game:GetService("GuiService")
-			gs:GetPropertyChangedSignal("ErrorMessage"):Connect(function()
-				crimLog("WARN", "GuiService.ErrorMessage=" .. tostring(gs.ErrorMessage))
-			end)
-		end)
-		pcall(function()
-			lp.AncestryChanged:Connect(function()
-				if not lp.Parent then
-					crimLog("WARN", "LocalPlayer left DataModel (kick/ban/leave)")
-				end
-			end)
-		end)
-		-- Light poll: only direct PlayerGui children text (no GetDescendants)
-		for _ = 1, 40 do
-			task.wait(0.4)
-			if S.Unloaded then
-				return
-			end
-			local pg = lp:FindFirstChild("PlayerGui")
-			if pg then
-				for _, ch in ipairs(pg:GetChildren()) do
-					local n = string.lower(ch.Name)
-					if n:find("ban", 1, true) or n:find("kick", 1, true) or n:find("detect", 1, true) then
-						crimLog("WARN", "suspicious PlayerGui child=" .. ch.Name .. " class=" .. ch.ClassName)
-					end
-					if ch:IsA("ScreenGui") or ch:IsA("Frame") then
-						for _, d in ipairs(ch:GetChildren()) do
-							if d:IsA("TextLabel") or d:IsA("TextButton") then
-								local t = tostring(d.Text or "")
-								local tl = string.lower(t)
-								if tl:find("banned", 1, true) or tl:find("kick", 1, true) or tl:find("detected", 1, true) then
-									crimLog("WARN", "UI text hit: " .. string.sub(t, 1, 120))
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-	end)
+	crimLog(
+		"INFO",
+		string.format(
+			"Init enter lite=%s music=%s smoke=%s safeESP=%s crateESP=%s gunESP=%s stamina=%s",
+			tostring(S.CrimLiteBoot),
+			tostring(S.CrimMenuMusic),
+			tostring(S.CrimRemoveSmokeExplosion),
+			tostring(S.CrimSafeESP),
+			tostring(S.CrimCrateESP),
+			tostring(S.CrimGunESP),
+			tostring(S.CrimInfStamina)
+		)
+	)
 
 	S._crimStartMenuMusic = function()
 		pcall(menuMus.start, S)
 	end
-
 	S._crimSyncGunESP = function()
 		if crimFlag(S.CrimGunESP) then
 			pcall(syncGunESP, S)
 			pcall(tickESP, S)
 		end
 	end
-
 	S._crimRefreshGunMods = function()
 		if gunModsWant(S) then
 			pcall(function()
@@ -4681,32 +4646,29 @@ function Criminality.Init(S)
 			pcall(syncGunMods, S)
 		end
 	end
-
 	S._crimElevatorTeleport = function()
 		pcall(teleportToElevator, S)
 	end
-
 	S._crimListGameSounds = snd.listGameSounds
-
 	S._configApplyHooks = S._configApplyHooks or {}
 	table.insert(S._configApplyHooks, function()
+		if S.CrimLiteBoot == true then
+			crimLog("INFO", "syncFromConfig skipped (CrimLiteBoot)")
+			return
+		end
 		syncFromConfig(S)
 	end)
 
-	crimLog(
-		"INFO",
-		string.format(
-			"Init enter flags music=%s smoke=%s safeESP=%s crateESP=%s gunESP=%s stamina=%s",
-			tostring(S.CrimMenuMusic),
-			tostring(S.CrimRemoveSmokeExplosion),
-			tostring(S.CrimSafeESP),
-			tostring(S.CrimCrateESP),
-			tostring(S.CrimGunESP),
-			tostring(S.CrimInfStamina)
-		)
-	)
+	-- Lite boot: register API only — no Heartbeat, no music, no smoke, no stamina hook.
+	-- If lobby still crashes with lite=true, fault is outside Criminality runtime (UI loader / Adonis).
+	if S.CrimLiteBoot == true then
+		crimLog("WARN", "CrimLiteBoot ON — skipping runtime boot (master/music/smoke/addons)")
+		S._onVgUiReady = function()
+			crimLog("INFO", "UI ready (lite — no Crim runtime)")
+		end
+		return
+	end
 
-	-- Only Q-pickup bind (cheap). Everything else waits for UI loader.
 	startFastPickupInput()
 
 	local bootStarted = false
@@ -4716,7 +4678,6 @@ function Criminality.Init(S)
 		end
 		bootStarted = true
 		crimLog("INFO", "deferred boot begin uiReady=" .. tostring(S._vgUiReady == true))
-		-- Stamina hook only if feature wanted (hookfunction is AC-sensitive)
 		if crimFlag(S.CrimInfStamina) then
 			crimStep("setupCrimStaminaHook", setupCrimStaminaHook)
 		else
@@ -4741,14 +4702,13 @@ function Criminality.Init(S)
 	S._onVgUiReady = function()
 		crimLog("INFO", "UI ready signal received")
 		task.defer(function()
-			task.wait(0.35)
+			task.wait(0.5)
 			runDeferredBoot()
 		end)
 	end
 
-	-- Fallback if UI never signals (timeout)
 	task.defer(function()
-		local deadline = os.clock() + 10
+		local deadline = os.clock() + 12
 		while os.clock() < deadline do
 			if S._vgUiReady or S.Unloaded or bootStarted then
 				break

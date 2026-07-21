@@ -1070,13 +1070,18 @@ if isCriminality and Criminality then
 		if Settings.Unloaded then
 			return
 		end
+		if Settings.CrimLiteBoot == true then
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("WARN", "[VG:crim] skip Path/ClientBuild/Bounty (CrimLiteBoot)")
+			end
+			return
+		end
 		if typeof(_G.__VG_LOG_FILE) == "function" then
 			_G.__VG_LOG_FILE(
 				"INFO",
 				string.format(
-					"[VG:crim] addon init uiReady=%s waited=%.1fs",
-					tostring(Settings._vgUiReady == true),
-					os.clock() - (Settings._vgUiReadyAt or os.clock())
+					"[VG:crim] addon init uiReady=%s",
+					tostring(Settings._vgUiReady == true)
 				)
 			)
 		end
@@ -1133,9 +1138,27 @@ end
 bootProgress("Interfejs", 0.86)
 
 -- Bypass scans in background — do NOT block UI.Init
+-- On Criminality: wait until UI loader finishes — Adonis getgc during loader was a crash suspect
 if Settings.AntiBypass ~= false then
 	task.spawn(function()
-		task.wait(0.3)
+		if isCriminality then
+			local deadline = os.clock() + 15
+			while os.clock() < deadline do
+				if Settings._vgUiReady or Settings.Unloaded then
+					break
+				end
+				task.wait(0.25)
+			end
+			task.wait(1.5)
+			if Settings.Unloaded then
+				return
+			end
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("INFO", "[VG:bypass] delayed Adonis wait (Criminality)")
+			end
+		else
+			task.wait(0.3)
+		end
 		AntiBypass.waitForAdonis(2)
 		AntiBypass.logAdonisDiagnostics("bypass", Settings)
 	end)
