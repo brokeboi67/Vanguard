@@ -264,10 +264,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local function refreshLoaderGameInfo()
 		local placeId = game.PlaceId
 		local gameId = game.GameId
-		local fallbackThumb = GameSupportModule
-			and GameSupportModule.getThumbnail(nil, gameId)
-			or (gameId > 0 and ("rbxthumb://type=GameThumbnail&id=" .. gameId .. "&w=150&h=150") or "")
-		LoaderGameIcon.Image = fallbackThumb
+		local fallbackThumb = ""
+		pcall(function()
+			if GameSupportModule and GameSupportModule.getThumbnail then
+				fallbackThumb = GameSupportModule.getThumbnail(nil, gameId) or ""
+			elseif gameId > 0 then
+				fallbackThumb = "rbxthumb://type=GameThumbnail&id=" .. gameId .. "&w=256&h=144"
+			end
+		end)
+		pcall(function()
+			LoaderGameIcon.Image = fallbackThumb
+		end)
 		LoaderGameName.Text = game.Name ~= "" and game.Name or ("Place " .. tostring(placeId))
 
 		if not GameSupportModule then
@@ -277,17 +284,33 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			return
 		end
 
-		local status, note = GameSupportModule.getStatus(placeId, gameId)
-		local badge, badgeColor = GameSupportModule.getStatusDisplay(status)
+		local status, note = "unknown", ""
+		pcall(function()
+			status, note = GameSupportModule.getStatus(placeId, gameId)
+		end)
+		local badge, badgeColor = "?", Color3.fromRGB(130, 130, 145)
+		pcall(function()
+			badge, badgeColor = GameSupportModule.getStatusDisplay(status)
+		end)
 		LoaderSupportBadge.Text = badge
 		LoaderSupportBadge.TextColor3 = badgeColor
 		LoaderSupportNote.Text = note or ""
 
 		task.spawn(function()
-			local name, thumb = GameSupportModule.getGameInfo(placeId, gameId)
-			LoaderGameName.Text = name
+			local name, thumb = nil, nil
+			local ok = pcall(function()
+				name, thumb = GameSupportModule.getGameInfo(placeId, gameId)
+			end)
+			if not ok then
+				return
+			end
+			if name and name ~= "" then
+				LoaderGameName.Text = name
+			end
 			if thumb and thumb ~= "" then
-				LoaderGameIcon.Image = thumb
+				pcall(function()
+					LoaderGameIcon.Image = thumb
+				end)
 			end
 		end)
 	end
@@ -5068,14 +5091,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 
 		task.wait(0.28)
-		refreshLoaderGameInfo()
+		pcall(refreshLoaderGameInfo)
 
 		LoaderStatus.Text = "Game info"
 		TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Size = UDim2.new(0.78, 0, 1, 0),
 		})
 		LoaderPct.Text = "78%"
-		task.wait(1.05)
+		task.wait(0.35)
 
 		local steps = {
 			{ text = "Initializing ESP", pct = 0.88, wait = 0.42 },

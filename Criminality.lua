@@ -3755,15 +3755,21 @@ function menuMus.scan(S)
 	if not intro then
 		return
 	end
-	-- Prefer the real menu track object; fall back to any Sound named music
+	-- Shallow only — Intro:GetDescendants() during lobby stream freezes/crashes clients
 	local music = intro:FindFirstChild("music") or intro:FindFirstChild("Music")
 	if music and music:IsA("Sound") then
 		menuMus.patch(music, id)
 		return
 	end
-	for _, d in ipairs(intro:GetDescendants()) do
-		if d:IsA("Sound") and (d.Name == "music" or d.Name == "Music") then
-			menuMus.patch(d, id)
+	for _, ch in ipairs(intro:GetChildren()) do
+		if ch:IsA("Sound") and (ch.Name == "music" or ch.Name == "Music") then
+			menuMus.patch(ch, id)
+			return
+		end
+		local nested = ch:FindFirstChild("music") or ch:FindFirstChild("Music")
+		if nested and nested:IsA("Sound") then
+			menuMus.patch(nested, id)
+			return
 		end
 	end
 end
@@ -3852,25 +3858,10 @@ function menuMus.start(S)
 	end
 end
 
-function Criminality.StartMenuMusicEarly(S)
-	if not Criminality.IsCriminality() then
-		return
-	end
-	if S then
-		if S.CrimMenuMusic == nil then
-			S.CrimMenuMusic = true
-		end
-		if S.CrimMenuMusicTrack == nil then
-			S.CrimMenuMusicTrack = menuMus.DEFAULT
-		end
-	end
-	if not S or S.CrimMenuMusic == true then
-		-- Defer past lobby GUI flood / Adonis boot — early Descendant hooks were crashing clients
-		task.defer(function()
-			task.wait(0.75)
-			pcall(menuMus.start, S or _G.__VG_S)
-		end)
-	end
+function Criminality.StartMenuMusicEarly(_S)
+	-- Intentionally no-op. Starting music during Main module-load raced Criminality
+	-- lobby Intro streaming and contributed to client freezes at boot (~78% loader).
+	-- Music starts later from Criminality.Init (deferred).
 end
 
 -- ── CUSTOM HIT SOUNDS (CoreGUI + ReplicatedStorage HitSounds_Head) ───────────
@@ -4591,14 +4582,10 @@ end
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
-
-	-- Menu music as early as Init allows (also started from Main via StartMenuMusicEarly)
-	if S.CrimMenuMusic == true then
-		task.defer(function()
-			task.wait(0.2)
-			pcall(menuMus.start, S)
-		end)
+	if S.CrimMenuMusicTrack == nil then
+		S.CrimMenuMusicTrack = menuMus.DEFAULT
 	end
+
 	S._crimStartMenuMusic = function()
 		pcall(menuMus.start, S)
 	end
@@ -4632,13 +4619,31 @@ function Criminality.Init(S)
 		syncFromConfig(S)
 	end)
 
-	-- Defer hooks/config past lobby UI stream + Adonis — sync stamina/getupvalue early was risky
+	-- CRITICAL: do not start Heartbeat / ESP / smoke / music while UI loader runs.
+	-- Autoload can enable CrimSafeESP etc. — scanning lobby Map during UI.Init froze clients at ~78%.
 	startFastPickupInput()
-	startMaster(S)
 	task.defer(function()
-		task.wait(0.6)
+		local delaySec = 2.25
+		task.wait(delaySec)
+		if S.Unloaded or _G.__VG_S ~= S then
+			return
+		end
+		pcall(function()
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("INFO", "[VG:crim] deferred boot start")
+			end
+		end)
 		pcall(setupCrimStaminaHook)
+		pcall(startMaster, S)
 		pcall(syncFromConfig, S)
+		if S.CrimMenuMusic == true then
+			pcall(menuMus.start, S)
+		end
+		pcall(function()
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("INFO", "[VG:crim] deferred boot done")
+			end
+		end)
 	end)
 end
 

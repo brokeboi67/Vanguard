@@ -547,16 +547,9 @@ function ClientBuild.WallbangAltClick()
 	local mouse = UIS:GetMouseLocation()
 	local ray = cam:ViewportPointToRay(mouse.X, mouse.Y)
 	local chars = {}
-	local partToPlr = {}
 	for _, plr in ipairs(Players:GetPlayers()) do
 		if plr ~= me and plr.Character then
 			table.insert(chars, plr.Character)
-			for _, d in ipairs(plr.Character:GetDescendants()) do
-				if d:IsA("BasePart") then
-					partToPlr[d] = plr
-				end
-			end
-			partToPlr[plr.Character] = plr
 		end
 	end
 	if #chars == 0 then
@@ -572,12 +565,9 @@ function ClientBuild.WallbangAltClick()
 	local hit = workspace:Raycast(ray.Origin, ray.Direction * 2500, params)
 	local chosen = nil
 	if hit and hit.Instance then
-		chosen = partToPlr[hit.Instance]
-		if not chosen then
-			local model = hit.Instance:FindFirstAncestorOfClass("Model")
-			if model then
-				chosen = Players:GetPlayerFromCharacter(model)
-			end
+		local model = hit.Instance:FindFirstAncestorOfClass("Model")
+		if model then
+			chosen = Players:GetPlayerFromCharacter(model)
 		end
 	end
 
@@ -761,10 +751,17 @@ function ClientBuild.Init(S)
 	S._clientWallbangRestore = ClientBuild.WallbangRestore
 	S._clientWallbangSetLive = ClientBuild.WallbangSetLive
 	S._clientWallbangRebind = ClientBuild.WallbangBindKeys
-	ClientBuild.WallbangBindKeys()
-	if S.CrimWallbangLive == true then
-		ClientBuild.WallbangSetLive(true)
-	end
+	-- Delay keybinds until after UI loader (same lobby crash window as Crim Heartbeat)
+	task.defer(function()
+		task.wait(2.5)
+		if not wb.settings then
+			return
+		end
+		ClientBuild.WallbangBindKeys()
+		if S.CrimWallbangLive == true then
+			ClientBuild.WallbangSetLive(true)
+		end
+	end)
 end
 
 return ClientBuild

@@ -91,11 +91,12 @@ function GameSupport.getStatusDisplay(status)
 end
 
 function GameSupport.getThumbnail(iconAssetId, gameId)
-	if iconAssetId then
+	-- Asset icons: 150x150 is valid. GameThumbnail requires 16:9 sizes only.
+	if iconAssetId and tonumber(iconAssetId) and tonumber(iconAssetId) > 0 then
 		return "rbxthumb://type=Asset&id=" .. tostring(iconAssetId) .. "&w=150&h=150"
 	end
 	if gameId and gameId > 0 then
-		return "rbxthumb://type=GameThumbnail&id=" .. tostring(gameId) .. "&w=150&h=150"
+		return "rbxthumb://type=GameThumbnail&id=" .. tostring(gameId) .. "&w=256&h=144"
 	end
 	return ""
 end
