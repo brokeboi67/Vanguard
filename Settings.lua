@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.73",
+	Version = "2.52.74",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -259,7 +259,7 @@ local Settings = {
 	CrimRemoteElevatorMaxDist = 400,
 	CrimInfStamina = false,
 	CrimFullBright = false,
-	CrimMenuMusic = true,
+	CrimMenuMusic = false,
 	CrimMenuMusicTrack = "PolskiePola",
 	CrimHitSoundSwap = false,
 	CrimHitSoundPreset = "UT",

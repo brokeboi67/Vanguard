@@ -1014,18 +1014,27 @@ do
 	end
 end
 
--- Helper: log phase start/end to file
+-- Helper: log phase start/end to file (with elapsed ms for Criminality crash bisect)
 local function phase(name, fn, ...)
 	_kickPhase = name
-	if typeof(_G.__VG_LOG_FILE) == "function" then _G.__VG_LOG_FILE("INFO", "[VG:phase] >>> " .. name) end
+	local t0 = os.clock()
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:phase] >>> " .. name)
+	end
 	local args = { ... }
-	local ok, err = pcall(function() fn(table.unpack(args)) end)
+	local ok, err = pcall(function()
+		fn(table.unpack(args))
+	end)
+	local ms = math.floor((os.clock() - t0) * 1000)
 	if typeof(_G.__VG_LOG_FILE) == "function" then
 		if ok then
-			_G.__VG_LOG_FILE("INFO", "[VG:phase] <<< " .. name .. " OK")
+			_G.__VG_LOG_FILE("INFO", string.format("[VG:phase] <<< %s OK (%dms)", name, ms))
 		else
-			_G.__VG_LOG_FILE("ERROR", "[VG:phase] <<< " .. name .. " ERR: " .. tostring(err))
+			_G.__VG_LOG_FILE("ERROR", string.format("[VG:phase] <<< %s ERR (%dms): %s", name, ms, tostring(err)))
 		end
+	end
+	if not ok then
+		warn("[Vanguard] phase failed:", name, err)
 	end
 	return ok
 end
@@ -1038,25 +1047,58 @@ phase("Rage.Init",       Rage.Init,       Settings, GUI, TeamFriends, Util)
 phase("Movement.Init",   Movement.Init,   Settings)
 phase("Invisibility.Init", Invisibility.Init, Settings, GUI)
 if isCriminality and Criminality then
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE(
+			"INFO",
+			string.format(
+				"[VG:crim] universe boot place=%s job=%s",
+				tostring(game.PlaceId),
+				tostring(game.JobId)
+			)
+		)
+	end
 	phase("Criminality.Init", Criminality.Init, Settings)
-	phase("PathDisplay.Init", function(S)
-		local mod = Get("PathDisplay.lua")
-		if mod and mod.Init then
-			mod.Init(S)
+	-- Defer heavy Crim addons until UI signals ready (or timeout) — recent lobby freezes
+	task.defer(function()
+		local deadline = os.clock() + 8
+		while os.clock() < deadline do
+			if Settings._vgUiReady or Settings.Unloaded then
+				break
+			end
+			task.wait(0.2)
 		end
-	end, Settings)
-	phase("ClientBuild.Init", function(S)
-		local mod = Get("ClientBuild.lua")
-		if mod and mod.Init then
-			mod.Init(S)
+		if Settings.Unloaded then
+			return
 		end
-	end, Settings)
-	phase("BountyTracker.Init", function(S)
-		local mod = Get("BountyTracker.lua")
-		if mod and mod.Init then
-			mod.Init(S)
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE(
+				"INFO",
+				string.format(
+					"[VG:crim] addon init uiReady=%s waited=%.1fs",
+					tostring(Settings._vgUiReady == true),
+					os.clock() - (Settings._vgUiReadyAt or os.clock())
+				)
+			)
 		end
-	end, Settings)
+		phase("PathDisplay.Init", function(S)
+			local mod = Get("PathDisplay.lua")
+			if mod and mod.Init then
+				mod.Init(S)
+			end
+		end, Settings)
+		phase("ClientBuild.Init", function(S)
+			local mod = Get("ClientBuild.lua")
+			if mod and mod.Init then
+				mod.Init(S)
+			end
+		end, Settings)
+		phase("BountyTracker.Init", function(S)
+			local mod = Get("BountyTracker.lua")
+			if mod and mod.Init then
+				mod.Init(S)
+			end
+		end, Settings)
+	end)
 end
 phase("Misc.Init",       Misc.Init,       Settings, TeamFriends, Util)
 phase("Features.Init",   Features.Init,   Settings, GUI, AntiBypass)

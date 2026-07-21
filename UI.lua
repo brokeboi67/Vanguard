@@ -5139,6 +5139,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end
 
+		-- Signal Criminality deferred boot that UI loader finished (avoids lobby race)
+		S._vgUiReady = true
+		S._vgUiReadyAt = os.clock()
+		pcall(function()
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE("INFO", "[VG:ui] loader complete · uiReady=true")
+			end
+		end)
+		if typeof(S._onVgUiReady) == "function" then
+			pcall(S._onVgUiReady)
+		end
+
 		menuOpen = false
 		MenuRoot.Visible = true
 		MenuRoot.GroupTransparency = 1

@@ -4585,6 +4585,80 @@ function Criminality.Init(S)
 	if S.CrimMenuMusicTrack == nil then
 		S.CrimMenuMusicTrack = menuMus.DEFAULT
 	end
+	-- Safer default after lobby freezes: don't auto-start music unless user enabled it
+	if S.CrimMenuMusic == nil then
+		S.CrimMenuMusic = false
+	end
+
+	local function crimLog(level, msg)
+		pcall(function()
+			if typeof(_G.__VG_LOG_FILE) == "function" then
+				_G.__VG_LOG_FILE(level or "INFO", string.format("[VG:crim][%.2f] %s", os.clock(), tostring(msg)))
+			end
+		end)
+	end
+
+	local function crimStep(name, fn)
+		local t0 = os.clock()
+		crimLog("INFO", "step >>> " .. name)
+		local ok, err = pcall(fn)
+		local ms = math.floor((os.clock() - t0) * 1000)
+		if ok then
+			crimLog("INFO", string.format("step <<< %s OK (%dms)", name, ms))
+		else
+			crimLog("ERROR", string.format("step <<< %s ERR (%dms): %s", name, ms, tostring(err)))
+		end
+		return ok
+	end
+
+	-- Ban / kick / error watchers (Criminality "Team Vanguard" ban UI ≠ often as crash)
+	task.spawn(function()
+		local lp = getLP()
+		if not lp then
+			return
+		end
+		crimLog("INFO", "watchers armed place=" .. tostring(game.PlaceId))
+		pcall(function()
+			local gs = game:GetService("GuiService")
+			gs:GetPropertyChangedSignal("ErrorMessage"):Connect(function()
+				crimLog("WARN", "GuiService.ErrorMessage=" .. tostring(gs.ErrorMessage))
+			end)
+		end)
+		pcall(function()
+			lp.AncestryChanged:Connect(function()
+				if not lp.Parent then
+					crimLog("WARN", "LocalPlayer left DataModel (kick/ban/leave)")
+				end
+			end)
+		end)
+		-- Light poll: only direct PlayerGui children text (no GetDescendants)
+		for _ = 1, 40 do
+			task.wait(0.4)
+			if S.Unloaded then
+				return
+			end
+			local pg = lp:FindFirstChild("PlayerGui")
+			if pg then
+				for _, ch in ipairs(pg:GetChildren()) do
+					local n = string.lower(ch.Name)
+					if n:find("ban", 1, true) or n:find("kick", 1, true) or n:find("detect", 1, true) then
+						crimLog("WARN", "suspicious PlayerGui child=" .. ch.Name .. " class=" .. ch.ClassName)
+					end
+					if ch:IsA("ScreenGui") or ch:IsA("Frame") then
+						for _, d in ipairs(ch:GetChildren()) do
+							if d:IsA("TextLabel") or d:IsA("TextButton") then
+								local t = tostring(d.Text or "")
+								local tl = string.lower(t)
+								if tl:find("banned", 1, true) or tl:find("kick", 1, true) or tl:find("detected", 1, true) then
+									crimLog("WARN", "UI text hit: " .. string.sub(t, 1, 120))
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end)
 
 	S._crimStartMenuMusic = function()
 		pcall(menuMus.start, S)
@@ -4619,31 +4693,73 @@ function Criminality.Init(S)
 		syncFromConfig(S)
 	end)
 
-	-- CRITICAL: do not start Heartbeat / ESP / smoke / music while UI loader runs.
-	-- Autoload can enable CrimSafeESP etc. — scanning lobby Map during UI.Init froze clients at ~78%.
+	crimLog(
+		"INFO",
+		string.format(
+			"Init enter flags music=%s smoke=%s safeESP=%s crateESP=%s gunESP=%s stamina=%s",
+			tostring(S.CrimMenuMusic),
+			tostring(S.CrimRemoveSmokeExplosion),
+			tostring(S.CrimSafeESP),
+			tostring(S.CrimCrateESP),
+			tostring(S.CrimGunESP),
+			tostring(S.CrimInfStamina)
+		)
+	)
+
+	-- Only Q-pickup bind (cheap). Everything else waits for UI loader.
 	startFastPickupInput()
-	task.defer(function()
-		local delaySec = 2.25
-		task.wait(delaySec)
-		if S.Unloaded or _G.__VG_S ~= S then
+
+	local bootStarted = false
+	local function runDeferredBoot()
+		if bootStarted or S.Unloaded or _G.__VG_S ~= S then
 			return
 		end
-		pcall(function()
-			if typeof(_G.__VG_LOG_FILE) == "function" then
-				_G.__VG_LOG_FILE("INFO", "[VG:crim] deferred boot start")
-			end
-		end)
-		pcall(setupCrimStaminaHook)
-		pcall(startMaster, S)
-		pcall(syncFromConfig, S)
-		if S.CrimMenuMusic == true then
-			pcall(menuMus.start, S)
+		bootStarted = true
+		crimLog("INFO", "deferred boot begin uiReady=" .. tostring(S._vgUiReady == true))
+		-- Stamina hook only if feature wanted (hookfunction is AC-sensitive)
+		if crimFlag(S.CrimInfStamina) then
+			crimStep("setupCrimStaminaHook", setupCrimStaminaHook)
+		else
+			crimLog("INFO", "skip stamina hook (feature off)")
 		end
-		pcall(function()
-			if typeof(_G.__VG_LOG_FILE) == "function" then
-				_G.__VG_LOG_FILE("INFO", "[VG:crim] deferred boot done")
-			end
+		crimStep("startMaster", function()
+			startMaster(S)
 		end)
+		crimStep("syncFromConfig", function()
+			syncFromConfig(S)
+		end)
+		if S.CrimMenuMusic == true then
+			crimStep("menuMus.start", function()
+				menuMus.start(S)
+			end)
+		else
+			crimLog("INFO", "skip menu music (off)")
+		end
+		crimLog("INFO", "deferred boot end")
+	end
+
+	S._onVgUiReady = function()
+		crimLog("INFO", "UI ready signal received")
+		task.defer(function()
+			task.wait(0.35)
+			runDeferredBoot()
+		end)
+	end
+
+	-- Fallback if UI never signals (timeout)
+	task.defer(function()
+		local deadline = os.clock() + 10
+		while os.clock() < deadline do
+			if S._vgUiReady or S.Unloaded or bootStarted then
+				break
+			end
+			task.wait(0.25)
+		end
+		if S.Unloaded or bootStarted then
+			return
+		end
+		crimLog("WARN", "UI ready timeout — starting deferred boot anyway")
+		runDeferredBoot()
 	end)
 end
 
