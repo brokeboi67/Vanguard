@@ -103,9 +103,9 @@ local function stopNoSpike()
 	end
 end
 
--- ── REMOVE smokeExplosion (client destroy by exact Dex name) ─────────────────
+-- ── REMOVE SmokeExplosion (Workspace.Debris — exact Dex name) ────────────────
 local function nukeSmokeExplosion(inst)
-	if inst and inst.Name == "smokeExplosion" then
+	if inst and inst.Name == "SmokeExplosion" then
 		pcall(function()
 			inst:Destroy()
 		end)
@@ -115,9 +115,33 @@ local function nukeSmokeExplosion(inst)
 end
 
 local function sweepSmokeExplosions()
+	local debris = workspace:FindFirstChild("Debris")
+	if debris then
+		for _, ch in ipairs(debris:GetChildren()) do
+			nukeSmokeExplosion(ch)
+		end
+		return
+	end
 	for _, d in ipairs(workspace:GetDescendants()) do
 		nukeSmokeExplosion(d)
 	end
+end
+
+local function hookSmokeDebrisFolder(folder)
+	if not folder then
+		return
+	end
+	for _, c in ipairs(misc.smoke.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.smoke.conns = {}
+	table.insert(misc.smoke.conns, folder.ChildAdded:Connect(function(ch)
+		if ch.Name == "SmokeExplosion" then
+			task.defer(nukeSmokeExplosion, ch)
+		end
+	end))
 end
 
 local function startRemoveSmokeExplosion()
@@ -126,11 +150,19 @@ local function startRemoveSmokeExplosion()
 	end
 	misc.smoke.active = true
 	pcall(sweepSmokeExplosions)
-	table.insert(misc.smoke.conns, workspace.DescendantAdded:Connect(function(d)
-		if d.Name == "smokeExplosion" then
-			task.defer(nukeSmokeExplosion, d)
-		end
-	end))
+	local debris = workspace:FindFirstChild("Debris")
+	if debris then
+		hookSmokeDebrisFolder(debris)
+	else
+		table.insert(misc.smoke.conns, workspace.ChildAdded:Connect(function(ch)
+			if ch.Name == "Debris" then
+				pcall(sweepSmokeExplosions)
+				hookSmokeDebrisFolder(ch)
+			elseif ch.Name == "SmokeExplosion" then
+				task.defer(nukeSmokeExplosion, ch)
+			end
+		end))
+	end
 end
 
 local function stopRemoveSmokeExplosion()
