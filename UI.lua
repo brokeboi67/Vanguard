@@ -5078,6 +5078,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	-- // Loading
 	task.spawn(function()
+		local loaderTweens = {}
 		local function uiLog(msg)
 			pcall(function()
 				if typeof(_G.__VG_LOG_FILE) == "function" then
@@ -5085,10 +5086,26 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end)
 		end
+		local function LTween(obj, info, props)
+			local tw = TweenPlay(obj, info, props)
+			if tw then
+				table.insert(loaderTweens, tw)
+			end
+			return tw
+		end
+		local function cancelLoaderTweens()
+			for _, tw in ipairs(loaderTweens) do
+				pcall(function()
+					tw:Cancel()
+				end)
+			end
+			table.clear(loaderTweens)
+		end
+
 		uiLog("loader start")
 		task.wait()
 		if AntiBypassModule then
-			AntiBypassModule.concealGui(ParentGUI)
+			pcall(AntiBypassModule.concealGui, ParentGUI)
 		end
 		Loader.Visible = true
 		uiLog("loader visible")
@@ -5101,17 +5118,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		LoaderGame.BackgroundTransparency = 1
 		LoaderGame.Position = UDim2.new(0.5, 0, 0.58, 0)
 
-		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		LTween(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Position = UDim2.new(0, 0, 0, 0),
 		})
-		TweenPlay(LoaderGame, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		LTween(LoaderGame, TweenInfo.new(0.32, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			BackgroundTransparency = 0.15,
 			Position = UDim2.new(0.5, 0, 0.54, 0),
 		})
 
 		task.wait(0.28)
 		uiLog("before game info")
-		-- Skip Marketplace/thumbnail on Criminality lobby — was last error before client death
 		local isCrim = game.GameId == 1494262959
 		if isCrim then
 			LoaderGameName.Text = game.Name ~= "" and game.Name or "Criminality"
@@ -5125,57 +5141,75 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 
 		LoaderStatus.Text = "Game info"
-		TweenPlay(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		LTween(Fill, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 			Size = UDim2.new(0.78, 0, 1, 0),
 		})
 		LoaderPct.Text = "78%"
 		uiLog("78%")
-		task.wait(0.25)
+		task.wait(0.2)
 
 		local steps = {
-			{ text = "Initializing ESP", pct = 0.88, wait = 0.25 },
-			{ text = "Preparing interface", pct = 0.96, wait = 0.25 },
-			{ text = "Ready", pct = 1, wait = 0.3 },
+			{ text = "Initializing ESP", pct = 0.88, wait = 0.2 },
+			{ text = "Preparing interface", pct = 0.96, wait = 0.2 },
+			{ text = "Ready", pct = 1, wait = 0.2 },
 		}
 
 		for _, step in ipairs(steps) do
 			LoaderStatus.Text = step.text
 			LoaderPct.Text = math.floor(step.pct * 100) .. "%"
 			uiLog("step " .. step.text)
-			TweenPlay(Fill, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			LTween(Fill, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
 				Size = UDim2.new(step.pct, 0, 1, 0),
 			})
 			task.wait(step.wait)
 		end
 
-		task.wait(0.08)
-		uiLog("hiding loader")
-		TweenPlay(LoaderTop, TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-			Position = UDim2.new(0, 0, 0, -56),
-		})
-		TweenPlay(LoaderGame, TweenInfo.new(0.22), {
-			BackgroundTransparency = 1,
-			Position = UDim2.new(0.5, 0, 0.52, 0),
-		})
-		TweenPlay(Loader, TweenInfo.new(0.28), { BackgroundTransparency = 1 })
-		task.wait(0.28)
-		Loader:Destroy()
+		uiLog("after Ready — teardown loader")
+		-- CRITICAL: cancel tweens BEFORE Destroy. Destroying while TweenService
+		-- still updates instances = native AV (c0000005 read @ null+0x28) on some clients.
+		cancelLoaderTweens()
+		pcall(function()
+			Fill.Size = UDim2.new(1, 0, 1, 0)
+			Loader.BackgroundTransparency = 1
+			LoaderTop.Position = UDim2.new(0, 0, 0, -56)
+			LoaderGame.BackgroundTransparency = 1
+			Loader.Visible = false
+		end)
+		uiLog("loader hidden")
+		task.wait()
+		pcall(function()
+			if Loader and Loader.Parent then
+				Loader:Destroy()
+			end
+		end)
 		uiLog("loader destroyed")
 
 		if ConfigModule then
 			refreshConfigList()
 			local autoload = ConfigModule.GetAutoload()
-			if autoload ~= "" then
+			if autoload ~= "" and not isCrim then
 				uiLog("autoload " .. tostring(autoload))
 				local ok = ConfigModule.Autoload(S)
 				if ok then
 					refreshAllControls()
 					setFooterStatus("Autoload · " .. autoload)
 				end
+			elseif autoload ~= "" and isCrim then
+				uiLog("defer autoload on Criminality: " .. tostring(autoload))
+				task.delay(2.5, function()
+					if S.Unloaded then
+						return
+					end
+					uiLog("autoload (delayed) " .. tostring(autoload))
+					local ok = ConfigModule.Autoload(S)
+					if ok then
+						pcall(refreshAllControls)
+						pcall(setFooterStatus, "Autoload · " .. autoload)
+					end
+				end)
 			end
 		end
 
-		-- Signal Criminality deferred boot that UI loader finished (avoids lobby race)
 		S._vgUiReady = true
 		S._vgUiReadyAt = os.clock()
 		uiLog("loader complete · uiReady=true")
@@ -5188,8 +5222,24 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MenuRoot.GroupTransparency = 1
 		MenuScale.Scale = 0.985
 		uiLog("opening menu")
-		SetMenuOpen(true)
-		uiLog("menu open done")
+		if isCrim then
+			pcall(function()
+				MenuRoot.GroupTransparency = 0
+				MenuScale.Scale = 1
+				menuOpen = true
+			end)
+			uiLog("menu soft-open done")
+			task.delay(0.4, function()
+				if S.Unloaded then
+					return
+				end
+				pcall(SetMenuOpen, true)
+				uiLog("menu SetMenuOpen done")
+			end)
+		else
+			SetMenuOpen(true)
+			uiLog("menu open done")
+		end
 	end)
 
 	end
