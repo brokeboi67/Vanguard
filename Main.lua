@@ -79,6 +79,69 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
+-- EARLY Adonis shield: "Disallowed Services Detected" (MainDetection)
+-- Adonis: if FindService(ServerStorage|ServerScriptService) then Detected("crash", ...)
+-- Executors often expose these to the client; must return nil BEFORE Adonis MainDetection runs.
+-- Safe at boot (no getgc / no yield / no Detected hook).
+do
+	local BLOCKED = {
+		ServerStorage = true,
+		ServerScriptService = true,
+	}
+	local function isBlockedName(v)
+		return typeof(v) == "string" and BLOCKED[v] == true
+	end
+
+	local function makeCC(f)
+		if typeof(newcclosure) == "function" then
+			local ok, w = pcall(newcclosure, f)
+			if ok and w then
+				return w
+			end
+		end
+		return f
+	end
+
+	local hooked = false
+	if typeof(hookfunction) == "function" then
+		pcall(function()
+			local oldFS = game.FindService
+			if typeof(oldFS) ~= "function" then
+				return
+			end
+			-- Adonis calls unbound: FindService("ServerStorage", DataModel) AND normal :FindService(name)
+			hookfunction(oldFS, makeCC(function(a, b, ...)
+				if isBlockedName(a) or isBlockedName(b) then
+					return nil
+				end
+				return oldFS(a, b, ...)
+			end))
+			hooked = true
+		end)
+	end
+
+	if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" then
+		pcall(function()
+			local oldNc
+			oldNc = hookmetamethod(game, "__namecall", makeCC(function(self, ...)
+				local method = getnamecallmethod()
+				if method == "FindService" or method == "findService" then
+					local name = ...
+					if isBlockedName(name) then
+						return nil
+					end
+				end
+				return oldNc(self, ...)
+			end))
+			hooked = true
+		end)
+	end
+
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield=" .. tostring(hooked) .. " (ServerStorage/SSS)")
+	end
+end
+
 -- ADONIS BYPASS — based on Anti.luau source analysis:
 -- Anti runs: debug.info(Detected,"slanf") → if closure≠Detected → "while true do end"
 -- hookfunction(Detected) changes closure identity → freeze. DO NOT hookfunction Detected.
