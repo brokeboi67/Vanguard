@@ -3245,6 +3245,7 @@ local function kickForStaff(staffList)
 	task.delay(1.5, function()
 		local S = _G.__VG_S
 		if not S or not S.CrimStaffDetect then return end
+		if S.CrimStaffAutoKick ~= true then return end
 		pcall(function() lp:Kick("Staff joined\n\n" .. body) end)
 	end)
 end
