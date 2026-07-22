@@ -125,14 +125,14 @@ do
 
 	local function scanForAdonis(deep)
 		if typeof(getgc) ~= "function" then return nil, nil end
+		-- ALWAYS light scan. getgc(true) on current Roblox heaps → multi‑GB RAM spike / freeze.
+		deep = false
 		local Detected, Kill
-		-- Yield every 400 items to prevent blocking the scheduler in large games
-		-- (e.g. Rivals with 200k+ concurrent players has a massive GC heap).
 		local i = 0
 		for _, v in getgc(deep) do
 			i = i + 1
 			if i % 400 == 0 then
-				task.wait()   -- give the scheduler a breath
+				task.wait()
 			end
 			if typeof(v) == "table" then
 				if not Detected then
@@ -185,13 +185,8 @@ do
 				return wrap("Main.BypassScan", scanForAdonis)(deep)
 			end
 
-			-- Fast light scan first (getgc false) ÔÇö works if Adonis is already loaded.
+			-- Fast light scan only (getgc false). Never getgc(true) — 10–20GB RAM / freeze on new clients.
 			local Detected, Kill = timedBypassScan(false)
-
-			-- Deep scan fallback if light scan missed it (Adonis tables may not be in light GC).
-			if not Detected then
-				Detected, Kill = timedBypassScan(true)
-			end
 
 			local installed = applyBypass(Detected, Kill)
 

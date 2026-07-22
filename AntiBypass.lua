@@ -628,10 +628,7 @@ function AntiBypass.scanAdonis(opts)
 	opts = opts or {}
 	AntiBypass.neutralizeAdonisDetectors(false)
 	local hooked = runLightScan()
-	local allowDeep = opts.deep == true and not isLoadPhase() and not uiBuilding
-	if not hooked and allowDeep then
-		hooked = runDeepScanBatched()
-	end
+	-- Deep getgc(true) disabled — caused multi‑GB RAM / client freeze on current Roblox.
 	ensureDebugInfoHook()
 	return hooked or adonisHookCount > 0
 end
