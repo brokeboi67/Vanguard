@@ -363,7 +363,13 @@ local function withScanIdentity(fn)
 end
 
 local function ensureDebugInfoHook()
-	-- If Main.lua already set up the hook, mark it done and return
+	-- Soft mode: Main.lua soft spoof owns debug.info — do not install yield hook.
+	if _G.__VG_ADONIS_SOFT or _G.__VG_DBG_HOOKED then
+		if _G.__VG_DBG_HOOKED then
+			debugInfoHooked = true
+		end
+		return _G.__VG_DBG_HOOKED == true or _G.__VG_ADONIS_SOFT == true
+	end
 	if _G.__VG_DBG_HOOKED then
 		debugInfoHooked = true
 		return true
@@ -375,38 +381,8 @@ local function ensureDebugInfoHook()
 	if not renv or typeof(renv.debug) ~= "table" or typeof(renv.debug.info) ~= "function" then
 		return false
 	end
-	local oldInfo = renv.debug.info
-	-- CORRECT approach: yield the coroutine when Adonis calls debug.info(Detected, ...)
-	-- This suspends the entire anti-cheat routine permanently (no tamper check, no detectors)
-	local detRef = adonisDetectedRef
-	local wrap = makeCclosure(function(fn, ...)
-		if fn == detRef then
-			local canYield = true
-			pcall(function()
-				if typeof(coroutine.isyieldable) == "function" then
-					canYield = coroutine.isyieldable()
-				end
-			end)
-			if canYield then
-				return coroutine.yield(coroutine.running())
-			end
-		end
-		return oldInfo(fn, ...)
-	end)
-	-- Try direct assignment first (hookfunction on debug.info fails in Potassium)
-	local ok1 = pcall(function() renv.debug.info = wrap end)
-	if ok1 then
-		debugInfoHooked = true
-		_G.__VG_DBG_HOOKED = true
-		return true
-	end
-	-- Fallback: hookfunction
-	local ok2 = pcall(hookfunction, oldInfo, wrap)
-	if ok2 then
-		debugInfoHooked = true
-		_G.__VG_DBG_HOOKED = true
-	end
-	return ok2
+	-- Legacy path disabled (yield caused native AV). Soft bypass handles this in Main.lua.
+	return false
 end
 
 local function replaceTableFn(tbl, key, replacement)
@@ -724,7 +700,7 @@ function AntiBypass.waitForAdonis(timeoutSec)
 end
 
 function AntiBypass.unlockAdonisHooks(S)
-	if _G.__VG_ADONIS_NO_HOOKS or (S and S.AdonisNoHooks) then
+	if _G.__VG_ADONIS_NO_HOOKS or _G.__VG_ADONIS_SOFT or (S and S.AdonisNoHooks) then
 		return false
 	end
 	if S and S.AntiBypass == false then
@@ -795,9 +771,10 @@ function AntiBypass.installShield(S)
 	if S and S.AntiBypass == false then
 		return false
 	end
-	if _G.__VG_ADONIS_NO_HOOKS or (S and S.AdonisNoHooks) then
+	-- Soft mode / NoHooks: no PreloadAsync hookfunction (crash risk on Potassium)
+	if _G.__VG_ADONIS_NO_HOOKS or _G.__VG_ADONIS_SOFT or (S and S.AdonisNoHooks) or (S and S.AdonisSoftBypass ~= false) then
 		if typeof(_G.__VG_LOG_FILE) == "function" then
-			_G.__VG_LOG_FILE("WARN", "[VG:bypass] installShield skipped (AdonisNoHooks)")
+			_G.__VG_LOG_FILE("INFO", "[VG:bypass] installShield skipped (soft/NoHooks — gethui only)")
 		end
 		return false
 	end
@@ -822,8 +799,6 @@ function AntiBypass.installShield(S)
 		shieldInstalled = true
 	end
 
-	-- Do NOT scan/watcher here — getgc+hooks during boot crash Adonis games (native AV).
-	-- Call unlockAdonisHooks after UI ready.
 	return true
 end
 
