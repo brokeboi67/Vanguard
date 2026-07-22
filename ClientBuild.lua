@@ -537,7 +537,7 @@ function ClientBuild.WallbangPickClosest()
 	ClientBuild.WallbangSetTarget(best)
 end
 
--- Alt+Click: ray only hits player characters (goes through walls/map)
+-- ` + Click: ray only hits player characters (goes through walls/map)
 function ClientBuild.WallbangAltClick()
 	local cam = workspace.CurrentCamera
 	local me = lp()
@@ -595,7 +595,7 @@ function ClientBuild.WallbangAltClick()
 	end
 
 	if not chosen then
-		notify("Wallbang", "Alt+Click: nic nie trafiono")
+		notify("Wallbang", "`+Click: nic nie trafiono")
 		return
 	end
 	ClientBuild.WallbangSetTarget(chosen)

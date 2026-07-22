@@ -2626,7 +2626,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeSection(CCombat, L("crim_sub_wallbang"), 14)
 		MakeChoice(CCombat, "Target Pick Mode", "CrimWallbangPickMode", {
 			{ label = "Menu list", value = "Menu" },
-			{ label = "Alt+Click", value = "AltClick" },
+			{ label = "`+Click", value = "AltClick" },
 			{ label = "Both", value = "Both" },
 		}, 15, {
 			labelKey = "crim_wallbang_pick_mode",
