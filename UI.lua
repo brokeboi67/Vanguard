@@ -56,9 +56,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local Cam = workspace.CurrentCamera
-	local W_FULL, W_COMPACT, H = 720, 560, 480
-	local W_MUSIC, H_MUSIC = 760, 540
-	local SIDE_W = 128
+	local W_FULL, W_COMPACT, H = 800, 600, 540
+	local W_MUSIC, H_MUSIC = 860, 620
+	local SIDE_W = 136
 	local FOOTER_PAD = 12
 	local FOOTER_RIGHT_W = 196
 	local tabLayoutProfiles = {}
@@ -70,12 +70,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function refreshLayout()
 		local vp = Cam.ViewportSize
-		-- Compact Neverlose-ish scale — old 0.58/0.68 + high mins filled small/windowed viewports
-		W_FULL = math.clamp(math.floor(vp.X * 0.46), 560, 780)
-		W_COMPACT = math.clamp(math.floor(vp.X * 0.38), 480, 620)
-		H = math.clamp(math.floor(vp.Y * 0.54), 400, 540)
-		W_MUSIC = math.clamp(math.floor(vp.X * 0.48), 620, 820)
-		H_MUSIC = math.clamp(math.floor(vp.Y * 0.60), 460, 600)
+		-- Match v2.52.40 menu scale
+		W_FULL = math.clamp(math.floor(vp.X * 0.58), 660, 900)
+		W_COMPACT = math.clamp(math.floor(vp.X * 0.48), 540, 660)
+		H = math.clamp(math.floor(vp.Y * 0.68), 500, 640)
+		W_MUSIC = math.clamp(math.floor(vp.X * 0.54), 760, 940)
+		H_MUSIC = math.clamp(math.floor(vp.Y * 0.74), 580, 700)
 	end
 	refreshLayout()
 
@@ -328,13 +328,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	task.wait()
 
-	-- // Main menu (Frame, not CanvasGroup — CanvasGroup rasterizes text and makes fonts look soft/jagged)
-	local MenuRoot = C("Frame", {
+	-- // Main menu (CanvasGroup like v2.52.40 — fade + scale open/close)
+	local MenuRoot = C("CanvasGroup", {
 		Name = "MenuRoot",
 		Size = UDim2.new(0, W_FULL, 0, H),
 		Position = centerPos(W_FULL),
 		AnchorPoint = Vector2.new(0, 0),
 		BackgroundTransparency = 1,
+		GroupTransparency = 1,
 		Visible = false,
 		Parent = ParentGUI,
 	})
@@ -974,6 +975,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		if oldWrap and oldWrap ~= pageWrap then
 			oldWrap.Visible = false
+			oldWrap.GroupTransparency = 1
 			oldWrap.Position = UDim2.new(0, 0, 0, 0)
 			local oldScale = oldWrap:FindFirstChild("PageScale")
 			if oldScale then
@@ -985,12 +987,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ActivePageWrap = pageWrap
 
 		pageWrap.Visible = true
+		pageWrap.GroupTransparency = 1
 		pageWrap.Position = UDim2.new(0, 6, 0, 0)
 		local newScale = pageWrap:FindFirstChild("PageScale")
 		if newScale then
 			newScale.Scale = 0.98
 		end
 		TweenPlay(pageWrap, inInfo, {
+			GroupTransparency = 0,
 			Position = UDim2.new(0, 0, 0, 0),
 		})
 		if newScale then
@@ -1037,9 +1041,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = B,
 		})
 
-		local Wrap = C("Frame", {
+		local Wrap = C("CanvasGroup", {
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
+			GroupTransparency = default and 0 or 1,
 			Visible = default,
 			ZIndex = 4,
 			Parent = Content,
@@ -1158,9 +1163,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 				Text = subtitle,
-			Font = Enum.Font.GothamMedium,
-			TextSize = 10,
-			TextColor3 = Color3.fromRGB(118, 118, 128),
+			Font = Enum.Font.Gotham,
+			TextSize = 9,
+			TextColor3 = Color3.fromRGB(92, 92, 102),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
 			LayoutOrder = 2,
@@ -1206,9 +1211,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
 			Text = text,
-			Font = Enum.Font.GothamMedium,
-			TextSize = 10,
-			TextColor3 = Color3.fromRGB(118, 118, 128),
+			Font = Enum.Font.Gotham,
+			TextSize = 9,
+			TextColor3 = Color3.fromRGB(88, 88, 98),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
 			LayoutOrder = order,
@@ -4928,8 +4933,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			else
 				showNotify(L("notify_music_global_off"))
-				if S.TransferScript ~= true and MusicModule and MusicModule.ClearTransferState then
-					pcall(MusicModule.ClearTransferState)
+				if MusicModule and MusicModule.ClearGlobalPersist then
+					pcall(MusicModule.ClearGlobalPersist)
 				end
 			end
 		end,
@@ -5089,6 +5094,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end)
 
 			MenuScale.Scale = 0.985
+			MenuRoot.GroupTransparency = 1
+			table.insert(menuTweens, TweenPlay(MenuRoot, showInfo, { GroupTransparency = 0 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, showInfo, { Scale = 1 }))
 
 			if UIMusicModule and UIMusicModule.onMenuOpen then
@@ -5150,6 +5157,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				setModalUnlock(false)
 			end)
 
+			table.insert(menuTweens, TweenPlay(MenuRoot, hideInfo, { GroupTransparency = 1 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, hideInfo, { Scale = 0.985 }))
 			task.delay(0.12, function()
 				if not menuOpen then
@@ -5333,11 +5341,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		menuOpen = false
 		MenuRoot.Visible = true
+		MenuRoot.GroupTransparency = 1
 		MenuScale.Scale = 0.985
 		uiLog("opening menu")
 		if isCrim then
 			-- Keep menuOpen=false until SetMenuOpen — otherwise SetMenuOpen no-ops and mouse never unlocks
 			pcall(function()
+				MenuRoot.GroupTransparency = 0
 				MenuScale.Scale = 1
 			end)
 			uiLog("menu soft-visible (defer unlock)")

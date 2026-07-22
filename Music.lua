@@ -55,6 +55,7 @@ function Music.Init(S, I18nModule)
 	local transferRestorePending = false
 	local lastSoundTimePos = 0
 	local TRANSFER_MUSIC_PATH = "Vanguard/transfer_music.json"
+	local GLOBAL_MUSIC_PATH = "Vanguard/music_persist.json"
 
 	local function canPersistTransfer()
 		return typeof(writefile) == "function"
@@ -74,6 +75,27 @@ function Music.Init(S, I18nModule)
 		if typeof(makefolder) == "function" then
 			pcall(makefolder, "Vanguard")
 		end
+	end
+
+	local function decodeMusicFile(path)
+		if not canPersistTransfer() or not isfile(path) then
+			return nil
+		end
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(readfile(path))
+		end)
+		if not ok or typeof(data) ~= "table" then
+			return nil, "corrupt"
+		end
+		return data
+	end
+
+	local function writeMusicFile(path, snap)
+		ensureVanguardFolder()
+		local ok = pcall(function()
+			writefile(path, HttpService:JSONEncode(snap))
+		end)
+		return ok == true
 	end
 
 	local function cloneQueueItem(item)
@@ -1626,6 +1648,7 @@ function Music.Init(S, I18nModule)
 		end
 		return {
 			v = 1,
+			mode = musicPersistIsGlobal() and "global" or "transfer",
 			gameId = game.GameId,
 			ts = os.time(),
 			volume = S.MusicVolume or 0.65,
@@ -3221,35 +3244,68 @@ function Music.Init(S, I18nModule)
 		if not snap then
 			return false
 		end
-		ensureVanguardFolder()
-		local ok = pcall(function()
-			writefile(TRANSFER_MUSIC_PATH, HttpService:JSONEncode(snap))
-		end)
+		local ok = false
+		-- Global: dedicated file (no GameId gate on restore). Transfer: teleport file.
+		if musicPersistIsGlobal() then
+			snap.mode = "global"
+			ok = writeMusicFile(GLOBAL_MUSIC_PATH, snap) or ok
+		end
+		if S.TransferScript == true then
+			snap.mode = "transfer"
+			ok = writeMusicFile(TRANSFER_MUSIC_PATH, snap) or ok
+		elseif not musicPersistIsGlobal() then
+			snap.mode = "transfer"
+			ok = writeMusicFile(TRANSFER_MUSIC_PATH, snap) or ok
+		end
 		return ok
 	end
 
 	function Music.ClearTransferState()
+		-- Only clear transfer teleport snapshot — never wipe global persist here
 		if canPersistTransfer() and isfile(TRANSFER_MUSIC_PATH) then
 			pcall(delfile, TRANSFER_MUSIC_PATH)
 		end
 	end
 
+	function Music.ClearGlobalPersist()
+		if canPersistTransfer() and isfile(GLOBAL_MUSIC_PATH) then
+			pcall(delfile, GLOBAL_MUSIC_PATH)
+		end
+	end
+
 	local function readTransferData()
-		if not canPersistTransfer() or not isfile(TRANSFER_MUSIC_PATH) then
+		-- Prefer global persist when toggle is on (works across games / fresh execute)
+		if musicPersistIsGlobal() then
+			local data, err = decodeMusicFile(GLOBAL_MUSIC_PATH)
+			if data then
+				local maxAge = 7 * 24 * 3600
+				if os.time() - (tonumber(data.ts) or 0) > maxAge then
+					return nil, "expired"
+				end
+				return data
+			end
+			if err == "corrupt" then
+				return nil, "corrupt"
+			end
+			-- Fallback: old transfer_music.json saved before split (ignore GameId)
+			local legacy = decodeMusicFile(TRANSFER_MUSIC_PATH)
+			if legacy then
+				local maxAge = 7 * 24 * 3600
+				if os.time() - (tonumber(legacy.ts) or 0) <= maxAge then
+					return legacy
+				end
+			end
 			return nil
 		end
-		local ok, data = pcall(function()
-			return HttpService:JSONDecode(readfile(TRANSFER_MUSIC_PATH))
-		end)
-		if not ok or typeof(data) ~= "table" then
-			return nil, "corrupt"
+
+		local data, err = decodeMusicFile(TRANSFER_MUSIC_PATH)
+		if not data then
+			return nil, err
 		end
-		-- Transfer-only: same GameId. Global: any game.
-		if data.gameId ~= game.GameId and not musicPersistIsGlobal() then
+		if data.gameId ~= game.GameId then
 			return nil, "game"
 		end
-		local maxAge = musicPersistIsGlobal() and (7 * 24 * 3600) or 900
-		if os.time() - (tonumber(data.ts) or 0) > maxAge then
+		if os.time() - (tonumber(data.ts) or 0) > 900 then
 			return nil, "expired"
 		end
 		return data
@@ -3312,8 +3368,13 @@ function Music.Init(S, I18nModule)
 		local data, reason = readTransferData()
 		if not data then
 			if reason == "corrupt" or reason == "expired" then
-				Music.ClearTransferState()
+				if musicPersistIsGlobal() then
+					Music.ClearGlobalPersist()
+				else
+					Music.ClearTransferState()
+				end
 			end
+			logInfo("Persist restore skipped:", tostring(reason or "none"))
 			return false
 		end
 
@@ -3331,6 +3392,7 @@ function Music.Init(S, I18nModule)
 
 		local cur = data.current
 		transferRestorePending = true
+		local isGlobal = musicPersistIsGlobal() or data.mode == "global"
 
 		if cur and typeof(cur.item) == "table" and cur.item.identifier then
 			local item = cloneQueueItem(cur.item)
@@ -3341,7 +3403,12 @@ function Music.Init(S, I18nModule)
 			end
 			local pos = tonumber(cur.position) or 0
 			local wasPaused = cur.paused == true
-			logInfo("Transfer restore:", item.title or item.identifier, string.format("@ %.1fs", pos), wasPaused and "(paused)" or "")
+			logInfo(
+				isGlobal and "Global restore:" or "Transfer restore:",
+				item.title or item.identifier,
+				string.format("@ %.1fs", pos),
+				wasPaused and "(paused)" or ""
+			)
 			task.defer(function()
 				Music.Play(item, {
 					keepQueue = true,
@@ -3349,18 +3416,29 @@ function Music.Init(S, I18nModule)
 					startPosition = pos,
 					resumePaused = wasPaused,
 				})
+				-- Keep global file; only clear teleport transfer snapshot
+				if not isGlobal then
+					Music.ClearTransferState()
+				else
+					task.defer(Music.SaveTransferState)
+				end
 			end)
 			return true
 		end
 
 		if #queue > 0 then
 			transferRestorePending = false
-			Music.ClearTransferState()
+			if not isGlobal then
+				Music.ClearTransferState()
+			end
 			notifyState()
+			logInfo(isGlobal and "Global restore: queue only" or "Transfer restore: queue only", #queue)
 			return true
 		end
 		transferRestorePending = false
-		Music.ClearTransferState()
+		if not isGlobal then
+			Music.ClearTransferState()
+		end
 		return false
 	end
 

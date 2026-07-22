@@ -1110,12 +1110,43 @@ if (isTransferLoad or Settings.MusicGlobalPersist == true) and Music.ApplyTransf
 elseif (isTransferLoad or Settings.MusicGlobalPersist == true) and Music.ApplyTransferVolume then
 	pcall(Music.ApplyTransferVolume)
 end
-if (isTransferLoad or Settings.MusicGlobalPersist == true) and Music.RestoreFromTransfer then
+local function tryRestoreMusic(reason)
+	if Settings.MusicGlobalPersist ~= true and not (isTransferLoad and Settings.TransferScript) then
+		return
+	end
+	if not Music.RestoreFromTransfer then
+		return
+	end
+	local ok, res = pcall(Music.RestoreFromTransfer)
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE(
+			"INFO",
+			string.format(
+				"[VG:music] restore(%s) ok=%s global=%s transfer=%s",
+				tostring(reason),
+				tostring(ok and res),
+				tostring(Settings.MusicGlobalPersist == true),
+				tostring(Settings.TransferScript == true)
+			)
+		)
+	end
+end
+if isTransferLoad or Settings.MusicGlobalPersist == true then
 	task.defer(function()
 		task.wait(0.65)
-		if Settings.MusicGlobalPersist == true or Settings.TransferScript then
-			pcall(Music.RestoreFromTransfer)
+		tryRestoreMusic("boot")
+	end)
+	-- Second chance after UI (stream/http often needs PlayerGui ready)
+	task.defer(function()
+		task.wait(2.5)
+		if Settings.Unloaded then
+			return
 		end
+		local st = Music.GetState and Music.GetState()
+		if st and (st.playing or st.loading or (st.queueCount or 0) > 0 or (st.title and st.title ~= "")) then
+			return
+		end
+		tryRestoreMusic("retry")
 	end)
 end
 
