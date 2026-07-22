@@ -2417,6 +2417,7 @@ local featureRunning = {
 	hitSounds = false,
 	autoRespawn = false,
 	removeSmoke = false,
+	hideHelmet = false,
 }
 local gunMod = {
 	conns = {},
@@ -3671,6 +3672,104 @@ local function stopFullBright()
 	end
 end
 
+-- ── HIDE HelmetOverlayGUI (PlayerGui.HelmetOverlayGUI.Enabled = false) ───────
+misc.helmet = { conns = {}, active = false }
+
+local function helmetClearConns()
+	for _, c in ipairs(misc.helmet.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.helmet.conns = {}
+end
+
+local function helmetAddConn(c)
+	if c then
+		table.insert(misc.helmet.conns, c)
+	end
+end
+
+local function helmetDisable(gui)
+	if not gui then
+		return
+	end
+	pcall(function()
+		if gui:IsA("LayerCollector") or gui:IsA("ScreenGui") then
+			gui.Enabled = false
+		end
+	end)
+end
+
+local function helmetEnable(gui)
+	if not gui then
+		return
+	end
+	pcall(function()
+		if gui:IsA("LayerCollector") or gui:IsA("ScreenGui") then
+			gui.Enabled = true
+		end
+	end)
+end
+
+local function helmetHookPlayerGui(pg)
+	if not pg then
+		return
+	end
+	local existing = pg:FindFirstChild("HelmetOverlayGUI")
+	if existing then
+		helmetDisable(existing)
+		helmetAddConn(existing:GetPropertyChangedSignal("Enabled"):Connect(function()
+			if misc.helmet.active and existing.Enabled then
+				helmetDisable(existing)
+			end
+		end))
+	end
+	helmetAddConn(pg.ChildAdded:Connect(function(ch)
+		if ch.Name == "HelmetOverlayGUI" then
+			helmetDisable(ch)
+			helmetAddConn(ch:GetPropertyChangedSignal("Enabled"):Connect(function()
+				if misc.helmet.active and ch.Enabled then
+					helmetDisable(ch)
+				end
+			end))
+		end
+	end))
+end
+
+local function startHideHelmetOverlay()
+	if misc.helmet.active then
+		return
+	end
+	misc.helmet.active = true
+	helmetClearConns()
+	local lp = getLP()
+	if not lp then
+		return
+	end
+	local pg = lp:FindFirstChild("PlayerGui")
+	if pg then
+		helmetHookPlayerGui(pg)
+	else
+		helmetAddConn(lp.ChildAdded:Connect(function(ch)
+			if ch.Name == "PlayerGui" or ch:IsA("PlayerGui") then
+				helmetHookPlayerGui(ch)
+			end
+		end))
+	end
+end
+
+local function stopHideHelmetOverlay()
+	helmetClearConns()
+	misc.helmet.active = false
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChild("PlayerGui")
+	local gui = pg and pg:FindFirstChild("HelmetOverlayGUI")
+	if gui then
+		helmetEnable(gui)
+	end
+end
+
 -- ── MENU INTRO MUSIC SWAP (PlayerGui.Intro.music) ────────────────────────────
 -- Only swaps SoundId — game itself still decides when to Play(). Portable via globals.json.
 local menuMus = {
@@ -4323,6 +4422,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+	syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", startHideHelmetOverlay, stopHideHelmetOverlay, S)
 	syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 	syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
@@ -4372,6 +4472,7 @@ local function startMaster(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", startHideHelmetOverlay, stopHideHelmetOverlay, S)
 			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
@@ -4556,6 +4657,7 @@ local function stopMaster()
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
+	pcall(stopHideHelmetOverlay)
 	pcall(stopRemoveSmokeExplosion)
 	pcall(snd.stop)
 	pcall(autoRespawn.stop)

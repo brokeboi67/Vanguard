@@ -677,6 +677,9 @@ function Config.EnforceRules(S)
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
+	if S.CrimHideHelmetOverlay == nil then
+		S.CrimHideHelmetOverlay = false
+	end
 	-- Menu music is portable (globals.json) — only fill defaults when missing
 	if S.CrimMenuMusic == nil then
 		S.CrimMenuMusic = false
