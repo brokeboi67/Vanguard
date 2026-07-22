@@ -791,10 +791,41 @@ local function dealerEspMeta(shop, S)
 	local lower = string.lower(name)
 	if string.find(lower, "rebel", 1, true) then
 		local col = S.CrimRebelDealerColor or Color3.fromRGB(255, 90, 70)
-		return col, "REBEL DEALER"
+		-- Map-wide + special label (★); distance ignored in tickESP
+		return col, "\u{2605} REBEL DEALER", true
 	end
 	local col = S.CrimDealerColor or Color3.fromRGB(100, 200, 255)
-	return col, "DEALER"
+	return col, "DEALER", false
+end
+
+local function styleRebelDealerEntry(entry, fill)
+	if not entry then
+		return
+	end
+	entry.rebel = true
+	if alive(entry.h) then
+		entry.h.FillTransparency = 0.35
+		entry.h.OutlineTransparency = 0
+		entry.h.FillColor = fill
+		entry.h.OutlineColor = Color3.fromRGB(255, 230, 120)
+	end
+	if alive(entry.bg) then
+		entry.bg.Size = UDim2.new(0, 148, 0, 24)
+		entry.bg.StudsOffset = Vector3.new(0, 5.2, 0)
+	end
+	if alive(entry.pill) then
+		entry.pill.BackgroundColor3 = Color3.fromRGB(28, 6, 8)
+		entry.pill.BackgroundTransparency = 0.12
+	end
+	if entry.stroke and entry.stroke.Parent then
+		entry.stroke.Color = fill
+		entry.stroke.Thickness = 2
+		entry.stroke.Transparency = 0.1
+	end
+	if alive(entry.lbl) then
+		entry.lbl.TextColor3 = Color3.fromRGB(255, 210, 90)
+		entry.lbl.TextSize = 12
+	end
 end
 
 local function clearDealerESP()
@@ -832,9 +863,13 @@ local function syncDealerESP(S)
 
 	for _, shop in ipairs(shops:GetChildren()) do
 		if not ESP.dealerByModel[shop] then
-			local color, label = dealerEspMeta(shop, S)
-			local ok, entry = pcall(makeEntry, shop, color, Color3.fromRGB(255, 255, 255), label, nil)
+			local color, label, isRebel = dealerEspMeta(shop, S)
+			local outline = isRebel and Color3.fromRGB(255, 230, 120) or Color3.fromRGB(255, 255, 255)
+			local ok, entry = pcall(makeEntry, shop, color, outline, label, nil)
 			if ok and entry then
+				if isRebel then
+					styleRebelDealerEntry(entry, color)
+				end
 				ESP.dealerByModel[shop] = entry
 				table.insert(ESP.dealers, entry)
 			end
@@ -1600,12 +1635,16 @@ local function tickESP(S)
 		end
 	end
 
-	-- Dealers
+	-- Dealers (RebelDealer = map-wide, ignore CrimESPMaxDist)
 	local showDlr = S.CrimDealerESP
 	for _, e in ipairs(ESP.dealers) do
 		local vis = false
 		if showDlr and alive(e.part) then
-			vis = (camPos - e.part.Position).Magnitude <= maxDist
+			if e.rebel then
+				vis = true
+			else
+				vis = (camPos - e.part.Position).Magnitude <= maxDist
+			end
 		end
 		if alive(e.h) then
 			if vis then espShow(e) else espHide(e) end
