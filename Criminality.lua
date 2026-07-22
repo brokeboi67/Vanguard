@@ -3673,9 +3673,10 @@ local function stopFullBright()
 end
 
 -- ── HIDE HelmetOverlayGUI (PlayerGui.HelmetOverlayGUI.Enabled = false) ───────
+-- Methods on misc.helmet — no extra chunk locals (Luau 200-register limit).
 misc.helmet = { conns = {}, active = false }
 
-local function helmetClearConns()
+function misc.helmet.clearConns()
 	for _, c in ipairs(misc.helmet.conns) do
 		pcall(function()
 			c:Disconnect()
@@ -3684,13 +3685,13 @@ local function helmetClearConns()
 	misc.helmet.conns = {}
 end
 
-local function helmetAddConn(c)
+function misc.helmet.addConn(c)
 	if c then
 		table.insert(misc.helmet.conns, c)
 	end
 end
 
-local function helmetDisable(gui)
+function misc.helmet.disable(gui)
 	if not gui then
 		return
 	end
@@ -3701,7 +3702,7 @@ local function helmetDisable(gui)
 	end)
 end
 
-local function helmetEnable(gui)
+function misc.helmet.enable(gui)
 	if not gui then
 		return
 	end
@@ -3712,61 +3713,61 @@ local function helmetEnable(gui)
 	end)
 end
 
-local function helmetHookPlayerGui(pg)
+function misc.helmet.hookPlayerGui(pg)
 	if not pg then
 		return
 	end
 	local existing = pg:FindFirstChild("HelmetOverlayGUI")
 	if existing then
-		helmetDisable(existing)
-		helmetAddConn(existing:GetPropertyChangedSignal("Enabled"):Connect(function()
+		misc.helmet.disable(existing)
+		misc.helmet.addConn(existing:GetPropertyChangedSignal("Enabled"):Connect(function()
 			if misc.helmet.active and existing.Enabled then
-				helmetDisable(existing)
+				misc.helmet.disable(existing)
 			end
 		end))
 	end
-	helmetAddConn(pg.ChildAdded:Connect(function(ch)
+	misc.helmet.addConn(pg.ChildAdded:Connect(function(ch)
 		if ch.Name == "HelmetOverlayGUI" then
-			helmetDisable(ch)
-			helmetAddConn(ch:GetPropertyChangedSignal("Enabled"):Connect(function()
+			misc.helmet.disable(ch)
+			misc.helmet.addConn(ch:GetPropertyChangedSignal("Enabled"):Connect(function()
 				if misc.helmet.active and ch.Enabled then
-					helmetDisable(ch)
+					misc.helmet.disable(ch)
 				end
 			end))
 		end
 	end))
 end
 
-local function startHideHelmetOverlay()
+function misc.helmet.start()
 	if misc.helmet.active then
 		return
 	end
 	misc.helmet.active = true
-	helmetClearConns()
+	misc.helmet.clearConns()
 	local lp = getLP()
 	if not lp then
 		return
 	end
 	local pg = lp:FindFirstChild("PlayerGui")
 	if pg then
-		helmetHookPlayerGui(pg)
+		misc.helmet.hookPlayerGui(pg)
 	else
-		helmetAddConn(lp.ChildAdded:Connect(function(ch)
+		misc.helmet.addConn(lp.ChildAdded:Connect(function(ch)
 			if ch.Name == "PlayerGui" or ch:IsA("PlayerGui") then
-				helmetHookPlayerGui(ch)
+				misc.helmet.hookPlayerGui(ch)
 			end
 		end))
 	end
 end
 
-local function stopHideHelmetOverlay()
-	helmetClearConns()
+function misc.helmet.stop()
+	misc.helmet.clearConns()
 	misc.helmet.active = false
 	local lp = getLP()
 	local pg = lp and lp:FindFirstChild("PlayerGui")
 	local gui = pg and pg:FindFirstChild("HelmetOverlayGUI")
 	if gui then
-		helmetEnable(gui)
+		misc.helmet.enable(gui)
 	end
 end
 
@@ -4422,7 +4423,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
-	syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", startHideHelmetOverlay, stopHideHelmetOverlay, S)
+	syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 	syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 	syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
@@ -4472,7 +4473,7 @@ local function startMaster(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
-			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", startHideHelmetOverlay, stopHideHelmetOverlay, S)
+			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
@@ -4657,7 +4658,7 @@ local function stopMaster()
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
-	pcall(stopHideHelmetOverlay)
+	pcall(misc.helmet.stop)
 	pcall(stopRemoveSmokeExplosion)
 	pcall(snd.stop)
 	pcall(autoRespawn.stop)
