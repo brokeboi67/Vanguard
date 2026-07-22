@@ -1567,8 +1567,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		savedMouse.icon = UIS.MouseIconEnabled
 		savedMouse.cameraMode = LP.CameraMode
 		savedMouse.devMouseLock = LP.DevEnableMouseLock
+		savedMouse.camMin = LP.CameraMinZoomDistance
+		savedMouse.camMax = LP.CameraMaxZoomDistance
 		savedMouse.wasFree = isFreeCursorState()
 	end
+
+	-- Official FP unlock: GuiButton.Modal (ScreenGui.Modal does nothing).
+	-- Tiny off-screen button so it doesn't eat clicks on the menu.
+	local modalUnlockBtn = C("TextButton", {
+		Name = "VGModalUnlock",
+		Size = UDim2.fromOffset(1, 1),
+		Position = UDim2.fromOffset(-20, -20),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextTransparency = 1,
+		AutoButtonColor = false,
+		Modal = false,
+		Visible = false,
+		Active = true,
+		Selectable = false,
+		ZIndex = 1,
+		Parent = ParentGUI,
+	})
 
 	local softCursor = C("ImageLabel", {
 		Name = "VGSoftCursor",
@@ -1576,9 +1596,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		BackgroundTransparency = 1,
 		Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
 		Visible = false,
-		ZIndex = 200,
+		ZIndex = 1000,
 		Parent = ParentGUI,
 	})
+
+	local function setModalUnlock(on)
+		modalUnlockBtn.Visible = on == true
+		modalUnlockBtn.Modal = on == true
+	end
 
 	local function updateSoftCursor()
 		if not softCursor.Visible then
@@ -1590,7 +1615,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function forceMenuCursor()
 		local LP = game:GetService("Players").LocalPlayer
-		-- Do NOT call GuiService:SetMenuIsOpen every frame — that desyncs Roblox cursor/input.
+		setModalUnlock(true)
+		-- Camera scripts re-lock every frame in FP — Modal + late RenderStep fights that.
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
 		pcall(function()
@@ -1599,32 +1625,34 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		pcall(function()
 			LP.CameraMode = Enum.CameraMode.Classic
 		end)
+		-- Nudge out of hard first-person zoom lock when possible
 		pcall(function()
-			GuiService.SelectedObject = nil
+			if LP.CameraMinZoomDistance < 5 then
+				LP.CameraMinZoomDistance = 5
+			end
+			if LP.CameraMaxZoomDistance < 32 then
+				LP.CameraMaxZoomDistance = 32
+			end
 		end)
 		pcall(function()
-			ParentGUI.Modal = true
+			GuiService.SelectedObject = nil
 		end)
 		updateSoftCursor()
 	end
 
 	local function applyFreeCursor()
+		setModalUnlock(false)
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
-		end)
-		pcall(function()
-			ParentGUI.Modal = false
 		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
 	end
 
 	local function applyLockedCursor()
+		setModalUnlock(false)
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
-		end)
-		pcall(function()
-			ParentGUI.Modal = false
 		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
 		UIS.MouseIconEnabled = false
@@ -1632,16 +1660,24 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function restoreMouseState()
 		softCursor.Visible = false
+		setModalUnlock(false)
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
-		end)
-		pcall(function()
-			ParentGUI.Modal = false
 		end)
 		local LP = game:GetService("Players").LocalPlayer
 		if savedMouse.devMouseLock ~= nil then
 			pcall(function()
 				LP.DevEnableMouseLock = savedMouse.devMouseLock
+			end)
+		end
+		if savedMouse.camMin ~= nil then
+			pcall(function()
+				LP.CameraMinZoomDistance = savedMouse.camMin
+			end)
+		end
+		if savedMouse.camMax ~= nil then
+			pcall(function()
+				LP.CameraMaxZoomDistance = savedMouse.camMax
 			end)
 		end
 		if savedMouse.wasFree then
@@ -5011,9 +5047,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			pcall(function()
 				GuiService:SetMenuIsOpen(true)
 			end)
-			pcall(function()
-				ParentGUI.Modal = true
-			end)
+			setModalUnlock(true)
 			softCursor.Visible = true
 			forceMenuCursor()
 
@@ -5028,13 +5062,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			pcall(function()
 				RS:UnbindFromRenderStep("VG_MenuMouse")
 			end)
-			-- Last priority so we win against FP lock scripts that run earlier in the frame
-			RS:BindToRenderStep("VG_MenuMouse", Enum.RenderPriority.Last.Value, perfWrap("UI.MenuMouseRS", function()
-				if not menuOpen then
-					return
-				end
-				forceMenuCursor()
-			end))
+			-- Later than Last — camera scripts often bind at Last
+			RS:BindToRenderStep(
+				"VG_MenuMouse",
+				Enum.RenderPriority.Last.Value + 1,
+				perfWrap("UI.MenuMouseRS", function()
+					if not menuOpen then
+						return
+					end
+					forceMenuCursor()
+				end)
+			)
 			mouseUnlockConn = {
 				Disconnect = function()
 					pcall(function()
@@ -5109,9 +5147,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				pcall(function()
 					GuiService:SetMenuIsOpen(false)
 				end)
-				pcall(function()
-					ParentGUI.Modal = false
-				end)
+				setModalUnlock(false)
 			end)
 
 			table.insert(menuTweens, TweenPlay(MenuScale, hideInfo, { Scale = 0.985 }))
