@@ -1105,15 +1105,15 @@ phase("Animations.Init", Animations.Init, Settings)
 phase("World.Init",      World.Init,      Settings)
 phase("Music.Init",      Music.Init,      Settings, I18n)
 
-if isTransferLoad and Music.ApplyTransferSettings then
+if (isTransferLoad or Settings.MusicGlobalPersist == true) and Music.ApplyTransferSettings then
 	pcall(Music.ApplyTransferSettings)
-elseif isTransferLoad and Music.ApplyTransferVolume then
+elseif (isTransferLoad or Settings.MusicGlobalPersist == true) and Music.ApplyTransferVolume then
 	pcall(Music.ApplyTransferVolume)
 end
-if isTransferLoad and Music.RestoreFromTransfer then
+if (isTransferLoad or Settings.MusicGlobalPersist == true) and Music.RestoreFromTransfer then
 	task.defer(function()
 		task.wait(0.65)
-		if Settings.TransferScript then
+		if Settings.MusicGlobalPersist == true or Settings.TransferScript then
 			pcall(Music.RestoreFromTransfer)
 		end
 	end)

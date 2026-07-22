@@ -4878,8 +4878,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end,
 	})
-	MakeHint(SSession, "hint_ssession1", 3)
-	MakeTog(SSession, "log_to_file", "LogToFile", 7, {
+	MakeTog(SSession, "Muzyka globalna", "MusicGlobalPersist", 3, {
+		flat = true,
+		onChange = function(enabled)
+			if ConfigModule and ConfigModule.SaveGlobals then
+				pcall(ConfigModule.SaveGlobals, S)
+			end
+			if enabled then
+				showNotify(L("notify_music_global_on"))
+				if MusicModule and MusicModule.SaveTransferState then
+					task.defer(MusicModule.SaveTransferState)
+				end
+			else
+				showNotify(L("notify_music_global_off"))
+				if S.TransferScript ~= true and MusicModule and MusicModule.ClearTransferState then
+					pcall(MusicModule.ClearTransferState)
+				end
+			end
+		end,
+	})
+	MakeHint(SSession, "hint_music_global", 4)
+	MakeHint(SSession, "hint_ssession1", 5)
+	MakeTog(SSession, "log_to_file", "LogToFile", 8, {
 		flat = true,
 		onChange = function(on)
 			local logMod = _G.__VG_LOGGER
@@ -4888,8 +4908,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 		end,
 	})
-	MakeHint(SSession, "log_file_hint", 8)
-	MakeButton(SSession, "log_clear", 9, function()
+	MakeHint(SSession, "log_file_hint", 9)
+	MakeButton(SSession, "log_clear", 10, function()
 		local logMod = _G.__VG_LOGGER
 		if logMod and logMod.clear then
 			local ok = logMod.clear()
@@ -4905,7 +4925,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			showNotify(L("log_clear_fail"))
 		end
 	end)
-	MakeButton(SSession, "Rejoin Game", 4, function()
+	MakeButton(SSession, "Rejoin Game", 6, function()
 		showNotify(L("notify_rejoin"))
 		if S.RejoinGame then
 			local ok, err = S.RejoinGame()
@@ -4916,7 +4936,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			showNotify(L("notify_rejoin_unavail"))
 		end
 	end)
-	MakeButton(SSession, "Server Hop", 5, function()
+	MakeButton(SSession, "Server Hop", 7, function()
 		showNotify(L("notify_searching_server"))
 		if S.ServerHop then
 			local ok, err = S.ServerHop()

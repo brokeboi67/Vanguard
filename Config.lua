@@ -27,6 +27,7 @@ local RUNTIME_KEYS = {
 local GLOBAL_KEYS = {
 	CrimMenuMusic = true,
 	CrimMenuMusicTrack = true,
+	MusicGlobalPersist = true,
 }
 
 local OK_MENU_TRACKS = {
@@ -753,6 +754,9 @@ function Config.EnforceRules(S)
 	end
 	if S.MusicAutoQueue == nil then
 		S.MusicAutoQueue = true
+	end
+	if S.MusicGlobalPersist == nil then
+		S.MusicGlobalPersist = false
 	end
 	if S.MusicWidgetPosXScale == nil then
 		S.MusicWidgetPosXScale = 0

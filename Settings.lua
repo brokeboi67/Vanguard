@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.90",
+	Version = "2.52.91",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -173,6 +173,7 @@ local Settings = {
 	MusicWidgetPosYScale = 1,
 	MusicWidgetPosYOffset = -90,
 	MusicAutoQueue = true,
+	MusicGlobalPersist = false,
 
 	-- HUD
 	Crosshair = false,

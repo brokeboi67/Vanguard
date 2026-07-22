@@ -62,6 +62,14 @@ function Music.Init(S, I18nModule)
 			and typeof(isfile) == "function"
 	end
 
+	local function musicPersistEnabled()
+		return S.MusicGlobalPersist == true or S.TransferScript == true
+	end
+
+	local function musicPersistIsGlobal()
+		return S.MusicGlobalPersist == true
+	end
+
 	local function ensureVanguardFolder()
 		if typeof(makefolder) == "function" then
 			pcall(makefolder, "Vanguard")
@@ -1574,7 +1582,7 @@ function Music.Init(S, I18nModule)
 	end
 
 	local function captureTransferSnapshot()
-		if not S.TransferScript then
+		if not musicPersistEnabled() then
 			return nil
 		end
 		local qOut = {}
@@ -2310,7 +2318,7 @@ function Music.Init(S, I18nModule)
 			logInfo("Pause soft @", string.format("%.1fs", pos))
 		end
 		notifyState()
-		if S.TransferScript then
+		if musicPersistEnabled() then
 			task.defer(Music.SaveTransferState)
 		end
 	end
@@ -3206,7 +3214,7 @@ function Music.Init(S, I18nModule)
 	end
 
 	function Music.SaveTransferState()
-		if not S.TransferScript or not canPersistTransfer() then
+		if not musicPersistEnabled() or not canPersistTransfer() then
 			return false
 		end
 		local snap = captureTransferSnapshot()
@@ -3236,10 +3244,12 @@ function Music.Init(S, I18nModule)
 		if not ok or typeof(data) ~= "table" then
 			return nil, "corrupt"
 		end
-		if data.gameId ~= game.GameId then
+		-- Transfer-only: same GameId. Global: any game.
+		if data.gameId ~= game.GameId and not musicPersistIsGlobal() then
 			return nil, "game"
 		end
-		if os.time() - (tonumber(data.ts) or 0) > 900 then
+		local maxAge = musicPersistIsGlobal() and (7 * 24 * 3600) or 900
+		if os.time() - (tonumber(data.ts) or 0) > maxAge then
 			return nil, "expired"
 		end
 		return data
@@ -3357,7 +3367,7 @@ function Music.Init(S, I18nModule)
 	local transferHeartbeatConn = nil
 	local transferHeartbeatAt = 0
 	transferHeartbeatConn = RS.Heartbeat:Connect(perfWrap("Music.Transfer", function()
-		if not S.TransferScript then
+		if not musicPersistEnabled() then
 			return
 		end
 		if os.clock() - transferHeartbeatAt < 3 then
@@ -3373,7 +3383,7 @@ function Music.Init(S, I18nModule)
 	local tpConn = nil
 	pcall(function()
 		tpConn = TeleportService.LocalPlayerLeaving:Connect(function()
-			if S.TransferScript then
+			if musicPersistEnabled() then
 				Music.SaveTransferState()
 			end
 		end)
@@ -3478,7 +3488,7 @@ function Music.Init(S, I18nModule)
 
 	if _G.VANGUARD then
 		_G.VANGUARD.registerCleanup(function()
-			if S.TransferScript then
+			if musicPersistEnabled() then
 				pcall(Music.SaveTransferState)
 			end
 			if transferHeartbeatConn then
