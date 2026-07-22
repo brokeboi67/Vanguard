@@ -1577,12 +1577,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		savedMouse.wasFree = isFreeCursorState()
 	end
 
-	-- Official FP unlock: GuiButton.Modal (ScreenGui.Modal does nothing).
-	-- Tiny off-screen button so it doesn't eat clicks on the menu.
+	-- Official FP/ShiftLock unlock: GuiButton.Modal must be ON-SCREEN + Visible.
 	local modalUnlockBtn = C("TextButton", {
 		Name = "VGModalUnlock",
-		Size = UDim2.fromOffset(1, 1),
-		Position = UDim2.fromOffset(-20, -20),
+		Size = UDim2.fromOffset(2, 2),
+		Position = UDim2.fromOffset(2, 2),
 		BackgroundTransparency = 1,
 		Text = "",
 		TextTransparency = 1,
@@ -1605,6 +1604,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		Parent = ParentGUI,
 	})
 
+	local shiftSuppressConn = nil
+	local shiftRestoreToken = 0
+
 	local function setModalUnlock(on)
 		modalUnlockBtn.Visible = on == true
 		modalUnlockBtn.Modal = on == true
@@ -1618,10 +1620,70 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		softCursor.Position = UDim2.fromOffset(pos.X, pos.Y)
 	end
 
+	-- RightShift = menu key AND Roblox Shift Lock bind → suppress until Shift released.
+	local function suppressShiftLockUntilReleased(thenRestoreDev)
+		local LP = game:GetService("Players").LocalPlayer
+		shiftRestoreToken += 1
+		local token = shiftRestoreToken
+		pcall(function()
+			LP.DevEnableMouseLock = false
+		end)
+		UIS.MouseBehavior = Enum.MouseBehavior.Default
+		UIS.MouseIconEnabled = true
+
+		if shiftSuppressConn then
+			shiftSuppressConn:Disconnect()
+			shiftSuppressConn = nil
+		end
+
+		local function tryRestore()
+			if token ~= shiftRestoreToken then
+				return
+			end
+			if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or UIS:IsKeyDown(Enum.KeyCode.RightShift) then
+				return false
+			end
+			if shiftSuppressConn then
+				shiftSuppressConn:Disconnect()
+				shiftSuppressConn = nil
+			end
+			task.delay(0.08, function()
+				if token ~= shiftRestoreToken or menuOpen then
+					pcall(function()
+						LP.DevEnableMouseLock = false
+					end)
+					return
+				end
+				if thenRestoreDev and savedMouse.devMouseLock ~= nil then
+					pcall(function()
+						LP.DevEnableMouseLock = savedMouse.devMouseLock
+					end)
+				end
+				-- Never force LockCenter here — FP camera scripts re-lock if needed.
+				-- Forcing LockCenter after RightShift felt like stuck Shift Lock.
+				UIS.MouseBehavior = Enum.MouseBehavior.Default
+			end)
+			return true
+		end
+
+		if tryRestore() then
+			return
+		end
+		shiftSuppressConn = UIS.InputEnded:Connect(function(input)
+			if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+				tryRestore()
+			end
+		end)
+		task.delay(1.2, function()
+			if token == shiftRestoreToken then
+				tryRestore()
+			end
+		end)
+	end
+
 	local function forceMenuCursor()
 		local LP = game:GetService("Players").LocalPlayer
 		setModalUnlock(true)
-		-- Camera scripts re-lock every frame in FP — Modal + late RenderStep fights that.
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
 		pcall(function()
@@ -1630,7 +1692,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		pcall(function()
 			LP.CameraMode = Enum.CameraMode.Classic
 		end)
-		-- Nudge out of hard first-person zoom lock when possible
 		pcall(function()
 			if LP.CameraMinZoomDistance < 5 then
 				LP.CameraMinZoomDistance = 5
@@ -1654,15 +1715,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		UIS.MouseIconEnabled = true
 	end
 
-	local function applyLockedCursor()
-		setModalUnlock(false)
-		pcall(function()
-			GuiService:SetMenuIsOpen(false)
-		end)
-		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
-		UIS.MouseIconEnabled = false
-	end
-
 	local function restoreMouseState()
 		softCursor.Visible = false
 		setModalUnlock(false)
@@ -1670,11 +1722,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			GuiService:SetMenuIsOpen(false)
 		end)
 		local LP = game:GetService("Players").LocalPlayer
-		if savedMouse.devMouseLock ~= nil then
-			pcall(function()
-				LP.DevEnableMouseLock = savedMouse.devMouseLock
-			end)
-		end
+		-- Keep DevEnableMouseLock OFF until Shift released (menu key = RightShift = Shift Lock toggle)
+		pcall(function()
+			LP.DevEnableMouseLock = false
+		end)
 		if savedMouse.camMin ~= nil then
 			pcall(function()
 				LP.CameraMinZoomDistance = savedMouse.camMin
@@ -1685,11 +1736,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				LP.CameraMaxZoomDistance = savedMouse.camMax
 			end)
 		end
-		if savedMouse.wasFree then
-			applyFreeCursor()
-		else
-			applyLockedCursor()
-		end
+		-- Always unlock on close; do not stamp LockCenter (Shift-Lock feel).
+		applyFreeCursor()
 		if savedMouse.cameraMode ~= nil then
 			pcall(function()
 				LP.CameraMode = savedMouse.cameraMode
@@ -5059,6 +5107,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			setModalUnlock(true)
 			softCursor.Visible = true
 			forceMenuCursor()
+			-- RightShift toggles Roblox Shift Lock — keep it disabled while menu opens
+			suppressShiftLockUntilReleased(false)
 
 			if mouseUnlockConn then
 				mouseUnlockConn:Disconnect()
@@ -5121,19 +5171,25 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end)
 
 			restoreMouseState()
+			suppressShiftLockUntilReleased(true)
 
 			local restoreFrames = 0
 			if mouseRestoreConn then
 				mouseRestoreConn:Disconnect()
 			end
-			local framesTarget = savedMouse.wasFree and 10 or 14
+			local framesTarget = 8
 			mouseRestoreConn = RS.RenderStepped:Connect(perfWrap("UI.MenuMouseRestore", function()
 				if menuOpen then
 					mouseRestoreConn:Disconnect()
 					mouseRestoreConn = nil
 					return
 				end
-				restoreMouseState()
+				-- Keep unlocked while RightShift may still be held (Shift Lock bind)
+				UIS.MouseBehavior = Enum.MouseBehavior.Default
+				UIS.MouseIconEnabled = true
+				pcall(function()
+					game:GetService("Players").LocalPlayer.DevEnableMouseLock = false
+				end)
 				restoreFrames = restoreFrames + 1
 				if restoreFrames >= framesTarget then
 					mouseRestoreConn:Disconnect()
@@ -5147,13 +5203,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					restoreMouseState()
 				end
 			end)
-			-- Safety: if game left us without a cursor after close, free it
-			task.delay(0.2, function()
+			-- Safety: free cursor if still locked after close (Shift Lock from RightShift)
+			task.delay(0.25, function()
 				if menuOpen then
 					return
 				end
-				if isLockedMouseBehavior(UIS.MouseBehavior) and savedMouse.wasFree then
+				if isLockedMouseBehavior(UIS.MouseBehavior) then
 					applyFreeCursor()
+					pcall(function()
+						game:GetService("Players").LocalPlayer.DevEnableMouseLock = false
+					end)
 				end
 				pcall(function()
 					GuiService:SetMenuIsOpen(false)
