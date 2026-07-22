@@ -678,7 +678,7 @@ function Config.EnforceRules(S)
 		S.CrimMenuMusic = false
 	end
 	if S.CrimLiteBoot == nil then
-		S.CrimLiteBoot = true
+		S.CrimLiteBoot = false
 	end
 	if S.CrimMenuMusicTrack == nil or not OK_MENU_TRACKS[S.CrimMenuMusicTrack] then
 		S.CrimMenuMusicTrack = "PolskiePola"

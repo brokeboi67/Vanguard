@@ -4589,7 +4589,7 @@ function Criminality.Init(S)
 		S.CrimMenuMusic = false
 	end
 	if S.CrimLiteBoot == nil then
-		S.CrimLiteBoot = true -- safe default while diagnosing lobby client crashes
+		S.CrimLiteBoot = false
 	end
 
 	local function crimLog(level, msg)

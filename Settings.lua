@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.81",
+	Version = "2.52.82",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -261,7 +261,7 @@ local Settings = {
 	CrimFullBright = false,
 	CrimMenuMusic = false,
 	CrimMenuMusicTrack = "PolskiePola",
-	CrimLiteBoot = true,
+	CrimLiteBoot = false,
 	CrimHitSoundSwap = false,
 	CrimHitSoundPreset = "UT",
 	CrimHitSoundCooldown = 180, -- ms between headshot SFX (P90 spray)
