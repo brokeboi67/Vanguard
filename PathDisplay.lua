@@ -97,13 +97,22 @@ function PathDisplay.Init(S)
 		return broken and broken:IsA("BoolValue") and broken.Value == true
 	end
 
-	local function isRareCrate(model)
+	local function getCrateKind(model)
 		local cot = model:GetAttribute("cot_") or model:GetAttribute("col_")
-		return cot == 7 or cot == "7"
+		if cot == 10 or cot == "10" then
+			return "airdrop"
+		end
+		if cot == 7 or cot == "7" then
+			return "rare"
+		end
+		return "basic"
 	end
 
-	local function shouldPathCrate(rare)
-		if rare then
+	local function shouldPathCrate(kind)
+		if kind == "airdrop" then
+			return S.CrimPathCrateAirdrop ~= false
+		end
+		if kind == "rare" then
 			return S.CrimPathCrateRare ~= false
 		end
 		return S.CrimPathCrateBasic ~= false
@@ -793,17 +802,19 @@ function PathDisplay.Init(S)
 			if piles then
 				for _, c in ipairs(piles:GetChildren()) do
 					if c.Name == "C1" or c:IsA("Model") then
-						local rare = isRareCrate(c)
-						if shouldPathCrate(rare) then
+						local crateKind = getCrateKind(c)
+						if shouldPathCrate(crateKind) then
 							local part = getModelPart(c)
 							if part then
 								local d = (origin - part.Position).Magnitude
-								if d <= maxDist and d > 2 then
+								-- Airdrop: ignore path max distance (map-wide like ESP)
+								local within = crateKind == "airdrop" or (d <= maxDist and d > 2)
+								if within and d > 2 then
 									list[#list + 1] = {
 										part = part,
 										model = c,
 										dist = d,
-										name = rare and "Rare Crate" or "Crate",
+										name = crateKind == "airdrop" and "AIRDROP" or (crateKind == "rare" and "RARE CRATE" or "CRATE"),
 									}
 								end
 							end

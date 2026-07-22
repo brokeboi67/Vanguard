@@ -923,15 +923,25 @@ local function getCrateMeshPart(model)
 	return getCrateVisualPart(model, true)
 end
 
-local function isRareCrate(model)
+local function getCrateKind(model)
+	-- basic: no cot_/col_ (or other)
+	-- rare: 7
+	-- airdrop: 10 (map-wide ESP)
 	local cot = getCrateRarityValue(model)
-	return cot == 7 or cot == "7"
+	if cot == 10 or cot == "10" then
+		return "airdrop"
+	end
+	if cot == 7 or cot == "7" then
+		return "rare"
+	end
+	return "basic"
 end
 
 -- Packed into one table to stay under Luau's 200-local limit.
 local COLORS = {
 	crateNorm = Color3.fromRGB(255, 190, 60),
 	crateRare = Color3.fromRGB(255, 55, 55),
+	crateAirdrop = Color3.fromRGB(180, 90, 255),
 	gun       = Color3.fromRGB(80, 255, 140),
 	melee     = Color3.fromRGB(255, 170, 60),
 	nade      = Color3.fromRGB(255, 90, 90),
@@ -940,21 +950,32 @@ local COLORS = {
 	safeD     = Color3.fromRGB(255, 220, 50),
 }
 
-local function shouldShowCrate(S, rare)
+local function shouldShowCrate(S, kind)
 	if not S.CrimCrateESP then
 		return false
 	end
-	if rare then
+	if kind == "airdrop" then
+		return S.CrimCrateAirdrop ~= false
+	end
+	if kind == "rare" then
 		return S.CrimCrateRare ~= false
 	end
 	return S.CrimCrateBasic ~= false
 end
 
-local function playCrateSpawnFx(entry, rare)
+local function playCrateSpawnFx(entry, kind)
 	if not entry or not alive(entry.h) then
 		return
 	end
-	local fill = rare and (COLORS.crateRare) or (COLORS.crateNorm)
+	local S = _G.__VG_S or {}
+	local fill = COLORS.crateNorm
+	if kind == "airdrop" then
+		fill = S.CrimCrateAirdropColor or COLORS.crateAirdrop
+	elseif kind == "rare" then
+		fill = S.CrimCrateRareColor or COLORS.crateRare
+	else
+		fill = S.CrimCrateColor or COLORS.crateNorm
+	end
 	entry.visState = true  -- mark visible so tickESP doesn't re-run fade-in over the fx
 	entry.h.Enabled = true
 	entry.h.FillColor = fill
@@ -981,9 +1002,15 @@ local function playCrateSpawnFx(entry, rare)
 	if alive(entry.lbl) then
 		local finalText = entry.lbl.Text
 		local finalSize = alive(entry.bg) and entry.bg.Size or nil
-		entry.lbl.Text = rare and "\u{2726} RARE SPAWN \u{2726}" or "\u{25B2} CRATE SPAWN \u{25B2}"
+		if kind == "airdrop" then
+			entry.lbl.Text = "\u{2726} AIRDROP SPAWN \u{2726}"
+		elseif kind == "rare" then
+			entry.lbl.Text = "\u{2726} RARE SPAWN \u{2726}"
+		else
+			entry.lbl.Text = "\u{25B2} CRATE SPAWN \u{25B2}"
+		end
 		if alive(entry.bg) then
-			entry.bg.Size = UDim2.new(0, 118, 0, 20)
+			entry.bg.Size = UDim2.new(0, kind == "airdrop" and 132 or 118, 0, 20)
 		end
 		task.delay(1.1, function()
 			if alive(entry.lbl) and entry.lbl.Text:find("SPAWN") then
@@ -1009,12 +1036,21 @@ local function addCrateESP(model, S, withSpawnFx)
 	if not isCrateModel(model) or crateByModel[model] then
 		return false
 	end
-	local rare = isRareCrate(model)
-	if not shouldShowCrate(S, rare) then
+	local kind = getCrateKind(model)
+	if not shouldShowCrate(S, kind) then
 		return false
 	end
-	local fill = rare and (S.CrimCrateRareColor or COLORS.crateRare) or (S.CrimCrateColor or COLORS.crateNorm)
-	local label = rare and "RARE CRATE" or "CRATE"
+	local fill = COLORS.crateNorm
+	local label = "CRATE"
+	if kind == "airdrop" then
+		fill = S.CrimCrateAirdropColor or COLORS.crateAirdrop
+		label = "AIRDROP CRATE"
+	elseif kind == "rare" then
+		fill = S.CrimCrateRareColor or COLORS.crateRare
+		label = "RARE CRATE"
+	else
+		fill = S.CrimCrateColor or COLORS.crateNorm
+	end
 	local part = getCrateVisualPart(model, true)
 	if not part then
 		return false
@@ -1023,11 +1059,13 @@ local function addCrateESP(model, S, withSpawnFx)
 	if not ok or not entry then
 		return false
 	end
-	entry.rare = rare
+	entry.kind = kind
+	entry.rare = kind == "rare"
+	entry.airdrop = kind == "airdrop"
 	crateByModel[model] = entry
 	table.insert(ESP.crates, entry)
 	if withSpawnFx then
-		playCrateSpawnFx(entry, rare)
+		playCrateSpawnFx(entry, kind)
 	end
 	return true
 end
@@ -1051,18 +1089,29 @@ local function syncCrateESP(S)
 		local model = e.model
 		local keep = alive(model) and isCrateModel(model) and isInSpawnedPiles(model)
 		if keep then
-			local rare = isRareCrate(model)
-			keep = shouldShowCrate(S, rare)
+			local kind = getCrateKind(model)
+			keep = shouldShowCrate(S, kind)
 		end
 		if not keep then
 			destroyCrateEntry(model)
 		else
 			-- Refresh rarity label/color if attribute changed
-			local rare = isRareCrate(model)
-			if e.rare ~= rare then
-				e.rare = rare
-				local fill = rare and (S.CrimCrateRareColor or COLORS.crateRare) or (S.CrimCrateColor or COLORS.crateNorm)
-				local label = rare and "RARE CRATE" or "CRATE"
+			local kind = getCrateKind(model)
+			if e.kind ~= kind then
+				e.kind = kind
+				e.rare = kind == "rare"
+				e.airdrop = kind == "airdrop"
+				local fill = COLORS.crateNorm
+				local label = "CRATE"
+				if kind == "airdrop" then
+					fill = S.CrimCrateAirdropColor or COLORS.crateAirdrop
+					label = "AIRDROP CRATE"
+				elseif kind == "rare" then
+					fill = S.CrimCrateRareColor or COLORS.crateRare
+					label = "RARE CRATE"
+				else
+					fill = S.CrimCrateColor or COLORS.crateNorm
+				end
 				if alive(e.h) then
 					e.h.FillColor = fill
 					e.h.OutlineColor = Color3.fromRGB(255, 255, 255)
@@ -1575,7 +1624,12 @@ local function tickESP(S)
 				if alive(e.bg) and e.bg.Adornee ~= e.part then
 					e.bg.Adornee = e.part
 				end
-				vis = (camPos - e.part.Position).Magnitude <= crateDist
+				-- Airdrop (cot_=10): always map-wide, ignore Crate View Distance
+				if e.airdrop or e.kind == "airdrop" then
+					vis = true
+				else
+					vis = (camPos - e.part.Position).Magnitude <= crateDist
+				end
 			end
 		end
 		if alive(e.h) then
@@ -1665,8 +1719,11 @@ local function shouldPickupCrate(S, model)
 	if not isCrateModel(model) then
 		return false
 	end
-	local rare = isRareCrate(model)
-	if rare then
+	local kind = getCrateKind(model)
+	if kind == "airdrop" then
+		return S.CrimCratePickupAirdrop ~= false
+	end
+	if kind == "rare" then
 		return S.CrimCratePickupRare ~= false
 	end
 	return S.CrimCratePickupBasic ~= false
@@ -1698,7 +1755,7 @@ local function clearAllPickupFx()
 	end
 end
 
-local function startPickupFx(model, rare)
+local function startPickupFx(model, kind)
 	if not model or not alive(model) then
 		return
 	end
@@ -1716,7 +1773,15 @@ local function startPickupFx(model, rare)
 		return
 	end
 
-	local fill = rare and Color3.fromRGB(255, 70, 255) or Color3.fromRGB(60, 255, 130)
+	local fill = Color3.fromRGB(60, 255, 130)
+	local txt = "PICKING UP"
+	if kind == "airdrop" then
+		fill = COLORS.crateAirdrop
+		txt = "AIRDROP PICKUP"
+	elseif kind == "rare" then
+		fill = Color3.fromRGB(255, 70, 255)
+		txt = "RARE PICKUP"
+	end
 	local gui = getGui()
 
 	local h = Instance.new("Highlight")
@@ -1740,7 +1805,7 @@ local function startPickupFx(model, rare)
 	local lbl = Instance.new("TextLabel")
 	lbl.Size = UDim2.new(1, 0, 1, 0)
 	lbl.BackgroundTransparency = 1
-	lbl.Text = rare and "RARE PICKUP" or "PICKING UP"
+	lbl.Text = txt
 	lbl.TextColor3 = fill
 	lbl.TextSize = 11
 	lbl.Font = Enum.Font.GothamBold
@@ -1787,7 +1852,7 @@ local function tryPickupCrate(S, model)
 		return false
 	end
 	if S.CrimCratePickupFx ~= false then
-		startPickupFx(model, isRareCrate(model))
+		startPickupFx(model, getCrateKind(model))
 	end
 	local ok = pcall(function()
 		remote:FireServer(id)
@@ -1823,8 +1888,15 @@ local function tickCratePickup(S)
 		if alive(model) and shouldPickupCrate(S, model) then
 			local dist = getCrateDist(model)
 			if dist <= fireDist then
-				local rare = isRareCrate(model)
-				local score = dist + (rare and 0 or 1000)
+				local kind = getCrateKind(model)
+				-- Priority: airdrop > rare > basic
+				local bonus = 2000
+				if kind == "airdrop" then
+					bonus = 0
+				elseif kind == "rare" then
+					bonus = 1000
+				end
+				local score = dist + bonus
 				if score < bestScore then
 					bestScore = score
 					best = model

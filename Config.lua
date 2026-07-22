@@ -560,6 +560,9 @@ function Config.EnforceRules(S)
 	if S.CrimPathCrateRare == nil then
 		S.CrimPathCrateRare = true
 	end
+	if S.CrimPathCrateAirdrop == nil then
+		S.CrimPathCrateAirdrop = true
+	end
 	if S.CrimPathFullOnly == nil then
 		S.CrimPathFullOnly = false
 	end
@@ -568,6 +571,9 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimCrateRare == nil then
 		S.CrimCrateRare = true
+	end
+	if S.CrimCrateAirdrop == nil then
+		S.CrimCrateAirdrop = true
 	end
 	if S.CrimCrateMaxDist == nil then
 		S.CrimCrateMaxDist = 400
@@ -578,6 +584,9 @@ function Config.EnforceRules(S)
 	if typeof(S.CrimCrateRareColor) ~= "Color3" then
 		S.CrimCrateRareColor = Color3.fromRGB(255, 55, 55)
 	end
+	if typeof(S.CrimCrateAirdropColor) ~= "Color3" then
+		S.CrimCrateAirdropColor = Color3.fromRGB(180, 90, 255)
+	end
 	if S.CrimCratePickup == nil then
 		S.CrimCratePickup = false
 	end
@@ -586,6 +595,9 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimCratePickupRare == nil then
 		S.CrimCratePickupRare = true
+	end
+	if S.CrimCratePickupAirdrop == nil then
+		S.CrimCratePickupAirdrop = true
 	end
 	if S.CrimCratePickupDist == nil or S.CrimCratePickupDist > 10 then
 		S.CrimCratePickupDist = 3.5
