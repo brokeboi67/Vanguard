@@ -83,8 +83,8 @@ do
 end
 
 -- EARLY Adonis shield: "Disallowed Services Detected"
--- ONLY install when Adonis is present — hookfunction(FindService) crashes some executors
--- in plain games. NEVER use hookmetamethod(__namecall).
+-- MUST run BEFORE Adonis wraps FindService into MetaFunc — late hook is too late.
+-- Plain hookfunction only (no newcclosure / no hookmetamethod).
 _G.__VG_INSTALL_FINDSERVICE_SHIELD = function()
 	if _G.__VG_ADONIS_NO_HOOKS then
 		if typeof(_G.__VG_LOG_FILE) == "function" then
@@ -102,35 +102,72 @@ _G.__VG_INSTALL_FINDSERVICE_SHIELD = function()
 	local function isBlockedName(v)
 		return typeof(v) == "string" and BLOCKED[v] == true
 	end
-	if typeof(hookfunction) ~= "function" then
-		return false
+
+	local hookedFs = false
+	if typeof(hookfunction) == "function" then
+		pcall(function()
+			local oldFS = game.FindService
+			if typeof(oldFS) ~= "function" then
+				return
+			end
+			-- Adonis: FindService("ServerStorage", DataModel) AND game:FindService(name)
+			hookfunction(oldFS, function(a, b, ...)
+				if isBlockedName(a) or isBlockedName(b) then
+					return nil
+				end
+				return oldFS(a, b, ...)
+			end)
+			hookedFs = true
+		end)
 	end
-	local ok = pcall(function()
-		local oldFS = game.FindService
-		if typeof(oldFS) ~= "function" then
+
+	-- Backup: raw metatable namecall (no hookmetamethod API — that crashed Potassium)
+	local hookedNc = false
+	pcall(function()
+		if typeof(getrawmetatable) ~= "function" or typeof(getnamecallmethod) ~= "function" then
 			return
 		end
-		-- Plain Lua wrap only (no newcclosure) — safer on Potassium/etc.
-		hookfunction(oldFS, function(a, b, ...)
-			if isBlockedName(a) or isBlockedName(b) then
-				return nil
+		local mt = getrawmetatable(game)
+		if typeof(mt) ~= "table" or typeof(mt.__namecall) ~= "function" then
+			return
+		end
+		local oldNc = mt.__namecall
+		local wrap = function(self, ...)
+			local method = getnamecallmethod()
+			if method == "FindService" or method == "findService" then
+				local name = ...
+				if isBlockedName(name) then
+					return nil
+				end
 			end
-			return oldFS(a, b, ...)
-		end)
-		_G.__VG_FINDSERVICE_SHIELD = true
+			return oldNc(self, ...)
+		end
+		if typeof(setreadonly) == "function" then
+			pcall(setreadonly, mt, false)
+		end
+		mt.__namecall = wrap
+		if typeof(setreadonly) == "function" then
+			pcall(setreadonly, mt, true)
+		end
+		hookedNc = true
 	end)
+
+	_G.__VG_FINDSERVICE_SHIELD = hookedFs or hookedNc
 	if typeof(_G.__VG_LOG_FILE) == "function" then
-		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield=" .. tostring(ok and _G.__VG_FINDSERVICE_SHIELD == true))
+		_G.__VG_LOG_FILE(
+			"INFO",
+			string.format(
+				"[VG:bypass] FindService shield fs=%s nc=%s",
+				tostring(hookedFs),
+				tostring(hookedNc)
+			)
+		)
 	end
-	return ok and _G.__VG_FINDSERVICE_SHIELD == true
+	return _G.__VG_FINDSERVICE_SHIELD == true
 end
 
-do
-	-- Never install FindService at boot — only late from soft bypass after Detected is hooked.
-	if typeof(_G.__VG_LOG_FILE) == "function" then
-		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService deferred (soft mode — late only)")
-	end
-end
+-- Install IMMEDIATELY so Adonis MetaFunc wraps our hooked FindService
+pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
 
 -- ADONIS BYPASS (SOFT) — avoids native crash on Potassium:
 -- * NO coroutine.yield (was c0000005 AV)
@@ -287,20 +324,18 @@ do
 		end
 		blog("apply step1 debug.info spoof")
 		local dbgOk = installSoftDebugInfo(Detected)
-		task.wait(0.15)
+		task.wait()
 		blog("apply step2 hook Detected")
 		if typeof(hookfunction) == "function" then
 			pcall(hookfunction, Detected, function(action, _info, _nocrash)
-				-- Swallow all detections; "_" sanity check must return true
 				return true
 			end)
 		end
-		task.wait(0.15)
+		task.wait()
 		blog("apply step3 hook Kill")
 		if Kill and typeof(hookfunction) == "function" then
 			pcall(hookfunction, Kill, function(_info) end)
 		end
-		task.wait(0.15)
 		blog(string.format("apply done dbg=%s kill=%s", tostring(dbgOk), tostring(Kill ~= nil)))
 		return dbgOk
 	end
@@ -332,10 +367,11 @@ do
 				end
 			end)
 			if not Detected then
-				blog("Detected not found — retry watcher")
+				blog("Detected not found — fast retry")
 				task.spawn(function()
-					for attempt = 1, 15 do
-						task.wait(2.5)
+					for attempt = 1, 40 do
+						-- Race Adonis Anti init — first seconds matter
+						task.wait(attempt <= 10 and 0.25 or 1.5)
 						if _G.__VG_DBG_HOOKED or _G.__VG_ADONIS_NO_HOOKS then
 							return
 						end
@@ -353,8 +389,6 @@ do
 						if d then
 							blog("found on retry #" .. attempt)
 							applySoftBypass(d, k)
-							task.wait(0.5)
-							pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
 							return
 						end
 					end
@@ -364,14 +398,37 @@ do
 			end
 			blog("Detected found — applying soft bypass")
 			applySoftBypass(Detected, Kill)
-			task.wait(0.4)
-			-- FindService last — only after Detected is neutralized (Disallowed Services → Detected)
-			blog("FindService shield (late)")
-			pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
 		end)
 	end
 
-	blog("soft bypass registered (deferred until UI)")
+	-- Race Adonis: start soft Detected/Kill as soon as Anti loads (don't wait for UI)
+	pcall(function()
+		local LogService = game:GetService("LogService")
+		LogService.MessageOut:Connect(function(message)
+			if _G.__VG_ADONIS_BYPASS_STARTED or _G.__VG_ADONIS_NO_HOOKS then
+				return
+			end
+			if typeof(message) ~= "string" then
+				return
+			end
+			if string.find(message, "INIT: Anti", 1, true)
+				or string.find(message, "Core Module: Anti", 1, true)
+				or string.find(message, "FINISHED LOADING", 1, true)
+			then
+				blog("Adonis signal — starting soft bypass NOW")
+				task.defer(_G.__VG_START_ADONIS_BYPASS)
+			end
+		end)
+	end)
+	-- Also poke after a short delay in case logs were missed
+	task.delay(1.0, function()
+		if not _G.__VG_ADONIS_BYPASS_STARTED and not _G.__VG_ADONIS_NO_HOOKS then
+			blog("1s poke — start soft bypass")
+			pcall(_G.__VG_START_ADONIS_BYPASS)
+		end
+	end)
+
+	blog("soft bypass registered (FindService early + Detected race)")
 end
 
 -- Soft mode: never hook PreloadAsync at boot (hookfunction crash risk).
