@@ -666,10 +666,10 @@ function ClientBuild.WallbangBindKeys()
 			return
 		end
 
-		-- Alt + LMB: pick player through walls (world click only)
+		-- ` (Backquote) + LMB: pick player through walls (world click only)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			local alt = UIS:IsKeyDown(Enum.KeyCode.LeftAlt) or UIS:IsKeyDown(Enum.KeyCode.RightAlt)
-			if alt and not gp and wbPickModeAllows(S.CrimWallbangPickMode, "alt") then
+			local grave = UIS:IsKeyDown(Enum.KeyCode.Backquote)
+			if grave and not gp and wbPickModeAllows(S.CrimWallbangPickMode, "alt") then
 				ClientBuild.WallbangAltClick()
 				return
 			end
