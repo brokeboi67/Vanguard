@@ -1069,12 +1069,6 @@ if isCriminality and Criminality then
 		if Settings.Unloaded then
 			return
 		end
-		if Settings.CrimLiteBoot == true then
-			if typeof(_G.__VG_LOG_FILE) == "function" then
-				_G.__VG_LOG_FILE("WARN", "[VG:crim] skip Path/ClientBuild/Bounty (CrimLiteBoot)")
-			end
-			return
-		end
 		if typeof(_G.__VG_LOG_FILE) == "function" then
 			_G.__VG_LOG_FILE(
 				"INFO",

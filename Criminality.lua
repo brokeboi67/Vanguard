@@ -4588,9 +4588,6 @@ function Criminality.Init(S)
 	if S.CrimMenuMusic == nil then
 		S.CrimMenuMusic = false
 	end
-	if S.CrimLiteBoot == nil then
-		S.CrimLiteBoot = false
-	end
 
 	local function crimLog(level, msg)
 		pcall(function()
@@ -4616,8 +4613,7 @@ function Criminality.Init(S)
 	crimLog(
 		"INFO",
 		string.format(
-			"Init enter lite=%s music=%s smoke=%s safeESP=%s crateESP=%s gunESP=%s stamina=%s",
-			tostring(S.CrimLiteBoot),
+			"Init enter music=%s smoke=%s safeESP=%s crateESP=%s gunESP=%s stamina=%s",
 			tostring(S.CrimMenuMusic),
 			tostring(S.CrimRemoveSmokeExplosion),
 			tostring(S.CrimSafeESP),
@@ -4652,22 +4648,8 @@ function Criminality.Init(S)
 	S._crimListGameSounds = snd.listGameSounds
 	S._configApplyHooks = S._configApplyHooks or {}
 	table.insert(S._configApplyHooks, function()
-		if S.CrimLiteBoot == true then
-			crimLog("INFO", "syncFromConfig skipped (CrimLiteBoot)")
-			return
-		end
 		syncFromConfig(S)
 	end)
-
-	-- Lite boot: register API only — no Heartbeat, no music, no smoke, no stamina hook.
-	-- If lobby still crashes with lite=true, fault is outside Criminality runtime (UI loader / Adonis).
-	if S.CrimLiteBoot == true then
-		crimLog("WARN", "CrimLiteBoot ON — skipping runtime boot (master/music/smoke/addons)")
-		S._onVgUiReady = function()
-			crimLog("INFO", "UI ready (lite — no Crim runtime)")
-		end
-		return
-	end
 
 	startFastPickupInput()
 

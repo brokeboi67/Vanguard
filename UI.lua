@@ -3525,63 +3525,61 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 
 		MakeTog(CUtil, "Staff Detector", "CrimStaffDetect", 1, { flat = true })
-		MakeTog(CUtil, "Crim Lite Boot (safe)", "CrimLiteBoot", 2, { flat = true })
-		MakeHint(CUtil, "hint_crim_lite_boot", 3)
-		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 4, { flat = true })
-		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 5, { flat = true })
-		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 6, { flat = true })
-		MakeTog(CUtil, "Remove Smoke Explosion", "CrimRemoveSmokeExplosion", 7, { flat = true })
-		MakeSection(CUtil, "INVISIBILITY", 8)
-		MakeTog(CUtil, "Invisibility", "Invisibility", 9, { flat = true })
-		MakeTog(CUtil, "Visible Warning", "InvisShowWarning", 10, {
+		MakeTog(CUtil, "No Fail Lockpick", "CrimNoFailLockpick", 2, { flat = true })
+		MakeTog(CUtil, "Auto Open Doors", "CrimAutoOpenDoors", 3, { flat = true })
+		MakeTog(CUtil, "Auto Unlock Doors", "CrimAutoUnlockDoors", 4, { flat = true })
+		MakeTog(CUtil, "Remove Smoke Explosion", "CrimRemoveSmokeExplosion", 5, { flat = true })
+		MakeSection(CUtil, "INVISIBILITY", 6)
+		MakeTog(CUtil, "Invisibility", "Invisibility", 7, { flat = true })
+		MakeTog(CUtil, "Visible Warning", "InvisShowWarning", 8, {
 			flat = true,
 			requires = "Invisibility",
 		})
-		MakeSlider(CUtil, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 11, {
+		MakeSlider(CUtil, "Invis Walk Speed", "InvisWalkSpeed", 6, 28, 9, {
 			suffix = "",
 			step = 1,
 			fmt = function(v) return string.format("%d", v) end,
 		})
-		MakeBind(CUtil, "Visibility Key", "InvisKey", 12, { requires = "Invisibility" })
-		MakeHint(CUtil, "hint_invis", 13)
-		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 14, { flat = true })
-		MakeButton(CUtil, nil, 15, function()
+		MakeBind(CUtil, "Visibility Key", "InvisKey", 10, { requires = "Invisibility" })
+		MakeHint(CUtil, "hint_invis", 11)
+		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 12, { flat = true })
+		MakeButton(CUtil, nil, 13, function()
 			if S._crimElevatorTeleport then
 				S._crimElevatorTeleport()
 			end
 		end, "btn_crim_elevator_tp")
-		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 16, {
+		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 14, {
 			requires = "CrimRemoteElevator",
 		})
-		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 17, {
+		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 15, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CUtil, "hint_crim_elevator", 18)
-		MakeSection(CUtil, L("crim_sub_clientbuild"), 19)
-		MakeButton(CUtil, nil, 20, function()
+		MakeHint(CUtil, "hint_crim_elevator", 16)
+		MakeSection(CUtil, L("crim_sub_clientbuild"), 17)
+		MakeButton(CUtil, nil, 18, function()
 			if S._clientBridgeStart then
 				S._clientBridgeStart()
 			end
 		end, "btn_crim_bridge")
-		MakeButton(CUtil, nil, 21, function()
+		MakeButton(CUtil, nil, 19, function()
 			if S._clientBridgeClear then
 				S._clientBridgeClear()
 			end
 		end, "btn_crim_bridge_clear")
-		MakeButton(CUtil, nil, 22, function()
+		MakeButton(CUtil, nil, 20, function()
 			if S._clientDeleteStart then
 				S._clientDeleteStart()
 			end
 		end, "btn_crim_delete")
-		MakeButton(CUtil, nil, 23, function()
+		MakeButton(CUtil, nil, 21, function()
 			if S._clientDeleteRestore then
 				S._clientDeleteRestore()
 			end
 		end, "btn_crim_delete_restore")
-		MakeHint(CUtil, "hint_crim_clientbuild", 24)
-		MakeHint(CUtil, "hint_crim_util", 25)
+		MakeHint(CUtil, "hint_crim_clientbuild", 22)
+		MakeHint(CUtil, "hint_crim_util", 23)
 	end
 
 	local function refreshWorld()
@@ -5142,7 +5140,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		if isCrim then
 			LoaderGameName.Text = game.Name ~= "" and game.Name or "Criminality"
 			LoaderSupportBadge.Text = "CRIM"
-			LoaderSupportNote.Text = "Lite boot — thumbnail skipped"
+			LoaderSupportNote.Text = "Criminality — thumbnail skipped"
 			LoaderGameIcon.Image = ""
 			uiLog("skipped refreshLoaderGameInfo (Criminality)")
 		else
