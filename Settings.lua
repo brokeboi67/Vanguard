@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.84",
+	Version = "2.52.85",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -291,9 +291,6 @@ local Settings = {
 	MiscAffectFriends = false,
 	MiscBots = true,
 	AntiBypass = true,
-	-- Soft Adonis bypass (spoof debug.info, no yield). Set true only to disable ALL Adonis hooks.
-	AdonisNoHooks = false,
-	AdonisSoftBypass = true,
 	DebugAdonis = false,
 	LogToFile = true,
 	TransferScript = false,

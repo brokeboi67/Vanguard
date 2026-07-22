@@ -4660,7 +4660,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local MSec = MakeCard(TM, "SECURITY", "card_msec_desc", 3)
 	MakeTog(MSec, "Anti-Cheat Bypass", "AntiBypass", 1, { flat = true })
-	MakeTog(MSec, "Adonis No Hooks (safe)", "AdonisNoHooks", 1, { flat = true })
 	MakeHint(MSec, "hint_msec", 2)
 
 	local MFX = MakeCard(TM, "LOCAL FX", "card_mfx_desc", 4)

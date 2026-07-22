@@ -2,9 +2,6 @@
 local REPO_BASE = "https://raw.githubusercontent.com/brokeboi67/Vanguard/main/"
 
 _G.__VG_LOADING = true
--- Soft Adonis bypass is default (spoof debug.info, no yield/namecall). Set AdonisNoHooks=true to disable all.
-_G.__VG_ADONIS_NO_HOOKS = false
-_G.__VG_ADONIS_SOFT = true
 
 -- File logger: capture full console to Vanguard/logs/vanguard.log
 do
@@ -82,360 +79,152 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
--- EARLY Adonis shield: "Disallowed Services Detected"
--- MUST run BEFORE Adonis wraps FindService into MetaFunc — late hook is too late.
--- Plain hookfunction only (no newcclosure / no hookmetamethod).
-_G.__VG_INSTALL_FINDSERVICE_SHIELD = function()
-	if _G.__VG_ADONIS_NO_HOOKS then
-		if typeof(_G.__VG_LOG_FILE) == "function" then
-			_G.__VG_LOG_FILE("WARN", "[VG:bypass] FindService shield BLOCKED (AdonisNoHooks)")
-		end
-		return false
-	end
-	if _G.__VG_FINDSERVICE_SHIELD then
-		return true
-	end
-	local BLOCKED = {
-		ServerStorage = true,
-		ServerScriptService = true,
-	}
-	local function isBlockedName(v)
-		return typeof(v) == "string" and BLOCKED[v] == true
-	end
-
-	local hookedFs = false
-	if typeof(hookfunction) == "function" then
-		pcall(function()
-			local oldFS = game.FindService
-			if typeof(oldFS) ~= "function" then
-				return
-			end
-			-- Adonis: FindService("ServerStorage", DataModel) AND game:FindService(name)
-			hookfunction(oldFS, function(a, b, ...)
-				if isBlockedName(a) or isBlockedName(b) then
-					return nil
-				end
-				return oldFS(a, b, ...)
-			end)
-			hookedFs = true
-		end)
-	end
-
-	-- Backup: raw metatable namecall (no hookmetamethod API — that crashed Potassium)
-	local hookedNc = false
-	pcall(function()
-		if typeof(getrawmetatable) ~= "function" or typeof(getnamecallmethod) ~= "function" then
-			return
-		end
-		local mt = getrawmetatable(game)
-		if typeof(mt) ~= "table" or typeof(mt.__namecall) ~= "function" then
-			return
-		end
-		local oldNc = mt.__namecall
-		local wrap = function(self, ...)
-			local method = getnamecallmethod()
-			if method == "FindService" or method == "findService" then
-				local name = ...
-				if isBlockedName(name) then
-					return nil
-				end
-			end
-			return oldNc(self, ...)
-		end
-		if typeof(setreadonly) == "function" then
-			pcall(setreadonly, mt, false)
-		end
-		mt.__namecall = wrap
-		if typeof(setreadonly) == "function" then
-			pcall(setreadonly, mt, true)
-		end
-		hookedNc = true
-	end)
-
-	_G.__VG_FINDSERVICE_SHIELD = hookedFs or hookedNc
-	if typeof(_G.__VG_LOG_FILE) == "function" then
-		_G.__VG_LOG_FILE(
-			"INFO",
-			string.format(
-				"[VG:bypass] FindService shield fs=%s nc=%s",
-				tostring(hookedFs),
-				tostring(hookedNc)
-			)
-		)
-	end
-	return _G.__VG_FINDSERVICE_SHIELD == true
-end
-
--- Install IMMEDIATELY so Adonis MetaFunc wraps our hooked FindService
-pcall(_G.__VG_INSTALL_FINDSERVICE_SHIELD)
-
--- ADONIS BYPASS (SOFT) — avoids native crash on Potassium:
--- * NO coroutine.yield (was c0000005 AV)
--- * NO hookmetamethod / early PreloadAsync
--- * Spoof debug.info so Anti identity check passes AFTER hookfunction(Detected)
--- * Light getgc(false) only, only after UI ready
--- Sources: Adonis Anti.luau (debug.info Detected "slanf")
+-- ADONIS BYPASS (restored from v2.52.68)
+-- Anti runs: debug.info(Detected,"slanf") Ôćĺ if closureÔëáDetected Ôćĺ "while true do end" (line 427)
+-- hookfunction(Detected) changes closure identity Ôćĺ freeze. DO NOT hookfunction Detected.
+-- CORRECT approach: hook debug.info with coroutine.yield Ôćĺ suspends entire anti-cheat routine.
+-- Sources: github.com/Epix-Incorporated/Adonis Anti.luau + scripthub bypass script
 do
-	local function blog(msg)
-		if typeof(_G.__VG_LOG_FILE) == "function" then
-			_G.__VG_LOG_FILE("INFO", "[VG:bypass:soft] " .. tostring(msg))
+	local function makeCC(f)
+		if typeof(newcclosure) == "function" then
+			local ok, w = pcall(newcclosure, f); if ok and w then return w end
 		end
+		return f
 	end
 
+	-- Shared state used by both the initial pass and the retry watcher.
+	local _bypassDetected = nil
 	local _bypassOldDbgInfo = nil
-	local _detMeta = nil -- {src,line,nparams,isVararg,name}
 
-	local function captureDetMeta(oldInfo, Detected)
-		local src, line, nparams, isVararg, name
-		pcall(function()
-			src = oldInfo(Detected, "s")
-			line = oldInfo(Detected, "l")
-			nparams, isVararg = oldInfo(Detected, "a")
-			name = oldInfo(Detected, "n")
-		end)
-		if typeof(nparams) ~= "number" then
-			nparams = 3
-		end
-		if isVararg == nil then
-			isVararg = false
-		end
-		return {
-			src = src,
-			line = line,
-			nparams = nparams,
-			isVararg = isVararg == true,
-			name = name,
-		}
-	end
-
-	local function spoofDebugInfo(Detected, opts)
-		local meta = _detMeta
-		if not meta or typeof(opts) ~= "string" then
-			return _bypassOldDbgInfo(Detected, opts)
-		end
-		local out = table.create(8)
-		local n = 0
-		for i = 1, #opts do
-			local c = string.sub(opts, i, i)
-			if c == "s" then
-				n += 1
-				out[n] = meta.src
-			elseif c == "l" then
-				n += 1
-				out[n] = meta.line
-			elseif c == "a" then
-				-- Luau "a" yields nparams, isvararg
-				n += 1
-				out[n] = meta.nparams
-				n += 1
-				out[n] = meta.isVararg
-			elseif c == "n" then
-				n += 1
-				out[n] = meta.name
-			elseif c == "f" then
-				-- MUST be original Detected reference Adonis holds
-				n += 1
-				out[n] = Detected
-			elseif c == "v" then
-				n += 1
-				out[n] = meta.isVararg
-			end
-		end
-		return table.unpack(out, 1, n)
-	end
-
-	local function installSoftDebugInfo(Detected)
-		if _G.__VG_DBG_HOOKED then
-			return true
-		end
+	local function installDebugInfoHook(Detected)
+		if _G.__VG_DBG_HOOKED then return true end
 		local renv = typeof(getrenv) == "function" and getrenv() or nil
-		if not renv or typeof(renv.debug) ~= "table" then
-			return false
-		end
+		if not renv or typeof(renv.debug) ~= "table" then return false end
 		local oldInfo = renv.debug.info
-		if typeof(oldInfo) ~= "function" then
-			return false
-		end
+		if typeof(oldInfo) ~= "function" then return false end
 		_bypassOldDbgInfo = _bypassOldDbgInfo or oldInfo
-		_detMeta = captureDetMeta(oldInfo, Detected)
 		local detRef = Detected
-		-- Plain Lua function — no newcclosure (crashes some executors with debug.info)
-		local wrap = function(fn, opts, ...)
+		local wrap = makeCC(function(fn, ...)
 			if fn == detRef then
-				return spoofDebugInfo(detRef, opts)
+				-- Yield Adonis's tamper-check coroutine forever.
+				-- This suspends the entire anti-cheat routine ÔÇö no detectors run.
+				return coroutine.yield(coroutine.running())
 			end
-			return _bypassOldDbgInfo(fn, opts, ...)
-		end
-		local ok = pcall(function()
-			renv.debug.info = wrap
+			return _bypassOldDbgInfo(fn, ...)
 		end)
+		-- Direct assignment preferred ÔÇö hookfunction on debug.info fails in Potassium.
+		local ok = pcall(function() renv.debug.info = wrap end)
 		if not ok then
 			ok = pcall(hookfunction, oldInfo, wrap)
 		end
 		if ok then
 			_G.__VG_DBG_HOOKED = true
-			blog("debug.info spoof OK")
-		else
-			blog("debug.info spoof FAILED")
 		end
 		return ok
 	end
 
-	local function scanForAdonis()
-		if typeof(getgc) ~= "function" then
-			return nil, nil
-		end
+	local function scanForAdonis(deep)
+		if typeof(getgc) ~= "function" then return nil, nil end
 		local Detected, Kill
+		-- Yield every 400 items to prevent blocking the scheduler in large games
+		-- (e.g. Rivals with 200k+ concurrent players has a massive GC heap).
 		local i = 0
-		local ok, err = pcall(function()
-			for _, v in getgc(false) do
-				i += 1
-				if i % 500 == 0 then
-					task.wait()
+		for _, v in getgc(deep) do
+			i = i + 1
+			if i % 400 == 0 then
+				task.wait()   -- give the scheduler a breath
+			end
+			if typeof(v) == "table" then
+				if not Detected then
+					local det = rawget(v, "Detected")
+					if typeof(det) == "function" then Detected = det end
 				end
-				if typeof(v) == "table" then
-					if not Detected then
-						local det = rawget(v, "Detected")
-						if typeof(det) == "function" then
-							Detected = det
-						end
+				if not Kill then
+					local kill = rawget(v, "Kill")
+					if typeof(kill) == "function" and rawget(v, "Variables") and rawget(v, "Process") then
+						Kill = kill
 					end
-					if not Kill then
-						local kill = rawget(v, "Kill")
-						if typeof(kill) == "function" and rawget(v, "Variables") and rawget(v, "Process") then
-							Kill = kill
-						end
-					end
-				end
-				if Detected and Kill then
-					break
 				end
 			end
-		end)
-		if not ok then
-			blog("getgc error: " .. tostring(err))
+			if Detected and Kill then break end
 		end
 		return Detected, Kill
 	end
 
-	local function applySoftBypass(Detected, Kill)
-		if not Detected then
-			return false
+	local function applyBypass(Detected, Kill)
+		if not Detected then return false end
+		_bypassDetected = Detected
+		local dbgHooked = installDebugInfoHook(Detected)
+		-- Hook Detected to return true for the sanity check Detected("_","_",true).
+		-- Safe to do AFTER debug.info is hooked (tamper-check coroutine is now suspended).
+		if dbgHooked then
+			pcall(hookfunction, Detected, makeCC(function() return true end))
 		end
-		blog("apply step1 debug.info spoof")
-		local dbgOk = installSoftDebugInfo(Detected)
-		task.wait()
-		blog("apply step2 hook Detected")
-		if typeof(hookfunction) == "function" then
-			pcall(hookfunction, Detected, function(action, _info, _nocrash)
-				return true
-			end)
+		if Kill then
+			pcall(hookfunction, Kill, makeCC(function() end))
 		end
-		task.wait()
-		blog("apply step3 hook Kill")
-		if Kill and typeof(hookfunction) == "function" then
-			pcall(hookfunction, Kill, function(_info) end)
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("INFO", string.format(
+				"[VG:bypass] Det=true Kill=%s dbgInfo=%s",
+				tostring(Kill ~= nil), tostring(dbgHooked)
+			))
 		end
-		blog(string.format("apply done dbg=%s kill=%s", tostring(dbgOk), tostring(Kill ~= nil)))
-		return dbgOk
+		return dbgHooked
 	end
 
-	_G.__VG_START_ADONIS_BYPASS = function()
-		if _G.__VG_ADONIS_NO_HOOKS then
-			blog("BLOCKED (AdonisNoHooks)")
-			return
-		end
-		if _G.__VG_ADONIS_BYPASS_STARTED then
-			return
-		end
-		_G.__VG_ADONIS_BYPASS_STARTED = true
-		if typeof(getgc) ~= "function" or typeof(hookfunction) ~= "function" then
-			blog("missing getgc/hookfunction")
-			return
-		end
+	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
+		-- Run in task.spawn to avoid blocking the scheduler (no freeze).
+		-- Adonis tamper-check fires every 5 s ÔÇö we have plenty of time to hook.
 		task.spawn(function()
-			blog("scan start (light getgc)")
-			pcall(function()
-				if typeof(setthreadidentity) == "function" then
-					setthreadidentity(2)
-				end
-			end)
-			local Detected, Kill = scanForAdonis()
-			pcall(function()
-				if typeof(setthreadidentity) == "function" then
-					setthreadidentity(7)
-				end
-			end)
+			if not game:IsLoaded() then pcall(function() game.Loaded:Wait() end) end
+			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
+
+			local function timedBypassScan(deep)
+				local perf = _G.__VG_PERF
+				local wrap = perf and perf.wrap or function(_, fn) return fn end
+				return wrap("Main.BypassScan", scanForAdonis)(deep)
+			end
+
+			-- Fast light scan first (getgc false) ÔÇö works if Adonis is already loaded.
+			local Detected, Kill = timedBypassScan(false)
+
+			-- Deep scan fallback if light scan missed it (Adonis tables may not be in light GC).
 			if not Detected then
-				blog("Detected not found — fast retry")
+				Detected, Kill = timedBypassScan(true)
+			end
+
+			local installed = applyBypass(Detected, Kill)
+
+			pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
+
+			-- RETRY WATCHER: for games where Adonis loads AFTER our script (e.g. Criminality).
+			-- Polls every 3 s for up to 30 s (10 attempts). Stops as soon as hook confirmed.
+			-- Uses light scan (getgc false) first to avoid blocking scheduler in big games.
+			if not installed then
+				if typeof(_G.__VG_LOG_FILE) == "function" then
+					_G.__VG_LOG_FILE("WARN", "[VG:bypass] Det not found ÔÇö starting retry watcher (Adonis may load late)")
+				end
 				task.spawn(function()
-					for attempt = 1, 40 do
-						-- Race Adonis Anti init — first seconds matter
-						task.wait(attempt <= 10 and 0.25 or 1.5)
-						if _G.__VG_DBG_HOOKED or _G.__VG_ADONIS_NO_HOOKS then
-							return
-						end
-						pcall(function()
-							if typeof(setthreadidentity) == "function" then
-								setthreadidentity(2)
-							end
-						end)
-						local d, k = scanForAdonis()
-						pcall(function()
-							if typeof(setthreadidentity) == "function" then
-								setthreadidentity(7)
-							end
-						end)
+					for _ = 1, 10 do      -- max 10 ├Ś 3s = 30 s
+						task.wait(3)
+						if _G.__VG_DBG_HOOKED then break end
+						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(2) end end)
+						-- Light scan only ÔÇö avoids the heavy getgc(true) causing stutters
+						local d, k = timedBypassScan(false)
+						pcall(function() if typeof(setthreadidentity) == "function" then setthreadidentity(7) end end)
 						if d then
-							blog("found on retry #" .. attempt)
-							applySoftBypass(d, k)
-							return
+							applyBypass(d, k)
+							break
 						end
 					end
-					blog("Detected never found")
 				end)
-				return
 			end
-			blog("Detected found — applying soft bypass")
-			applySoftBypass(Detected, Kill)
 		end)
 	end
-
-	-- Race Adonis: start soft Detected/Kill as soon as Anti loads (don't wait for UI)
-	pcall(function()
-		local LogService = game:GetService("LogService")
-		LogService.MessageOut:Connect(function(message)
-			if _G.__VG_ADONIS_BYPASS_STARTED or _G.__VG_ADONIS_NO_HOOKS then
-				return
-			end
-			if typeof(message) ~= "string" then
-				return
-			end
-			if string.find(message, "INIT: Anti", 1, true)
-				or string.find(message, "Core Module: Anti", 1, true)
-				or string.find(message, "FINISHED LOADING", 1, true)
-			then
-				blog("Adonis signal — starting soft bypass NOW")
-				task.defer(_G.__VG_START_ADONIS_BYPASS)
-			end
-		end)
-	end)
-	-- Also poke after a short delay in case logs were missed
-	task.delay(1.0, function()
-		if not _G.__VG_ADONIS_BYPASS_STARTED and not _G.__VG_ADONIS_NO_HOOKS then
-			blog("1s poke — start soft bypass")
-			pcall(_G.__VG_START_ADONIS_BYPASS)
-		end
-	end)
-
-	blog("soft bypass registered (FindService early + Detected race)")
 end
 
--- Soft mode: never hook PreloadAsync at boot (hookfunction crash risk).
+-- Block Adonis CoreGui scan via PreloadAsync
 pcall(function()
-	if _G.__VG_ADONIS_NO_HOOKS or _G.__VG_ADONIS_SOFT then
-		return
-	end
 	if typeof(hookfunction) ~= "function" then return end
 	local CoreGui = game:GetService("CoreGui")
 	local function isCoreScan(assets)
@@ -453,11 +242,21 @@ pcall(function()
 		return false
 	end
 	local oldPreload
-	local preloadWrap = function(self, assets, ...)
-		if self == Content and isCoreScan(assets) then
-			return
+	local preloadWrap
+	if typeof(newcclosure) == "function" then
+		preloadWrap = newcclosure(function(self, assets, ...)
+			if self == Content and isCoreScan(assets) then
+				return
+			end
+			return oldPreload(self, assets, ...)
+		end)
+	else
+		preloadWrap = function(self, assets, ...)
+			if self == Content and isCoreScan(assets) then
+				return
+			end
+			return oldPreload(self, assets, ...)
 		end
-		return oldPreload(self, assets, ...)
 	end
 	oldPreload = hookfunction(Content.PreloadAsync, preloadWrap)
 end)
@@ -1095,29 +894,6 @@ end)
 Stealth.Init(AntiBypass)
 
 local Settings = Get("Settings.lua")
--- Soft bypass default; AdonisNoHooks only if explicitly true
-if Settings.AdonisNoHooks == true then
-	_G.__VG_ADONIS_NO_HOOKS = true
-else
-	_G.__VG_ADONIS_NO_HOOKS = false
-	Settings.AdonisNoHooks = false
-end
-if Settings.AdonisSoftBypass == false then
-	_G.__VG_ADONIS_SOFT = false
-else
-	_G.__VG_ADONIS_SOFT = true
-	Settings.AdonisSoftBypass = true
-end
-if typeof(_G.__VG_LOG_FILE) == "function" then
-	_G.__VG_LOG_FILE(
-		"INFO",
-		string.format(
-			"[VG:bypass] AdonisNoHooks=%s Soft=%s",
-			tostring(_G.__VG_ADONIS_NO_HOOKS),
-			tostring(_G.__VG_ADONIS_SOFT)
-		)
-	)
-end
 local Logger = Get("Logger.lua")
 local Perf = Get("Perf.lua")
 _G.__VG_PERF = Perf
@@ -1360,39 +1136,13 @@ end
 
 bootProgress("Interfejs", 0.86)
 
--- Soft Adonis bypass after UI — do NOT unlock AntiBypass heavy scanner (yield/getgc deep).
-if Settings.AntiBypass ~= false and not _G.__VG_ADONIS_NO_HOOKS then
+-- Bypass scans in background — do NOT block UI.Init
+if Settings.AntiBypass ~= false then
 	task.spawn(function()
-		local deadline = os.clock() + 20
-		while os.clock() < deadline do
-			if Settings._vgUiReady or Settings.Unloaded then
-				break
-			end
-			task.wait(0.25)
-		end
-		if Settings.Unloaded then
-			return
-		end
-		task.wait(isCriminality and 2.0 or 1.5)
-		if Settings.Unloaded or _G.__VG_ADONIS_NO_HOOKS then
-			return
-		end
-		if typeof(_G.__VG_LOG_FILE) == "function" then
-			_G.__VG_LOG_FILE("INFO", "[VG:bypass] starting soft Adonis bypass")
-		end
-		if typeof(_G.__VG_START_ADONIS_BYPASS) == "function" then
-			pcall(_G.__VG_START_ADONIS_BYPASS)
-		end
-		-- Soft mode: skip AntiBypass.unlockAdonisHooks (old yield path / watcher).
-		if not _G.__VG_ADONIS_SOFT then
-			pcall(AntiBypass.unlockAdonisHooks, Settings)
-			task.wait(0.5)
-			AntiBypass.waitForAdonis(2)
-		end
+		task.wait(0.3)
+		AntiBypass.waitForAdonis(2)
 		AntiBypass.logAdonisDiagnostics("bypass", Settings)
 	end)
-elseif typeof(_G.__VG_LOG_FILE) == "function" then
-	_G.__VG_LOG_FILE("WARN", "[VG:bypass] deferred Adonis bypass DISABLED (AdonisNoHooks)")
 end
 
 task.spawn(function()
