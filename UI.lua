@@ -56,9 +56,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local Cam = workspace.CurrentCamera
-	local W_FULL, W_COMPACT, H = 800, 600, 540
-	local W_MUSIC, H_MUSIC = 860, 620
-	local SIDE_W = 136
+	local W_FULL, W_COMPACT, H = 720, 560, 480
+	local W_MUSIC, H_MUSIC = 760, 540
+	local SIDE_W = 128
 	local FOOTER_PAD = 12
 	local FOOTER_RIGHT_W = 196
 	local tabLayoutProfiles = {}
@@ -70,11 +70,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	local function refreshLayout()
 		local vp = Cam.ViewportSize
-		W_FULL = math.clamp(math.floor(vp.X * 0.58), 660, 900)
-		W_COMPACT = math.clamp(math.floor(vp.X * 0.48), 540, 660)
-		H = math.clamp(math.floor(vp.Y * 0.68), 500, 640)
-		W_MUSIC = math.clamp(math.floor(vp.X * 0.54), 760, 940)
-		H_MUSIC = math.clamp(math.floor(vp.Y * 0.74), 580, 700)
+		-- Compact Neverlose-ish scale — old 0.58/0.68 + high mins filled small/windowed viewports
+		W_FULL = math.clamp(math.floor(vp.X * 0.46), 560, 780)
+		W_COMPACT = math.clamp(math.floor(vp.X * 0.38), 480, 620)
+		H = math.clamp(math.floor(vp.Y * 0.54), 400, 540)
+		W_MUSIC = math.clamp(math.floor(vp.X * 0.48), 620, 820)
+		H_MUSIC = math.clamp(math.floor(vp.Y * 0.60), 460, 600)
 	end
 	refreshLayout()
 
@@ -1158,7 +1159,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				BackgroundTransparency = 1,
 				Text = subtitle,
 			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
+			TextSize = 10,
 			TextColor3 = Color3.fromRGB(118, 118, 128),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
@@ -1206,7 +1207,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			BackgroundTransparency = 1,
 			Text = text,
 			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
+			TextSize = 10,
 			TextColor3 = Color3.fromRGB(118, 118, 128),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
