@@ -79,6 +79,34 @@ do
 	bootWrite("INFO", "Vanguard bootstrap")
 end
 
+-- RH Testing / Adonis MainDetection: FindService("ServerStorage"|"ServerScriptService")
+-- must return nil. Criminality often has Detection off — RH does not.
+-- ONLY hookfunction(FindService), no namecall/getgc — safe + must run before Adonis wraps it.
+do
+	local BLOCKED = { ServerStorage = true, ServerScriptService = true }
+	local function blocked(v)
+		return typeof(v) == "string" and BLOCKED[v] == true
+	end
+	local ok = false
+	if typeof(hookfunction) == "function" then
+		ok = pcall(function()
+			local oldFS = game.FindService
+			if typeof(oldFS) ~= "function" then
+				return
+			end
+			hookfunction(oldFS, function(a, b, ...)
+				if blocked(a) or blocked(b) then
+					return nil
+				end
+				return oldFS(a, b, ...)
+			end)
+		end)
+	end
+	if typeof(_G.__VG_LOG_FILE) == "function" then
+		_G.__VG_LOG_FILE("INFO", "[VG:bypass] FindService shield=" .. tostring(ok))
+	end
+end
+
 -- ADONIS BYPASS (restored from v2.52.68)
 -- Anti runs: debug.info(Detected,"slanf") Ôćĺ if closureÔëáDetected Ôćĺ "while true do end" (line 427)
 -- hookfunction(Detected) changes closure identity Ôćĺ freeze. DO NOT hookfunction Detected.
@@ -155,11 +183,9 @@ do
 		if not Detected then return false end
 		_bypassDetected = Detected
 		local dbgHooked = installDebugInfoHook(Detected)
-		-- Hook Detected to return true for the sanity check Detected("_","_",true).
-		-- Safe to do AFTER debug.info is hooked (tamper-check coroutine is now suspended).
-		if dbgHooked then
-			pcall(hookfunction, Detected, makeCC(function() return true end))
-		end
+		-- Always neutralize Detected/Kill — RH MainDetection can fire before yield is enough.
+		-- debug.info yield still preferred for Anti loop identity check.
+		pcall(hookfunction, Detected, makeCC(function() return true end))
 		if Kill then
 			pcall(hookfunction, Kill, makeCC(function() end))
 		end
@@ -169,7 +195,7 @@ do
 				tostring(Kill ~= nil), tostring(dbgHooked)
 			))
 		end
-		return dbgHooked
+		return true
 	end
 
 	if typeof(getgc) == "function" and typeof(hookfunction) == "function" then
