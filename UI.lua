@@ -327,14 +327,13 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 	task.wait()
 
-	-- // Main menu
-	local MenuRoot = C("CanvasGroup", {
+	-- // Main menu (Frame, not CanvasGroup — CanvasGroup rasterizes text and makes fonts look soft/jagged)
+	local MenuRoot = C("Frame", {
 		Name = "MenuRoot",
 		Size = UDim2.new(0, W_FULL, 0, H),
 		Position = centerPos(W_FULL),
 		AnchorPoint = Vector2.new(0, 0),
 		BackgroundTransparency = 1,
-		GroupTransparency = 1,
 		Visible = false,
 		Parent = ParentGUI,
 	})
@@ -974,7 +973,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		if oldWrap and oldWrap ~= pageWrap then
 			oldWrap.Visible = false
-			oldWrap.GroupTransparency = 1
 			oldWrap.Position = UDim2.new(0, 0, 0, 0)
 			local oldScale = oldWrap:FindFirstChild("PageScale")
 			if oldScale then
@@ -986,14 +984,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		ActivePageWrap = pageWrap
 
 		pageWrap.Visible = true
-		pageWrap.GroupTransparency = 1
 		pageWrap.Position = UDim2.new(0, 6, 0, 0)
 		local newScale = pageWrap:FindFirstChild("PageScale")
 		if newScale then
 			newScale.Scale = 0.98
 		end
 		TweenPlay(pageWrap, inInfo, {
-			GroupTransparency = 0,
 			Position = UDim2.new(0, 0, 0, 0),
 		})
 		if newScale then
@@ -1040,10 +1036,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = B,
 		})
 
-		local Wrap = C("CanvasGroup", {
+		local Wrap = C("Frame", {
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
-			GroupTransparency = default and 0 or 1,
 			Visible = default,
 			ZIndex = 4,
 			Parent = Content,
@@ -1162,15 +1157,15 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				AutomaticSize = Enum.AutomaticSize.Y,
 				BackgroundTransparency = 1,
 				Text = subtitle,
-				Font = Enum.Font.Gotham,
-				TextSize = 9,
-				TextColor3 = Color3.fromRGB(92, 92, 102),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextWrapped = true,
-				LayoutOrder = 2,
-				ZIndex = 6,
-				Parent = Card,
-			})
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(118, 118, 128),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = true,
+			LayoutOrder = 2,
+			ZIndex = 6,
+			Parent = Card,
+		})
 			if subtitleKey and I18n and I18n.registerText then
 				I18n.registerText(subLbl, subtitleKey)
 			end
@@ -1210,9 +1205,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
 			Text = text,
-			Font = Enum.Font.Gotham,
-			TextSize = 9,
-			TextColor3 = Color3.fromRGB(88, 88, 98),
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(118, 118, 128),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
 			LayoutOrder = order,
@@ -1574,21 +1569,50 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		savedMouse.wasFree = isFreeCursorState()
 	end
 
+	local softCursor = C("ImageLabel", {
+		Name = "VGSoftCursor",
+		Size = UDim2.fromOffset(18, 22),
+		BackgroundTransparency = 1,
+		Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
+		Visible = false,
+		ZIndex = 200,
+		Parent = ParentGUI,
+	})
+
+	local function updateSoftCursor()
+		if not softCursor.Visible then
+			return
+		end
+		local pos = UIS:GetMouseLocation()
+		softCursor.Position = UDim2.fromOffset(pos.X, pos.Y)
+	end
+
 	local function forceMenuCursor()
+		local LP = game:GetService("Players").LocalPlayer
 		-- Do NOT call GuiService:SetMenuIsOpen every frame — that desyncs Roblox cursor/input.
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
 		pcall(function()
-			game:GetService("Players").LocalPlayer.DevEnableMouseLock = false
+			LP.DevEnableMouseLock = false
+		end)
+		pcall(function()
+			LP.CameraMode = Enum.CameraMode.Classic
 		end)
 		pcall(function()
 			GuiService.SelectedObject = nil
 		end)
+		pcall(function()
+			ParentGUI.Modal = true
+		end)
+		updateSoftCursor()
 	end
 
 	local function applyFreeCursor()
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
+		end)
+		pcall(function()
+			ParentGUI.Modal = false
 		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
@@ -1598,13 +1622,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
 		end)
+		pcall(function()
+			ParentGUI.Modal = false
+		end)
 		UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
 		UIS.MouseIconEnabled = false
 	end
 
 	local function restoreMouseState()
+		softCursor.Visible = false
 		pcall(function()
 			GuiService:SetMenuIsOpen(false)
+		end)
+		pcall(function()
+			ParentGUI.Modal = false
 		end)
 		local LP = game:GetService("Players").LocalPlayer
 		if savedMouse.devMouseLock ~= nil then
@@ -4959,22 +4990,37 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			pcall(function()
 				GuiService:SetMenuIsOpen(true)
 			end)
+			pcall(function()
+				ParentGUI.Modal = true
+			end)
+			softCursor.Visible = true
 			forceMenuCursor()
 
 			if mouseUnlockConn then
 				mouseUnlockConn:Disconnect()
+				mouseUnlockConn = nil
 			end
 			if mouseUnlockHB then
 				mouseUnlockHB:Disconnect()
 				mouseUnlockHB = nil
 			end
-			-- Only RenderStepped — Heartbeat+RS both calling SetMenuIsOpen caused random cursor loss
-			mouseUnlockConn = RS.RenderStepped:Connect(perfWrap("UI.MenuMouseRS", function()
+			pcall(function()
+				RS:UnbindFromRenderStep("VG_MenuMouse")
+			end)
+			-- Last priority so we win against FP lock scripts that run earlier in the frame
+			RS:BindToRenderStep("VG_MenuMouse", Enum.RenderPriority.Last.Value, perfWrap("UI.MenuMouseRS", function()
 				if not menuOpen then
 					return
 				end
 				forceMenuCursor()
 			end))
+			mouseUnlockConn = {
+				Disconnect = function()
+					pcall(function()
+						RS:UnbindFromRenderStep("VG_MenuMouse")
+					end)
+				end,
+			}
 
 			task.defer(forceMenuCursor)
 			task.delay(0.05, function()
@@ -4984,8 +5030,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end)
 
 			MenuScale.Scale = 0.985
-			MenuRoot.GroupTransparency = 1
-			table.insert(menuTweens, TweenPlay(MenuRoot, showInfo, { GroupTransparency = 0 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, showInfo, { Scale = 1 }))
 
 			if UIMusicModule and UIMusicModule.onMenuOpen then
@@ -5002,6 +5046,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				mouseUnlockHB:Disconnect()
 				mouseUnlockHB = nil
 			end
+			pcall(function()
+				RS:UnbindFromRenderStep("VG_MenuMouse")
+			end)
 
 			restoreMouseState()
 
@@ -5041,9 +5088,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				pcall(function()
 					GuiService:SetMenuIsOpen(false)
 				end)
+				pcall(function()
+					ParentGUI.Modal = false
+				end)
 			end)
 
-			table.insert(menuTweens, TweenPlay(MenuRoot, hideInfo, { GroupTransparency = 1 }))
 			table.insert(menuTweens, TweenPlay(MenuScale, hideInfo, { Scale = 0.985 }))
 			task.delay(0.12, function()
 				if not menuOpen then
@@ -5227,16 +5276,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		menuOpen = false
 		MenuRoot.Visible = true
-		MenuRoot.GroupTransparency = 1
 		MenuScale.Scale = 0.985
 		uiLog("opening menu")
 		if isCrim then
+			-- Keep menuOpen=false until SetMenuOpen — otherwise SetMenuOpen no-ops and mouse never unlocks
 			pcall(function()
-				MenuRoot.GroupTransparency = 0
 				MenuScale.Scale = 1
-				menuOpen = true
 			end)
-			uiLog("menu soft-open done")
+			uiLog("menu soft-visible (defer unlock)")
 			task.delay(0.4, function()
 				if S.Unloaded then
 					return

@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.52.89",
+	Version = "2.52.90",
 	-- ESP
 	ESP = false,
 	Box = false,
