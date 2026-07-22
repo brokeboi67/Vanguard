@@ -1561,13 +1561,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local function isFreeCursorState()
-		if UIS.MouseBehavior == Enum.MouseBehavior.Default then
-			return true
-		end
-		if UIS.MouseIconEnabled then
-			return true
-		end
-		return false
+		-- Only MouseBehavior matters — MouseIconEnabled alone is unreliable (games scripts toggle it).
+		return not isLockedMouseBehavior(UIS.MouseBehavior)
 	end
 
 	local function captureMouseState()
@@ -1575,13 +1570,12 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		savedMouse.behavior = UIS.MouseBehavior
 		savedMouse.icon = UIS.MouseIconEnabled
 		savedMouse.cameraMode = LP.CameraMode
+		savedMouse.devMouseLock = LP.DevEnableMouseLock
 		savedMouse.wasFree = isFreeCursorState()
 	end
 
 	local function forceMenuCursor()
-		pcall(function()
-			GuiService:SetMenuIsOpen(true)
-		end)
+		-- Do NOT call GuiService:SetMenuIsOpen every frame — that desyncs Roblox cursor/input.
 		UIS.MouseBehavior = Enum.MouseBehavior.Default
 		UIS.MouseIconEnabled = true
 		pcall(function()
@@ -1609,12 +1603,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	end
 
 	local function restoreMouseState()
+		pcall(function()
+			GuiService:SetMenuIsOpen(false)
+		end)
+		local LP = game:GetService("Players").LocalPlayer
+		if savedMouse.devMouseLock ~= nil then
+			pcall(function()
+				LP.DevEnableMouseLock = savedMouse.devMouseLock
+			end)
+		end
 		if savedMouse.wasFree then
 			applyFreeCursor()
 		else
 			applyLockedCursor()
 		end
-		local LP = game:GetService("Players").LocalPlayer
 		if savedMouse.cameraMode ~= nil then
 			pcall(function()
 				LP.CameraMode = savedMouse.cameraMode
@@ -4955,6 +4957,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 
 			captureMouseState()
+			-- Once: unlock for UI. Avoid SetMenuIsOpen spam (cursor/input desync).
+			pcall(function()
+				GuiService:SetMenuIsOpen(true)
+			end)
 			forceMenuCursor()
 
 			if mouseUnlockConn then
@@ -4962,22 +4968,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end
 			if mouseUnlockHB then
 				mouseUnlockHB:Disconnect()
+				mouseUnlockHB = nil
 			end
-			local unlockBeat = false
+			-- Only RenderStepped — Heartbeat+RS both calling SetMenuIsOpen caused random cursor loss
 			mouseUnlockConn = RS.RenderStepped:Connect(perfWrap("UI.MenuMouseRS", function()
 				if not menuOpen then
 					return
 				end
 				forceMenuCursor()
-			end))
-			mouseUnlockHB = RS.Heartbeat:Connect(perfWrap("UI.MenuMouseHB", function()
-				if not menuOpen then
-					return
-				end
-				unlockBeat = not unlockBeat
-				if unlockBeat then
-					forceMenuCursor()
-				end
 			end))
 
 			task.defer(forceMenuCursor)
@@ -5033,6 +5031,18 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				if not menuOpen then
 					restoreMouseState()
 				end
+			end)
+			-- Safety: if game left us without a cursor after close, free it
+			task.delay(0.2, function()
+				if menuOpen then
+					return
+				end
+				if isLockedMouseBehavior(UIS.MouseBehavior) and savedMouse.wasFree then
+					applyFreeCursor()
+				end
+				pcall(function()
+					GuiService:SetMenuIsOpen(false)
+				end)
 			end)
 
 			table.insert(menuTweens, TweenPlay(MenuRoot, hideInfo, { GroupTransparency = 1 }))
