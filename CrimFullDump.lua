@@ -486,6 +486,7 @@ task.wait()
 -- 12 + 13 + 14 getgc
 do
 	local skinMap = {}
+	local meshMap = {}
 	local skinRows = {}
 	local weaponStats = {}
 	local interesting = {}
@@ -538,9 +539,9 @@ do
 					continue
 				end
 
-				-- skins
-				local ok2, tex, name, disp, rarity, skinClass = pcall(function()
-					return v.TextureID, v.ItemName, v.DisplayName, v.Rarity, v.SkinClass
+				-- skins (+ MeshVariant official SkinVariants link)
+				local ok2, tex, name, disp, rarity, skinClass, meshVar = pcall(function()
+					return v.TextureID, v.ItemName, v.DisplayName, v.Rarity, v.SkinClass, v.MeshVariant
 				end)
 				if ok2 and typeof(tex) == "number" and tex > 1000
 					and typeof(name) == "string" and name ~= ""
@@ -555,8 +556,26 @@ do
 							tex = tex,
 							rarity = rarity,
 							class = skinClass,
+							mesh = typeof(meshVar) == "string" and meshVar or nil,
 						}
+					elseif typeof(meshVar) == "string" and meshVar ~= "" then
+						for _, r in ipairs(skinRows) do
+							if r.item == name and r.display == disp and not r.mesh then
+								r.mesh = meshVar
+								break
+							end
+						end
 					end
+					if typeof(meshVar) == "string" and meshVar ~= "" then
+						meshMap[name] = meshMap[name] or {}
+						meshMap[name][disp] = meshVar
+					end
+				elseif ok2 and typeof(name) == "string" and name ~= ""
+					and typeof(disp) == "string" and disp ~= ""
+					and typeof(meshVar) == "string" and meshVar ~= ""
+				then
+					meshMap[name] = meshMap[name] or {}
+					meshMap[name][disp] = meshVar
 				end
 
 				-- weapon / movement stat tables (rawget/pcall — avoid PhysicModule __index throws)
@@ -613,16 +632,18 @@ do
 
 	local skinTxt = {
 		"-- skin TextureID dump " .. stamp,
+		"-- format: ItemName | DisplayName | TextureID | rarity= | class= | mesh=",
 		"",
 	}
 	for _, r in ipairs(skinRows) do
 		skinTxt[#skinTxt + 1] = string.format(
-			"%s | %s | %d | rarity=%s | class=%s",
+			"%s | %s | %d | rarity=%s | class=%s | mesh=%s",
 			r.item,
 			r.display,
 			r.tex,
 			tostring(r.rarity or "?"),
-			tostring(r.class or "?")
+			tostring(r.class or "?"),
+			tostring(r.mesh or "")
 		)
 	end
 	write(OUT .. "/12_gc_skins.txt", table.concat(skinTxt, "\n") .. "\n")
@@ -634,6 +655,27 @@ do
 		write("VG_CrimSkinIds.json", json)
 		write("VG_CrimSkinIds.txt", table.concat(skinTxt, "\n") .. "\n")
 	end
+	local mok, mjson = pcall(function()
+		return HttpService:JSONEncode(meshMap)
+	end)
+	if mok then
+		write(OUT .. "/12_gc_skin_meshes.json", mjson)
+		write("VG_CrimSkinMeshes.json", mjson)
+	end
+	local meshLines = { "-- MeshVariant map " .. stamp, "-- ItemName | DisplayName | MeshVariant", "" }
+	local meshN = 0
+	local meshRows = {}
+	for gun, skins in pairs(meshMap) do
+		for disp, mesh in pairs(skins) do
+			meshN += 1
+			meshRows[#meshRows + 1] = string.format("%s | %s | %s", gun, disp, mesh)
+		end
+	end
+	table.sort(meshRows)
+	for _, row in ipairs(meshRows) do
+		meshLines[#meshLines + 1] = row
+	end
+	write(OUT .. "/12_gc_skin_meshes.txt", table.concat(meshLines, "\n") .. "\n")
 
 	write(OUT .. "/13_gc_weapon_stats.txt", table.concat({
 		"=== getgc weapon/movement-like tables ===",
@@ -655,9 +697,10 @@ do
 	end
 	summary[#summary + 1] = "getgc scanned=" .. scanned
 	summary[#summary + 1] = "skins=" .. #skinRows .. " guns=" .. gunN
+	summary[#summary + 1] = "meshVariants=" .. meshN
 	summary[#summary + 1] = "statTables=" .. #weaponStats
 	summary[#summary + 1] = "interestingGC=" .. #interesting
-	print("[VG:full] skins", #skinRows, "stats", #weaponStats, "interesting", #interesting)
+	print("[VG:full] skins", #skinRows, "meshes", meshN, "stats", #weaponStats)
 end
 
 task.wait()
