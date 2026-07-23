@@ -364,9 +364,36 @@ function UISkinVault.build(opts)
 		ZIndex = 7,
 		Parent = Header,
 	})
+	local BtnUpgrade = C("TextButton", {
+		Size = UDim2.new(0, 72, 0, 24),
+		Position = UDim2.new(0, 118, 0.5, -12),
+		BackgroundColor3 = Color3.fromRGB(40, 70, 130),
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+		Text = "Upgrade",
+		Font = Enum.Font.GothamBold,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(220, 235, 255),
+		AutoButtonColor = true,
+		ZIndex = 7,
+		Parent = Header,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = BtnUpgrade })
+	local BtnUpgClear = C("TextButton", {
+		Size = UDim2.new(0, 58, 0, 24),
+		Position = UDim2.new(0, 196, 0.5, -12),
+		BackgroundTransparency = 1,
+		Text = "No Upg",
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 11,
+		TextColor3 = Color3.fromRGB(150, 160, 180),
+		AutoButtonColor = false,
+		ZIndex = 7,
+		Parent = Header,
+	})
 	local TitleLbl = C("TextLabel", {
-		Size = UDim2.new(0, 120, 0, 24),
-		Position = UDim2.new(0.5, -60, 0.5, -12),
+		Size = UDim2.new(0, 100, 0, 24),
+		Position = UDim2.new(0.5, -20, 0.5, -12),
 		BackgroundTransparency = 1,
 		Text = "Inventory",
 		Font = Enum.Font.GothamBold,
@@ -376,8 +403,8 @@ function UISkinVault.build(opts)
 		Parent = Header,
 	})
 	local StatusLbl = C("TextLabel", {
-		Size = UDim2.new(0, 200, 0, 18),
-		Position = UDim2.new(1, -212, 0.5, -9),
+		Size = UDim2.new(0, 160, 0, 18),
+		Position = UDim2.new(1, -168, 0.5, -9),
 		BackgroundTransparency = 1,
 		Text = "",
 		Font = Enum.Font.GothamMedium,
@@ -1072,6 +1099,24 @@ function UISkinVault.build(opts)
 		persistSkins()
 		refreshWeaponSidebar()
 		refreshSkinGrid()
+	end)
+	BtnUpgrade.MouseButton1Click:Connect(function()
+		if S._crimUpgradeHeld then
+			local ok, msg = S._crimUpgradeHeld()
+			if showNotify then
+				showNotify(tostring(msg or (ok and "upgraded look" or "fail")))
+			end
+		elseif showNotify then
+			showNotify("upgrade unavailable")
+		end
+	end)
+	BtnUpgClear.MouseButton1Click:Connect(function()
+		if S._crimClearUpgradeHeld then
+			local ok, msg = S._crimClearUpgradeHeld()
+			if showNotify then
+				showNotify(tostring(msg or (ok and "cleared" or "fail")))
+			end
+		end
 	end)
 
 	-- Controls below Inventory vault
