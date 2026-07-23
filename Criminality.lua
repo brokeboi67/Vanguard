@@ -244,8 +244,8 @@ local function stopRemoveSmokeExplosion()
 	misc.smoke.active = false
 end
 
--- ── NO RAGDOLL (client: cancel PlatformStand / Ragdoll / Physics + restore joints) ──
-misc.noRagdoll = { conns = {}, charConns = {} }
+-- ── NO RAGDOLL (CharStats NoRagdoll/RagdollTime + client PlatformStand cancel) ──
+misc.noRagdoll = { conns = {}, charConns = {}, statsConns = {}, saved = {} }
 
 function misc.clearNoRagdollChar()
 	for _, c in ipairs(misc.noRagdoll.charConns) do
@@ -254,6 +254,149 @@ function misc.clearNoRagdollChar()
 		end)
 	end
 	misc.noRagdoll.charConns = {}
+end
+
+function misc.noRagdoll.clearStatsConns()
+	for _, c in ipairs(misc.noRagdoll.statsConns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.noRagdoll.statsConns = {}
+end
+
+function misc.noRagdoll.getStatsFolder()
+	local lp = getLP()
+	if not lp then
+		return nil
+	end
+	local root = RepSt:FindFirstChild("CharStats")
+	if not root then
+		return nil
+	end
+	return root:FindFirstChild(lp.Name)
+end
+
+function misc.noRagdoll.remember(obj)
+	if not obj or misc.noRagdoll.saved[obj] ~= nil then
+		return
+	end
+	if obj:IsA("BoolValue") or obj:IsA("NumberValue") or obj:IsA("IntValue") then
+		misc.noRagdoll.saved[obj] = obj.Value
+	end
+end
+
+function misc.noRagdoll.writeVal(obj, want)
+	if not obj then
+		return
+	end
+	if obj:IsA("BoolValue") or obj:IsA("NumberValue") or obj:IsA("IntValue") then
+		misc.noRagdoll.remember(obj)
+		if obj.Value ~= want then
+			pcall(function()
+				obj.Value = want
+			end)
+		end
+	end
+end
+
+function misc.noRagdoll.applyCharStats()
+	local folder = misc.noRagdoll.getStatsFolder()
+	if not folder then
+		return false
+	end
+	-- Primary flags from CharStats.<nick>
+	misc.noRagdoll.writeVal(folder:FindFirstChild("NoRagdoll"), true)
+	-- Related stun that often chains into ragdoll
+	misc.noRagdoll.writeVal(folder:FindFirstChild("NoFlameGasStun"), true)
+
+	local rt = folder:FindFirstChild("RagdollTime")
+	if rt then
+		-- Some builds expose RagdollTime as a NumberValue; others as a Folder.
+		if rt:IsA("BoolValue") or rt:IsA("NumberValue") or rt:IsA("IntValue") then
+			misc.noRagdoll.writeVal(rt, 0)
+		end
+		misc.noRagdoll.writeVal(rt:FindFirstChild("RagdollTime2"), 0)
+		misc.noRagdoll.writeVal(rt:FindFirstChild("SRagdolled"), false)
+		local tickVal = rt:FindFirstChild("Tick")
+		if tickVal and (tickVal:IsA("NumberValue") or tickVal:IsA("IntValue")) then
+			misc.noRagdoll.writeVal(tickVal, 0)
+		end
+		for _, swName in ipairs({ "RagdollSwitch", "RagdollSwitch2" }) do
+			local sw = rt:FindFirstChild(swName)
+			if sw then
+				if sw:IsA("BoolValue") or sw:IsA("NumberValue") or sw:IsA("IntValue") then
+					misc.noRagdoll.writeVal(sw, typeof(sw.Value) == "boolean" and false or 0)
+				end
+				for _, ch in ipairs(sw:GetChildren()) do
+					if ch:IsA("BoolValue") then
+						misc.noRagdoll.writeVal(ch, false)
+					elseif ch:IsA("NumberValue") or ch:IsA("IntValue") then
+						misc.noRagdoll.writeVal(ch, 0)
+					end
+				end
+			end
+		end
+	end
+	return true
+end
+
+function misc.noRagdoll.restoreCharStats()
+	for obj, prev in pairs(misc.noRagdoll.saved) do
+		if typeof(obj) == "Instance" and obj.Parent then
+			pcall(function()
+				obj.Value = prev
+			end)
+		end
+	end
+	table.clear(misc.noRagdoll.saved)
+end
+
+function misc.noRagdoll.hookCharStats()
+	misc.noRagdoll.clearStatsConns()
+	misc.noRagdoll.applyCharStats()
+	local folder = misc.noRagdoll.getStatsFolder()
+	if not folder then
+		-- CharStats may spawn later — watch ReplicatedStorage
+		local root = RepSt:FindFirstChild("CharStats") or RepSt
+		table.insert(
+			misc.noRagdoll.statsConns,
+			root.ChildAdded:Connect(function()
+				if _G.__VG_S and _G.__VG_S.CrimNoRagdoll then
+					task.defer(function()
+						misc.noRagdoll.hookCharStats()
+					end)
+				end
+			end)
+		)
+		return
+	end
+	local function reapply()
+		if _G.__VG_S and _G.__VG_S.CrimNoRagdoll then
+			misc.noRagdoll.applyCharStats()
+		end
+	end
+	table.insert(misc.noRagdoll.statsConns, folder.DescendantAdded:Connect(function()
+		task.defer(reapply)
+	end))
+	for _, d in ipairs(folder:GetDescendants()) do
+		if d:IsA("BoolValue") or d:IsA("NumberValue") or d:IsA("IntValue") then
+			local n = d.Name
+			if n == "NoRagdoll"
+				or n == "NoFlameGasStun"
+				or n == "RagdollTime"
+				or n == "RagdollTime2"
+				or n == "SRagdolled"
+				or n == "Tick"
+				or n:find("Ragdoll", 1, true)
+			then
+				table.insert(
+					misc.noRagdoll.statsConns,
+					d:GetPropertyChangedSignal("Value"):Connect(reapply)
+				)
+			end
+		end
+	end
 end
 
 function misc.unragdollChar(char)
@@ -367,6 +510,7 @@ local function startNoRagdoll()
 	end
 	misc.noRagdoll.conns = {}
 	misc.clearNoRagdollChar()
+	misc.noRagdoll.hookCharStats()
 	local lp = getLP()
 	if not lp then
 		return
@@ -379,6 +523,7 @@ local function startNoRagdoll()
 		lp.CharacterAdded:Connect(function(char)
 			task.defer(function()
 				if _G.__VG_S and _G.__VG_S.CrimNoRagdoll then
+					misc.noRagdoll.hookCharStats()
 					misc.hookNoRagdollChar(char)
 				end
 			end)
@@ -394,6 +539,8 @@ local function stopNoRagdoll()
 	end
 	misc.noRagdoll.conns = {}
 	misc.clearNoRagdollChar()
+	misc.noRagdoll.clearStatsConns()
+	misc.noRagdoll.restoreCharStats()
 	local hum = getHum()
 	if hum then
 		pcall(function()
@@ -4599,6 +4746,7 @@ local function startMaster(S)
 			refillCrimStamina()
 		end
 		if featureRunning.noRagdoll and master.frame % 6 == 0 then
+			pcall(misc.noRagdoll.applyCharStats)
 			local char = getChar()
 			if char then
 				misc.unragdollChar(char)
