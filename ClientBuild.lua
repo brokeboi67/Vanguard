@@ -649,6 +649,13 @@ local function wbMatchKey(input, keyName)
 	elseif keyName == "MouseButton3" then
 		return input.UserInputType == Enum.UserInputType.MouseButton3
 	end
+	local m = string.match(keyName, "^MouseButton(%d+)$")
+	if m then
+		local ok, uit = pcall(function()
+			return Enum.UserInputType["MouseButton" .. m]
+		end)
+		return ok and uit ~= nil and input.UserInputType == uit
+	end
 	if input.UserInputType ~= Enum.UserInputType.Keyboard then
 		return false
 	end

@@ -849,16 +849,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		task.wait()
 
 	local function formatBindName(name)
-		if name == "MouseButton1" then
-			return "M1"
+		if typeof(name) ~= "string" then
+			return "None"
 		end
-		if name == "MouseButton2" then
-			return "M2"
+		local m = string.match(name, "^MouseButton(%d+)$")
+		if m then
+			return "M" .. m
 		end
-		if name == "MouseButton3" then
-			return "M3"
-		end
-		return name or "None"
+		return name ~= "" and name or "None"
 	end
 
 	local function espCustomColorsEnabled()
@@ -2116,10 +2114,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		end
 
 		local function isMouseBind(input)
-			local t = input.UserInputType
-			return t == Enum.UserInputType.MouseButton1
-				or t == Enum.UserInputType.MouseButton2
-				or t == Enum.UserInputType.MouseButton3
+			local n = input.UserInputType and input.UserInputType.Name
+			return typeof(n) == "string" and string.match(n, "^MouseButton%d+$") ~= nil
 		end
 
 		Row.MouseButton1Click:Connect(function()
@@ -2143,15 +2139,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 						cancelBind()
 						return
 					end
-					-- Mouse: always accept while rebinding (GUI marks clicks as processed)
+					-- MouseButton1..N (Roblox has 1–3; some executors may expose more)
 					if isMouseBind(input) then
-						if input.UserInputType == Enum.UserInputType.MouseButton1 then
-							finishBind("MouseButton1")
-						elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-							finishBind("MouseButton2")
-						elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
-							finishBind("MouseButton3")
-						end
+						finishBind(input.UserInputType.Name)
 						return
 					end
 					-- Keyboard: ignore chat/IME when processed, else take KeyCode

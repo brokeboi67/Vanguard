@@ -105,9 +105,30 @@ function Aim.Init(S, ParentGUI, TF, Util)
 		MouseButton2 = Enum.UserInputType.MouseButton2,
 		MouseButton3 = Enum.UserInputType.MouseButton3,
 	}
+	-- Future / executor extras (MouseButton4+) if enum exists
+	pcall(function()
+		MOUSE_BINDS.MouseButton4 = Enum.UserInputType.MouseButton4
+	end)
+	pcall(function()
+		MOUSE_BINDS.MouseButton5 = Enum.UserInputType.MouseButton5
+	end)
 
 	local function resolveMouseBind(name)
-		return MOUSE_BINDS[name]
+		if MOUSE_BINDS[name] then
+			return MOUSE_BINDS[name]
+		end
+		local n = string.match(tostring(name or ""), "^MouseButton(%d+)$")
+		if not n then
+			return nil
+		end
+		local ok, uit = pcall(function()
+			return Enum.UserInputType["MouseButton" .. n]
+		end)
+		if ok and uit then
+			MOUSE_BINDS[name] = uit
+			return uit
+		end
+		return nil
 	end
 
 	local function resolveKeyBind(name)

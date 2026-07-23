@@ -1320,9 +1320,10 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		end
 		if S.Aimbot then
 			local bind = S.AimKey or "MouseButton2"
-			if bind == "MouseButton1" then bind = "M1"
-			elseif bind == "MouseButton2" then bind = "M2"
-			elseif bind == "MouseButton3" then bind = "M3" end
+			local m = string.match(tostring(bind), "^MouseButton(%d+)$")
+			if m then
+				bind = "M" .. m
+			end
 			addKeyRow("Aimbot", bind, order)
 			order += 1
 		end
