@@ -394,6 +394,7 @@ local STR = {
 		hint_crim_allowance = "CLMZALOW when Claim=true. Highlights nearest ATM while allowance is ready.",
 		hint_crim_fullbright = "Forces bright lighting and removes fog (Criminality only).",
 		hint_crim_nofog = "ReplicatedStorage.Values: SetFogValue=0 + SetHazeValue=0. Also clears Lighting Fog/Atmosphere.",
+		hint_crim_skipintro = "ReplicatedStorage.Values.SkipMenuIntro = true (ON) / false (OFF). Saved globally.",
 		hint_crim_skinchanger = "Picker: gun/melee (left) → skin (right). Skins save to globals + active config. Re-applies on equip.",
 		btn_crim_skin_refresh = "Refresh Skin List",
 		btn_crim_skin_clear = "Clear Skin (selected)",
