@@ -9021,22 +9021,33 @@ function Criminality.ScanInventories()
 	return out
 end
 
--- ── SESSION ECO (GotCash / GotXP / LevelUp — listen only, no Fire) ──────────
--- Event-driven: zero Heartbeat work. UpdateClient skipped (cosmetics spam +
--- would double-count with GotCash/GotXP).
+-- ── SESSION ECO (GotCash / GotXP / LevelUp + CharStats deltas — listen only) ─
+-- Tracks earned AND spent. CharStats Value.Changed is preferred for cash/XP
+-- (catches shop spend). Remotes used as fallback / LevelUp. No Fire, no HB work.
 misc.sessionEco = {
-	cash = 0,
-	xp = 0,
+	cashEarned = 0,
+	cashSpent = 0,
+	xpEarned = 0,
+	xpSpent = 0,
 	levels = 0,
 	start = 0,
 	hooked = false,
 	dirty = true,
 	conns = {},
 	bound = {},
+	cashFromStats = false,
+	xpFromStats = false,
 	lastLevel = nil,
 }
 
-function misc.sessionEco.extractNum(v)
+function misc.sessionEco.isSpendFlag(v)
+	if v == true or v == 1 or v == "spend" or v == "spent" or v == "Spend" or v == "Spent" then
+		return true
+	end
+	return false
+end
+
+function misc.sessionEco.extractSigned(v)
 	local t = typeof(v)
 	if t == "number" then
 		return v
@@ -9047,6 +9058,7 @@ function misc.sessionEco.extractNum(v)
 	if t ~= "table" then
 		return nil
 	end
+	local amt = nil
 	local keys = {
 		"Amount", "amount", "Cash", "cash", "Money", "money",
 		"XP", "xp", "Exp", "exp", "Value", "value", "Delta", "delta", "n",
@@ -9054,53 +9066,89 @@ function misc.sessionEco.extractNum(v)
 	for i = 1, #keys do
 		local n = tonumber(v[keys[i]])
 		if n ~= nil then
-			return n
+			amt = n
+			break
 		end
 	end
-	-- first numeric array slot (some remotes fire {amount})
-	local n0 = tonumber(v[1])
-	if n0 ~= nil then
-		return n0
+	if amt == nil then
+		amt = tonumber(v[1])
 	end
-	return nil
+	if amt == nil then
+		return nil
+	end
+	local spend = misc.sessionEco.isSpendFlag(v.Spend)
+		or misc.sessionEco.isSpendFlag(v.spend)
+		or misc.sessionEco.isSpendFlag(v.Spent)
+		or misc.sessionEco.isSpendFlag(v.spent)
+		or misc.sessionEco.isSpendFlag(v.IsSpend)
+		or misc.sessionEco.isSpendFlag(v.Remove)
+		or misc.sessionEco.isSpendFlag(v.Loss)
+	if spend and amt > 0 then
+		return -amt
+	end
+	return amt
 end
 
-function misc.sessionEco.extractFromArgs(...)
+function misc.sessionEco.extractSignedFromArgs(...)
 	local n = select("#", ...)
+	local amt = nil
+	local spendHint = false
 	for i = 1, n do
-		local v = misc.sessionEco.extractNum(select(i, ...))
-		if v ~= nil then
-			return v
+		local a = select(i, ...)
+		local t = typeof(a)
+		if t == "boolean" and a == true and i > 1 then
+			spendHint = true
+		elseif t == "string" and misc.sessionEco.isSpendFlag(a) then
+			spendHint = true
+		else
+			local s = misc.sessionEco.extractSigned(a)
+			if s ~= nil and amt == nil then
+				amt = s
+			end
 		end
 	end
-	return nil
+	if amt == nil then
+		return nil
+	end
+	if spendHint and amt > 0 then
+		return -amt
+	end
+	return amt
 end
 
 function misc.sessionEco.mark()
 	misc.sessionEco.dirty = true
 end
 
-function misc.sessionEco.addCash(n)
-	n = tonumber(n)
-	if not n or n <= 0 then
+function misc.sessionEco.applyCashDelta(d)
+	d = tonumber(d)
+	if not d or d == 0 then
 		return
 	end
-	misc.sessionEco.cash += n
+	if d > 0 then
+		misc.sessionEco.cashEarned += d
+	else
+		misc.sessionEco.cashSpent += -d
+	end
 	misc.sessionEco.mark()
 end
 
-function misc.sessionEco.addXp(n)
-	n = tonumber(n)
-	if not n or n <= 0 then
+function misc.sessionEco.applyXpDelta(d)
+	d = tonumber(d)
+	if not d or d == 0 then
 		return
 	end
-	misc.sessionEco.xp += n
+	if d > 0 then
+		misc.sessionEco.xpEarned += d
+	else
+		misc.sessionEco.xpSpent += -d
+	end
 	misc.sessionEco.mark()
 end
 
 function misc.sessionEco.onLevel(...)
 	misc.sessionEco.levels += 1
-	local n = misc.sessionEco.extractFromArgs(...)
+	local n = misc.sessionEco.extractSignedFromArgs(...)
 	if n and n > 0 and n < 10000 then
 		misc.sessionEco.lastLevel = math.floor(n)
 	end
@@ -9108,8 +9156,10 @@ function misc.sessionEco.onLevel(...)
 end
 
 function misc.sessionEco.reset()
-	misc.sessionEco.cash = 0
-	misc.sessionEco.xp = 0
+	misc.sessionEco.cashEarned = 0
+	misc.sessionEco.cashSpent = 0
+	misc.sessionEco.xpEarned = 0
+	misc.sessionEco.xpSpent = 0
 	misc.sessionEco.levels = 0
 	misc.sessionEco.start = tick()
 	misc.sessionEco.lastLevel = nil
@@ -9120,14 +9170,24 @@ function misc.sessionEco.snapshot()
 	local e = misc.sessionEco
 	local elapsed = math.max(tick() - (e.start > 0 and e.start or tick()), 1e-3)
 	local mins = elapsed / 60
+	local netCash = e.cashEarned - e.cashSpent
+	local netXp = e.xpEarned - e.xpSpent
 	return {
-		cash = e.cash,
-		xp = e.xp,
+		cashEarned = e.cashEarned,
+		cashSpent = e.cashSpent,
+		xpEarned = e.xpEarned,
+		xpSpent = e.xpSpent,
+		cashNet = netCash,
+		xpNet = netXp,
+		-- legacy aliases (net)
+		cash = netCash,
+		xp = netXp,
 		levels = e.levels,
 		start = e.start,
 		elapsed = elapsed,
-		cashPerMin = e.cash / mins,
-		xpPerMin = e.xp / mins,
+		cashPerMin = e.cashEarned / mins,
+		cashSpentPerMin = e.cashSpent / mins,
+		xpPerMin = e.xpEarned / mins,
 		level = e.lastLevel,
 		dirty = e.dirty,
 	}
@@ -9145,7 +9205,94 @@ function misc.sessionEco.disconnect()
 	end
 	misc.sessionEco.conns = {}
 	misc.sessionEco.bound = {}
+	misc.sessionEco.cashFromStats = false
+	misc.sessionEco.xpFromStats = false
 	misc.sessionEco.hooked = false
+end
+
+function misc.sessionEco.watchValue(obj, kind)
+	if not obj then
+		return false
+	end
+	if not (obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("DoubleConstrainedValue") or obj:IsA("IntConstrainedValue")) then
+		return false
+	end
+	local last = tonumber(obj.Value) or 0
+	local conn = obj.Changed:Connect(function()
+		local now = tonumber(obj.Value) or last
+		local d = now - last
+		last = now
+		if kind == "cash" then
+			misc.sessionEco.applyCashDelta(d)
+		else
+			misc.sessionEco.applyXpDelta(d)
+		end
+	end)
+	table.insert(misc.sessionEco.conns, conn)
+	return true
+end
+
+function misc.sessionEco.hookCharStatsFolder(folder)
+	if not folder then
+		return
+	end
+	local cashNames = { "Cash", "Money", "money", "cash" }
+	local xpNames = { "XP", "Exp", "Experience", "xp", "exp" }
+	if not misc.sessionEco.cashFromStats then
+		for i = 1, #cashNames do
+			local o = folder:FindFirstChild(cashNames[i])
+			if o and misc.sessionEco.watchValue(o, "cash") then
+				misc.sessionEco.cashFromStats = true
+				break
+			end
+		end
+	end
+	if not misc.sessionEco.xpFromStats then
+		for i = 1, #xpNames do
+			local o = folder:FindFirstChild(xpNames[i])
+			if o and misc.sessionEco.watchValue(o, "xp") then
+				misc.sessionEco.xpFromStats = true
+				break
+			end
+		end
+	end
+end
+
+function misc.sessionEco.hookCharStats()
+	local folder = misc.noRagdoll.getStatsFolder()
+	if folder then
+		misc.sessionEco.hookCharStatsFolder(folder)
+	end
+	-- late CharStats / player folder
+	local root = RepSt:FindFirstChild("CharStats")
+	if root then
+		local w = root.ChildAdded:Connect(function(ch)
+			local lp = getLP()
+			if lp and ch.Name == lp.Name then
+				misc.sessionEco.hookCharStatsFolder(ch)
+			end
+		end)
+		table.insert(misc.sessionEco.conns, w)
+	else
+		local w = RepSt.ChildAdded:Connect(function(ch)
+			if ch.Name ~= "CharStats" then
+				return
+			end
+			local lp = getLP()
+			local folder = lp and ch:FindFirstChild(lp.Name)
+			if folder then
+				misc.sessionEco.hookCharStatsFolder(folder)
+			end
+			local wa = ch.ChildAdded:Connect(function(plrFolder)
+				local lp2 = getLP()
+				if lp2 and plrFolder.Name == lp2.Name then
+					misc.sessionEco.hookCharStatsFolder(plrFolder)
+				end
+			end)
+			table.insert(misc.sessionEco.conns, wa)
+		end)
+		table.insert(misc.sessionEco.conns, w)
+	end
 end
 
 function misc.sessionEco.bindRemote(evFolder, name, kind)
@@ -9156,7 +9303,6 @@ function misc.sessionEco.bindRemote(evFolder, name, kind)
 	if not rem then
 		return false
 	end
-	-- RemoteEvent / UnreliableRemoteEvent
 	local sig = rem.OnClientEvent
 	if not sig then
 		return false
@@ -9164,11 +9310,18 @@ function misc.sessionEco.bindRemote(evFolder, name, kind)
 	local conn
 	if kind == "cash" then
 		conn = sig:Connect(function(...)
-			misc.sessionEco.addCash(misc.sessionEco.extractFromArgs(...))
+			-- Prefer CharStats deltas to avoid double-count
+			if misc.sessionEco.cashFromStats then
+				return
+			end
+			misc.sessionEco.applyCashDelta(misc.sessionEco.extractSignedFromArgs(...))
 		end)
 	elseif kind == "xp" then
 		conn = sig:Connect(function(...)
-			misc.sessionEco.addXp(misc.sessionEco.extractFromArgs(...))
+			if misc.sessionEco.xpFromStats then
+				return
+			end
+			misc.sessionEco.applyXpDelta(misc.sessionEco.extractSignedFromArgs(...))
 		end)
 	elseif kind == "level" then
 		conn = sig:Connect(function(...)
@@ -9205,12 +9358,12 @@ function misc.sessionEco.start()
 	end
 	misc.sessionEco.disconnect()
 	misc.sessionEco.reset()
+	pcall(misc.sessionEco.hookCharStats)
 	local hooked = 0
 	local ev = RepSt:FindFirstChild("Events")
 	if ev then
 		hooked = misc.sessionEco.tryHookFolder(ev)
 	end
-	-- Events may replicate late
 	if hooked < 3 then
 		local w
 		w = RepSt.ChildAdded:Connect(function(ch)

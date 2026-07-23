@@ -402,13 +402,14 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	local StatRows = {}
 	local STAT_KEYS = { "Kills", "Hits", "Accuracy", "Cash", "XP", "Rate", "Time" }
 	local ECO_KEYS = { Cash = true, XP = true, Rate = true }
+	local ECO_LABEL = { Cash = "Cash ±", XP = "XP ±", Rate = "$ ±/m" }
 	for i, key in ipairs(STAT_KEYS) do
 		local rowY = 38 + (i - 1) * 20
 		local lab = tagZ(C("TextLabel", {
 			Size = UDim2.new(0.55, 0, 0, 14),
 			Position = UDim2.new(0, 12, 0, rowY),
 			BackgroundTransparency = 1,
-			Text = (key == "Rate" and "$/min") or key,
+			Text = ECO_LABEL[key] or key,
 			Font = Enum.Font.GothamMedium,
 			TextSize = 10,
 			TextColor3 = Color3.fromRGB(145, 148, 162),
@@ -447,7 +448,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		Parent = AccBarBg,
 	}), Z.stats + 2)
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = AccBarFill })
-	local statDisplayEco = { cash = -1, xp = -1, rate = "", ecoOn = false }
+	local statDisplayEco = { cashE = -1, cashS = -1, xpE = -1, xpS = -1, rate = "", ecoOn = false }
 	local statsEcoLastLayout = false
 	local function fmtEcoAmt(n)
 		n = math.floor(tonumber(n) or 0)
@@ -458,6 +459,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			return string.format("%.1fk", n / 1000)
 		end
 		return tostring(n)
+	end
+	local function fmtEcoPair(earned, spent)
+		return "+" .. fmtEcoAmt(earned) .. " / −" .. fmtEcoAmt(spent)
 	end
 	local function layoutSessionStats(ecoOn)
 		if statsEcoLastLayout == ecoOn then
@@ -1250,15 +1254,26 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		StatsLines.Time.Text = formatSessionTime()
 		if ecoOn then
 			local snap = ecoMod.snapshot()
-			local cashTxt = fmtEcoAmt(snap.cash)
-			local xpTxt = fmtEcoAmt(snap.xp)
+			local cashE = snap.cashEarned or 0
+			local cashS = snap.cashSpent or 0
+			local xpE = snap.xpEarned or 0
+			local xpS = snap.xpSpent or 0
+			local cashTxt = fmtEcoPair(cashE, cashS)
+			local xpTxt = fmtEcoPair(xpE, xpS)
 			if snap.levels and snap.levels > 0 then
-				xpTxt = xpTxt .. " · L" .. tostring(snap.levels)
+				xpTxt = xpTxt .. " ·↑" .. tostring(snap.levels)
 			end
-			local rateTxt = fmtEcoAmt(snap.cashPerMin) .. "/m"
-			if snap.dirty or statDisplayEco.cash ~= snap.cash or statDisplayEco.xp ~= snap.xp then
-				statDisplayEco.cash = snap.cash
-				statDisplayEco.xp = snap.xp
+			local rateTxt = fmtEcoPair(snap.cashPerMin or 0, snap.cashSpentPerMin or 0)
+			local changed = snap.dirty
+				or statDisplayEco.cashE ~= cashE
+				or statDisplayEco.cashS ~= cashS
+				or statDisplayEco.xpE ~= xpE
+				or statDisplayEco.xpS ~= xpS
+			if changed then
+				statDisplayEco.cashE = cashE
+				statDisplayEco.cashS = cashS
+				statDisplayEco.xpE = xpE
+				statDisplayEco.xpS = xpS
 				bumpStatLabel("Cash", cashTxt)
 				bumpStatLabel("XP", xpTxt)
 				if typeof(ecoMod.clearDirty) == "function" then
