@@ -1545,63 +1545,37 @@ function gunWatch.nameFromMesh(model)
 	return nil
 end
 
-function gunWatch.nameFromKnown(model)
-	local listFn = misc.skinChanger and misc.skinChanger.listAllWeapons
-	if typeof(listFn) ~= "function" then
+function gunWatch.nameFromKnown(nameSet)
+	if typeof(nameSet) ~= "table" then
 		return nil
 	end
-	local ok, list = pcall(listFn)
-	if not ok or typeof(list) ~= "table" or #list == 0 then
+	local weapons = misc.skinChanger and misc.skinChanger.weaponsByLen and misc.skinChanger.weaponsByLen()
+	if typeof(weapons) ~= "table" or #weapons == 0 then
 		return nil
 	end
-	local nameSet = {}
-	for _, d in ipairs(model:GetDescendants()) do
-		nameSet[d.Name] = true
-	end
-	local weapons = {}
-	for i, g in ipairs(list) do
-		weapons[i] = g
-	end
-	table.sort(weapons, function(a, b)
-		return #a > #b
-	end)
 	for _, gun in ipairs(weapons) do
 		if nameSet[gun] or nameSet[gun .. "Mesh"] then
 			return gun
-		end
-		for n in pairs(nameSet) do
-			if string.sub(n, 1, #gun) == gun then
-				return gun
-			end
 		end
 	end
 	return nil
 end
 
-function gunWatch.classify(model, label)
+function gunWatch.classifyFromSet(nameSet, label)
 	local upper = string.upper(tostring(label or ""))
-	local deep = gunWatch.hasDeep
 	if upper:find("GRENADE", 1, true) then
 		return "grenade"
 	end
-	if deep(model, "Pin") and deep(model, "He") and not deep(model, "MagPart") then
+	if nameSet.Pin and nameSet.He and not nameSet.MagPart then
 		return "grenade"
 	end
-	if deep(model, "MagPart")
-		or deep(model, "BoltPart")
-		or deep(model, "SlidePart")
-		or deep(model, "Slide")
-		or deep(model, "Barrel")
-		or deep(model, "ActualBoltPart")
+	if nameSet.MagPart or nameSet.BoltPart or nameSet.SlidePart or nameSet.Slide
+		or nameSet.Barrel or nameSet.ActualBoltPart
 	then
 		return "gun"
 	end
-	if deep(model, "KatanaMesh")
-		or deep(model, "ClubMesh")
-		or deep(model, "Crowbar")
-		or deep(model, "Blade")
-		or deep(model, "WeaponHandle")
-		or deep(model, "WeaponHandle2")
+	if nameSet.KatanaMesh or nameSet.ClubMesh or nameSet.Crowbar or nameSet.Blade
+		or nameSet.WeaponHandle or nameSet.WeaponHandle2
 	then
 		return "melee"
 	end
@@ -1614,58 +1588,87 @@ function gunWatch.identify(model)
 		return cached[1], cached[2]
 	end
 	local rem = gunWatch.remember
-	local deep = gunWatch.hasDeep
-	local kindOf = gunWatch.classify
 
 	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName" }) do
 		local val = model:GetAttribute(key)
 		if val ~= nil and tostring(val) ~= "" then
 			local label = tostring(val)
-			return rem(model, string.upper(label), kindOf(model, label), true)
+			local nameSet = {}
+			for _, d in ipairs(model:GetDescendants()) do
+				nameSet[d.Name] = true
+			end
+			return rem(model, string.upper(label), gunWatch.classifyFromSet(nameSet, label), true)
 		end
 	end
 
-	local fromSa = gunWatch.nameFromSA(model)
-	if fromSa then
-		return rem(model, string.upper(fromSa), kindOf(model, fromSa), true)
-	end
-	local fromMesh = gunWatch.nameFromMesh(model)
-	if fromMesh then
-		return rem(model, string.upper(fromMesh), kindOf(model, fromMesh), true)
-	end
-	local fromKnown = gunWatch.nameFromKnown(model)
-	if fromKnown then
-		return rem(model, string.upper(fromKnown), kindOf(model, fromKnown), true)
+	-- One GetDescendants pass (old path: many FindFirstChild + listAllWeapons sorts)
+	local nameSet = {}
+	local fromSa, fromMesh
+	local meshMap = misc.skinChanger and misc.skinChanger.meshToGun
+	for _, d in ipairs(model:GetDescendants()) do
+		nameSet[d.Name] = true
+		if d:IsA("SurfaceAppearance") and not fromSa then
+			local us = string.find(d.Name, "_", 1, true)
+			if us and us > 1 then
+				fromSa = string.sub(d.Name, 1, us - 1)
+			end
+		elseif d:IsA("BasePart") then
+			local n = d.Name
+			if not fromMesh and string.sub(n, -4) == "Mesh" and #n > 4 then
+				fromMesh = string.sub(n, 1, #n - 4)
+			end
+			if d:IsA("MeshPart") and meshMap then
+				local mid = ""
+				pcall(function()
+					mid = tostring(d.MeshId or "")
+				end)
+				local g = meshMap[mid]
+				if g then
+					return rem(model, string.upper(g), gunWatch.classifyFromSet(nameSet, g), true)
+				end
+			end
+		end
 	end
 
-	if deep(model, "Crowbar") then
+	if fromSa then
+		return rem(model, string.upper(fromSa), gunWatch.classifyFromSet(nameSet, fromSa), true)
+	end
+	if fromMesh then
+		return rem(model, string.upper(fromMesh), gunWatch.classifyFromSet(nameSet, fromMesh), true)
+	end
+	local fromKnown = gunWatch.nameFromKnown(nameSet)
+	if fromKnown then
+		return rem(model, string.upper(fromKnown), gunWatch.classifyFromSet(nameSet, fromKnown), true)
+	end
+
+	if nameSet.Crowbar then
 		return rem(model, "CROWBAR", "melee", false)
 	end
-	if deep(model, "ClubMesh") then
+	if nameSet.ClubMesh then
 		return rem(model, "CLUB", "melee", true)
 	end
-	if deep(model, "KatanaMesh") then
+	if nameSet.KatanaMesh then
 		return rem(model, "KATANA", "melee", true)
 	end
-	if deep(model, "Wrench") and not deep(model, "Crowbar") then
+	if nameSet.Wrench and not nameSet.Crowbar then
 		return rem(model, "WRENCH", "melee", false)
 	end
-	if deep(model, "Pin") and deep(model, "He") and not deep(model, "MagPart") then
+	if nameSet.Pin and nameSet.He and not nameSet.MagPart then
 		return rem(model, "GRENADE", "grenade", true)
 	end
-	if deep(model, "Chain1") or (deep(model, "Blade") and deep(model, "Cord")) then
+	if nameSet.Chain1 or (nameSet.Blade and nameSet.Cord) then
 		return rem(model, "CHAINSAW", "melee", false)
 	end
-	if deep(model, "BoltPart") and deep(model, "MagPart") then
+	if nameSet.BoltPart and nameSet.MagPart then
 		return rem(model, "RIFLE", "gun", false)
 	end
-	if deep(model, "MagPart") and (deep(model, "Barrel") or deep(model, "SlidePart") or deep(model, "Slide")) then
+	if nameSet.MagPart and (nameSet.Barrel or nameSet.SlidePart or nameSet.Slide) then
 		return rem(model, "PISTOL", "gun", false)
 	end
-	if deep(model, "MagPart") then
+	if nameSet.MagPart then
 		return rem(model, "GUN", "gun", false)
 	end
-	if deep(model, "WeaponHandle") or deep(model, "WeaponHandle2") then
+	if nameSet.WeaponHandle or nameSet.WeaponHandle2 then
 		return rem(model, "WEAPON", "melee", false)
 	end
 
@@ -1675,7 +1678,7 @@ function gunWatch.identify(model)
 	then
 		return rem(model, n, "armor", true)
 	end
-	if deep(model, "OriginPart") and not deep(model, "MagPart") and not deep(model, "WeaponHandle") then
+	if nameSet.OriginPart and not nameSet.MagPart and not nameSet.WeaponHandle then
 		return rem(model, "ARMOR", "armor", false)
 	end
 	return rem(model, "ITEM", "other", false)
@@ -5171,6 +5174,25 @@ function misc.skinChanger.listAllWeapons()
 	return out
 end
 
+-- Cached longest-first weapon names (avoid sort+scan every drop/ESP identify)
+function misc.skinChanger.weaponsByLen()
+	local now = tick()
+	if misc.skinChanger._wepCache and (now - (misc.skinChanger._wepAt or 0)) < 45 then
+		return misc.skinChanger._wepCache
+	end
+	local list = misc.skinChanger.listAllWeapons()
+	local weapons = {}
+	for i, g in ipairs(list) do
+		weapons[i] = g
+	end
+	table.sort(weapons, function(a, b)
+		return #a > #b
+	end)
+	misc.skinChanger._wepCache = weapons
+	misc.skinChanger._wepAt = now
+	return weapons
+end
+
 function misc.skinChanger.skinLabel(fullName)
 	if typeof(fullName) ~= "string" then
 		return "?"
@@ -5226,76 +5248,81 @@ function misc.skinChanger.resolveDroppedGunName(model)
 	if not model then
 		return nil
 	end
+	local cached = model:GetAttribute("VG_DropGun")
+	if typeof(cached) == "string" and cached ~= "" then
+		return cached
+	end
 	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName", "Weapon", "WeaponName" }) do
 		local val = model:GetAttribute(key)
 		if val ~= nil and tostring(val) ~= "" then
-			return tostring(val)
+			local g = tostring(val)
+			pcall(function()
+				model:SetAttribute("VG_DropGun", g)
+			end)
+			return g
 		end
 	end
+
+	local map = misc.skinChanger.meshToGun
+	local fromSa, fromMesh, fromVal
+	local nameSet = {}
 	for _, d in ipairs(model:GetDescendants()) do
+		nameSet[d.Name] = true
 		if d:IsA("StringValue") or d:IsA("ObjectValue") then
 			local n = d.Name
-			if n == "Name" or n == "Item" or n == "ToolName" or n == "GunName" or n == "Weapon" then
+			if not fromVal and (n == "Name" or n == "Item" or n == "ToolName" or n == "GunName" or n == "Weapon") then
 				local v = d.Value
 				if typeof(v) == "string" and v ~= "" then
-					return v
-				end
-				if typeof(v) == "Instance" and v.Name ~= "" then
-					return v.Name
+					fromVal = v
+				elseif typeof(v) == "Instance" and v.Name ~= "" then
+					fromVal = v.Name
 				end
 			end
-		end
-	end
-	for _, d in ipairs(model:GetDescendants()) do
-		if d:IsA("SurfaceAppearance") then
+		elseif d:IsA("SurfaceAppearance") and not fromSa then
 			local us = string.find(d.Name, "_", 1, true)
 			if us and us > 1 then
-				return string.sub(d.Name, 1, us - 1)
+				fromSa = string.sub(d.Name, 1, us - 1)
 			end
-		end
-	end
-	-- MeshId fingerprint (indexed from held/backpack tools)
-	local map = misc.skinChanger.meshToGun
-	for _, d in ipairs(model:GetDescendants()) do
-		if d:IsA("MeshPart") then
+		elseif d:IsA("MeshPart") then
 			local mid = ""
 			pcall(function()
 				mid = tostring(d.MeshId or "")
 			end)
 			local gun = map[mid]
 			if gun then
+				pcall(function()
+					model:SetAttribute("VG_DropGun", gun)
+				end)
 				return gun
 			end
-		end
-	end
-	for _, d in ipairs(model:GetDescendants()) do
-		if d:IsA("BasePart") then
 			local n = d.Name
-			if string.sub(n, -4) == "Mesh" and #n > 4 then
-				return string.sub(n, 1, #n - 4)
+			if not fromMesh and string.sub(n, -4) == "Mesh" and #n > 4 then
+				fromMesh = string.sub(n, 1, #n - 4)
+			end
+		elseif d:IsA("BasePart") then
+			local n = d.Name
+			if not fromMesh and string.sub(n, -4) == "Mesh" and #n > 4 then
+				fromMesh = string.sub(n, 1, #n - 4)
 			end
 		end
 	end
-	local ok, list = pcall(misc.skinChanger.listAllWeapons)
-	if ok and typeof(list) == "table" then
-		local nameSet = {}
-		for _, d in ipairs(model:GetDescendants()) do
-			nameSet[d.Name] = true
+
+	local gun = fromVal or fromSa or fromMesh
+	if not gun then
+		local weapons = misc.skinChanger.weaponsByLen()
+		for _, w in ipairs(weapons) do
+			if nameSet[w] or nameSet[w .. "Mesh"] then
+				gun = w
+				break
+			end
 		end
-		local weapons = {}
-		for i, g in ipairs(list) do
-			weapons[i] = g
-		end
-		table.sort(weapons, function(a, b)
-			return #a > #b
+	end
+	if gun then
+		pcall(function()
+			model:SetAttribute("VG_DropGun", gun)
 		end)
-		for _, gun in ipairs(weapons) do
-			if nameSet[gun] or nameSet[gun .. "Mesh"] then
-				return gun
-			end
-		end
 	end
-	return nil
+	return gun
 end
 
 function misc.skinChanger.applyToDroppedModel(model)
@@ -5314,14 +5341,28 @@ function misc.skinChanger.applyToDroppedModel(model)
 	if not key then
 		return 0
 	end
+	-- Attribute skip — avoid GetDescendants every poll
+	if model:GetAttribute("VG_DropSkin") == key then
+		return 0
+	end
 	if misc.skinChanger.toolAlreadyHasSkin(model, key) then
+		pcall(function()
+			model:SetAttribute("VG_DropSkin", key)
+		end)
 		return 0
 	end
 	local tmpl = misc.skinChanger.resolveTemplate(gunName, key)
 	if not tmpl then
 		return 0
 	end
-	return misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+	local n = misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+	if n > 0 then
+		pcall(function()
+			model:SetAttribute("VG_DropSkin", key)
+			model:SetAttribute("VG_DropGun", gunName)
+		end)
+	end
+	return n
 end
 
 function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
@@ -5335,13 +5376,22 @@ function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
 		if model:IsA("Model") then
 			local resolved = misc.skinChanger.resolveDroppedGunName(model)
 			if resolved == gunName then
+				pcall(function()
+					model:SetAttribute("VG_DropSkin", nil)
+				end)
 				n = n + misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+				if n > 0 then
+					pcall(function()
+						model:SetAttribute("VG_DropSkin", tmpl.Name)
+					end)
+				end
 			end
 		end
 	end
 	return n
 end
 
+-- Budgeted scan: max 3 models per call (round-robin) — was full folder every ~0.25s on Heartbeat
 function misc.skinChanger.applyDroppedModels()
 	local S = _G.__VG_S
 	if not S or not S.CrimSkinDropped or not misc.skinChanger.active then
@@ -5352,12 +5402,31 @@ function misc.skinChanger.applyDroppedModels()
 	if not folder then
 		return 0
 	end
+	local kids = folder:GetChildren()
+	local total = #kids
+	if total == 0 then
+		return 0
+	end
+	local budget = 3
+	local start = (misc.skinChanger._dropIdx or 0) % total
 	local n = 0
-	for _, model in ipairs(folder:GetChildren()) do
-		if model:IsA("Model") then
-			n = n + misc.skinChanger.applyToDroppedModel(model)
+	local checked = 0
+	while checked < total and budget > 0 do
+		local i = (start + checked) % total + 1
+		checked = checked + 1
+		local model = kids[i]
+		if model and model:IsA("Model") then
+			local applied = misc.skinChanger.applyToDroppedModel(model)
+			if applied > 0 then
+				n = n + applied
+				budget = budget - 1
+			elseif model:GetAttribute("VG_DropSkin") == nil and model:GetAttribute("VG_DropGun") == nil then
+				-- unresolved / no saved skin — still spend budget slot so we rotate
+				budget = budget - 1
+			end
 		end
 	end
+	misc.skinChanger._dropIdx = start + checked
 	return n
 end
 
@@ -5450,19 +5519,14 @@ function misc.skinChanger.tick()
 	if not misc.skinChanger.active then
 		return
 	end
-	-- only equipped gun — do NOT spam backpack every frame
+	-- Held gun only on Heartbeat path — dropped skins are budgeted via runHeavy
 	local tool = misc.skinChanger.findActiveGun()
 	if tool then
-		misc.skinChanger.indexMeshes(tool, tool.Name)
-		misc.skinChanger.applySavedForTool(tool, true)
-	end
-	local S = _G.__VG_S
-	if S and S.CrimSkinDropped then
-		local now = tick()
-		if (now - (misc.skinChanger._dropAt or 0)) >= 0.35 then
-			misc.skinChanger._dropAt = now
-			misc.skinChanger.applyDroppedModels()
+		if misc.skinChanger.lastToolName ~= tool.Name then
+			misc.skinChanger.indexMeshes(tool, tool.Name)
+			misc.skinChanger.lastToolName = tool.Name
 		end
+		misc.skinChanger.applySavedForTool(tool, true)
 	end
 end
 
@@ -6565,14 +6629,19 @@ local function startMaster(S)
 			pcall(misc.skipIntro.apply, true)
 		end
 		if featureRunning.skinChanger then
-			-- held gun + dropped skins (was %180 — drops never looked skinned)
-			if master.frame % 20 == 0 then
+			-- held: ~2 Hz — cheap. drops: off Heartbeat via runHeavy, budgeted
+			if master.frame % 30 == 0 then
 				pcall(misc.skinChanger.tick)
-			elseif S.CrimSkinDropped and master.frame % 15 == 7 then
-				pcall(misc.skinChanger.applyDroppedModels)
 			end
-			if master.frame % 120 == 0 then
-				pcall(misc.skinChanger.indexInventory)
+			if S.CrimSkinDropped and master.frame % 90 == 15 then
+				runHeavy(function()
+					pcall(misc.skinChanger.applyDroppedModels)
+				end)
+			end
+			if master.frame % 300 == 0 then
+				runHeavy(function()
+					pcall(misc.skinChanger.indexInventory)
+				end)
 			end
 		end
 
@@ -6644,7 +6713,7 @@ local function startMaster(S)
 					pcall(gunWatch.ensure, _G.__VG_S)
 				end)
 			end
-			if master.frame % 50 == 35 then
+			if master.frame % 90 == 45 then
 				ESP.gunScanAt = tick()
 				runHeavy(function()
 					pcall(gunWatch.sync, _G.__VG_S)
