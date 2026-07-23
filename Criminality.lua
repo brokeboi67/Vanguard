@@ -846,6 +846,12 @@ function misc.ragdollDrag.tick(S)
 		right = Vector3.new(1, 0, 0)
 	end
 
+	local speed = math.clamp(tonumber(S.CrimRagdollDragSpeed) or 45, 10, 120)
+	ap.MaxVelocity = speed
+	-- Soft grab feel — body flops behind the pulled torso
+	ap.MaxForce = 32000 + speed * 400
+	ap.Responsiveness = 16
+
 	local move = Vector3.zero
 	if UIS:IsKeyDown(Enum.KeyCode.W) then
 		move = move + look
@@ -859,27 +865,18 @@ function misc.ragdollDrag.tick(S)
 	if UIS:IsKeyDown(Enum.KeyCode.D) then
 		move = move + right
 	end
-
-	local speed = math.clamp(tonumber(S.CrimRagdollDragSpeed) or 45, 10, 120)
-	ap.MaxVelocity = speed
-	-- Soft grab feel — body flops behind the pulled torso
-	ap.MaxForce = 28000 + speed * 350
-	ap.Responsiveness = 14
-
-	local y = grab.Position.Y
 	if UIS:IsKeyDown(Enum.KeyCode.Space) then
-		y = y + 1.2
-	elseif UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
-		y = y - 0.8
+		move = move + Vector3.yAxis
+	end
+	if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+		move = move - Vector3.yAxis
 	end
 
 	if move.Magnitude > 0.05 then
 		local dir = move.Unit
-		local ahead = grab.Position + dir * math.max(6, speed * 0.22)
-		ap.Position = Vector3.new(ahead.X, y, ahead.Z)
+		ap.Position = grab.Position + dir * math.max(7, speed * 0.26)
 	else
-		-- Hold / scrape along current spot (gravity still acts)
-		ap.Position = Vector3.new(grab.Position.X, y, grab.Position.Z)
+		ap.Position = grab.Position
 	end
 end
 
