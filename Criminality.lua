@@ -440,6 +440,9 @@ function misc.hookNoRagdollChar(char)
 			if not (_G.__VG_S and _G.__VG_S.CrimNoRagdoll) then
 				return
 			end
+			if misc.ragdollDrag and misc.ragdollDrag.active then
+				return
+			end
 			if new == Enum.HumanoidStateType.Ragdoll
 				or new == Enum.HumanoidStateType.Physics
 				or new == Enum.HumanoidStateType.FallingDown
@@ -453,6 +456,9 @@ function misc.hookNoRagdollChar(char)
 	table.insert(
 		misc.noRagdoll.charConns,
 		hum:GetPropertyChangedSignal("PlatformStand"):Connect(function()
+			if misc.ragdollDrag and misc.ragdollDrag.active then
+				return
+			end
 			if _G.__VG_S and _G.__VG_S.CrimNoRagdoll and hum.PlatformStand then
 				hum.PlatformStand = false
 				task.defer(function()
@@ -465,6 +471,9 @@ function misc.hookNoRagdollChar(char)
 		misc.noRagdoll.charConns,
 		char.DescendantAdded:Connect(function(d)
 			if not (_G.__VG_S and _G.__VG_S.CrimNoRagdoll) then
+				return
+			end
+			if misc.ragdollDrag and misc.ragdollDrag.active then
 				return
 			end
 			if d:IsA("BallSocketConstraint") then
@@ -524,6 +533,271 @@ local function stopNoRagdoll()
 			hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
 		end)
 	end
+end
+
+-- ── SELF RAGDOLL DRAG (Physics + AlignPosition WASD mobility) ──
+misc.ragdollDrag = {
+	conns = {},
+	active = false,
+	att = nil,
+	ap = nil,
+	ao = nil,
+	hrp = nil,
+	hum = nil,
+}
+
+function misc.ragdollDrag.clearForces()
+	local rd = misc.ragdollDrag
+	for _, obj in ipairs({ rd.ap, rd.ao, rd.att }) do
+		if obj then
+			pcall(function()
+				obj:Destroy()
+			end)
+		end
+	end
+	rd.ap, rd.ao, rd.att = nil, nil, nil
+	rd.hrp, rd.hum = nil, nil
+end
+
+function misc.ragdollDrag.exit()
+	local rd = misc.ragdollDrag
+	if not rd.active then
+		misc.ragdollDrag.clearForces()
+		return
+	end
+	rd.active = false
+	local hum = rd.hum
+	misc.ragdollDrag.clearForces()
+	if hum and hum.Parent then
+		pcall(function()
+			hum.PlatformStand = false
+			local st = hum:GetState()
+			if st == Enum.HumanoidStateType.Physics
+				or st == Enum.HumanoidStateType.Ragdoll
+				or st == Enum.HumanoidStateType.PlatformStanding then
+				hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+			end
+		end)
+	end
+	local S = _G.__VG_S
+	if S and S.CrimNoRagdoll then
+		local char = getChar()
+		if char then
+			task.defer(function()
+				misc.unragdollChar(char)
+			end)
+		end
+	end
+end
+
+function misc.ragdollDrag.enter()
+	local rd = misc.ragdollDrag
+	if rd.active then
+		return true
+	end
+	local hrp, char = getHRP()
+	if not hrp or not char then
+		return false
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then
+		return false
+	end
+
+	misc.ragdollDrag.clearForces()
+	rd.active = true
+	rd.hrp = hrp
+	rd.hum = hum
+
+	pcall(function()
+		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
+		hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+		hum.PlatformStand = true
+		hum:ChangeState(Enum.HumanoidStateType.Physics)
+	end)
+
+	local att = Instance.new("Attachment")
+	att.Name = "VG_RagdollDragAtt"
+	att.Parent = hrp
+
+	local ap = Instance.new("AlignPosition")
+	ap.Name = "VG_RagdollDragAP"
+	ap.Mode = Enum.PositionAlignmentMode.OneAttachment
+	ap.Attachment0 = att
+	ap.ApplyAtCenterOfMass = true
+	ap.RigidityEnabled = false
+	ap.MaxForce = 1e6
+	ap.MaxVelocity = 50
+	ap.Responsiveness = 40
+	ap.Position = hrp.Position
+	ap.Parent = hrp
+
+	local ao = Instance.new("AlignOrientation")
+	ao.Name = "VG_RagdollDragAO"
+	ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	ao.Attachment0 = att
+	ao.RigidityEnabled = false
+	ao.MaxTorque = 8e4
+	ao.Responsiveness = 25
+	ao.CFrame = hrp.CFrame
+	ao.Parent = hrp
+
+	rd.att = att
+	rd.ap = ap
+	rd.ao = ao
+	return true
+end
+
+function misc.ragdollDrag.keyHeld(S)
+	if not UIS then
+		return false
+	end
+	local keyName = S and S.CrimRagdollDragKey or "X"
+	if not keyName or keyName == "" or keyName == "None" then
+		return false
+	end
+	if string.match(keyName, "^MouseButton%d+$") then
+		local ok, uit = pcall(function()
+			return Enum.UserInputType[keyName]
+		end)
+		if ok and uit then
+			return UIS:IsMouseButtonPressed(uit)
+		end
+		return false
+	end
+	local ok, key = pcall(function()
+		return Enum.KeyCode[keyName]
+	end)
+	if not ok or not key then
+		return false
+	end
+	return UIS:IsKeyDown(key)
+end
+
+function misc.ragdollDrag.tick(S)
+	local rd = misc.ragdollDrag
+	if not S or not S.CrimRagdollDrag then
+		if rd.active then
+			misc.ragdollDrag.exit()
+		end
+		return
+	end
+
+	local want = misc.ragdollDrag.keyHeld(S)
+	if want and not rd.active then
+		misc.ragdollDrag.enter()
+	elseif not want and rd.active then
+		misc.ragdollDrag.exit()
+		return
+	end
+	if not rd.active then
+		return
+	end
+
+	local hrp = rd.hrp
+	local hum = rd.hum
+	local ap = rd.ap
+	local ao = rd.ao
+	if not hrp or not hrp.Parent or not ap or not ap.Parent then
+		misc.ragdollDrag.exit()
+		return
+	end
+	if hum and hum.Parent and hum.Health <= 0 then
+		misc.ragdollDrag.exit()
+		return
+	end
+
+	if hum then
+		pcall(function()
+			if not hum.PlatformStand then
+				hum.PlatformStand = true
+			end
+			local st = hum:GetState()
+			if st ~= Enum.HumanoidStateType.Physics and st ~= Enum.HumanoidStateType.Ragdoll then
+				hum:ChangeState(Enum.HumanoidStateType.Physics)
+			end
+		end)
+	end
+
+	local Cam = workspace.CurrentCamera
+	if not Cam then
+		return
+	end
+	local cf = Cam.CFrame
+	local look = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z)
+	local right = Vector3.new(cf.RightVector.X, 0, cf.RightVector.Z)
+	if look.Magnitude > 0.05 then
+		look = look.Unit
+	else
+		look = Vector3.new(0, 0, -1)
+	end
+	if right.Magnitude > 0.05 then
+		right = right.Unit
+	else
+		right = Vector3.new(1, 0, 0)
+	end
+
+	local move = Vector3.zero
+	if UIS:IsKeyDown(Enum.KeyCode.W) then
+		move = move + look
+	end
+	if UIS:IsKeyDown(Enum.KeyCode.S) then
+		move = move - look
+	end
+	if UIS:IsKeyDown(Enum.KeyCode.A) then
+		move = move - right
+	end
+	if UIS:IsKeyDown(Enum.KeyCode.D) then
+		move = move + right
+	end
+	if UIS:IsKeyDown(Enum.KeyCode.Space) then
+		move = move + Vector3.yAxis
+	end
+	if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+		move = move - Vector3.yAxis
+	end
+
+	local speed = math.clamp(tonumber(S.CrimRagdollDragSpeed) or 45, 10, 120)
+	ap.MaxVelocity = speed
+	if move.Magnitude > 0.05 then
+		local dir = move.Unit
+		ap.Position = hrp.Position + dir * math.max(8, speed * 0.28)
+		if ao and ao.Parent then
+			local flat = Vector3.new(dir.X, 0, dir.Z)
+			if flat.Magnitude > 0.05 then
+				ao.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flat.Unit)
+			end
+		end
+	else
+		ap.Position = hrp.Position
+	end
+end
+
+function misc.ragdollDrag.clearConns()
+	for _, c in ipairs(misc.ragdollDrag.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.ragdollDrag.conns = {}
+end
+
+function misc.ragdollDrag.start()
+	misc.ragdollDrag.clearConns()
+	local lp = getLP()
+	if lp then
+		table.insert(
+			misc.ragdollDrag.conns,
+			lp.CharacterRemoving:Connect(function()
+				misc.ragdollDrag.exit()
+			end)
+		)
+	end
+end
+
+function misc.ragdollDrag.stop()
+	misc.ragdollDrag.clearConns()
+	misc.ragdollDrag.exit()
 end
 
 -- ── FAST ACCELERATION (CharStats AccelerationModifier / AccelerationModifier2 = 1) ──
@@ -2951,6 +3225,7 @@ local featureRunning = {
 	noFall = false,
 	noSpike = false,
 	noRagdoll = false,
+	ragdollDrag = false,
 	fastAccel = false,
 	gunMods = false,
 	staffDetect = false,
@@ -6556,6 +6831,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 	syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 	syncFeatureToggle("noRagdoll", "CrimNoRagdoll", startNoRagdoll, stopNoRagdoll, S)
+	syncFeatureToggle("ragdollDrag", "CrimRagdollDrag", misc.ragdollDrag.start, misc.ragdollDrag.stop, S)
 	syncFeatureToggle("fastAccel", "CrimFastAccel", misc.fastAccel.start, misc.fastAccel.stop, S)
 	syncGunMods(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
@@ -6611,6 +6887,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 			syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 			syncFeatureToggle("noRagdoll", "CrimNoRagdoll", startNoRagdoll, stopNoRagdoll, S)
+			syncFeatureToggle("ragdollDrag", "CrimRagdollDrag", misc.ragdollDrag.start, misc.ragdollDrag.stop, S)
 			syncFeatureToggle("fastAccel", "CrimFastAccel", misc.fastAccel.start, misc.fastAccel.stop, S)
 			syncGunMods(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
@@ -6636,9 +6913,14 @@ local function startMaster(S)
 		if featureRunning.noRagdoll and master.frame % 6 == 0 then
 			pcall(misc.noRagdoll.applyCharStats)
 			local char = getChar()
-			if char then
+			if char and not (misc.ragdollDrag and misc.ragdollDrag.active) then
 				misc.unragdollChar(char)
 			end
+		end
+		if featureRunning.ragdollDrag then
+			pcall(misc.ragdollDrag.tick, S)
+		elseif misc.ragdollDrag and misc.ragdollDrag.active then
+			pcall(misc.ragdollDrag.exit)
 		end
 		if featureRunning.fastAccel and master.frame % 10 == 0 then
 			pcall(misc.fastAccel.apply)
@@ -6827,6 +7109,7 @@ local function stopMaster()
 	if gunWatch.folderWatch then gunWatch.folderWatch:Disconnect(); gunWatch.folderWatch=nil end
 	pcall(stopNoRecoil)
 	pcall(stopNoRagdoll)
+	pcall(misc.ragdollDrag.stop)
 	pcall(misc.fastAccel.stop)
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)

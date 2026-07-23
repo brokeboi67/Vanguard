@@ -2020,7 +2020,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				I18n.registerText(B, opt.labelKey)
 			end
 			btns[opt.value] = B
-			B.MouseButton1Click:Connect(function()
+		B.MouseButton1Click:Connect(function()
 				S[key] = opt.value
 				for val, btn in pairs(btns) do
 					local on = val == opt.value
@@ -2033,7 +2033,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 						stroke:Destroy()
 					end
 				end
-				UpdPreview()
+			UpdPreview()
 				if choiceOpts.onChange then
 					pcall(choiceOpts.onChange, opt.value)
 				end
@@ -3044,7 +3044,33 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
 		MakeTog(CSurv, "No Ragdoll", "CrimNoRagdoll", 3, { flat = true })
 		MakeHint(CSurv, "hint_crim_noragdoll", 4)
-		MakeTog(CSurv, "Fast Acceleration", "CrimFastAccel", 5, {
+		MakeTog(CSurv, "Ragdoll Drag", "CrimRagdollDrag", 5, {
+			flat = true,
+			onChange = function(on)
+				local reg = sliderRegistry.CrimRagdollDragSpeed
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+			end,
+		})
+		MakeBind(CSurv, "Drag Key (hold)", "CrimRagdollDragKey", 6, {
+			requires = "CrimRagdollDrag",
+		})
+		MakeSlider(CSurv, "Drag Speed", "CrimRagdollDragSpeed", 10, 120, 7, {
+			suffix = " st/s",
+			step = 5,
+			requires = "CrimRagdollDrag",
+			fmt = function(v)
+				return string.format("%d st/s", v)
+			end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimRagdollDrag == true)
+				end
+			end,
+		})
+		MakeHint(CSurv, "hint_crim_ragdolldrag", 8)
+		MakeTog(CSurv, "Fast Acceleration", "CrimFastAccel", 9, {
 			flat = true,
 			onChange = function(on)
 				local reg = sliderRegistry.CrimFastAccelValue
@@ -3053,7 +3079,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeSlider(CSurv, "Accel Value", "CrimFastAccelValue", 0.5, 3, 6, {
+		MakeSlider(CSurv, "Accel Value", "CrimFastAccelValue", 0.5, 3, 10, {
 			step = 0.1,
 			requires = "CrimFastAccel",
 			fmt = function(v) return string.format("%.1f", v) end,
@@ -3063,11 +3089,11 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CSurv, "hint_crim_fastaccel", 7)
-		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 8, { flat = true })
-		MakeHint(CSurv, "hint_crim_stamina", 9)
-		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 10, { flat = true })
-		MakeHint(CSurv, "hint_crim_autorespawn", 11)
+		MakeHint(CSurv, "hint_crim_fastaccel", 11)
+		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 12, { flat = true })
+		MakeHint(CSurv, "hint_crim_stamina", 13)
+		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 14, { flat = true })
+		MakeHint(CSurv, "hint_crim_autorespawn", 15)
 
 		MakeSection(CCrate, L("crim_sub_pickup_crates"), 1)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 2, {

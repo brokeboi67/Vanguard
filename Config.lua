@@ -737,6 +737,15 @@ function Config.EnforceRules(S)
 	if S.CrimNoRagdoll == nil then
 		S.CrimNoRagdoll = false
 	end
+	if S.CrimRagdollDrag == nil then
+		S.CrimRagdollDrag = false
+	end
+	if S.CrimRagdollDragKey == nil or S.CrimRagdollDragKey == "" then
+		S.CrimRagdollDragKey = "X"
+	end
+	if S.CrimRagdollDragSpeed == nil then
+		S.CrimRagdollDragSpeed = 45
+	end
 	if S.CrimFastAccel == nil then
 		S.CrimFastAccel = false
 	end
