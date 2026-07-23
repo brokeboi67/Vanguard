@@ -1,8 +1,8 @@
--- Invisibility.lua  v2.57.0
+-- Invisibility.lua  v2.59.6
 -- R6 anim-desync. Master toggle arms the feature; keybind toggles visibility.
 -- Turning Invisibility OFF disables everything.
 -- Desync: Heartbeat applies pose, RenderStepped restores (no Wait — no hitch).
--- InvisResolver: detect others' sustained ~90° tilt and locally upright HRP.
+-- InvisResolver: upright others only on tilted network frames (don't freeze CFrame).
 
 local Invisibility = {}
 
@@ -476,14 +476,14 @@ function Invisibility.Init(S, ParentGUI)
 	end
 
 	-- ── Invis Resolver (others using same R6 desync / ~90° tilt) ─────────────
-	-- Detect sustained weird pitch — NOT low Y (undergrounds are legitimate).
-	-- Once armed, keep uprighting until death/leave (our upright write would
-	-- otherwise clear a miss-based detector between replication pulses).
+	-- ONLY upright on frames where network pose is still tilted.
+	-- Writing CFrame every frame while "on" freezes them (blocks replication).
 	local RESOLVE_PITCH_MIN = math.rad(65)
 	local RESOLVE_PITCH_MAX = math.rad(125)
 	local RESOLVE_LOOK_Y = 0.82
-	local RESOLVE_SUSTAIN = 5
-	local resolveState = {} -- [userId] = { hit = n, on = bool }
+	local RESOLVE_SUSTAIN = 4
+	local RESOLVE_HOLD = 0.75
+	local resolveState = {} -- [userId] = { hit, on, lastDesync }
 
 	local function isDesyncPose(root)
 		local pitch = select(1, root.CFrame:ToOrientation())
@@ -529,6 +529,7 @@ function Invisibility.Init(S, ParentGUI)
 			return
 		end
 
+		local now = tick()
 		local seen = {}
 		for _, plr in ipairs(Players:GetPlayers()) do
 			if plr ~= LP then
@@ -539,26 +540,28 @@ function Invisibility.Init(S, ParentGUI)
 					seen[plr.UserId] = true
 					local st = resolveState[plr.UserId]
 					if not st then
-						st = { hit = 0, on = false }
+						st = { hit = 0, on = false, lastDesync = 0 }
 						resolveState[plr.UserId] = st
 					end
 
-					-- Sample BEFORE upright so network tilt still counts
-					if not st.on then
-						if isDesyncPose(root) then
-							st.hit += 1
-							if st.hit >= RESOLVE_SUSTAIN then
-								st.on = true
-							end
-						else
-							st.hit = 0
+					if isDesyncPose(root) then
+						st.hit += 1
+						st.lastDesync = now
+						if st.hit >= RESOLVE_SUSTAIN then
+							st.on = true
 						end
-					end
-
-					if st.on then
-						pcall(function()
-							root.CFrame = uprightCF(root)
-						end)
+						-- Correct pose only while tilted — then stop writing so
+						-- the next replication packet can move them.
+						if st.on then
+							pcall(function()
+								root.CFrame = uprightCF(root)
+							end)
+						end
+					else
+						st.hit = 0
+						if st.on and (now - st.lastDesync) > RESOLVE_HOLD then
+							st.on = false
+						end
 					end
 				end
 			end
