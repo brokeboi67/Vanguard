@@ -395,12 +395,6 @@ function Config.EnforceRules(S)
 	if S.InvisResolver == nil then
 		S.InvisResolver = false
 	end
-	if S.UnderMapClip == nil then
-		S.UnderMapClip = false
-	end
-	if S.UnderMapDepth == nil then
-		S.UnderMapDepth = 80
-	end
 	if S.NoFog == nil then
 		S.NoFog = false
 	end

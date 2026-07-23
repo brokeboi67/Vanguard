@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.60.3",
+	Version = "2.60.4",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -156,9 +156,6 @@ local Settings = {
 	InvisKey = "X",
 	-- Local upright for others using same desync/tilt invis
 	InvisResolver = false,
-	-- Server under map / client surface + local noclip (walk through buildings)
-	UnderMapClip = false,
-	UnderMapDepth = 80,
 
 	-- ANIMATIONS
 	AnimSpeed = 1,
