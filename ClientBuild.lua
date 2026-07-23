@@ -302,8 +302,11 @@ local function wbDrawBeam(a, b)
 	wb.beam = p
 end
 
-local function wbShouldPunch(part)
+local function wbShouldPunch(part, feetSkip)
 	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	if feetSkip and feetSkip[part] then
 		return false
 	end
 	if part:IsA("Terrain") then
@@ -322,8 +325,75 @@ local function wbShouldPunch(part)
 	return true
 end
 
-local function wbPunchPart(part)
-	if not wbShouldPunch(part) then
+-- Floor / props under Left Leg + Right Leg (and a few layers below) — never punch
+local function wbCollectUnderFeet(char)
+	local skip = {}
+	if not char then
+		return skip
+	end
+	local folder = ensureFolder()
+	local legs = {
+		char:FindFirstChild("Left Leg"),
+		char:FindFirstChild("Right Leg"),
+		char:FindFirstChild("LeftFoot"),
+		char:FindFirstChild("RightFoot"),
+	}
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		table.insert(legs, hrp)
+	end
+
+	local function mark(part)
+		if part and part:IsA("BasePart") and not part:IsDescendantOf(char) and part ~= folder and not part:IsDescendantOf(folder) then
+			skip[part] = true
+		end
+	end
+
+	local function digDown(origin, excludeList)
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		params.FilterDescendantsInstances = excludeList
+		local cursor = origin
+		for _ = 1, 4 do
+			local hit = workspace:Raycast(cursor, Vector3.new(0, -10, 0), params)
+			if not hit or not hit.Instance then
+				break
+			end
+			mark(hit.Instance)
+			table.insert(excludeList, hit.Instance)
+			params.FilterDescendantsInstances = excludeList
+			cursor = hit.Position + Vector3.new(0, -0.08, 0)
+		end
+	end
+
+	for _, leg in ipairs(legs) do
+		if leg and leg:IsA("BasePart") then
+			pcall(function()
+				for _, p in ipairs(leg:GetTouchingParts()) do
+					mark(p)
+				end
+			end)
+			local offsets = {
+				Vector3.zero,
+				Vector3.new(0.55, 0, 0),
+				Vector3.new(-0.55, 0, 0),
+				Vector3.new(0, 0, 0.55),
+				Vector3.new(0, 0, -0.55),
+			}
+			for _, off in ipairs(offsets) do
+				local ex = { char, folder }
+				for k in pairs(skip) do
+					table.insert(ex, k)
+				end
+				digDown(leg.Position + off + Vector3.new(0, 0.35, 0), ex)
+			end
+		end
+	end
+	return skip
+end
+
+local function wbPunchPart(part, feetSkip)
+	if not wbShouldPunch(part, feetSkip) then
 		return false
 	end
 	if wb.parts[part] then
@@ -408,6 +478,8 @@ local function wbApplyLine()
 	end
 	params.FilterDescendantsInstances = exclude
 
+	local feetSkip = wbCollectUnderFeet(me.Character)
+
 	local unit = delta.Unit
 	local cursor = origin
 	local remaining = dist
@@ -421,7 +493,9 @@ local function wbApplyLine()
 			break
 		end
 		local inst = hit.Instance
-		if wbPunchPart(inst) then
+		if feetSkip[inst] then
+			-- keep floor under our legs solid — only skip past it
+		elseif wbPunchPart(inst, feetSkip) then
 			punched = punched + 1
 		end
 		-- advance past this hit so the next ray continues toward the target
