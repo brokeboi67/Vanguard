@@ -3420,6 +3420,22 @@ function Music.Init(S, I18nModule)
 			end
 			local pos = tonumber(cur.position) or 0
 			local wasPaused = cur.paused == true
+			-- Only auto-resume when we were actually playing/paused — not after track finished
+			local shouldResume = cur.active == true or (cur.active == nil and (wasPaused or pos > 1.5))
+			if cur.active == false then
+				shouldResume = false
+			end
+			if not shouldResume then
+				logInfo(isGlobal and "Global restore: queue only (track was idle)" or "Transfer restore: queue only (track was idle)")
+				transferRestorePending = false
+				if not isGlobal then
+					Music.ClearTransferState()
+				else
+					task.defer(Music.SaveTransferState)
+				end
+				notifyState()
+				return true
+			end
 			logInfo(
 				isGlobal and "Global restore:" or "Transfer restore:",
 				item.title or item.identifier,
