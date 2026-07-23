@@ -156,6 +156,36 @@ local function iconCloseX(parent, C, z, color)
 	return holder, a, b
 end
 
+local function iconCheck(parent, C, z, color)
+	local holder = C("Frame", {
+		Name = "CheckIcon",
+		Size = UDim2.new(0, 18, 0, 18),
+		BackgroundTransparency = 1,
+		ZIndex = z or 12,
+		Parent = parent,
+	})
+	-- simple check from two bars
+	C("Frame", {
+		Size = UDim2.new(0, 6, 0, 2),
+		Position = UDim2.new(0, 2, 0, 9),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Rotation = 40,
+		ZIndex = z or 12,
+		Parent = holder,
+	})
+	C("Frame", {
+		Size = UDim2.new(0, 11, 0, 2),
+		Position = UDim2.new(0, 5, 0, 7),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Rotation = -50,
+		ZIndex = z or 12,
+		Parent = holder,
+	})
+	return holder
+end
+
 local function iconDiamond(parent, C, color, z)
 	local holder = C("Frame", {
 		Name = "Diamond",
@@ -484,10 +514,10 @@ function UISkinVault.build(opts)
 			labelPad = 18
 		end
 		C("TextLabel", {
-			Size = UDim2.new(1, -(labelPad + 4), 1, 0),
+			Size = UDim2.new(1, -(labelPad + (saved and 10 or 4)), 1, 0),
 			Position = UDim2.new(0, labelPad, 0, 0),
 			BackgroundTransparency = 1,
-			Text = gun .. (saved and "  ·" or ""),
+			Text = gun,
 			Font = Enum.Font.GothamSemibold,
 			TextSize = 10,
 			TextColor3 = active and Color3.fromRGB(245, 248, 255) or Color3.fromRGB(150, 155, 170),
@@ -496,6 +526,18 @@ function UISkinVault.build(opts)
 			ZIndex = 9,
 			Parent = B,
 		})
+		-- clear skin marker (was a tiny "·" glyph that looked like a bug)
+		if saved then
+			C("Frame", {
+				Name = "HasSkin",
+				Size = UDim2.new(0, 3, 0, 14),
+				Position = UDim2.new(1, -7, 0.5, -7),
+				BackgroundColor3 = SKIN_ACCENT,
+				BorderSizePixel = 0,
+				ZIndex = 9,
+				Parent = B,
+			})
+		end
 		B.MouseButton1Click:Connect(function()
 			skinUi.weapon = gun
 			S.CrimSkinUiWeapon = gun
@@ -596,7 +638,7 @@ function UISkinVault.build(opts)
 		end
 
 		local Card = C("TextButton", {
-			BackgroundColor3 = Color3.fromRGB(20, 22, 30),
+			BackgroundColor3 = selected and Color3.fromRGB(24, 32, 48) or Color3.fromRGB(20, 22, 30),
 			Text = "",
 			AutoButtonColor = false,
 			BorderSizePixel = 0,
@@ -607,10 +649,21 @@ function UISkinVault.build(opts)
 		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = Card })
 		C("UIStroke", {
 			Color = selected and SKIN_ACCENT or accent,
-			Thickness = selected and 2 or 1,
-			Transparency = selected and 0.15 or 0.45,
+			Thickness = selected and 2.5 or 1,
+			Transparency = selected and 0.05 or 0.45,
 			Parent = Card,
 		})
+		if selected then
+			C("Frame", {
+				Name = "SelectedBar",
+				Size = UDim2.new(1, 0, 0, 3),
+				Position = UDim2.new(0, 0, 1, -3),
+				BackgroundColor3 = SKIN_ACCENT,
+				BorderSizePixel = 0,
+				ZIndex = 11,
+				Parent = Card,
+			})
+		end
 
 		local Halo = C("Frame", {
 			Size = UDim2.new(0, 90, 0, 90),
@@ -660,7 +713,7 @@ function UISkinVault.build(opts)
 		end
 
 		C("TextLabel", {
-			Size = UDim2.new(1, -12, 0, 16),
+			Size = UDim2.new(1, selected and -36 or -12, 0, 16),
 			Position = UDim2.new(0, 6, 0, 4),
 			BackgroundTransparency = 1,
 			Text = lab,
@@ -676,10 +729,10 @@ function UISkinVault.build(opts)
 			Size = UDim2.new(1, -12, 0, 16),
 			Position = UDim2.new(0, 6, 1, -22),
 			BackgroundTransparency = 1,
-			Text = gun,
+			Text = selected and (gun .. "  EQUIPPED") or gun,
 			Font = Enum.Font.GothamBold,
 			TextSize = 12,
-			TextColor3 = accent,
+			TextColor3 = selected and SKIN_ACCENT or accent,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			ZIndex = 10,
@@ -687,29 +740,16 @@ function UISkinVault.build(opts)
 		})
 
 		if selected then
-			local X = C("TextButton", {
+			local badge = C("Frame", {
 				Size = UDim2.new(0, 22, 0, 22),
 				Position = UDim2.new(1, -26, 0, 4),
-				BackgroundColor3 = Color3.fromRGB(40, 42, 52),
-				Text = "",
-				AutoButtonColor = false,
+				BackgroundColor3 = SKIN_ACCENT,
 				BorderSizePixel = 0,
 				ZIndex = 11,
 				Parent = Card,
 			})
-			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = X })
-			iconCloseX(X, C, 12, Color3.fromRGB(190, 190, 200))
-			X.MouseButton1Click:Connect(function()
-				if S._crimSkinClear then
-					local ok, msg = S._crimSkinClear(gun)
-					if showNotify then
-						showNotify(tostring(msg or (ok and "cleared" or "fail")))
-					end
-				end
-				persistSkins()
-				refreshWeaponSidebar()
-				refreshSkinGrid()
-			end)
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = badge })
+			iconCheck(badge, C, 12, Color3.fromRGB(255, 255, 255))
 		end
 
 		Card.MouseButton1Click:Connect(function()
@@ -787,25 +827,119 @@ function UISkinVault.build(opts)
 			end
 		end)
 
+		-- No Skin = restore default captured before first apply
+		local noSelected = saved == nil
+		local NoCard = C("TextButton", {
+			BackgroundColor3 = noSelected and Color3.fromRGB(24, 32, 48) or Color3.fromRGB(18, 22, 32),
+			Text = "",
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			LayoutOrder = 1,
+			ZIndex = 8,
+			Parent = GridScroll,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = NoCard })
+		C("UIStroke", {
+			Color = noSelected and SKIN_ACCENT or Color3.fromRGB(70, 78, 95),
+			Thickness = noSelected and 2.5 or 1,
+			Transparency = noSelected and 0.05 or 0.35,
+			Parent = NoCard,
+		})
+		if noSelected then
+			C("Frame", {
+				Name = "SelectedBar",
+				Size = UDim2.new(1, 0, 0, 3),
+				Position = UDim2.new(0, 0, 1, -3),
+				BackgroundColor3 = SKIN_ACCENT,
+				BorderSizePixel = 0,
+				ZIndex = 11,
+				Parent = NoCard,
+			})
+			local badge = C("Frame", {
+				Size = UDim2.new(0, 22, 0, 22),
+				Position = UDim2.new(1, -26, 0, 4),
+				BackgroundColor3 = SKIN_ACCENT,
+				BorderSizePixel = 0,
+				ZIndex = 11,
+				Parent = NoCard,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = badge })
+			iconCheck(badge, C, 12, Color3.fromRGB(255, 255, 255))
+		end
+		local noIcon = C("Frame", {
+			Size = UDim2.new(0, 44, 0, 44),
+			Position = UDim2.new(0.5, -22, 0.5, -36),
+			BackgroundColor3 = Color3.fromRGB(36, 40, 52),
+			BorderSizePixel = 0,
+			ZIndex = 9,
+			Parent = NoCard,
+		})
+		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = noIcon })
+		iconCloseX(noIcon, C, 10, Color3.fromRGB(200, 205, 220))
+		C("TextLabel", {
+			Size = UDim2.new(1, -12, 0, 16),
+			Position = UDim2.new(0, 6, 0, 4),
+			BackgroundTransparency = 1,
+			Text = "No Skin",
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(235, 238, 245),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 10,
+			Parent = NoCard,
+		})
+		C("TextLabel", {
+			Size = UDim2.new(1, -12, 0, 18),
+			Position = UDim2.new(0, 6, 1, -36),
+			BackgroundTransparency = 1,
+			Text = noSelected and "Default  EQUIPPED" or "Restore default",
+			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			TextColor3 = noSelected and SKIN_ACCENT or Color3.fromRGB(170, 180, 200),
+			ZIndex = 9,
+			Parent = NoCard,
+		})
+		NoCard.MouseButton1Click:Connect(function()
+			if not gun then
+				if showNotify then
+					showNotify("Pick a weapon first")
+				end
+				return
+			end
+			if S._crimSkinClear then
+				local ok, msg = S._crimSkinClear(gun)
+				if showNotify then
+					showNotify(tostring(msg or (ok and "No Skin" or "fail")))
+				end
+			end
+			persistSkins()
+			refreshWeaponSidebar()
+			refreshSkinGrid()
+		end)
+
 		for _, row in ipairs(rows) do
 			local lab = row.label or row.full
 			if q == "" or string.find(string.lower(lab), q, 1, true) or string.find(string.lower(gun or ""), q, 1, true) then
 				order = order + 1
-				if makeSkinCard(GridScroll, gun, row, order, saved == row.full) then
+				if makeSkinCard(GridScroll, gun, row, order + 1, saved == row.full) then
 					shown = shown + 1
 				end
 			end
 		end
 
-		if shown == 0 then
-			StatusLbl.Text = gun and "No skins" or "Pick a weapon"
+		if shown == 0 and not gun then
+			StatusLbl.Text = "Pick a weapon"
+		elseif shown == 0 then
+			StatusLbl.Text = string.format("%s | No Skin%s", gun, noSelected and " (default)" or "")
 		else
 			local savedLab = nil
 			if saved then
 				local us = string.find(saved, "_", 1, true)
 				savedLab = us and string.sub(saved, us + 1) or saved
+			else
+				savedLab = "No Skin"
 			end
-			StatusLbl.Text = string.format("%s · %d%s", gun or "?", shown, savedLab and (" · " .. savedLab) or "")
+			StatusLbl.Text = string.format("%s | %d skins | %s", gun or "?", shown, savedLab)
 		end
 	end
 

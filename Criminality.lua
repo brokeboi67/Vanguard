@@ -4736,6 +4736,7 @@ function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 	if not root or not template then
 		return 0
 	end
+	misc.skinChanger.captureDefaults(root)
 	local n, patched, skipped = 0, 0, 0
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("MeshPart") then
@@ -4777,6 +4778,129 @@ function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 		misc.skinChanger.log(string.format("applyTemplate root=%s ok=%d patched=%d skip=%d tmpl=%s", root.Name, n, patched, skipped, template.Name))
 	end
 	return n
+end
+
+-- Snapshot default TextureID / SA maps once before first skin apply (for No Skin)
+function misc.skinChanger.captureDefaults(root)
+	if not root then
+		return
+	end
+	local function mapId(sa, prop)
+		local ok, val = pcall(function()
+			return sa[prop]
+		end)
+		if not ok or val == nil then
+			return ""
+		end
+		return misc.skinChanger.contentId(val)
+	end
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+			if d:GetAttribute("VG_DefCaptured") ~= true then
+				pcall(function()
+					d:SetAttribute("VG_DefTex", d.TextureID or "")
+					local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						d:SetAttribute("VG_DefHadSA", true)
+						d:SetAttribute("VG_DefSAName", sa.Name)
+						d:SetAttribute("VG_DefColorMap", mapId(sa, "ColorMap"))
+						d:SetAttribute("VG_DefMetalnessMap", mapId(sa, "MetalnessMap"))
+						d:SetAttribute("VG_DefNormalMap", mapId(sa, "NormalMap"))
+						d:SetAttribute("VG_DefRoughnessMap", mapId(sa, "RoughnessMap"))
+					else
+						d:SetAttribute("VG_DefHadSA", false)
+					end
+					d:SetAttribute("VG_DefCaptured", true)
+				end)
+			end
+		end
+	end
+end
+
+function misc.skinChanger.restoreDefaults(root)
+	if not root then
+		return 0
+	end
+	local n = 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+			pcall(function()
+				for _, ch in ipairs(d:GetChildren()) do
+					if ch:IsA("SurfaceAppearance") then
+						ch:Destroy()
+					end
+				end
+				if d:GetAttribute("VG_DefHadSA") == true then
+					local neo = Instance.new("SurfaceAppearance")
+					neo.Name = d:GetAttribute("VG_DefSAName") or "Default"
+					local function setMap(prop, attr)
+						local id = d:GetAttribute(attr)
+						if typeof(id) == "string" and id ~= "" then
+							pcall(function()
+								neo[prop] = id
+							end)
+						end
+					end
+					setMap("ColorMap", "VG_DefColorMap")
+					setMap("MetalnessMap", "VG_DefMetalnessMap")
+					setMap("NormalMap", "VG_DefNormalMap")
+					setMap("RoughnessMap", "VG_DefRoughnessMap")
+					neo.Parent = d
+				end
+				local tex = d:GetAttribute("VG_DefTex")
+				if tex == nil then
+					tex = d:GetAttribute("VG_PrevTex")
+				end
+				if typeof(tex) == "string" then
+					d.TextureID = tex
+				end
+				n = n + 1
+			end)
+		end
+	end
+	return n
+end
+
+function misc.skinChanger.restoreNamed(gunName)
+	if not gunName then
+		return false, "no gun"
+	end
+	misc.skinChanger.setSavedSkinKey(gunName, nil)
+	local n = 0
+	local seen = {}
+	local function tryOnce(tool)
+		if not tool or seen[tool] then
+			return
+		end
+		if tool.Name ~= gunName then
+			return
+		end
+		seen[tool] = true
+		n = n + misc.skinChanger.restoreDefaults(tool)
+	end
+	tryOnce(misc.skinChanger.findActiveGun())
+	local lp = getLP()
+	if lp then
+		tryOnce(lp.Character and lp.Character:FindFirstChild(gunName))
+		local chars = workspace:FindFirstChild("Characters")
+		local model = chars and chars:FindFirstChild(lp.Name)
+		tryOnce(model and model:FindFirstChild(gunName))
+		local bp = lp:FindFirstChild("Backpack")
+		tryOnce(bp and bp:FindFirstChild(gunName))
+	end
+	local cam = workspace.CurrentCamera
+	local vm = cam and cam:FindFirstChild("ViewModel")
+	if vm then
+		n = n + misc.skinChanger.restoreDefaults(vm)
+	end
+	local rf = game:GetService("ReplicatedFirst")
+	local folder = rf:FindFirstChild("ViewModels")
+	if folder then
+		for _, ch in ipairs(folder:GetChildren()) do
+			n = n + misc.skinChanger.restoreDefaults(ch)
+		end
+	end
+	return true, string.format("%s → No Skin (%d)", gunName, n)
 end
 
 function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
@@ -4976,8 +5100,7 @@ function misc.skinChanger.clearCurrent()
 	if not tool then
 		return false, "no gun"
 	end
-	misc.skinChanger.setSavedSkinKey(tool.Name, nil)
-	return true, "cleared " .. tool.Name
+	return misc.skinChanger.restoreNamed(tool.Name)
 end
 
 function misc.skinChanger.statusText()
@@ -5080,8 +5203,8 @@ function misc.skinChanger.bindUi(S)
 		if not gunName then
 			return false, "no gun"
 		end
-		misc.skinChanger.setSavedSkinKey(gunName, nil)
-		return true, "cleared " .. gunName
+		ensureOn()
+		return misc.skinChanger.restoreNamed(gunName)
 	end
 	S._crimSkinStatus = function()
 		return misc.skinChanger.statusText()
