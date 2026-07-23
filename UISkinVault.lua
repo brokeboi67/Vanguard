@@ -194,33 +194,53 @@ local function iconCloseX(parent, C, z, color)
 end
 
 local function iconCheck(parent, C, z, color)
+	-- centered ✓ inside parent badge
 	local holder = C("Frame", {
 		Name = "CheckIcon",
-		Size = UDim2.new(0, 18, 0, 18),
+		Size = UDim2.fromOffset(12, 12),
+		Position = UDim2.fromScale(0.5, 0.5),
+		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundTransparency = 1,
 		ZIndex = z or 12,
 		Parent = parent,
 	})
-	-- simple check from two bars
+	-- short leg
 	C("Frame", {
-		Size = UDim2.new(0, 6, 0, 2),
-		Position = UDim2.new(0, 2, 0, 9),
+		Size = UDim2.fromOffset(4, 2),
+		Position = UDim2.new(0, 0, 0, 6),
 		BackgroundColor3 = color,
 		BorderSizePixel = 0,
-		Rotation = 40,
+		Rotation = 45,
 		ZIndex = z or 12,
 		Parent = holder,
 	})
+	-- long leg
 	C("Frame", {
-		Size = UDim2.new(0, 11, 0, 2),
-		Position = UDim2.new(0, 5, 0, 7),
+		Size = UDim2.fromOffset(8, 2),
+		Position = UDim2.new(0, 3, 0, 5),
 		BackgroundColor3 = color,
 		BorderSizePixel = 0,
-		Rotation = -50,
+		Rotation = -48,
 		ZIndex = z or 12,
 		Parent = holder,
 	})
 	return holder
+end
+
+local function makeEquippedBadge(parent, C)
+	local badge = C("Frame", {
+		Name = "EquippedBadge",
+		Size = UDim2.fromOffset(18, 18),
+		Position = UDim2.new(1, -8, 0, 8),
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundColor3 = SKIN_ACCENT,
+		BorderSizePixel = 0,
+		ZIndex = 11,
+		Parent = parent,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = badge })
+	iconCheck(badge, C, 12, Color3.fromRGB(255, 255, 255))
+	return badge
 end
 
 local function iconDiamond(parent, C, color, z)
@@ -747,7 +767,7 @@ function UISkinVault.build(opts)
 		end
 
 		C("TextLabel", {
-			Size = UDim2.new(1, selected and -36 or -12, 0, 16),
+			Size = UDim2.new(1, selected and -34 or -12, 0, 16),
 			Position = UDim2.new(0, 6, 0, 4),
 			BackgroundTransparency = 1,
 			Text = lab,
@@ -786,16 +806,7 @@ function UISkinVault.build(opts)
 		})
 
 		if selected then
-			local badge = C("Frame", {
-				Size = UDim2.new(0, 22, 0, 22),
-				Position = UDim2.new(1, -26, 0, 4),
-				BackgroundColor3 = SKIN_ACCENT,
-				BorderSizePixel = 0,
-				ZIndex = 11,
-				Parent = Card,
-			})
-			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = badge })
-			iconCheck(badge, C, 12, Color3.fromRGB(255, 255, 255))
+			makeEquippedBadge(Card, C)
 		end
 
 		Card.MouseButton1Click:Connect(function()
@@ -903,16 +914,7 @@ function UISkinVault.build(opts)
 				ZIndex = 11,
 				Parent = NoCard,
 			})
-			local badge = C("Frame", {
-				Size = UDim2.new(0, 22, 0, 22),
-				Position = UDim2.new(1, -26, 0, 4),
-				BackgroundColor3 = SKIN_ACCENT,
-				BorderSizePixel = 0,
-				ZIndex = 11,
-				Parent = NoCard,
-			})
-			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = badge })
-			iconCheck(badge, C, 12, Color3.fromRGB(255, 255, 255))
+			makeEquippedBadge(NoCard, C)
 		end
 		local noIcon = C("Frame", {
 			Size = UDim2.new(0, 44, 0, 44),
