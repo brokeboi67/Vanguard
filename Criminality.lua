@@ -5622,6 +5622,7 @@ function misc.skinChanger.bindUi(S)
 			data.CrimGunSkins = S.CrimGunSkins
 			data.CrimSkinUiWeapon = S.CrimSkinUiWeapon
 			data.CrimSkinChanger = S.CrimSkinChanger == true
+			data.CrimSkinDropped = S.CrimSkinDropped == true
 			if typeof(makefolder) == "function" then
 				makefolder("Vanguard")
 			end
