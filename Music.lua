@@ -1622,7 +1622,9 @@ function Music.Init(S, I18nModule)
 			pos = pausedSession.position
 		end
 		local currentItem = nil
+		local isActive = false
 		if nowPlaying and nowPlaying.identifier then
+			isActive = true
 			currentItem = cloneQueueItem(nowPlaying)
 			for _, it in ipairs(queue) do
 				if it.identifier == currentItem.identifier then
@@ -1631,15 +1633,16 @@ function Music.Init(S, I18nModule)
 				end
 			end
 		elseif pausedSession and pausedSession.identifier then
+			-- Paused mid-track — resume later
+			isActive = true
 			currentItem = {
 				identifier = pausedSession.identifier,
 				title = nowPlaying and nowPlaying.title or pausedSession.identifier,
 				creator = nowPlaying and nowPlaying.creator or "",
 				cachePath = pausedSession.cachePath,
 			}
-		elseif queueIndex > 0 and queue[queueIndex] then
-			currentItem = cloneQueueItem(queue[queueIndex])
 		end
+		-- Do NOT fall back to queue[queueIndex] when idle — that re-started finished tracks after join
 		if currentItem then
 			normalizePlayItem(currentItem)
 		end
@@ -1667,6 +1670,7 @@ function Music.Init(S, I18nModule)
 				item = currentItem,
 				position = pos,
 				paused = paused,
+				active = isActive,
 			} or nil,
 		}
 	end
@@ -1789,6 +1793,10 @@ function Music.Init(S, I18nModule)
 		cachedDuration = 0
 		trackEnding = false
 		notifyState()
+		-- Persist idle state (queue kept, no auto-resume current) so next game doesn't restart
+		if musicPersistEnabled() then
+			task.defer(Music.SaveTransferState)
+		end
 	end
 
 	local function attachProgress(sound)
@@ -2092,6 +2100,15 @@ function Music.Init(S, I18nModule)
 		queue = {}
 		queueIndex = 0
 		stopInternal()
+		if musicPersistEnabled() then
+			task.defer(function()
+				-- Fully idle — wipe resume snapshots so next game stays silent
+				if musicPersistIsGlobal() then
+					Music.ClearGlobalPersist()
+				end
+				Music.ClearTransferState()
+			end)
+		end
 	end
 
 	function Music.GetQueue()
