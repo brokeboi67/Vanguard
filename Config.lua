@@ -35,12 +35,19 @@ local GLOBAL_KEYS = {
 	CrimSkipMenuIntro = true,
 }
 
--- Also always mirrored into globals.json (and kept in named configs via Serialize).
+-- Skin prefs live ONLY in globals.json (never overwrite named Legit/Crim profiles).
 local SKIN_PREF_KEYS = {
 	"CrimGunSkins",
 	"CrimSkinUiWeapon",
 	"CrimSkinChanger",
 	"CrimSkinDropped",
+}
+
+local SKIN_PREF_SET = {
+	CrimGunSkins = true,
+	CrimSkinUiWeapon = true,
+	CrimSkinChanger = true,
+	CrimSkinDropped = true,
 }
 
 local OK_MENU_TRACKS = {
@@ -81,7 +88,7 @@ local function coerceConfigValue(v, current)
 end
 
 local function shouldSkipSerializeKey(k)
-	if RUNTIME_KEYS[k] or GLOBAL_KEYS[k] then
+	if RUNTIME_KEYS[k] or GLOBAL_KEYS[k] or SKIN_PREF_SET[k] then
 		return true
 	end
 	if typeof(k) == "string" and string.sub(k, 1, 1) == "_" then
@@ -214,11 +221,14 @@ function Config.CanPersist()
 	return canPersist()
 end
 
-function Config.Serialize(S)
+function Config.Serialize(S, opts)
+	local stripCrim = opts and opts.stripCrim == true
 	local data = {}
 	for k, v in pairs(S) do
 		if not shouldSkipSerializeKey(k) then
-			if typeof(v) == "Color3" then
+			if stripCrim and typeof(k) == "string" and string.sub(k, 1, 4) == "Crim" then
+				-- keep Legit profiles free of Criminality feature flags
+			elseif typeof(v) == "Color3" then
 				data[k] = { __color = true, r = v.R, g = v.G, b = v.B }
 			else
 				data[k] = v
@@ -232,12 +242,25 @@ function Config.Apply(S, data)
 	if typeof(data) ~= "table" then
 		return false
 	end
+	-- Clear Crim* booleans missing from the loaded profile so a prior Criminality
+	-- session does not bleed into Legit when the file never stored those keys.
+	for k, v in pairs(S) do
+		if typeof(k) == "string"
+			and string.sub(k, 1, 4) == "Crim"
+			and typeof(v) == "boolean"
+			and data[k] == nil
+			and not GLOBAL_KEYS[k]
+			and not SKIN_PREF_SET[k]
+		then
+			S[k] = false
+		end
+	end
 	local migrateGlobals = {}
 	local hasMigrate = false
 	for k, v in pairs(data) do
 		if RUNTIME_KEYS[k] then
 			-- skip runtime keys
-		elseif GLOBAL_KEYS[k] then
+		elseif GLOBAL_KEYS[k] or SKIN_PREF_SET[k] then
 			-- named configs no longer own these; keep for one-time migrate
 			migrateGlobals[k] = v
 			hasMigrate = true
@@ -927,7 +950,8 @@ function Config.Save(name, S)
 	end
 	ensureDirs()
 	local path = CONFIG_DIR .. "/" .. name .. ".json"
-	writefile(path, HttpService:JSONEncode(Config.Serialize(S)))
+	local stripCrim = string.find(string.lower(name), "legit", 1, true) ~= nil
+	writefile(path, HttpService:JSONEncode(Config.Serialize(S, { stripCrim = stripCrim })))
 	Config.SaveGlobals(S)
 	local index = readIndex()
 	local found = false

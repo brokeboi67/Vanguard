@@ -240,7 +240,8 @@ function UISkinVault.build(opts)
 
 	local persistToken = 0
 	local function persistSkins()
-		-- debounce disk writes — picking skins was blocking on SaveGlobals + config
+		-- Skin prefs ONLY → globals.json. NEVER Config.Save(autoload):
+		-- that was overwriting the user's Legit profile with full Criminality state.
 		persistToken = persistToken + 1
 		local token = persistToken
 		task.delay(0.45, function()
@@ -253,12 +254,6 @@ function UISkinVault.build(opts)
 			if ConfigModule and ConfigModule.SaveGlobals then
 				pcall(ConfigModule.SaveGlobals, S)
 			end
-			pcall(function()
-				local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
-				if name and name ~= "" and ConfigModule.Save then
-					ConfigModule.Save(name, S)
-				end
-			end)
 		end)
 	end
 
