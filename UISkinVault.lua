@@ -54,6 +54,130 @@ local function contentToImage(val)
 	return ""
 end
 
+-- Frame icons (no unicode — Gotham shows tofu □ for ▾/★/◆ on many executors)
+local function iconChevron(parent, C, open, z, color)
+	local holder = C("Frame", {
+		Name = "Chevron",
+		Size = UDim2.new(0, 12, 0, 12),
+		Position = UDim2.new(1, -18, 0.5, -6),
+		BackgroundTransparency = 1,
+		ZIndex = z or 9,
+		Parent = parent,
+	})
+	if open then
+		-- down: wide bar + shorter bar under it
+		C("Frame", {
+			Size = UDim2.new(0, 10, 0, 2),
+			Position = UDim2.new(0.5, -5, 0, 3),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			ZIndex = z or 9,
+			Parent = holder,
+		})
+		C("Frame", {
+			Size = UDim2.new(0, 6, 0, 2),
+			Position = UDim2.new(0.5, -3, 0, 7),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			ZIndex = z or 9,
+			Parent = holder,
+		})
+	else
+		-- right: two stacked bars growing left→right look like >
+		C("Frame", {
+			Size = UDim2.new(0, 2, 0, 8),
+			Position = UDim2.new(0, 3, 0.5, -4),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			ZIndex = z or 9,
+			Parent = holder,
+		})
+		C("Frame", {
+			Size = UDim2.new(0, 2, 0, 5),
+			Position = UDim2.new(0, 6, 0.5, -2.5),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			ZIndex = z or 9,
+			Parent = holder,
+		})
+		C("Frame", {
+			Size = UDim2.new(0, 2, 0, 2),
+			Position = UDim2.new(0, 9, 0.5, -1),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			ZIndex = z or 9,
+			Parent = holder,
+		})
+	end
+	return holder
+end
+
+local function iconDot(parent, C, pos, size, color, z)
+	local d = C("Frame", {
+		Name = "Dot",
+		Size = UDim2.new(0, size, 0, size),
+		Position = pos,
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		ZIndex = z or 9,
+		Parent = parent,
+	})
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = d })
+	return d
+end
+
+local function iconCloseX(parent, C, z, color)
+	local holder = C("Frame", {
+		Name = "CloseIcon",
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		ZIndex = z or 11,
+		Parent = parent,
+	})
+	-- two bars crossing via Rotation (works in Studio + most executors)
+	local a = C("Frame", {
+		Size = UDim2.new(0, 10, 0, 2),
+		Position = UDim2.new(0.5, -5, 0.5, -1),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Rotation = 45,
+		ZIndex = z or 11,
+		Parent = holder,
+	})
+	local b = C("Frame", {
+		Size = UDim2.new(0, 10, 0, 2),
+		Position = UDim2.new(0.5, -5, 0.5, -1),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Rotation = -45,
+		ZIndex = z or 11,
+		Parent = holder,
+	})
+	return holder, a, b
+end
+
+local function iconDiamond(parent, C, color, z)
+	local holder = C("Frame", {
+		Name = "Diamond",
+		Size = UDim2.new(0, 36, 0, 36),
+		Position = UDim2.new(0.5, -18, 0.5, -10),
+		BackgroundTransparency = 1,
+		ZIndex = z or 9,
+		Parent = parent,
+	})
+	local core = C("Frame", {
+		Size = UDim2.new(0, 22, 0, 22),
+		Position = UDim2.new(0.5, -11, 0.5, -11),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		Rotation = 45,
+		ZIndex = z or 9,
+		Parent = holder,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 3), Parent = core })
+	return holder
+end
+
 local function cmapImage(saName, precomputed)
 	if precomputed and precomputed ~= "" then
 		return contentToImage(precomputed)
@@ -354,11 +478,16 @@ function UISkinVault.build(opts)
 		if active then
 			C("UIStroke", { Color = SKIN_ACCENT, Thickness = 1, Transparency = 0.35, Parent = B })
 		end
+		local labelPad = 8
+		if isMeleeWeapon(gun) then
+			iconDot(B, C, UDim2.new(0, 7, 0.5, -3), 6, Color3.fromRGB(255, 180, 70), 9)
+			labelPad = 18
+		end
 		C("TextLabel", {
-			Size = UDim2.new(1, -10, 1, 0),
-			Position = UDim2.new(0, 8, 0, 0),
+			Size = UDim2.new(1, -(labelPad + 4), 1, 0),
+			Position = UDim2.new(0, labelPad, 0, 0),
 			BackgroundTransparency = 1,
-			Text = (isMeleeWeapon(gun) and "★ " or "") .. gun .. (saved and "  ·" or ""),
+			Text = gun .. (saved and "  ·" or ""),
 			Font = Enum.Font.GothamSemibold,
 			TextSize = 10,
 			TextColor3 = active and Color3.fromRGB(245, 248, 255) or Color3.fromRGB(150, 155, 170),
@@ -401,17 +530,7 @@ function UISkinVault.build(opts)
 			ZIndex = 9,
 			Parent = B,
 		})
-		C("TextLabel", {
-			Size = UDim2.new(0, 20, 1, 0),
-			Position = UDim2.new(1, -22, 0, 0),
-			BackgroundTransparency = 1,
-			Text = open and "▾" or "▸",
-			Font = Enum.Font.GothamBold,
-			TextSize = 12,
-			TextColor3 = Color3.fromRGB(130, 140, 160),
-			ZIndex = 9,
-			Parent = B,
-		})
+		iconChevron(B, C, open, 9, Color3.fromRGB(140, 150, 170))
 		B.MouseButton1Click:Connect(function()
 			skinUi.expanded[key] = not open
 			refreshWeaponSidebar()
