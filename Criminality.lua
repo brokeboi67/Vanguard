@@ -1,13 +1,11 @@
--- Criminality.lua  v2.52.19
+-- Criminality.lua  v2.59.1
 -- Game-specific features for Criminality (Universe 1494262959).
 -- Architecture: ONE Heartbeat loop for all features + built-in profiler.
 -- Profiler writes timing stats to the log file every 30 s.
 -- NOTE: many small state vars are packed into shared tables (COLORS, misc,
 -- crateWatch, gunWatch, staff, door, melee, moneyPu, cratePu, ...) purely to
 -- stay under Luau's 200-local-register limit for the main chunk.
--- v2.52.19: CS:GO headshot sound (5764885315) as default HeadshotSound swap.
--- v2.52.18: bounty via CoreGUI.NotificationFrame; optional hit sound swap.
--- v2.52.17: removed No Gun Slow. Auto Reload uses GunGUI Current/Stored.
+-- v2.59.1: pack Gun ESP helpers into gunWatch (fix 200-local compile blow).
 
 local Criminality = {}
 Criminality.GAME_ID = 1494262959
@@ -1494,35 +1492,35 @@ local function ensureCrateWatch(S)
 end
 
 -- â”€â”€ SPAWNED TOOL / GUN ESP (SpawnedTools) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-local gunByModel = {}
--- Packed into one table to stay under Luau's 200-local limit.
-local gunWatch = { folderConn = nil, removeConn = nil, folderWatch = nil }
+-- Packed into gunWatch (methods + state) to stay under Luau's 200-local limit.
+local gunWatch = {
+	folderConn = nil,
+	removeConn = nil,
+	folderWatch = nil,
+	byModel = {},
+	idCache = setmetatable({}, { __mode = "k" }),
+	weakLabels = {
+		ITEM = true,
+		WEAPON = true,
+		GUN = true,
+		PISTOL = true,
+		RIFLE = true,
+		ARMOR = true,
+		OTHER = true,
+	},
+}
 
-
-local function hasDeepChild(model, name)
+function gunWatch.hasDeep(model, name)
 	return model and model:FindFirstChild(name, true) ~= nil
 end
 
-local toolIdCache = setmetatable({}, { __mode = "k" })
-
--- Weak / early labels must NOT stick — SpawnedTools models stream in empty then fill.
-local WEAK_TOOL_LABELS = {
-	ITEM = true,
-	WEAPON = true,
-	GUN = true,
-	PISTOL = true,
-	RIFLE = true,
-	ARMOR = true,
-	OTHER = true,
-}
-
-local function rememberToolId(model, label, kind, solid)
+function gunWatch.remember(model, label, kind, solid)
 	local entry = { label, kind, solid and true or false }
-	toolIdCache[model] = entry
+	gunWatch.idCache[model] = entry
 	return label, kind
 end
 
-local function resolveNameFromSurfaceAppearance(model)
+function gunWatch.nameFromSA(model)
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("SurfaceAppearance") then
 			local n = d.Name
@@ -1535,7 +1533,7 @@ local function resolveNameFromSurfaceAppearance(model)
 	return nil
 end
 
-local function resolveNameFromMesh(model)
+function gunWatch.nameFromMesh(model)
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("BasePart") then
 			local n = d.Name
@@ -1547,7 +1545,7 @@ local function resolveNameFromMesh(model)
 	return nil
 end
 
-local function resolveNameFromKnownWeapons(model)
+function gunWatch.nameFromKnown(model)
 	local listFn = misc.skinChanger and misc.skinChanger.listAllWeapons
 	if typeof(listFn) ~= "function" then
 		return nil
@@ -1580,113 +1578,110 @@ local function resolveNameFromKnownWeapons(model)
 	return nil
 end
 
-local function classifyKind(model, label)
+function gunWatch.classify(model, label)
 	local upper = string.upper(tostring(label or ""))
+	local deep = gunWatch.hasDeep
 	if upper:find("GRENADE", 1, true) then
 		return "grenade"
 	end
-	-- Real grenade fingerprint (NOT bare Pin+Handle — guns also have Pin)
-	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") and not hasDeepChild(model, "MagPart") then
+	if deep(model, "Pin") and deep(model, "He") and not deep(model, "MagPart") then
 		return "grenade"
 	end
-	if hasDeepChild(model, "MagPart")
-		or hasDeepChild(model, "BoltPart")
-		or hasDeepChild(model, "SlidePart")
-		or hasDeepChild(model, "Slide")
-		or hasDeepChild(model, "Barrel")
-		or hasDeepChild(model, "ActualBoltPart")
+	if deep(model, "MagPart")
+		or deep(model, "BoltPart")
+		or deep(model, "SlidePart")
+		or deep(model, "Slide")
+		or deep(model, "Barrel")
+		or deep(model, "ActualBoltPart")
 	then
 		return "gun"
 	end
-	if hasDeepChild(model, "KatanaMesh")
-		or hasDeepChild(model, "ClubMesh")
-		or hasDeepChild(model, "Crowbar")
-		or hasDeepChild(model, "Blade")
-		or hasDeepChild(model, "WeaponHandle")
-		or hasDeepChild(model, "WeaponHandle2")
+	if deep(model, "KatanaMesh")
+		or deep(model, "ClubMesh")
+		or deep(model, "Crowbar")
+		or deep(model, "Blade")
+		or deep(model, "WeaponHandle")
+		or deep(model, "WeaponHandle2")
 	then
 		return "melee"
 	end
 	return "other"
 end
 
-local function identifySpawnedTool(model)
-	local cached = toolIdCache[model]
-	if cached and cached[3] == true and cached[1] and not WEAK_TOOL_LABELS[cached[1]] then
+function gunWatch.identify(model)
+	local cached = gunWatch.idCache[model]
+	if cached and cached[3] == true and cached[1] and not gunWatch.weakLabels[cached[1]] then
 		return cached[1], cached[2]
 	end
+	local rem = gunWatch.remember
+	local deep = gunWatch.hasDeep
+	local kindOf = gunWatch.classify
 
 	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName" }) do
 		local val = model:GetAttribute(key)
 		if val ~= nil and tostring(val) ~= "" then
 			local label = tostring(val)
-			return rememberToolId(model, string.upper(label), classifyKind(model, label), true)
+			return rem(model, string.upper(label), kindOf(model, label), true)
 		end
 	end
 
-	local fromSa = resolveNameFromSurfaceAppearance(model)
+	local fromSa = gunWatch.nameFromSA(model)
 	if fromSa then
-		return rememberToolId(model, string.upper(fromSa), classifyKind(model, fromSa), true)
+		return rem(model, string.upper(fromSa), kindOf(model, fromSa), true)
 	end
-
-	local fromMesh = resolveNameFromMesh(model)
+	local fromMesh = gunWatch.nameFromMesh(model)
 	if fromMesh then
-		return rememberToolId(model, string.upper(fromMesh), classifyKind(model, fromMesh), true)
+		return rem(model, string.upper(fromMesh), kindOf(model, fromMesh), true)
 	end
-
-	local fromKnown = resolveNameFromKnownWeapons(model)
+	local fromKnown = gunWatch.nameFromKnown(model)
 	if fromKnown then
-		return rememberToolId(model, string.upper(fromKnown), classifyKind(model, fromKnown), true)
+		return rem(model, string.upper(fromKnown), kindOf(model, fromKnown), true)
 	end
 
-	-- Fingerprints (weak — may upgrade when children stream in)
-	if hasDeepChild(model, "Crowbar") then
-		return rememberToolId(model, "CROWBAR", "melee", false)
+	if deep(model, "Crowbar") then
+		return rem(model, "CROWBAR", "melee", false)
 	end
-	if hasDeepChild(model, "ClubMesh") then
-		return rememberToolId(model, "CLUB", "melee", true)
+	if deep(model, "ClubMesh") then
+		return rem(model, "CLUB", "melee", true)
 	end
-	if hasDeepChild(model, "KatanaMesh") then
-		return rememberToolId(model, "KATANA", "melee", true)
+	if deep(model, "KatanaMesh") then
+		return rem(model, "KATANA", "melee", true)
 	end
-	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then
-		return rememberToolId(model, "WRENCH", "melee", false)
+	if deep(model, "Wrench") and not deep(model, "Crowbar") then
+		return rem(model, "WRENCH", "melee", false)
 	end
-	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") and not hasDeepChild(model, "MagPart") then
-		return rememberToolId(model, "GRENADE", "grenade", true)
+	if deep(model, "Pin") and deep(model, "He") and not deep(model, "MagPart") then
+		return rem(model, "GRENADE", "grenade", true)
 	end
-	if hasDeepChild(model, "Chain1") or (hasDeepChild(model, "Blade") and hasDeepChild(model, "Cord")) then
-		return rememberToolId(model, "CHAINSAW", "melee", false)
+	if deep(model, "Chain1") or (deep(model, "Blade") and deep(model, "Cord")) then
+		return rem(model, "CHAINSAW", "melee", false)
 	end
-	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then
-		return rememberToolId(model, "RIFLE", "gun", false)
+	if deep(model, "BoltPart") and deep(model, "MagPart") then
+		return rem(model, "RIFLE", "gun", false)
 	end
-	if hasDeepChild(model, "MagPart")
-		and (hasDeepChild(model, "Barrel") or hasDeepChild(model, "SlidePart") or hasDeepChild(model, "Slide"))
-	then
-		return rememberToolId(model, "PISTOL", "gun", false)
+	if deep(model, "MagPart") and (deep(model, "Barrel") or deep(model, "SlidePart") or deep(model, "Slide")) then
+		return rem(model, "PISTOL", "gun", false)
 	end
-	if hasDeepChild(model, "MagPart") then
-		return rememberToolId(model, "GUN", "gun", false)
+	if deep(model, "MagPart") then
+		return rem(model, "GUN", "gun", false)
 	end
-	if hasDeepChild(model, "WeaponHandle") or hasDeepChild(model, "WeaponHandle2") then
-		return rememberToolId(model, "WEAPON", "melee", false)
+	if deep(model, "WeaponHandle") or deep(model, "WeaponHandle2") then
+		return rem(model, "WEAPON", "melee", false)
 	end
 
 	local n = string.upper(tostring(model.Name or ""))
 	if n:find("HELMET", 1, true) or n:find("VEST", 1, true) or n:find("ARMOR", 1, true)
 		or n:find("KEVLAR", 1, true) or n:find("BALACLAVA", 1, true)
 	then
-		return rememberToolId(model, n, "armor", true)
+		return rem(model, n, "armor", true)
 	end
-	if hasDeepChild(model, "OriginPart") and not hasDeepChild(model, "MagPart") and not hasDeepChild(model, "WeaponHandle") then
-		return rememberToolId(model, "ARMOR", "armor", false)
+	if deep(model, "OriginPart") and not deep(model, "MagPart") and not deep(model, "WeaponHandle") then
+		return rem(model, "ARMOR", "armor", false)
 	end
-
-	return rememberToolId(model, "ITEM", "other", false)
+	return rem(model, "ITEM", "other", false)
 end
 
-local function getGunEspPart(model)
+function gunWatch.getPart(model)
 	if not model then
 		return nil
 	end
@@ -1703,7 +1698,7 @@ local function getGunEspPart(model)
 			return p
 		end
 	end
-	local meshNamed = resolveNameFromMesh(model)
+	local meshNamed = gunWatch.nameFromMesh(model)
 	if meshNamed then
 		local p = model:FindFirstChild(meshNamed .. "Mesh", true)
 		if p and p:IsA("BasePart") then
@@ -1713,7 +1708,9 @@ local function getGunEspPart(model)
 	return getModelPart(model)
 end
 
-local function kindColor(kind, S)
+-- Call-sites use gunWatch.identify / getPart / hasDeep / byModel / idCache
+
+function gunWatch.kindColor(kind, S)
 	if kind == "gun" then
 		return S.CrimGunESPGunColor or COLORS.gun
 	end
@@ -1726,7 +1723,7 @@ local function kindColor(kind, S)
 	return COLORS.tool
 end
 
-local function shouldShowGun(S, kind)
+function gunWatch.shouldShow(S, kind)
 	if not S.CrimGunESP then
 		return false
 	end
@@ -1739,31 +1736,31 @@ local function shouldShowGun(S, kind)
 	return true
 end
 
-local function isSpawnedToolModel(model)
+function gunWatch.isModel(model)
 	return model and model:IsA("Model")
 end
 
-local function getFilterFolder()
+function gunWatch.filterFolder()
 	return workspace:FindFirstChild("Filter")
 end
 
-local function getSpawnedTools()
-	local filter = getFilterFolder()
+function gunWatch.spawnedFolder()
+	local filter = gunWatch.filterFolder()
 	if not filter then
 		return nil
 	end
 	return filter:FindFirstChild("SpawnedTools")
 end
 
-local function isInSpawnedTools(model)
-	local folder = getSpawnedTools()
+function gunWatch.inFolder(model)
+	local folder = gunWatch.spawnedFolder()
 	if not folder or not model then
 		return false
 	end
 	return model:IsDescendantOf(folder)
 end
 
-local function iterSpawnedToolModels(folder)
+function gunWatch.iterModels(folder)
 	local models = {}
 	for _, ch in ipairs(folder:GetChildren()) do
 		if ch:IsA("Model") then
@@ -1779,11 +1776,11 @@ local function iterSpawnedToolModels(folder)
 	return models
 end
 
-local function destroyGunEntry(model)
-	local e = gunByModel[model]
+function gunWatch.destroyEntry(model)
+	local e = gunWatch.byModel[model]
 	if not e then return end
-	gunByModel[model] = nil
-	toolIdCache[model] = nil
+	gunWatch.byModel[model] = nil
+	gunWatch.idCache[model] = nil
 	if e.hOwned ~= false and alive(e.h) then
 		e.h:Destroy()
 	end
@@ -1796,40 +1793,40 @@ local function destroyGunEntry(model)
 	end
 end
 
-local function sweepOrphanGunGui()
+function gunWatch.sweepOrphans()
 	local gui = getGui()
-	local folder = getSpawnedTools()
+	local folder = gunWatch.spawnedFolder()
 	if not gui or not folder then
 		return
 	end
 	for _, ch in ipairs(gui:GetChildren()) do
 		if ch:IsA("Highlight") and ch.Adornee and ch.Adornee:IsA("Model") then
-			if ch.Adornee:IsDescendantOf(folder) and not gunByModel[ch.Adornee] then
+			if ch.Adornee:IsDescendantOf(folder) and not gunWatch.byModel[ch.Adornee] then
 				ch:Destroy()
 			end
 		elseif ch:IsA("BillboardGui") and ch.Adornee and ch.Adornee:IsA("BasePart") then
 			local model = ch.Adornee:FindFirstAncestorOfClass("Model")
-			if model and model:IsDescendantOf(folder) and not gunByModel[model] then
+			if model and model:IsDescendantOf(folder) and not gunWatch.byModel[model] then
 				ch:Destroy()
 			end
 		end
 	end
 end
 
-local function clearGunESP()
-	for model in pairs(gunByModel) do
-		destroyGunEntry(model)
+function gunWatch.clear()
+	for model in pairs(gunWatch.byModel) do
+		gunWatch.destroyEntry(model)
 	end
 	table.clear(ESP.guns)
-	table.clear(gunByModel)
-	sweepOrphanGunGui()
+	table.clear(gunWatch.byModel)
+	gunWatch.sweepOrphans()
 end
 
-local function playGunSpawnFx(entry, fill)
+function gunWatch.playSpawnFx(entry, fill)
 	if not entry or not alive(entry.h) then
 		return
 	end
-	entry.visState = true  -- mark visible so tickESP doesn't re-run fade-in over the fx
+	entry.visState = true
 	entry.h.Enabled = true
 	entry.h.FillColor = fill
 	entry.h.FillTransparency = 1
@@ -1845,22 +1842,20 @@ local function playGunSpawnFx(entry, fill)
 	end
 end
 
-local function addGunESP(model, S, withSpawnFx)
-	if not isSpawnedToolModel(model) or gunByModel[model] then
+function gunWatch.add(model, S, withSpawnFx)
+	if not gunWatch.isModel(model) or gunWatch.byModel[model] then
 		return false
 	end
-	local label, kind = identifySpawnedTool(model)
-	if not shouldShowGun(S, kind) then
+	local label, kind = gunWatch.identify(model)
+	if not gunWatch.shouldShow(S, kind) then
 		return false
 	end
-	local fill = kindColor(kind, S)
+	local fill = gunWatch.kindColor(kind, S)
 	local ok, entry = pcall(makeEntry, model, fill, Color3.fromRGB(255, 255, 255), label, nil)
 	if not ok or not entry then
 		return false
 	end
 	entry.hOwned = true
-	-- Reuse game's Highlight when present (SpawnedTools often ship with one) —
-	-- avoids Roblox's ~31 Highlight cap killing ESP on busy drops.
 	local existingHl = model:FindFirstChildWhichIsA("Highlight")
 	if existingHl then
 		if alive(entry.h) then
@@ -1876,7 +1871,7 @@ local function addGunESP(model, S, withSpawnFx)
 		existingHl.Adornee = model
 		existingHl.Enabled = false
 	end
-	local wh = getGunEspPart(model)
+	local wh = gunWatch.getPart(model)
 	if wh and wh:IsA("BasePart") then
 		entry.part = wh
 		if alive(entry.bg) then entry.bg.Adornee = wh end
@@ -1888,23 +1883,23 @@ local function addGunESP(model, S, withSpawnFx)
 	end
 	entry.kind = kind
 	entry.label = label
-	gunByModel[model] = entry
+	gunWatch.byModel[model] = entry
 	table.insert(ESP.guns, entry)
 	if withSpawnFx then
-		playGunSpawnFx(entry, fill)
+		gunWatch.playSpawnFx(entry, fill)
 	end
 	return true
 end
 
-local function syncGunESP(S)
+function gunWatch.sync(S)
 	if not S.CrimGunESP then
 		if #ESP.guns > 0 then
-			clearGunESP()
+			gunWatch.clear()
 		end
 		return
 	end
 
-	local folder = getSpawnedTools()
+	local folder = gunWatch.spawnedFolder()
 	if not folder then
 		return
 	end
@@ -1912,14 +1907,14 @@ local function syncGunESP(S)
 	for i = #ESP.guns, 1, -1 do
 		local e = ESP.guns[i]
 		local model = e.model
-		local keep = alive(model) and isSpawnedToolModel(model) and isInSpawnedTools(model)
+		local keep = alive(model) and gunWatch.isModel(model) and gunWatch.inFolder(model)
 		if keep then
-			local label, kind = identifySpawnedTool(model)
-			keep = shouldShowGun(S, kind)
+			local label, kind = gunWatch.identify(model)
+			keep = gunWatch.shouldShow(S, kind)
 			if keep and (e.label ~= label or e.kind ~= kind) then
 				e.label = label
 				e.kind = kind
-				local fill = kindColor(kind, S)
+				local fill = gunWatch.kindColor(kind, S)
 				if alive(e.h) then e.h.FillColor = fill end
 				if alive(e.lbl) then e.lbl.Text = label end
 				if alive(e.bg) then
@@ -1928,16 +1923,16 @@ local function syncGunESP(S)
 			end
 		end
 		if not keep then
-			destroyGunEntry(model)
+			gunWatch.destroyEntry(model)
 		end
 	end
 
-	for _, model in ipairs(iterSpawnedToolModels(folder)) do
-		addGunESP(model, S, false)
+	for _, model in ipairs(gunWatch.iterModels(folder)) do
+		gunWatch.add(model, S, false)
 	end
 end
 
-local function bindGunFolder(folder)
+function gunWatch.bindFolder(folder)
 	if gunWatch.folderWatch then
 		gunWatch.folderWatch:Disconnect()
 		gunWatch.folderWatch = nil
@@ -1956,14 +1951,13 @@ local function bindGunFolder(folder)
 				if not curS then
 					return
 				end
-				-- SpawnedTools models often stream empty → wait for parts before ID
 				RS.Heartbeat:Wait()
 				task.wait(0.2)
-				local targets = ch:IsA("Model") and { ch } or iterSpawnedToolModels(ch)
+				local targets = ch:IsA("Model") and { ch } or gunWatch.iterModels(ch)
 				if curS.CrimGunESP then
 					for _, model in ipairs(targets) do
-						toolIdCache[model] = nil
-						local added = addGunESP(model, curS, true)
+						gunWatch.idCache[model] = nil
+						local added = gunWatch.add(model, curS, true)
 						if added then
 							pcall(tickESP, curS)
 						end
@@ -1978,23 +1972,23 @@ local function bindGunFolder(folder)
 	end)
 	gunWatch.removeConn = folder.ChildRemoved:Connect(function(ch)
 		if ch:IsA("Model") then
-			destroyGunEntry(ch)
+			gunWatch.destroyEntry(ch)
 		else
-			for _, model in ipairs(iterSpawnedToolModels(ch)) do
-				destroyGunEntry(model)
+			for _, model in ipairs(gunWatch.iterModels(ch)) do
+				gunWatch.destroyEntry(model)
 			end
 		end
 	end)
 end
 
-local function ensureGunWatch(S)
-	local folder = getSpawnedTools()
+function gunWatch.ensure(S)
+	local folder = gunWatch.spawnedFolder()
 	if folder then
-		bindGunFolder(folder)
+		gunWatch.bindFolder(folder)
 		return
 	end
 
-	local filter = getFilterFolder()
+	local filter = gunWatch.filterFolder()
 	if filter then
 		if not gunWatch.folderWatch then
 			gunWatch.folderWatch = filter.ChildAdded:Connect(function(ch)
@@ -2004,8 +1998,8 @@ local function ensureGunWatch(S)
 				task.defer(function()
 					local curS = _G.__VG_S
 					if curS and curS.CrimGunESP then
-						bindGunFolder(ch)
-						syncGunESP(curS)
+						gunWatch.bindFolder(ch)
+						gunWatch.sync(curS)
 					end
 				end)
 			end)
@@ -2023,8 +2017,8 @@ local function ensureGunWatch(S)
 		task.defer(function()
 			local curS = _G.__VG_S
 			if curS and curS.CrimGunESP then
-				ensureGunWatch(curS)
-				syncGunESP(curS)
+				gunWatch.ensure(curS)
+				gunWatch.sync(curS)
 			end
 		end)
 	end)
@@ -2114,12 +2108,12 @@ local function tickESP(S)
 	local showGun = S.CrimGunESP
 	for _, e in ipairs(ESP.guns) do
 		local vis = false
-		if showGun and alive(e.model) and isInSpawnedTools(e.model) then
-			if not shouldShowGun(S, e.kind or "other") then
+		if showGun and alive(e.model) and gunWatch.inFolder(e.model) then
+			if not gunWatch.shouldShow(S, e.kind or "other") then
 				vis = false
 			else
 			if not alive(e.part) then
-				e.part = getGunEspPart(e.model)
+				e.part = gunWatch.getPart(e.model)
 			end
 			if alive(e.part) then
 				if alive(e.bg) and e.bg.Adornee ~= e.part then
@@ -2765,10 +2759,10 @@ local function shouldFastPickupItem(S, model)
 	if not S.CrimFastPickup then
 		return false
 	end
-	if not isSpawnedToolModel(model) or not alive(model) then
+	if not gunWatch.isModel(model) or not alive(model) then
 		return false
 	end
-	local _, kind = identifySpawnedTool(model)
+	local _, kind = gunWatch.identify(model)
 	if kind == "gun" or kind == "grenade" then
 		return S.CrimFastPickupGuns ~= false
 	end
@@ -2830,9 +2824,9 @@ local function findNearestFastPickup(S)
 	local maxDist = math.clamp(tonumber(S.CrimFastPickupRange) or 6, 2, 15)
 	local best, bestDist = nil, maxDist
 
-	local folder = getSpawnedTools()
+	local folder = gunWatch.spawnedFolder()
 	if folder then
-		for _, model in ipairs(iterSpawnedToolModels(folder)) do
+		for _, model in ipairs(gunWatch.iterModels(folder)) do
 			if shouldFastPickupItem(S, model) then
 				local dist = getToolPickupDist(model)
 				if dist <= maxDist and dist < bestDist then
@@ -2843,7 +2837,7 @@ local function findNearestFastPickup(S)
 							handle = handle,
 							model = model,
 							adornee = getModelPart(model) or handle,
-							kind = select(2, identifySpawnedTool(model)),
+							kind = select(2, gunWatch.identify(model)),
 						}
 					end
 				end
@@ -2893,7 +2887,7 @@ local function tryFastPickup(target)
 	if ok then
 		fastPu.lastAt = now
 		if target.model then
-			destroyGunEntry(target.model)
+			gunWatch.destroyEntry(target.model)
 		end
 		hideFastPickupPrompt()
 	end
@@ -6411,10 +6405,10 @@ local function syncFromConfig(S)
 		pcall(clearDealerESP)
 	end
 	if crimFlag(S.CrimGunESP) then
-		pcall(ensureGunWatch, S)
-		pcall(syncGunESP, S)
+		pcall(gunWatch.ensure, S)
+		pcall(gunWatch.sync, S)
 	elseif #ESP.guns > 0 then
-		pcall(clearGunESP)
+		pcall(gunWatch.clear)
 	end
 end
 
@@ -6540,17 +6534,17 @@ local function startMaster(S)
 		if S.CrimGunESP then
 			if master.frame % 90 == 30 then
 				runHeavy(function()
-					pcall(ensureGunWatch, _G.__VG_S)
+					pcall(gunWatch.ensure, _G.__VG_S)
 				end)
 			end
 			if master.frame % 50 == 35 then
 				ESP.gunScanAt = tick()
 				runHeavy(function()
-					pcall(syncGunESP, _G.__VG_S)
+					pcall(gunWatch.sync, _G.__VG_S)
 				end)
 			end
 		elseif #ESP.guns > 0 then
-			pcall(clearGunESP)
+			pcall(gunWatch.clear)
 		end
 
 		if (S.CrimSafeESP or S.CrimDealerESP) and not espInitTick then
@@ -6603,7 +6597,7 @@ local function startMaster(S)
 				pcall(clearCrateESP)
 			end
 			if not S.CrimGunESP and #ESP.guns > 0 then
-				pcall(clearGunESP)
+				pcall(gunWatch.clear)
 			end
 		end
 		-- rare orphan cleanup
@@ -6656,7 +6650,7 @@ local function stopMaster()
 	crimStamina.active = false
 	door.lastTick = 0
 	clearCrateESP()
-	clearGunESP()
+	gunWatch.clear()
 	clearSafeESP()
 	clearDealerESP()
 	if allow.atm then
@@ -6664,7 +6658,7 @@ local function stopMaster()
 		if alive(allow.atm.bg) then allow.atm.bg:Destroy() end
 		allow.atm = nil
 	end
-	table.clear(toolIdCache)
+	table.clear(gunWatch.idCache)
 end
 
 -- ── INVSEE (manual scan: Backpack + Character / Workspace.Characters) ─────────
@@ -6787,7 +6781,7 @@ function Criminality.Init(S)
 	end
 	S._crimSyncGunESP = function()
 		if crimFlag(S.CrimGunESP) then
-			pcall(syncGunESP, S)
+			pcall(gunWatch.sync, S)
 			pcall(tickESP, S)
 		end
 	end
