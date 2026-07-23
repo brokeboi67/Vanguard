@@ -412,6 +412,99 @@ function Movement.Init(S)
 		end
 	end)
 
+	-- ── Ctrl + Click TP (stepped + retries vs rubberband) ─────────────────────
+
+	local clickTpBusy = false
+	local Players = game:GetService("Players")
+
+	local function doClickTP(worldPos)
+		if clickTpBusy or not worldPos then
+			return
+		end
+		local hrp, char = getHRP()
+		if not hrp then
+			return
+		end
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum and hum.Health <= 0 then
+			return
+		end
+
+		local goal = worldPos + Vector3.new(0, 3.15, 0)
+		local stepSize = math.max(2, tonumber(S.ClickTPStep) or 7)
+		local delay = math.clamp(tonumber(S.ClickTPDelay) or 0.035, 0.01, 0.2)
+		local retries = math.clamp(math.floor(tonumber(S.ClickTPRetries) or 5), 1, 15)
+
+		clickTpBusy = true
+		task.spawn(function()
+			for _ = 1, retries do
+				if not hrp or not hrp.Parent then
+					break
+				end
+				local start = hrp.Position
+				local dist = (goal - start).Magnitude
+				if dist < 3.5 then
+					break
+				end
+				local n = math.max(1, math.ceil(dist / stepSize))
+				local look = hrp.CFrame - hrp.CFrame.Position
+				for i = 1, n do
+					if not hrp.Parent then
+						break
+					end
+					local pos = start:Lerp(goal, i / n)
+					pcall(function()
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						hrp.AssemblyAngularVelocity = Vector3.zero
+						hrp.CFrame = CFrame.new(pos) * look
+					end)
+					task.wait(delay)
+				end
+				task.wait(0.06)
+				if not hrp.Parent then
+					break
+				end
+				if (hrp.Position - goal).Magnitude < 6 then
+					break
+				end
+			end
+			clickTpBusy = false
+		end)
+	end
+
+	UIS.InputBegan:Connect(function(inp, gpe)
+		if gpe or S.MenuOpen then
+			return
+		end
+		if not S.ClickTP then
+			return
+		end
+		if inp.UserInputType ~= Enum.UserInputType.MouseButton1 then
+			return
+		end
+		if not (UIS:IsKeyDown(Enum.KeyCode.LeftControl) or UIS:IsKeyDown(Enum.KeyCode.RightControl)) then
+			return
+		end
+
+		task.defer(function()
+			local mouse = LP:GetMouse()
+			local target = mouse.Target
+			if target then
+				local model = target:FindFirstAncestorOfClass("Model")
+				if model and model:FindFirstChildOfClass("Humanoid") then
+					local plr = Players:GetPlayerFromCharacter(model)
+					if plr and plr ~= LP then
+						return -- FriendClick owns player targets
+					end
+				end
+			end
+			local hit = mouse.Hit
+			if hit then
+				doClickTP(hit.Position)
+			end
+		end)
+	end)
+
 	-- ── CharacterAdded — re-apply persistent states ──────────────────────────
 
 	LP.CharacterAdded:Connect(function(_char)

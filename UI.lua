@@ -5112,29 +5112,49 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		fmt = function(v) return string.format("%d", v) end,
 	})
 	MakeTog(MMove, "Noclip", "Noclip", 9, { flat = true })
-	MakeTog(MMove, "Spider", "Spider", 10, { flat = true })
-	MakeTog(MMove, "Spider Stealth", "SpiderStealth", 11, {
+	MakeTog(MMove, "Ctrl + Click TP", "ClickTP", 10, { flat = true })
+	MakeSlider(MMove, "Click TP Step", "ClickTPStep", 3, 20, 11, {
+		suffix = " st",
+		step = 1,
+		fmt = function(v) return string.format("%d st", v) end,
+		requires = "ClickTP",
+	})
+	MakeSlider(MMove, "Click TP Delay", "ClickTPDelay", 0.015, 0.1, 12, {
+		suffix = "s",
+		step = 0.005,
+		fmt = function(v) return string.format("%.3fs", v) end,
+		requires = "ClickTP",
+	})
+	MakeSlider(MMove, "Click TP Retries", "ClickTPRetries", 1, 12, 13, {
+		suffix = "",
+		step = 1,
+		fmt = function(v) return string.format("%d", v) end,
+		requires = "ClickTP",
+	})
+	MakeHint(MMove, "hint_clicktp", 14)
+	MakeTog(MMove, "Spider", "Spider", 15, { flat = true })
+	MakeTog(MMove, "Spider Stealth", "SpiderStealth", 16, {
 		flat = true,
 		requires = "Spider",
 	})
-	MakeSlider(MMove, "Spider Climb Speed", "SpiderSpeed", 8, 24, 12, {
+	MakeSlider(MMove, "Spider Climb Speed", "SpiderSpeed", 8, 24, 17, {
 		suffix = "",
 		step = 1,
 		fmt = function(v) return string.format("%d", v) end,
 	})
-	MakeSlider(MMove, "Spider Burst Height", "SpiderBurstHeight", 3, 14, 13, {
+	MakeSlider(MMove, "Spider Burst Height", "SpiderBurstHeight", 3, 14, 18, {
 		suffix = " st",
 		step = 1,
 		fmt = function(v) return string.format("%d st", v) end,
 	})
-	MakeSlider(MMove, "Spider Cooldown", "SpiderCooldown", 0.6, 4, 14, {
+	MakeSlider(MMove, "Spider Cooldown", "SpiderCooldown", 0.6, 4, 19, {
 		suffix = "s",
 		step = 0.1,
 		fmt = function(v) return string.format("%.1fs", v) end,
 	})
-	MakeHint(MMove, "hint_spider", 15)
-	MakeTog(MMove, "Infinite Stamina", "InfStamina", 16, { flat = true })
-	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 17, { flat = true })
+	MakeHint(MMove, "hint_spider", 20)
+	MakeTog(MMove, "Infinite Stamina", "InfStamina", 21, { flat = true })
+	MakeTog(MMove, "No Fall Damage", "NoFallDmg", 22, { flat = true })
 
 	local MHit = MakeCard(TM, "HITBOX EXPANDER", "card_mhit_desc", 2)
 	MakeTog(MHit, "Head Size", "HeadSize", 1, { flat = true })

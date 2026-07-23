@@ -379,6 +379,18 @@ function Config.EnforceRules(S)
 	if S.SpiderCooldown == nil then
 		S.SpiderCooldown = 1.4
 	end
+	if S.ClickTP == nil then
+		S.ClickTP = false
+	end
+	if S.ClickTPStep == nil then
+		S.ClickTPStep = 7
+	end
+	if S.ClickTPDelay == nil then
+		S.ClickTPDelay = 0.035
+	end
+	if S.ClickTPRetries == nil then
+		S.ClickTPRetries = 5
+	end
 	if S.Invisibility == nil then
 		S.Invisibility = false
 	end

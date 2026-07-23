@@ -18,8 +18,10 @@ local wb = {
 	targetUserId = 0,
 	parts = {}, -- [part] = { canCollide, canQuery, transparency }
 	order = {},
+	walkSolid = {}, -- punched parts currently solid under feet
 	liveConn = nil,
 	keyConn = nil,
+	walkConn = nil,
 	beam = nil,
 	settings = nil,
 }
@@ -389,7 +391,140 @@ local function wbCollectUnderFeet(char)
 			end
 		end
 	end
+
+	-- Punched parts have CanQuery=false (rays miss them) — still skip if under feet
+	if next(wb.parts) and hrp then
+		pcall(function()
+			local list = {}
+			for p in pairs(wb.parts) do
+				if p and p.Parent then
+					table.insert(list, p)
+				end
+			end
+			if #list == 0 then
+				return
+			end
+			local op = OverlapParams.new()
+			op.FilterType = Enum.RaycastFilterType.Include
+			op.FilterDescendantsInstances = list
+			local box = workspace:GetPartBoundsInBox(hrp.CFrame * CFrame.new(0, -2.6, 0), Vector3.new(5, 6, 5), op)
+			for _, p in ipairs(box) do
+				mark(p)
+			end
+		end)
+	end
 	return skip
+end
+
+-- Re-solid punched corridor parts while standing on them (walkable floor)
+local function wbClearWalkSolid()
+	for part in pairs(wb.walkSolid) do
+		local e = wb.parts[part]
+		if e and part and part.Parent then
+			pcall(function()
+				part.CanCollide = false
+				part.CanQuery = false
+			end)
+		end
+	end
+	table.clear(wb.walkSolid)
+end
+
+local function wbPunchedUnderFeet(char)
+	local under = {}
+	if not char or not next(wb.parts) then
+		return under
+	end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return under
+	end
+	pcall(function()
+		local list = {}
+		for p in pairs(wb.parts) do
+			if p and p.Parent then
+				table.insert(list, p)
+			end
+		end
+		if #list == 0 then
+			return
+		end
+		local op = OverlapParams.new()
+		op.FilterType = Enum.RaycastFilterType.Include
+		op.FilterDescendantsInstances = list
+		local box = workspace:GetPartBoundsInBox(hrp.CFrame * CFrame.new(0, -2.4, 0), Vector3.new(5.5, 5.5, 5.5), op)
+		for _, p in ipairs(box) do
+			if wb.parts[p] then
+				under[p] = true
+			end
+		end
+	end)
+	return under
+end
+
+local function wbSyncWalkable()
+	local me = lp()
+	local char = me and me.Character
+	if not char or not next(wb.parts) then
+		wbClearWalkSolid()
+		return
+	end
+	local under = wbPunchedUnderFeet(char)
+	for part in pairs(wb.walkSolid) do
+		if not under[part] then
+			local e = wb.parts[part]
+			if e and part and part.Parent then
+				pcall(function()
+					part.CanCollide = false
+					part.CanQuery = false
+				end)
+			end
+			wb.walkSolid[part] = nil
+		end
+	end
+	for part in pairs(under) do
+		if not wb.walkSolid[part] then
+			if part and part.Parent and wb.parts[part] then
+				pcall(function()
+					part.CanCollide = true
+					-- keep CanQuery false so wallbang rays still pass
+				end)
+				wb.walkSolid[part] = true
+			end
+		elseif part and part.Parent then
+			-- keep solid if something else flipped CanCollide
+			pcall(function()
+				if not part.CanCollide then
+					part.CanCollide = true
+				end
+			end)
+		end
+	end
+end
+
+local function wbEnsureWalkableLoop()
+	if wb.walkConn then
+		return
+	end
+	wb.walkConn = RS.Heartbeat:Connect(function()
+		if not next(wb.parts) then
+			wbClearWalkSolid()
+			if wb.walkConn then
+				wb.walkConn:Disconnect()
+				wb.walkConn = nil
+			end
+			return
+		end
+		wbSyncWalkable()
+	end)
+end
+
+local function wbStopWalkable()
+	wbClearWalkSolid()
+	if wb.walkConn then
+		wb.walkConn:Disconnect()
+		wb.walkConn = nil
+	end
 end
 
 local function wbPunchPart(part, feetSkip)
@@ -413,6 +548,7 @@ local function wbPunchPart(part, feetSkip)
 			part.Transparency = 0.35
 		end
 	end)
+	wbEnsureWalkableLoop()
 	return true
 end
 
@@ -513,6 +649,7 @@ local function wbApplyLine()
 end
 
 function ClientBuild.WallbangRestore()
+	wbStopWalkable()
 	for _, part in ipairs(wb.order) do
 		local e = wb.parts[part]
 		if e and part and part.Parent then
@@ -525,6 +662,7 @@ function ClientBuild.WallbangRestore()
 	end
 	table.clear(wb.parts)
 	table.clear(wb.order)
+	table.clear(wb.walkSolid)
 	wbClearBeam()
 	notify("Wallbang", "Przywrócono ściany")
 end
@@ -811,6 +949,7 @@ function ClientBuild.Stop()
 	stopMode()
 	wbStopLive()
 	wbStopKey()
+	wbStopWalkable()
 end
 
 function ClientBuild.Init(S)

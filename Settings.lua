@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.61.3",
+	Version = "2.62.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -149,6 +149,11 @@ local Settings = {
 	Noclip = false,
 	InfStamina = false,
 	NoFallDmg = false,
+	-- Ctrl+Click world TP (stepped + retries vs setback)
+	ClickTP = false,
+	ClickTPStep = 7,
+	ClickTPDelay = 0.035,
+	ClickTPRetries = 5,
 	-- R6 anim-desync invis (local ghost + "YOU ARE VISIBLE" when airborne)
 	Invisibility = false,
 	InvisShowWarning = true,
