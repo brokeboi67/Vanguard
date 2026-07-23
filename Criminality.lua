@@ -1460,6 +1460,7 @@ local function styleRebelDealerEntry(entry, fill)
 		return
 	end
 	entry.rebel = true
+	entry.stockHit = false
 	if alive(entry.h) then
 		entry.h.FillTransparency = 0.35
 		entry.h.OutlineTransparency = 0
@@ -1482,6 +1483,40 @@ local function styleRebelDealerEntry(entry, fill)
 	if alive(entry.lbl) then
 		entry.lbl.TextColor3 = Color3.fromRGB(255, 210, 90)
 		entry.lbl.TextSize = 12
+	end
+end
+
+-- Restore makeEntry defaults after stock-match / rebel styling
+local function styleNormalDealerEntry(entry, fill, labelText)
+	if not entry then
+		return
+	end
+	entry.rebel = false
+	entry.stockHit = false
+	local txt = tostring(labelText or entry.baseLabel or "DEALER")
+	if alive(entry.h) then
+		entry.h.FillTransparency = 0.55
+		entry.h.OutlineTransparency = 0
+		entry.h.FillColor = fill
+		entry.h.OutlineColor = Color3.fromRGB(255, 255, 255)
+	end
+	if alive(entry.bg) then
+		entry.bg.Size = UDim2.new(0, math.clamp(#txt * 7 + 22, 58, 130), 0, 20)
+		entry.bg.StudsOffset = Vector3.new(0, 4, 0)
+	end
+	if alive(entry.pill) then
+		entry.pill.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+		entry.pill.BackgroundTransparency = 0.25
+	end
+	if entry.stroke and entry.stroke.Parent then
+		entry.stroke.Color = fill
+		entry.stroke.Thickness = 1
+		entry.stroke.Transparency = 0.35
+	end
+	if alive(entry.lbl) then
+		entry.lbl.Text = txt
+		entry.lbl.TextColor3 = Color3.fromRGB(240, 240, 245)
+		entry.lbl.TextSize = 10
 	end
 end
 
@@ -1539,7 +1574,7 @@ local function refreshDealerStockLabels(S)
 				end
 				local prefix = isRebel and "\u{2605} REBEL" or "DEALER"
 				local txt = prefix .. " · " .. show
-				if alive(e.lbl) and e.lbl.Text ~= txt then
+				if alive(e.lbl) then
 					e.lbl.Text = txt
 				end
 				if alive(e.bg) then
@@ -1548,30 +1583,25 @@ local function refreshDealerStockLabels(S)
 				styleStockMatchEntry(e, stockColor)
 			else
 				e.stockMatch = nil
-				if alive(e.lbl) then
-					e.lbl.Text = baseLabel
-					e.lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-					e.lbl.TextSize = 11
-				end
-				if alive(e.h) then
-					e.h.FillColor = color
-					e.h.OutlineColor = isRebel and Color3.fromRGB(255, 230, 120) or Color3.fromRGB(255, 255, 255)
-					e.h.FillTransparency = 0.55
-				end
 				if isRebel then
+					if alive(e.lbl) then
+						e.lbl.Text = baseLabel
+					end
 					styleRebelDealerEntry(e, color)
+				else
+					styleNormalDealerEntry(e, color, baseLabel)
 				end
 			end
 		else
+			-- Empty filter: always restore original dealer ESP look
 			e.stockMatch = nil
-			if alive(e.lbl) and e.lbl.Text ~= baseLabel then
-				e.lbl.Text = baseLabel
-			end
 			if isRebel then
+				if alive(e.lbl) then
+					e.lbl.Text = baseLabel
+				end
 				styleRebelDealerEntry(e, color)
-			elseif alive(e.h) then
-				e.h.FillColor = color
-				e.h.OutlineColor = Color3.fromRGB(255, 255, 255)
+			else
+				styleNormalDealerEntry(e, color, baseLabel)
 			end
 		end
 	end
