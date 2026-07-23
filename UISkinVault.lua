@@ -61,6 +61,10 @@ local MELEE_NAMES = {
 	Bat = true, Machete = true, Axe = true, Bowie = true,
 	Karambit = true, Kukri = true, Cleaver = true, Tactical = true,
 	Shiv = true, Pipe = true, Hammer = true,
+	-- Crim melee tools (exact ItemStats / skin catalog names)
+	Balisong = true, BBaton = true, ["Fire-Axe"] = true,
+	Golfclub = true, Sledgehammer = true, Taiga = true,
+	["Metal-Bat"] = true, Shovel = true,
 }
 
 local function isMeleeWeapon(name)
@@ -71,6 +75,17 @@ local function isMeleeWeapon(name)
 	return string.find(lower, "knife", 1, true)
 		or string.find(lower, "blade", 1, true)
 		or string.find(lower, "sword", 1, true)
+		or string.find(lower, "baton", 1, true)
+		or string.find(lower, "balisong", 1, true)
+		or string.find(lower, "fire-axe", 1, true)
+		or string.find(lower, "fireaxe", 1, true)
+		or string.find(lower, "golfclub", 1, true)
+		or string.find(lower, "sledge", 1, true)
+		or string.find(lower, "taiga", 1, true)
+		or string.find(lower, "shovel", 1, true)
+		or string.find(lower, "machete", 1, true)
+		or string.find(lower, "katana", 1, true)
+		or string.find(lower, "chainsaw", 1, true)
 end
 
 local function contentToImage(val)

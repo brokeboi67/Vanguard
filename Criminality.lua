@@ -5267,7 +5267,8 @@ function misc.skinChanger.meshVariantToSkinKey(meshVar)
 	local meleeSlugs = {
 		bat = true, katana = true, rambo = true, chainsaw = true, machete = true,
 		balisong = true, bayonet = true, metalbat = true, shiv = true, wrench = true,
-		fireaxe = true, sledgehammer = true, golfclub = true,
+		fireaxe = true, sledgehammer = true, golfclub = true, bbaton = true,
+		taiga = true, shovel = true, crowbar = true, club = true, hammer = true,
 	}
 	local us = string.find(meshVar, "_", 1, true)
 	local slug = us and string.lower(string.sub(meshVar, 1, us - 1)) or string.lower(meshVar)
