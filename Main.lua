@@ -902,6 +902,7 @@ pcall(function()
 end)
 
 local Config = Get("Config.lua")
+_G.__VG_CONFIG = Config
 pcall(function()
 	Config.Autoload(Settings)
 end)

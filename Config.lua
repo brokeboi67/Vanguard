@@ -28,6 +28,10 @@ local GLOBAL_KEYS = {
 	CrimMenuMusic = true,
 	CrimMenuMusicTrack = true,
 	MusicGlobalPersist = true,
+	MusicLoop = true,
+	MusicAutoQueue = true,
+	MusicVolume = true,
+	ShowMusicWidget = true,
 	CrimSkipMenuIntro = true,
 }
 

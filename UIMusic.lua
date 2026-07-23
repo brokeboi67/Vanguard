@@ -1670,7 +1670,13 @@ function UIMusic.build(env)
 			end
 		end,
 	})
-	makeCompactTog(TogRow, L("music_auto_next_short"), "MusicAutoQueue", 2)
+	makeCompactTog(TogRow, L("music_auto_next_short"), "MusicAutoQueue", 2, {
+		onChange = function(on)
+			if Music and Music.SetAutoQueue then
+				Music.SetAutoQueue(on)
+			end
+		end,
+	})
 	makeCompactTog(TogRow, L("music_mini_short"), "ShowMusicWidget", 3, {
 		onChange = function()
 			if UIMusic._refreshWidget then

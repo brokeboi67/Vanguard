@@ -71,6 +71,20 @@ function Music.Init(S, I18nModule)
 		return S.MusicGlobalPersist == true
 	end
 
+	local function persistMusicPrefs()
+		pcall(function()
+			local cfg = rawget(_G, "__VG_CONFIG")
+			if cfg and typeof(cfg.SaveGlobals) == "function" then
+				cfg.SaveGlobals(S)
+			end
+		end)
+		if musicPersistEnabled() then
+			task.defer(function()
+				pcall(Music.SaveTransferState)
+			end)
+		end
+	end
+
 	local function ensureVanguardFolder()
 		if typeof(makefolder) == "function" then
 			pcall(makefolder, "Vanguard")
@@ -1646,7 +1660,8 @@ function Music.Init(S, I18nModule)
 		if currentItem then
 			normalizePlayItem(currentItem)
 		end
-		if #qOut == 0 and not currentItem then
+		-- Prefer saving even when idle so Loop / Auto-next / volume survive game hops
+		if #qOut == 0 and not currentItem and not musicPersistEnabled() then
 			return nil
 		end
 		return {
@@ -2072,6 +2087,7 @@ function Music.Init(S, I18nModule)
 			position = pos,
 			duration = dur,
 			volume = S.MusicVolume or 0.65,
+			loop = S.MusicLoop == true,
 			error = lastError,
 			hasTrack = nowPlaying ~= nil or (paused and pausedSession ~= nil),
 			queueIndex = qIdx,
@@ -2089,6 +2105,7 @@ function Music.Init(S, I18nModule)
 			currentSound.Volume = S.MusicVolume
 		end
 		notifyState()
+		persistMusicPrefs()
 	end
 
 	function Music.GetVolumeMax()
@@ -2109,6 +2126,7 @@ function Music.Init(S, I18nModule)
 				Music.ClearTransferState()
 			end)
 		end
+		persistMusicPrefs()
 	end
 
 	function Music.GetQueue()
@@ -2226,6 +2244,13 @@ function Music.Init(S, I18nModule)
 			currentSound.Looped = S.MusicLoop
 		end
 		notifyState()
+		persistMusicPrefs()
+	end
+
+	function Music.SetAutoQueue(on)
+		S.MusicAutoQueue = on ~= false
+		notifyState()
+		persistMusicPrefs()
 	end
 
 	function Music.Seek(seconds)
@@ -3335,7 +3360,11 @@ function Music.Init(S, I18nModule)
 		local applied = false
 		local vol = tonumber(data.volume)
 		if vol then
-			Music.SetVolume(vol)
+			-- Don't call SetVolume here — it would SaveTransferState and wipe queue mid-restore
+			S.MusicVolume = math.clamp(vol, 0, 3)
+			if currentSound then
+				currentSound.Volume = S.MusicVolume
+			end
 			applied = true
 		end
 		if data.loop ~= nil then
@@ -3360,6 +3389,16 @@ function Music.Init(S, I18nModule)
 			S.MusicWidgetPosYScale = tonumber(wp.yScale) or 1
 			S.MusicWidgetPosYOffset = tonumber(wp.yOffset) or -90
 			applied = true
+		end
+		if applied then
+			-- Mirror into globals so Autoload/config can't wipe Loop after transfer
+			pcall(function()
+				local cfg = rawget(_G, "__VG_CONFIG")
+				if cfg and typeof(cfg.SaveGlobals) == "function" then
+					cfg.SaveGlobals(S)
+				end
+			end)
+			notifyState()
 		end
 		return applied
 	end
@@ -3485,9 +3524,8 @@ function Music.Init(S, I18nModule)
 			return
 		end
 		transferHeartbeatAt = os.clock()
-		if #queue > 0 or nowPlaying or pausedSession or (paused and currentSound) then
-			Music.SaveTransferState()
-		end
+		-- Always snapshot while persist is on (prefs-only OK) so Loop survives hops
+		Music.SaveTransferState()
 	end))
 
 	local TeleportService = game:GetService("TeleportService")
@@ -3614,11 +3652,24 @@ function Music.Init(S, I18nModule)
 				charConn:Disconnect()
 				charConn = nil
 			end
-		end)
-		_G.VANGUARD.registerCleanup(function()
 			Music.Stop()
 		end)
 	end
+
+	-- After config autoload, keep Loop on the active Sound
+	pcall(function()
+		local cfg = rawget(_G, "__VG_CONFIG")
+		if cfg and typeof(cfg.RegisterApplyHook) == "function" then
+			cfg.RegisterApplyHook(S, function()
+				if currentSound then
+					pcall(function()
+						currentSound.Looped = S.MusicLoop == true
+						currentSound.Volume = S.MusicVolume or 0.65
+					end)
+				end
+			end)
+		end
+	end)
 end
 
 return Music
