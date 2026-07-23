@@ -5017,7 +5017,84 @@ function misc.skinChanger.isMeleeRoot(root)
 	return tool ~= nil and tool:FindFirstChild("Melee") ~= nil
 end
 
--- Prefer real RepPBR SurfaceAppearance when catalog label matches (best UVs).
+-- Crim melee visual = XxxMesh under WeaponHandle (RamboMesh / BayonetMesh), not the handle part itself.
+function misc.skinChanger.isMeleeSkinTarget(inst)
+	if not inst then
+		return false
+	end
+	local n = string.lower(inst.Name)
+	if string.find(n, "mesh", 1, true) then
+		return true
+	end
+	if inst:IsA("SpecialMesh") or inst:IsA("FileMesh") then
+		return true
+	end
+	return false
+end
+
+function misc.skinChanger.collectMeleeMeshParts(root)
+	local targets = {}
+	if not root then
+		return targets
+	end
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) and misc.skinChanger.isMeleeSkinTarget(d) then
+			targets[#targets + 1] = d
+		end
+	end
+	if #targets == 0 then
+		for _, d in ipairs(root:GetDescendants()) do
+			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+				targets[#targets + 1] = d
+			end
+		end
+	end
+	return targets
+end
+
+function misc.skinChanger.getCasePBR()
+	local storage = RepSt:FindFirstChild("Storage")
+	local cos = storage and storage:FindFirstChild("CosmeticsStuff")
+	return cos and cos:FindFirstChild("CasePBRs")
+end
+
+function misc.skinChanger.findSaByGunLabel(folder, gunName, label)
+	if not folder or not gunName or not label then
+		return nil
+	end
+	local labelL = string.lower(label)
+	local labelC = string.gsub(labelL, "%s+", "")
+	local gunL = string.lower(gunName)
+	local gunBase = gunL
+	if string.sub(gunBase, -2) == "-1" then
+		gunBase = string.sub(gunBase, 1, #gunBase - 2)
+	end
+	local fuzzy = nil
+	for _, ch in ipairs(folder:GetChildren()) do
+		if ch:IsA("SurfaceAppearance") then
+			local nm = ch.Name
+			local us = string.find(nm, "_", 1, true)
+			if us and us > 1 then
+				local g = string.lower(string.sub(nm, 1, us - 1))
+				local skin = string.sub(nm, us + 1)
+				local skinL = string.lower(skin)
+				local skinC = string.gsub(skinL, "%s+", "")
+				local gunOk = g == gunL or g == gunBase or g == gunBase .. "-1"
+				if gunOk then
+					if skinL == labelL or skinC == labelC then
+						return ch
+					end
+					if not fuzzy and (string.find(skinL, labelL, 1, true) or string.find(labelL, skinL, 1, true)) then
+						fuzzy = ch
+					end
+				end
+			end
+		end
+	end
+	return fuzzy
+end
+
+-- Prefer real RepPBR / CasePBRs SurfaceAppearance when catalog label matches (correct UVs).
 function misc.skinChanger.resolveRepForTexKey(gunName, skinKey)
 	if not gunName or not misc.skinChanger.isTexSkinKey(skinKey) then
 		return nil
@@ -5042,10 +5119,17 @@ function misc.skinChanger.resolveRepForTexKey(gunName, skinKey)
 		if tmpl then
 			return tmpl
 		end
-		local folder = misc.skinChanger.getRepPBR()
-		local direct = folder and folder:FindFirstChild(name)
-		if direct and direct:IsA("SurfaceAppearance") then
-			return direct
+		for _, folder in ipairs({ misc.skinChanger.getRepPBR(), misc.skinChanger.getCasePBR() }) do
+			local direct = folder and folder:FindFirstChild(name)
+			if direct and direct:IsA("SurfaceAppearance") then
+				return direct
+			end
+		end
+	end
+	for _, folder in ipairs({ misc.skinChanger.getRepPBR(), misc.skinChanger.getCasePBR() }) do
+		local hit = misc.skinChanger.findSaByGunLabel(folder, gunName, label)
+		if hit then
+			return hit
 		end
 	end
 	return nil
@@ -5061,30 +5145,45 @@ function misc.skinChanger.applyTextureToInstance(root, texId, quiet)
 	local melee = misc.skinChanger.isMeleeRoot(root)
 	local n, patched = 0, 0
 
-	for _, d in ipairs(root:GetDescendants()) do
-		-- Crim melee: WeaponHandle + XxxMesh — skins are classic MeshPart/SpecialMesh TextureID
-		-- (SA ColorMap stretches UVs on some skins like Damascus). Guns keep SA ColorMap.
-		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
-			if melee then
-				local cur = misc.skinChanger.contentId(d.TextureID)
-				local want = misc.skinChanger.contentId(idStr)
-				local hasSa = d:FindFirstChildOfClass("SurfaceAppearance") ~= nil
-				if cur == want and not hasSa then
-					n = n + 1
-				else
-					pcall(function()
-						for _, ch in ipairs(d:GetChildren()) do
-							if ch:IsA("SurfaceAppearance") then
-								ch:Destroy()
-							end
+	if melee then
+		-- Only XxxMesh (BayonetMesh / RamboMesh). Painting WeaponHandle with the same
+		-- TextureID destroys blade UVs (handle OK / blade barcode — classic mismatch).
+		for _, d in ipairs(misc.skinChanger.collectMeleeMeshParts(root)) do
+			local cur = misc.skinChanger.contentId(d.TextureID)
+			local want = misc.skinChanger.contentId(idStr)
+			local hasSa = d:FindFirstChildOfClass("SurfaceAppearance") ~= nil
+			if cur == want and not hasSa then
+				n = n + 1
+			else
+				pcall(function()
+					for _, ch in ipairs(d:GetChildren()) do
+						if ch:IsA("SurfaceAppearance") then
+							ch:Destroy()
 						end
-						d.TextureID = idStr
-						d:SetAttribute("VG_TexSkin", tostring(texId))
+					end
+					d.TextureID = idStr
+					d:SetAttribute("VG_TexSkin", tostring(texId))
+				end)
+				patched = patched + 1
+				n = n + 1
+			end
+		end
+		for _, d in ipairs(root:GetDescendants()) do
+			if (d:IsA("SpecialMesh") or d:IsA("FileMesh")) and misc.skinChanger.isMeleeSkinTarget(d) then
+				local cur = misc.skinChanger.contentId(d.TextureId)
+				local want = misc.skinChanger.contentId(idStr)
+				if cur ~= want then
+					pcall(function()
+						d.TextureId = idStr
 					end)
 					patched = patched + 1
-					n = n + 1
 				end
-			else
+				n = n + 1
+			end
+		end
+	else
+		for _, d in ipairs(root:GetDescendants()) do
+			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
 				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
 				local okMap = false
 				if sa and sa.Name == saName then
@@ -5110,37 +5209,6 @@ function misc.skinChanger.applyTextureToInstance(root, texId, quiet)
 					patched = patched + 1
 					n = n + 1
 				end
-			end
-		elseif d:IsA("BasePart") and not d:IsA("MeshPart") and not d:IsA("Terrain") then
-			-- WeaponHandle + SpecialMesh / FileMesh (RamboMesh sometimes)
-			for _, ch in ipairs(d:GetChildren()) do
-				if ch:IsA("SpecialMesh") or ch:IsA("FileMesh") then
-					local cur = misc.skinChanger.contentId(ch.TextureId)
-					local want = misc.skinChanger.contentId(idStr)
-					if cur ~= want then
-						pcall(function()
-							ch.TextureId = idStr
-						end)
-						patched = patched + 1
-					end
-					n = n + 1
-				end
-			end
-		end
-	end
-	-- Also texture Mesh objects nested under WeaponHandle named *Mesh (SpecialMesh on MeshPart parent edge cases)
-	for _, d in ipairs(root:GetDescendants()) do
-		if (d:IsA("SpecialMesh") or d:IsA("FileMesh")) and d.Parent and d.Parent:IsA("MeshPart") then
-			-- MeshPart already handled above; skip
-		elseif d:IsA("SpecialMesh") or d:IsA("FileMesh") then
-			local cur = misc.skinChanger.contentId(d.TextureId)
-			local want = misc.skinChanger.contentId(idStr)
-			if cur ~= want then
-				pcall(function()
-					d.TextureId = idStr
-				end)
-				patched = patched + 1
-				n = n + 1
 			end
 		end
 	end
@@ -5598,41 +5666,47 @@ function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 	end
 	misc.skinChanger.captureDefaults(root)
 	local n, patched, skipped = 0, 0, 0
-	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("MeshPart") then
-			if misc.skinChanger.shouldSkinMesh(d) then
-				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
-				-- Name match = already applied — never rewrite maps (avoids asset refetch lag)
-				if sa and sa.Name == template.Name then
-					n = n + 1
-				elseif not sa then
-					sa = template:Clone()
-					sa.Parent = d
-					patched = patched + 1
-					n = n + 1
-					if not quiet then
-						misc.skinChanger.log(string.format("CLONE SA '%s' → %s", template.Name, d.Name))
-					end
-				else
-					-- Replace wrong skin: destroy + clone is faster/cleaner than rewriting 4 maps
-					pcall(function()
-						sa:Destroy()
-					end)
-					local neo = template:Clone()
-					neo.Parent = d
-					patched = patched + 1
-					n = n + 1
-				end
-				pcall(function()
-					if d.TextureID and d.TextureID ~= "" then
-						d:SetAttribute("VG_PrevTex", d.TextureID)
-						d.TextureID = ""
-					end
-				end)
-			else
-				skipped = skipped + 1
+	local melee = misc.skinChanger.isMeleeRoot(root)
+	local list
+	if melee then
+		list = misc.skinChanger.collectMeleeMeshParts(root)
+	else
+		list = {}
+		for _, d in ipairs(root:GetDescendants()) do
+			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+				list[#list + 1] = d
 			end
 		end
+	end
+	for _, d in ipairs(list) do
+		local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+		-- Name match = already applied — never rewrite maps (avoids asset refetch lag)
+		if sa and sa.Name == template.Name then
+			n = n + 1
+		elseif not sa then
+			sa = template:Clone()
+			sa.Parent = d
+			patched = patched + 1
+			n = n + 1
+			if not quiet then
+				misc.skinChanger.log(string.format("CLONE SA '%s' → %s", template.Name, d.Name))
+			end
+		else
+			-- Replace wrong skin: destroy + clone is faster/cleaner than rewriting 4 maps
+			pcall(function()
+				sa:Destroy()
+			end)
+			local neo = template:Clone()
+			neo.Parent = d
+			patched = patched + 1
+			n = n + 1
+		end
+		pcall(function()
+			if d.TextureID and d.TextureID ~= "" then
+				d:SetAttribute("VG_PrevTex", d.TextureID)
+				d.TextureID = ""
+			end
+		end)
 	end
 	if not quiet and patched > 0 then
 		misc.skinChanger.log(string.format("applyTemplate root=%s ok=%d patched=%d skip=%d tmpl=%s", root.Name, n, patched, skipped, template.Name))
