@@ -2517,6 +2517,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			{ key = "esp", labelKey = "crim_tab_esp" },
 			{ key = "path", labelKey = "crim_tab_path" },
 			{ key = "bounty", labelKey = "crim_tab_bounty" },
+			{ key = "invsee", labelKey = "crim_tab_invsee" },
 			{ key = "visual", labelKey = "crim_tab_visual" },
 			{ key = "skins", labelKey = "crim_tab_skins" },
 			{ key = "utility", labelKey = "crim_tab_utility" },
@@ -2632,6 +2633,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CESP = CP.esp
 		local CPath = CP.path
 		local CBounty = CP.bounty
+		local CInv = CP.invsee
 		local CVIS = CP.visual
 		local CSkins = CP.skins
 		local CUtil = CP.utility
@@ -3356,6 +3358,251 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		_G.__VG_BountyList = BountyList
 		_G.__VG_BountyHeader = BountyHeader
+
+		-- ── Invsee (manual refresh) ───────────────────────────────────────────
+		MakeHint(CInv, "hint_crim_invsee", 1)
+		local InvRow = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundTransparency = 1,
+			LayoutOrder = 2,
+			ZIndex = 5,
+			Parent = CInv,
+		})
+		local InvSearch = C("TextBox", {
+			Size = UDim2.new(1, -88, 1, 0),
+			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+			BorderSizePixel = 0,
+			Text = "",
+			PlaceholderText = "Search player or item…",
+			ClearTextOnFocus = false,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 220, 230),
+			PlaceholderColor3 = Color3.fromRGB(100, 100, 112),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = InvRow,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = InvSearch })
+		C("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = InvSearch })
+		local InvBtn = C("TextButton", {
+			Size = UDim2.new(0, 80, 1, 0),
+			Position = UDim2.new(1, -80, 0, 0),
+			BackgroundColor3 = Color3.fromRGB(36, 42, 58),
+			Text = L("btn_crim_invsee_refresh"),
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 225, 240),
+			AutoButtonColor = false,
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = InvRow,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = InvBtn })
+		if I18n and I18n.registerText then
+			I18n.registerText(InvBtn, "btn_crim_invsee_refresh")
+		end
+
+		local InvStatus = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 18),
+			BackgroundTransparency = 1,
+			Text = L("crim_invsee_idle"),
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(140, 145, 160),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 3,
+			ZIndex = 5,
+			Parent = CInv,
+		})
+
+		local InvBox = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 380),
+			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
+			BorderSizePixel = 0,
+			LayoutOrder = 4,
+			ZIndex = 5,
+			Parent = CInv,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = InvBox })
+		C("UIStroke", { Color = Color3.fromRGB(34, 34, 44), Thickness = 1, Transparency = 0.35, Parent = InvBox })
+
+		local InvList = C("ScrollingFrame", {
+			Size = UDim2.new(1, -8, 1, -8),
+			Position = UDim2.new(0, 4, 0, 4),
+			BackgroundTransparency = 1,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			BorderSizePixel = 0,
+			ZIndex = 6,
+			Parent = InvBox,
+		})
+		C("UIListLayout", {
+			Padding = UDim.new(0, 6),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Parent = InvList,
+		})
+		C("UIPadding", {
+			PaddingTop = UDim.new(0, 4),
+			PaddingBottom = UDim.new(0, 4),
+			PaddingLeft = UDim.new(0, 4),
+			PaddingRight = UDim.new(0, 4),
+			Parent = InvList,
+		})
+
+		local invCache = {}
+		local invFilter = ""
+
+		local function clearInvList()
+			for _, ch in ipairs(InvList:GetChildren()) do
+				if ch:IsA("Frame") or ch:IsA("TextLabel") then
+					ch:Destroy()
+				end
+			end
+		end
+
+		local function renderInvList()
+			clearInvList()
+			local q = string.lower(invFilter or "")
+			local shownPlayers, shownTools = 0, 0
+			local order = 0
+			for _, row in ipairs(invCache) do
+				local nameL = string.lower(row.name or "")
+				local dispL = string.lower(row.display or "")
+				local tools = row.tools or {}
+				local nameHit = q == "" or string.find(nameL, q, 1, true) or string.find(dispL, q, 1, true)
+				local matchedTools = {}
+				if nameHit then
+					matchedTools = tools
+				else
+					for _, t in ipairs(tools) do
+						if string.find(string.lower(t.name or ""), q, 1, true) then
+							matchedTools[#matchedTools + 1] = t
+						end
+					end
+				end
+				if nameHit or #matchedTools > 0 then
+					order = order + 1
+					shownPlayers = shownPlayers + 1
+					shownTools = shownTools + #matchedTools
+
+					local card = C("Frame", {
+						Size = UDim2.new(1, 0, 0, 0),
+						AutomaticSize = Enum.AutomaticSize.Y,
+						BackgroundColor3 = row.isLocal and Color3.fromRGB(22, 28, 38) or Color3.fromRGB(18, 18, 24),
+						BorderSizePixel = 0,
+						LayoutOrder = order,
+						ZIndex = 7,
+						Parent = InvList,
+					})
+					C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = card })
+					C("UIListLayout", {
+						Padding = UDim.new(0, 2),
+						SortOrder = Enum.SortOrder.LayoutOrder,
+						Parent = card,
+					})
+					C("UIPadding", {
+						PaddingTop = UDim.new(0, 6),
+						PaddingBottom = UDim.new(0, 6),
+						PaddingLeft = UDim.new(0, 8),
+						PaddingRight = UDim.new(0, 8),
+						Parent = card,
+					})
+
+					local title = row.name
+					if row.display and row.display ~= "" and row.display ~= row.name then
+						title = row.name .. "  (" .. row.display .. ")"
+					end
+					if row.isLocal then
+						title = title .. "  · you"
+					end
+					local handTxt = row.hand and ("  · hand: " .. row.hand) or ""
+					C("TextLabel", {
+						Size = UDim2.new(1, 0, 0, 16),
+						BackgroundTransparency = 1,
+						Text = title .. handTxt,
+						Font = Enum.Font.GothamBold,
+						TextSize = 11,
+						TextColor3 = Color3.fromRGB(235, 238, 245),
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextTruncate = Enum.TextTruncate.AtEnd,
+						LayoutOrder = 1,
+						ZIndex = 8,
+						Parent = card,
+					})
+
+					if #matchedTools == 0 then
+						C("TextLabel", {
+							Size = UDim2.new(1, 0, 0, 14),
+							BackgroundTransparency = 1,
+							Text = "  (empty)",
+							Font = Enum.Font.Gotham,
+							TextSize = 10,
+							TextColor3 = Color3.fromRGB(110, 115, 130),
+							TextXAlignment = Enum.TextXAlignment.Left,
+							LayoutOrder = 2,
+							ZIndex = 8,
+							Parent = card,
+						})
+					else
+						for i, t in ipairs(matchedTools) do
+							local prefix = t.equipped and "  [HAND] " or "  · "
+							local col = t.equipped and Color3.fromRGB(120, 220, 150) or Color3.fromRGB(170, 175, 190)
+							C("TextLabel", {
+								Size = UDim2.new(1, 0, 0, 14),
+								BackgroundTransparency = 1,
+								Text = prefix .. t.name,
+								Font = Enum.Font.GothamMedium,
+								TextSize = 10,
+								TextColor3 = col,
+								TextXAlignment = Enum.TextXAlignment.Left,
+								TextTruncate = Enum.TextTruncate.AtEnd,
+								LayoutOrder = 1 + i,
+								ZIndex = 8,
+								Parent = card,
+							})
+						end
+					end
+				end
+			end
+			if order == 0 then
+				C("TextLabel", {
+					Size = UDim2.new(1, 0, 0, 24),
+					BackgroundTransparency = 1,
+					Text = #invCache == 0 and L("crim_invsee_idle") or "No matches",
+					Font = Enum.Font.Gotham,
+					TextSize = 11,
+					TextColor3 = Color3.fromRGB(110, 115, 130),
+					LayoutOrder = 1,
+					ZIndex = 7,
+					Parent = InvList,
+				})
+			end
+			InvStatus.Text = string.format("%d players · %d items%s", shownPlayers, shownTools, q ~= "" and (" · filter: " .. invFilter) or "")
+		end
+
+		local function doInvRefresh()
+			local list = {}
+			if S._crimInvseeScan then
+				local ok, res = pcall(S._crimInvseeScan)
+				if ok and typeof(res) == "table" then
+					list = res
+				end
+			end
+			invCache = list
+			renderInvList()
+			if showNotify then
+				showNotify(string.format("Invsee: %d players", #list))
+			end
+		end
+
+		InvBtn.MouseButton1Click:Connect(doInvRefresh)
+		InvSearch:GetPropertyChangedSignal("Text"):Connect(function()
+			invFilter = InvSearch.Text or ""
+			renderInvList()
+		end)
 
 		MakeTog(CVIS, "FullBright", "CrimFullBright", 1, { flat = true })
 		MakeHint(CVIS, "hint_crim_fullbright", 2)

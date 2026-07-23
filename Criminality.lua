@@ -6183,10 +6183,80 @@ local function stopMaster()
 	table.clear(toolIdCache)
 end
 
+-- ── INVSEE (manual scan: Backpack + Character / Workspace.Characters) ─────────
+function Criminality.ScanInventories()
+	local out = {}
+	local lp = getLP()
+	local charsFolder = workspace:FindFirstChild("Characters")
+	local SKIP = {
+		VM = true,
+	}
+
+	local function collectFrom(container, where, equipped, tools, seen)
+		if not container then
+			return
+		end
+		for _, ch in ipairs(container:GetChildren()) do
+			if ch:IsA("Tool") and not SKIP[ch.Name] and not seen[ch] then
+				seen[ch] = true
+				tools[#tools + 1] = {
+					name = ch.Name,
+					equipped = equipped == true,
+					where = where,
+				}
+			end
+		end
+	end
+
+	for _, plr in ipairs(Plrs:GetPlayers()) do
+		local tools, seen = {}, {}
+		collectFrom(plr:FindFirstChild("Backpack"), "Backpack", false, tools, seen)
+		local charModel = nil
+		if charsFolder then
+			charModel = charsFolder:FindFirstChild(plr.Name)
+		end
+		if not charModel then
+			charModel = plr.Character
+		end
+		collectFrom(charModel, "Hand", true, tools, seen)
+		-- If Players.Character differs from Workspace.Characters, merge both
+		if plr.Character and plr.Character ~= charModel then
+			collectFrom(plr.Character, "Hand", true, tools, seen)
+		end
+		table.sort(tools, function(a, b)
+			if a.equipped ~= b.equipped then
+				return a.equipped
+			end
+			return string.lower(a.name) < string.lower(b.name)
+		end)
+		local handName = nil
+		for _, t in ipairs(tools) do
+			if t.equipped then
+				handName = t.name
+				break
+			end
+		end
+		out[#out + 1] = {
+			name = plr.Name,
+			display = plr.DisplayName,
+			userId = plr.UserId,
+			isLocal = plr == lp,
+			tools = tools,
+			count = #tools,
+			hand = handName,
+		}
+	end
+	table.sort(out, function(a, b)
+		return string.lower(a.name) < string.lower(b.name)
+	end)
+	return out
+end
+
 -- â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
 	_G.__VG_S = S
+	S._crimInvseeScan = Criminality.ScanInventories
 	if S.CrimMenuMusicTrack == nil then
 		S.CrimMenuMusicTrack = menuMus.DEFAULT
 	end
