@@ -1105,7 +1105,24 @@ function UISkinVault.build(opts)
 			end
 		end
 	end, "btn_crim_skin_dump")
-	MakeHint(CSkins, "hint_crim_skinchanger_vault", 15)
+	MakeButton(CSkins, nil, 15, function()
+		if S._crimUpgradeHeld then
+			local ok, msg = S._crimUpgradeHeld()
+			if showNotify then
+				showNotify(tostring(msg or (ok and "upgraded look" or "fail")))
+			end
+		end
+	end, "btn_crim_upgrade_held")
+	MakeButton(CSkins, nil, 16, function()
+		if S._crimClearUpgradeHeld then
+			local ok, msg = S._crimClearUpgradeHeld()
+			if showNotify then
+				showNotify(tostring(msg or (ok and "cleared" or "fail")))
+			end
+		end
+	end, "btn_crim_upgrade_clear")
+	MakeHint(CSkins, "hint_crim_upgrade_look", 17)
+	MakeHint(CSkins, "hint_crim_skinchanger_vault", 18)
 
 	local autoRefreshedOnce = false
 	local function refreshAll()
