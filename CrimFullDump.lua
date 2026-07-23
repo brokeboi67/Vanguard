@@ -498,10 +498,27 @@ do
 		"WalkSpeed", "SprintSpeed", "Stamina",
 	}
 
+	-- Crim proxy tables (PhysicModule etc.) throw on missing keys via __index
+	local function safeGet(t, k)
+		local ok, val = pcall(function()
+			if typeof(rawget) == "function" then
+				local r = rawget(t, k)
+				if r ~= nil then
+					return r
+				end
+			end
+			return t[k]
+		end)
+		if ok then
+			return val
+		end
+		return nil
+	end
+
 	local function hasAny(t, keys)
 		for _, k in ipairs(keys) do
-			local v = t[k]
-			if v ~= nil and (typeof(v) == "number" or typeof(v) == "boolean") then
+			local val = safeGet(t, k)
+			if val ~= nil and (typeof(val) == "number" or typeof(val) == "boolean") then
 				return true
 			end
 		end
@@ -542,14 +559,16 @@ do
 					end
 				end
 
-				-- weapon / movement stat tables
+				-- weapon / movement stat tables (rawget/pcall — avoid PhysicModule __index throws)
 				if hasAny(v, STAT_KEYS) and #weaponStats < 400 then
 					local bits = {}
-					local label = v.Name or v.WeaponName or v.GunName or v.ItemName or v.Id or "?"
+					local label = safeGet(v, "Name") or safeGet(v, "WeaponName") or safeGet(v, "GunName")
+						or safeGet(v, "ItemName") or safeGet(v, "Id") or "?"
 					bits[#bits + 1] = "label=" .. tostring(label)
 					for _, k in ipairs(STAT_KEYS) do
-						if v[k] ~= nil then
-							bits[#bits + 1] = k .. "=" .. tostring(v[k])
+						local val = safeGet(v, k)
+						if val ~= nil then
+							bits[#bits + 1] = k .. "=" .. tostring(val)
 						end
 					end
 					if #bits > 2 then
@@ -562,20 +581,22 @@ do
 					local hit = false
 					local sample = {}
 					local nkeys = 0
-					for k, val in pairs(v) do
-						nkeys += 1
-						if nkeys > 60 then
-							break
+					local okPairs = pcall(function()
+						for k, val in pairs(v) do
+							nkeys += 1
+							if nkeys > 60 then
+								break
+							end
+							local ks = tostring(k)
+							if interestingName(ks) or (typeof(val) == "string" and interestingName(val)) then
+								hit = true
+							end
+							if nkeys <= 12 then
+								sample[#sample + 1] = ks .. ":" .. typeof(val)
+							end
 						end
-						local ks = tostring(k)
-						if interestingName(ks) or (typeof(val) == "string" and interestingName(val)) then
-							hit = true
-						end
-						if nkeys <= 12 then
-							sample[#sample + 1] = ks .. ":" .. typeof(val)
-						end
-					end
-					if hit and nkeys >= 3 then
+					end)
+					if okPairs and hit and nkeys >= 3 then
 						interesting[#interesting + 1] = "keys(" .. nkeys .. ") " .. table.concat(sample, ", ")
 					end
 				end
