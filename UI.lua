@@ -2574,6 +2574,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				ApplyLayout(false, true, true, "default")
 			end
 			Scroll.ScrollingEnabled = key ~= "skins"
+			if key == "skins" and type(_G.__VG_SkinVaultAutoRefreshOnce) == "function" then
+				task.defer(_G.__VG_SkinVaultAutoRefreshOnce)
+			end
 		end
 
 		for i, def in ipairs(tabDefs) do

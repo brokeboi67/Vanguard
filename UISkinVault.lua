@@ -876,15 +876,54 @@ function UISkinVault.build(opts)
 	end, "btn_crim_skin_dump")
 	MakeHint(CSkins, "hint_crim_skinchanger_vault", 4)
 
-	task.defer(function()
-		task.wait(0.15)
-		refreshWeaponSidebar()
-		refreshSkinGrid()
-	end)
-	_G.__VG_RefreshSkinUi = function()
+	local autoRefreshedOnce = false
+	local function refreshAll()
 		refreshWeaponSidebar()
 		refreshSkinGrid()
 	end
+
+	local function countWeapons()
+		if not S._crimSkinListWeapons then
+			return 0
+		end
+		local ok, list = pcall(S._crimSkinListWeapons)
+		if ok and typeof(list) == "table" then
+			return #list
+		end
+		return 0
+	end
+
+	-- One-shot full assortment refresh (wait for RepPBR / bindUi if needed)
+	_G.__VG_SkinVaultAutoRefreshOnce = function()
+		if autoRefreshedOnce then
+			return
+		end
+		autoRefreshedOnce = true
+		task.spawn(function()
+			local n = 0
+			for _ = 1, 40 do
+				n = countWeapons()
+				if n > 0 then
+					break
+				end
+				task.wait(0.25)
+			end
+			refreshAll()
+			-- second pass shortly after (streaming / late CosmeticsStuff)
+			task.wait(0.6)
+			if countWeapons() > n then
+				refreshAll()
+			else
+				refreshAll()
+			end
+		end)
+	end
+
+	task.defer(function()
+		task.wait(0.2)
+		refreshAll()
+	end)
+	_G.__VG_RefreshSkinUi = refreshAll
 end
 
 return UISkinVault
