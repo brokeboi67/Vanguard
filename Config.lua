@@ -40,6 +40,7 @@ local SKIN_PREF_KEYS = {
 	"CrimGunSkins",
 	"CrimSkinUiWeapon",
 	"CrimSkinChanger",
+	"CrimSkinDropped",
 }
 
 local OK_MENU_TRACKS = {
@@ -730,6 +731,9 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimSkinChanger == nil then
 		S.CrimSkinChanger = false
+	end
+	if S.CrimSkinDropped == nil then
+		S.CrimSkinDropped = false
 	end
 	if typeof(S.CrimGunSkins) ~= "table" then
 		S.CrimGunSkins = {}

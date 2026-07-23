@@ -1505,60 +1505,212 @@ end
 
 local toolIdCache = setmetatable({}, { __mode = "k" })
 
-local function rememberToolId(model, label, kind)
-	local entry = { label, kind }
+-- Weak / early labels must NOT stick — SpawnedTools models stream in empty then fill.
+local WEAK_TOOL_LABELS = {
+	ITEM = true,
+	WEAPON = true,
+	GUN = true,
+	PISTOL = true,
+	RIFLE = true,
+	ARMOR = true,
+	OTHER = true,
+}
+
+local function rememberToolId(model, label, kind, solid)
+	local entry = { label, kind, solid and true or false }
 	toolIdCache[model] = entry
 	return label, kind
 end
 
+local function resolveNameFromSurfaceAppearance(model)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("SurfaceAppearance") then
+			local n = d.Name
+			local us = string.find(n, "_", 1, true)
+			if us and us > 1 then
+				return string.sub(n, 1, us - 1)
+			end
+		end
+	end
+	return nil
+end
+
+local function resolveNameFromMesh(model)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local n = d.Name
+			if string.sub(n, -4) == "Mesh" and #n > 4 then
+				return string.sub(n, 1, #n - 4)
+			end
+		end
+	end
+	return nil
+end
+
+local function resolveNameFromKnownWeapons(model)
+	local listFn = misc.skinChanger and misc.skinChanger.listAllWeapons
+	if typeof(listFn) ~= "function" then
+		return nil
+	end
+	local ok, list = pcall(listFn)
+	if not ok or typeof(list) ~= "table" or #list == 0 then
+		return nil
+	end
+	local nameSet = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		nameSet[d.Name] = true
+	end
+	local weapons = {}
+	for i, g in ipairs(list) do
+		weapons[i] = g
+	end
+	table.sort(weapons, function(a, b)
+		return #a > #b
+	end)
+	for _, gun in ipairs(weapons) do
+		if nameSet[gun] or nameSet[gun .. "Mesh"] then
+			return gun
+		end
+		for n in pairs(nameSet) do
+			if string.sub(n, 1, #gun) == gun then
+				return gun
+			end
+		end
+	end
+	return nil
+end
+
+local function classifyKind(model, label)
+	local upper = string.upper(tostring(label or ""))
+	if upper:find("GRENADE", 1, true) then
+		return "grenade"
+	end
+	-- Real grenade fingerprint (NOT bare Pin+Handle — guns also have Pin)
+	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") and not hasDeepChild(model, "MagPart") then
+		return "grenade"
+	end
+	if hasDeepChild(model, "MagPart")
+		or hasDeepChild(model, "BoltPart")
+		or hasDeepChild(model, "SlidePart")
+		or hasDeepChild(model, "Slide")
+		or hasDeepChild(model, "Barrel")
+		or hasDeepChild(model, "ActualBoltPart")
+	then
+		return "gun"
+	end
+	if hasDeepChild(model, "KatanaMesh")
+		or hasDeepChild(model, "ClubMesh")
+		or hasDeepChild(model, "Crowbar")
+		or hasDeepChild(model, "Blade")
+		or hasDeepChild(model, "WeaponHandle")
+		or hasDeepChild(model, "WeaponHandle2")
+	then
+		return "melee"
+	end
+	return "other"
+end
+
 local function identifySpawnedTool(model)
 	local cached = toolIdCache[model]
-	if cached then
+	if cached and cached[3] == true and cached[1] and not WEAK_TOOL_LABELS[cached[1]] then
 		return cached[1], cached[2]
 	end
+
 	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName" }) do
 		local val = model:GetAttribute(key)
 		if val ~= nil and tostring(val) ~= "" then
-			local label = string.upper(tostring(val))
-			local kind = "other"
-			if label:find("GRENADE", 1, true) then
-				kind = "grenade"
-			elseif hasDeepChild(model, "MagPart") or hasDeepChild(model, "BoltPart") or hasDeepChild(model, "Barrel") then
-				kind = "gun"
-			elseif hasDeepChild(model, "WeaponHandle") or hasDeepChild(model, "ClubMesh") or hasDeepChild(model, "Crowbar") then
-				kind = "melee"
-			end
-			return rememberToolId(model, label, kind)
+			local label = tostring(val)
+			return rememberToolId(model, string.upper(label), classifyKind(model, label), true)
 		end
 	end
 
-	if hasDeepChild(model, "Crowbar") then return rememberToolId(model, "CROWBAR", "melee") end
-	if hasDeepChild(model, "ClubMesh") then return rememberToolId(model, "CLUB", "melee") end
-	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then return rememberToolId(model, "WRENCH", "melee") end
-	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") then return rememberToolId(model, "GRENADE", "grenade") end
-	if hasDeepChild(model, "Chain1") or (hasDeepChild(model, "Blade") and hasDeepChild(model, "Cord")) then
-		return rememberToolId(model, "CHAINSAW", "melee")
+	local fromSa = resolveNameFromSurfaceAppearance(model)
+	if fromSa then
+		return rememberToolId(model, string.upper(fromSa), classifyKind(model, fromSa), true)
 	end
-	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then return rememberToolId(model, "RIFLE", "gun") end
-	if hasDeepChild(model, "MagPart") and (hasDeepChild(model, "Barrel") or hasDeepChild(model, "SlidePart") or hasDeepChild(model, "Slide")) then
-		return rememberToolId(model, "PISTOL", "gun")
-	end
-	if hasDeepChild(model, "MagPart") and hasDeepChild(model, "Bullets") then return rememberToolId(model, "GUN", "gun") end
-	if hasDeepChild(model, "MagPart") then return rememberToolId(model, "GUN", "gun") end
-	if hasDeepChild(model, "WeaponHandle") then return rememberToolId(model, "WEAPON", "melee") end
-	if hasDeepChild(model, "Handle") and hasDeepChild(model, "Pin") then return rememberToolId(model, "GRENADE", "grenade") end
 
-	-- Helmet / vest / armor often expose OriginPart (PIC_TLO) instead of WeaponHandle
+	local fromMesh = resolveNameFromMesh(model)
+	if fromMesh then
+		return rememberToolId(model, string.upper(fromMesh), classifyKind(model, fromMesh), true)
+	end
+
+	local fromKnown = resolveNameFromKnownWeapons(model)
+	if fromKnown then
+		return rememberToolId(model, string.upper(fromKnown), classifyKind(model, fromKnown), true)
+	end
+
+	-- Fingerprints (weak — may upgrade when children stream in)
+	if hasDeepChild(model, "Crowbar") then
+		return rememberToolId(model, "CROWBAR", "melee", false)
+	end
+	if hasDeepChild(model, "ClubMesh") then
+		return rememberToolId(model, "CLUB", "melee", true)
+	end
+	if hasDeepChild(model, "KatanaMesh") then
+		return rememberToolId(model, "KATANA", "melee", true)
+	end
+	if hasDeepChild(model, "Wrench") and not hasDeepChild(model, "Crowbar") then
+		return rememberToolId(model, "WRENCH", "melee", false)
+	end
+	if hasDeepChild(model, "Pin") and hasDeepChild(model, "He") and not hasDeepChild(model, "MagPart") then
+		return rememberToolId(model, "GRENADE", "grenade", true)
+	end
+	if hasDeepChild(model, "Chain1") or (hasDeepChild(model, "Blade") and hasDeepChild(model, "Cord")) then
+		return rememberToolId(model, "CHAINSAW", "melee", false)
+	end
+	if hasDeepChild(model, "BoltPart") and hasDeepChild(model, "MagPart") then
+		return rememberToolId(model, "RIFLE", "gun", false)
+	end
+	if hasDeepChild(model, "MagPart")
+		and (hasDeepChild(model, "Barrel") or hasDeepChild(model, "SlidePart") or hasDeepChild(model, "Slide"))
+	then
+		return rememberToolId(model, "PISTOL", "gun", false)
+	end
+	if hasDeepChild(model, "MagPart") then
+		return rememberToolId(model, "GUN", "gun", false)
+	end
+	if hasDeepChild(model, "WeaponHandle") or hasDeepChild(model, "WeaponHandle2") then
+		return rememberToolId(model, "WEAPON", "melee", false)
+	end
+
 	local n = string.upper(tostring(model.Name or ""))
 	if n:find("HELMET", 1, true) or n:find("VEST", 1, true) or n:find("ARMOR", 1, true)
-		or n:find("KEVLAR", 1, true) or n:find("BALACLAVA", 1, true) then
-		return rememberToolId(model, n, "armor")
+		or n:find("KEVLAR", 1, true) or n:find("BALACLAVA", 1, true)
+	then
+		return rememberToolId(model, n, "armor", true)
 	end
 	if hasDeepChild(model, "OriginPart") and not hasDeepChild(model, "MagPart") and not hasDeepChild(model, "WeaponHandle") then
-		return rememberToolId(model, "ARMOR", "armor")
+		return rememberToolId(model, "ARMOR", "armor", false)
 	end
 
-	return rememberToolId(model, "ITEM", "other")
+	return rememberToolId(model, "ITEM", "other", false)
+end
+
+local function getGunEspPart(model)
+	if not model then
+		return nil
+	end
+	for _, name in ipairs({
+		"WeaponHandle",
+		"WeaponHandle2",
+		"KatanaMesh",
+		"ClubMesh",
+		"HandlePart",
+		"Handle",
+	}) do
+		local p = model:FindFirstChild(name, true)
+		if p and p:IsA("BasePart") then
+			return p
+		end
+	end
+	local meshNamed = resolveNameFromMesh(model)
+	if meshNamed then
+		local p = model:FindFirstChild(meshNamed .. "Mesh", true)
+		if p and p:IsA("BasePart") then
+			return p
+		end
+	end
+	return getModelPart(model)
 end
 
 local function kindColor(kind, S)
@@ -1632,7 +1784,9 @@ local function destroyGunEntry(model)
 	if not e then return end
 	gunByModel[model] = nil
 	toolIdCache[model] = nil
-	if alive(e.h)  then e.h:Destroy()  end
+	if e.hOwned ~= false and alive(e.h) then
+		e.h:Destroy()
+	end
 	if alive(e.bg) then e.bg:Destroy() end
 	for i, entry in ipairs(ESP.guns) do
 		if entry == e then
@@ -1704,7 +1858,25 @@ local function addGunESP(model, S, withSpawnFx)
 	if not ok or not entry then
 		return false
 	end
-	local wh = model:FindFirstChild("WeaponHandle", true)
+	entry.hOwned = true
+	-- Reuse game's Highlight when present (SpawnedTools often ship with one) —
+	-- avoids Roblox's ~31 Highlight cap killing ESP on busy drops.
+	local existingHl = model:FindFirstChildWhichIsA("Highlight")
+	if existingHl then
+		if alive(entry.h) then
+			entry.h:Destroy()
+		end
+		entry.h = existingHl
+		entry.hOwned = false
+		existingHl.FillColor = fill
+		existingHl.OutlineColor = Color3.fromRGB(255, 255, 255)
+		existingHl.FillTransparency = 0.55
+		existingHl.OutlineTransparency = 0
+		existingHl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		existingHl.Adornee = model
+		existingHl.Enabled = false
+	end
+	local wh = getGunEspPart(model)
 	if wh and wh:IsA("BasePart") then
 		entry.part = wh
 		if alive(entry.bg) then entry.bg.Adornee = wh end
@@ -1712,7 +1884,7 @@ local function addGunESP(model, S, withSpawnFx)
 		entry.bg.Adornee = entry.part
 	end
 	if alive(entry.bg) then
-		entry.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 22, 64, 122), 0, 20)
+		entry.bg.Size = UDim2.new(0, math.clamp(#label * 7 + 22, 64, 140), 0, 20)
 	end
 	entry.kind = kind
 	entry.label = label
@@ -1781,15 +1953,25 @@ local function bindGunFolder(folder)
 	gunWatch.folderConn = folder.ChildAdded:Connect(function(ch)
 			task.defer(function()
 				local curS = _G.__VG_S
-				if not curS or not curS.CrimGunESP then
+				if not curS then
 					return
 				end
+				-- SpawnedTools models often stream empty → wait for parts before ID
 				RS.Heartbeat:Wait()
+				task.wait(0.2)
 				local targets = ch:IsA("Model") and { ch } or iterSpawnedToolModels(ch)
-				for _, model in ipairs(targets) do
-					local added = addGunESP(model, curS, true)
-					if added then
-						pcall(tickESP, curS)
+				if curS.CrimGunESP then
+					for _, model in ipairs(targets) do
+						toolIdCache[model] = nil
+						local added = addGunESP(model, curS, true)
+						if added then
+							pcall(tickESP, curS)
+						end
+					end
+				end
+				if curS.CrimSkinDropped and misc.skinChanger and misc.skinChanger.applyToDroppedModel then
+					for _, model in ipairs(targets) do
+						pcall(misc.skinChanger.applyToDroppedModel, model)
 					end
 				end
 		end)
@@ -1937,8 +2119,7 @@ local function tickESP(S)
 				vis = false
 			else
 			if not alive(e.part) then
-				local wh = e.model:FindFirstChild("WeaponHandle", true)
-				e.part = (wh and wh:IsA("BasePart")) and wh or getModelPart(e.model)
+				e.part = getGunEspPart(e.model)
 			end
 			if alive(e.part) then
 				if alive(e.bg) and e.bg.Adornee ~= e.part then
@@ -4900,6 +5081,15 @@ function misc.skinChanger.restoreNamed(gunName)
 			n = n + misc.skinChanger.restoreDefaults(ch)
 		end
 	end
+	local filter = workspace:FindFirstChild("Filter")
+	local spawned = filter and filter:FindFirstChild("SpawnedTools")
+	if spawned then
+		for _, model in ipairs(spawned:GetChildren()) do
+			if model:IsA("Model") and misc.skinChanger.resolveDroppedGunName(model) == gunName then
+				n = n + misc.skinChanger.restoreDefaults(model)
+			end
+		end
+	end
 	return true, string.format("%s → No Skin (%d)", gunName, n)
 end
 
@@ -4986,7 +5176,117 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 		local bp = lp:FindFirstChild("Backpack")
 		tryOnce(bp and bp:FindFirstChild(gunName))
 	end
+	local S = _G.__VG_S
+	if S and S.CrimSkinDropped then
+		n = n + (misc.skinChanger.applyDroppedForGun(gunName, tmpl) or 0)
+	end
 	return true, string.format("%s → %s (%d)", gunName, misc.skinChanger.skinLabel(skinKey), n)
+end
+
+-- Resolve Crim gun name from Filter.SpawnedTools Model (all named "Model")
+function misc.skinChanger.resolveDroppedGunName(model)
+	if not model then
+		return nil
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("SurfaceAppearance") then
+			local us = string.find(d.Name, "_", 1, true)
+			if us and us > 1 then
+				return string.sub(d.Name, 1, us - 1)
+			end
+		end
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local n = d.Name
+			if string.sub(n, -4) == "Mesh" and #n > 4 then
+				return string.sub(n, 1, #n - 4)
+			end
+		end
+	end
+	local ok, list = pcall(misc.skinChanger.listAllWeapons)
+	if ok and typeof(list) == "table" then
+		local nameSet = {}
+		for _, d in ipairs(model:GetDescendants()) do
+			nameSet[d.Name] = true
+		end
+		local weapons = {}
+		for i, g in ipairs(list) do
+			weapons[i] = g
+		end
+		table.sort(weapons, function(a, b)
+			return #a > #b
+		end)
+		for _, gun in ipairs(weapons) do
+			if nameSet[gun] or nameSet[gun .. "Mesh"] then
+				return gun
+			end
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.applyToDroppedModel(model)
+	local S = _G.__VG_S
+	if not S or not S.CrimSkinDropped or not misc.skinChanger.active then
+		return 0
+	end
+	if not model or not model:IsA("Model") then
+		return 0
+	end
+	local gunName = misc.skinChanger.resolveDroppedGunName(model)
+	if not gunName then
+		return 0
+	end
+	local key = misc.skinChanger.getSavedSkinKey(gunName)
+	if not key then
+		return 0
+	end
+	if misc.skinChanger.toolAlreadyHasSkin(model, key) then
+		return 0
+	end
+	local tmpl = misc.skinChanger.resolveTemplate(gunName, key)
+	if not tmpl then
+		return 0
+	end
+	return misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+end
+
+function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
+	local filter = workspace:FindFirstChild("Filter")
+	local folder = filter and filter:FindFirstChild("SpawnedTools")
+	if not folder or not gunName or not tmpl then
+		return 0
+	end
+	local n = 0
+	for _, model in ipairs(folder:GetChildren()) do
+		if model:IsA("Model") then
+			local resolved = misc.skinChanger.resolveDroppedGunName(model)
+			if resolved == gunName then
+				n = n + misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+			end
+		end
+	end
+	return n
+end
+
+function misc.skinChanger.applyDroppedModels()
+	local S = _G.__VG_S
+	if not S or not S.CrimSkinDropped or not misc.skinChanger.active then
+		return 0
+	end
+	local filter = workspace:FindFirstChild("Filter")
+	local folder = filter and filter:FindFirstChild("SpawnedTools")
+	if not folder then
+		return 0
+	end
+	local n = 0
+	for _, model in ipairs(folder:GetChildren()) do
+		if model:IsA("Model") then
+			n = n + misc.skinChanger.applyToDroppedModel(model)
+		end
+	end
+	return n
 end
 
 function misc.skinChanger.getSavedSkinKey(gunName)
@@ -5071,6 +5371,14 @@ function misc.skinChanger.tick()
 	local tool = misc.skinChanger.findActiveGun()
 	if tool then
 		misc.skinChanger.applySavedForTool(tool, true)
+	end
+	local S = _G.__VG_S
+	if S and S.CrimSkinDropped then
+		local now = tick()
+		if (now - (misc.skinChanger._dropAt or 0)) >= 0.75 then
+			misc.skinChanger._dropAt = now
+			misc.skinChanger.applyDroppedModels()
+		end
 	end
 end
 
@@ -5161,6 +5469,53 @@ function misc.skinChanger.start()
 			end
 		end)
 	)
+	-- Dropped tools: Workspace.Filter.SpawnedTools
+	local function hookSpawnedTools(folder)
+		if not folder then
+			return
+		end
+		table.insert(
+			misc.skinChanger.conns,
+			folder.ChildAdded:Connect(function(ch)
+				if not ch:IsA("Model") then
+					return
+				end
+				task.defer(function()
+					task.wait(0.25)
+					local S = _G.__VG_S
+					if S and S.CrimSkinDropped then
+						misc.skinChanger.applyToDroppedModel(ch)
+					end
+				end)
+			end)
+		)
+	end
+	local filter = workspace:FindFirstChild("Filter")
+	local spawned = filter and filter:FindFirstChild("SpawnedTools")
+	if spawned then
+		hookSpawnedTools(spawned)
+	elseif filter then
+		table.insert(
+			misc.skinChanger.conns,
+			filter.ChildAdded:Connect(function(ch)
+				if ch.Name == "SpawnedTools" then
+					hookSpawnedTools(ch)
+					task.defer(misc.skinChanger.applyDroppedModels)
+				end
+			end)
+		)
+	else
+		table.insert(
+			misc.skinChanger.conns,
+			workspace.ChildAdded:Connect(function(ch)
+				if ch.Name == "Filter" then
+					local st = ch:WaitForChild("SpawnedTools", 10)
+					hookSpawnedTools(st)
+					task.defer(misc.skinChanger.applyDroppedModels)
+				end
+			end)
+		)
+	end
 	-- VM enable/disable (from game VM.lua)
 	if _G.VM and _G.VM.ChangeEvent then
 		table.insert(
@@ -5241,6 +5596,11 @@ function misc.skinChanger.bindUi(S)
 	end
 	S._crimSkinSaved = function(gunName)
 		return misc.skinChanger.getSavedSkinKey(gunName)
+	end
+	S._crimSkinApplyDropped = function()
+		ensureOn()
+		S.CrimSkinDropped = true
+		return true, "dropped skins: " .. tostring(misc.skinChanger.applyDroppedModels())
 	end
 	S._crimSkinPersist = function()
 		-- UI / Main should call Config.SaveGlobals; this is a fallback write of skin keys

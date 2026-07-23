@@ -263,13 +263,24 @@ function UISkinVault.build(opts)
 	end
 
 	MakeTog(CSkins, "Enable Skin Changer", "CrimSkinChanger", 1, { flat = true })
+	MakeTog(CSkins, "Skins on Dropped Tools", "CrimSkinDropped", 2, {
+		flat = true,
+		requires = "CrimSkinChanger",
+		onChange = function(on)
+			if on and S._crimSkinApplyDropped then
+				pcall(S._crimSkinApplyDropped)
+			end
+			persistSkins()
+		end,
+	})
+	MakeHint(CSkins, "hint_crim_skin_dropped", 3)
 
 	local Vault = C("Frame", {
 		Name = "SkinVault",
 		Size = UDim2.new(1, 0, 0, 560),
 		BackgroundColor3 = Color3.fromRGB(12, 14, 20),
 		BorderSizePixel = 0,
-		LayoutOrder = 2,
+		LayoutOrder = 4,
 		ClipsDescendants = true,
 		ZIndex = 5,
 		Parent = CSkins,
