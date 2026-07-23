@@ -4966,16 +4966,63 @@ function misc.skinChanger.texKey(texId)
 	return "T:" .. tostring(texId)
 end
 
+-- Crim silencer tools: Tommy-S / Uzi-S = same gun + Attachments, not a separate skin set
+function misc.skinChanger.baseGunName(gunName)
+	if typeof(gunName) ~= "string" or gunName == "" then
+		return gunName
+	end
+	local n = gunName
+	if #n > 2 and string.sub(n, -2) == "-S" then
+		n = string.sub(n, 1, #n - 2)
+	end
+	return n
+end
+
+function misc.skinChanger.gunsShareSkin(a, b)
+	if typeof(a) ~= "string" or typeof(b) ~= "string" then
+		return false
+	end
+	if a == b then
+		return true
+	end
+	local ba, bb = misc.skinChanger.baseGunName(a), misc.skinChanger.baseGunName(b)
+	if ba == bb then
+		return true
+	end
+	-- catalog quirk: M4A1 ↔ M4A1-1
+	local function strip1(n)
+		if #n > 2 and string.sub(n, -2) == "-1" then
+			return string.sub(n, 1, #n - 2)
+		end
+		return n
+	end
+	return strip1(ba) == strip1(bb)
+end
+
 function misc.skinChanger.catalogKeysForGun(gunName)
-	local keys = {}
+	local keys, seen = {}, {}
 	if typeof(gunName) ~= "string" or gunName == "" then
 		return keys
 	end
-	keys[#keys + 1] = gunName
-	if string.sub(gunName, -2) == "-1" then
-		keys[#keys + 1] = string.sub(gunName, 1, #gunName - 2)
-	else
-		keys[#keys + 1] = gunName .. "-1"
+	local function add(k)
+		if typeof(k) ~= "string" or k == "" or seen[k] then
+			return
+		end
+		seen[k] = true
+		keys[#keys + 1] = k
+	end
+	local base = misc.skinChanger.baseGunName(gunName)
+	add(gunName)
+	add(base)
+	if base ~= gunName then
+		add(base .. "-S")
+	end
+	for _, k in ipairs({ gunName, base }) do
+		if string.sub(k, -2) == "-1" then
+			add(string.sub(k, 1, #k - 2))
+		else
+			add(k .. "-1")
+		end
 	end
 	return keys
 end
@@ -5065,7 +5112,7 @@ function misc.skinChanger.findSaByGunLabel(folder, gunName, label)
 	local labelL = string.lower(label)
 	local labelC = string.gsub(labelL, "%s+", "")
 	local gunL = string.lower(gunName)
-	local gunBase = gunL
+	local gunBase = string.lower(misc.skinChanger.baseGunName(gunName))
 	if string.sub(gunBase, -2) == "-1" then
 		gunBase = string.sub(gunBase, 1, #gunBase - 2)
 	end
@@ -5076,10 +5123,14 @@ function misc.skinChanger.findSaByGunLabel(folder, gunName, label)
 			local us = string.find(nm, "_", 1, true)
 			if us and us > 1 then
 				local g = string.lower(string.sub(nm, 1, us - 1))
+				local gBase = misc.skinChanger.baseGunName(g)
+				if string.sub(gBase, -2) == "-1" then
+					gBase = string.sub(gBase, 1, #gBase - 2)
+				end
 				local skin = string.sub(nm, us + 1)
 				local skinL = string.lower(skin)
 				local skinC = string.gsub(skinL, "%s+", "")
-				local gunOk = g == gunL or g == gunBase or g == gunBase .. "-1"
+				local gunOk = g == gunL or gBase == gunBase or g == gunBase or g == gunBase .. "-1"
 				if gunOk then
 					if skinL == labelL or skinC == labelC then
 						return ch
@@ -5302,15 +5353,18 @@ function misc.skinChanger.findActiveGun()
 end
 
 function misc.skinChanger.listSkinsForGun(gunName)
-	local out = {}
+	local out, seen = {}, {}
 	local folder = misc.skinChanger.getRepPBR()
 	if not folder or not gunName or gunName == "" then
 		return out
 	end
-	local prefix = gunName .. "_"
-	for _, ch in ipairs(folder:GetChildren()) do
-		if ch:IsA("SurfaceAppearance") and string.sub(ch.Name, 1, #prefix) == prefix then
-			out[#out + 1] = ch
+	for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+		local prefix = key .. "_"
+		for _, ch in ipairs(folder:GetChildren()) do
+			if ch:IsA("SurfaceAppearance") and string.sub(ch.Name, 1, #prefix) == prefix and not seen[ch.Name] then
+				seen[ch.Name] = true
+				out[#out + 1] = ch
+			end
 		end
 	end
 	table.sort(out, function(a, b)
@@ -5329,11 +5383,13 @@ function misc.skinChanger.resolveTemplate(gunName, skinKey)
 		if direct and direct:IsA("SurfaceAppearance") then
 			return direct
 		end
-		-- suffix only: "Heartseeker" → "Mare_Heartseeker"
+		-- suffix only: "Heartseeker" → "Mare_Heartseeker" (also Tommy-S → Tommy_*)
 		if gunName and not string.find(skinKey, "_", 1, true) then
-			local full = folder:FindFirstChild(gunName .. "_" .. skinKey)
-			if full and full:IsA("SurfaceAppearance") then
-				return full
+			for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+				local full = folder:FindFirstChild(key .. "_" .. skinKey)
+				if full and full:IsA("SurfaceAppearance") then
+					return full
+				end
 			end
 		end
 	end
@@ -5604,6 +5660,10 @@ function misc.skinChanger.indexMeshes(root, gunName)
 	if not root or not gunName or gunName == "" then
 		return
 	end
+	local storeAs = misc.skinChanger.baseGunName(gunName)
+	if string.sub(storeAs, -2) == "-1" then
+		storeAs = string.sub(storeAs, 1, #storeAs - 2)
+	end
 	local map = misc.skinChanger.meshToGun
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("MeshPart") then
@@ -5612,7 +5672,7 @@ function misc.skinChanger.indexMeshes(root, gunName)
 				mid = tostring(d.MeshId or "")
 			end)
 			if mid ~= "" and mid ~= "rbxassetid://0" and not string.find(mid, "ContentId", 1, true) then
-				map[mid] = gunName
+				map[mid] = storeAs
 			end
 		end
 	end
@@ -5806,21 +5866,29 @@ function misc.skinChanger.restoreNamed(gunName)
 		if not tool or seen[tool] then
 			return
 		end
-		if tool.Name ~= gunName then
+		if not misc.skinChanger.gunsShareSkin(tool.Name, gunName) then
 			return
 		end
 		seen[tool] = true
 		n = n + misc.skinChanger.restoreDefaults(tool)
 	end
+	local function tryContainer(container)
+		if not container then
+			return
+		end
+		for _, ch in ipairs(container:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				tryOnce(ch)
+			end
+		end
+	end
 	tryOnce(misc.skinChanger.findActiveGun())
 	local lp = getLP()
 	if lp then
-		tryOnce(lp.Character and lp.Character:FindFirstChild(gunName))
+		tryContainer(lp.Character)
 		local chars = workspace:FindFirstChild("Characters")
-		local model = chars and chars:FindFirstChild(lp.Name)
-		tryOnce(model and model:FindFirstChild(gunName))
-		local bp = lp:FindFirstChild("Backpack")
-		tryOnce(bp and bp:FindFirstChild(gunName))
+		tryContainer(chars and chars:FindFirstChild(lp.Name))
+		tryContainer(lp:FindFirstChild("Backpack"))
 	end
 	local cam = workspace.CurrentCamera
 	local vm = cam and cam:FindFirstChild("ViewModel")
@@ -5838,12 +5906,15 @@ function misc.skinChanger.restoreNamed(gunName)
 	local spawned = filter and filter:FindFirstChild("SpawnedTools")
 	if spawned then
 		for _, model in ipairs(spawned:GetChildren()) do
-			if model:IsA("Model") and misc.skinChanger.resolveDroppedGunName(model) == gunName then
-				n = n + misc.skinChanger.restoreDefaults(model)
+			if model:IsA("Model") then
+				local resolved = misc.skinChanger.resolveDroppedGunName(model)
+				if resolved and misc.skinChanger.gunsShareSkin(resolved, gunName) then
+					n = n + misc.skinChanger.restoreDefaults(model)
+				end
 			end
 		end
 	end
-	return true, string.format("%s → No Skin (%d)", gunName, n)
+	return true, string.format("%s → No Skin (%d)", misc.skinChanger.baseGunName(gunName), n)
 end
 
 function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
@@ -5898,18 +5969,19 @@ end
 function misc.skinChanger.listAllWeapons()
 	local out, seen = {}, {}
 	local function addGun(gun)
-		if typeof(gun) ~= "string" or gun == "" or seen[gun] then
+		if typeof(gun) ~= "string" or gun == "" then
 			return
 		end
-		-- Normalize catalog quirks like M4A1-1 → prefer base name if both exist later
-		local base = gun
-		if string.sub(gun, -2) == "-1" then
-			base = string.sub(gun, 1, #gun - 2)
+		-- Normalize: Tommy-S → Tommy, M4A1-1 → M4A1
+		local base = misc.skinChanger.baseGunName(gun)
+		if string.sub(base, -2) == "-1" then
+			base = string.sub(base, 1, #base - 2)
 		end
-		if not seen[base] then
-			seen[base] = true
-			out[#out + 1] = base
+		if seen[base] then
+			return
 		end
+		seen[base] = true
+		out[#out + 1] = base
 	end
 	local folder = misc.skinChanger.getRepPBR()
 	if folder then
@@ -6026,7 +6098,7 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 		if not tool or seen[tool] then
 			return
 		end
-		if tool.Name ~= gunName or not misc.skinChanger.isGunTool(tool) then
+		if not misc.skinChanger.gunsShareSkin(tool.Name, gunName) or not misc.skinChanger.isGunTool(tool) then
 			return
 		end
 		seen[tool] = true
@@ -6036,15 +6108,23 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 			n = n + misc.skinChanger.applyToTool(tool, tmpl, true)
 		end
 	end
+	local function tryContainer(container)
+		if not container then
+			return
+		end
+		for _, ch in ipairs(container:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				tryOnce(ch)
+			end
+		end
+	end
 	tryOnce(misc.skinChanger.findActiveGun())
 	local lp = getLP()
 	if lp then
-		tryOnce(lp.Character and lp.Character:FindFirstChild(gunName))
+		tryContainer(lp.Character)
 		local chars = workspace:FindFirstChild("Characters")
-		local model = chars and chars:FindFirstChild(lp.Name)
-		tryOnce(model and model:FindFirstChild(gunName))
-		local bp = lp:FindFirstChild("Backpack")
-		tryOnce(bp and bp:FindFirstChild(gunName))
+		tryContainer(chars and chars:FindFirstChild(lp.Name))
+		tryContainer(lp:FindFirstChild("Backpack"))
 	end
 	local S = _G.__VG_S
 	if S and S.CrimSkinDropped then
@@ -6054,7 +6134,7 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 			n = n + (misc.skinChanger.applyDroppedForGun(gunName, tmpl) or 0)
 		end
 	end
-	return true, string.format("%s → %s (%d)", gunName, misc.skinChanger.skinLabel(skinKey), n)
+	return true, string.format("%s → %s (%d)", misc.skinChanger.baseGunName(gunName), misc.skinChanger.skinLabel(skinKey), n)
 end
 
 -- Resolve Crim gun name from Filter.SpawnedTools Model (all named "Model")
@@ -6062,14 +6142,30 @@ function misc.skinChanger.resolveDroppedGunName(model)
 	if not model then
 		return nil
 	end
+	local function normalizeDropGun(g)
+		if typeof(g) ~= "string" or g == "" then
+			return nil
+		end
+		local storeAs = misc.skinChanger.baseGunName(g)
+		if string.sub(storeAs, -2) == "-1" then
+			storeAs = string.sub(storeAs, 1, #storeAs - 2)
+		end
+		return storeAs
+	end
 	local cached = model:GetAttribute("VG_DropGun")
 	if typeof(cached) == "string" and cached ~= "" then
-		return cached
+		local n = normalizeDropGun(cached)
+		if n and n ~= cached then
+			pcall(function()
+				model:SetAttribute("VG_DropGun", n)
+			end)
+		end
+		return n or cached
 	end
 	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName", "Weapon", "WeaponName" }) do
 		local val = model:GetAttribute(key)
 		if val ~= nil and tostring(val) ~= "" then
-			local g = tostring(val)
+			local g = normalizeDropGun(tostring(val))
 			pcall(function()
 				model:SetAttribute("VG_DropGun", g)
 			end)
@@ -6104,10 +6200,11 @@ function misc.skinChanger.resolveDroppedGunName(model)
 			end)
 			local gun = map[mid]
 			if gun then
+				local storeAs = normalizeDropGun(gun)
 				pcall(function()
-					model:SetAttribute("VG_DropGun", gun)
+					model:SetAttribute("VG_DropGun", storeAs)
 				end)
-				return gun
+				return storeAs
 			end
 			local n = d.Name
 			if not fromMesh and string.sub(n, -4) == "Mesh" and #n > 4 then
@@ -6125,18 +6222,20 @@ function misc.skinChanger.resolveDroppedGunName(model)
 	if not gun then
 		local weapons = misc.skinChanger.weaponsByLen()
 		for _, w in ipairs(weapons) do
-			if nameSet[w] or nameSet[w .. "Mesh"] then
+			if nameSet[w] or nameSet[w .. "Mesh"] or nameSet[w .. "-S"] or nameSet[w .. "-SMesh"] then
 				gun = w
 				break
 			end
 		end
 	end
 	if gun then
+		local storeAs = normalizeDropGun(gun)
 		pcall(function()
-			model:SetAttribute("VG_DropGun", gun)
+			model:SetAttribute("VG_DropGun", storeAs)
 		end)
+		return storeAs
 	end
-	return gun
+	return nil
 end
 
 function misc.skinChanger.dropNearLocal(model, S)
@@ -6216,7 +6315,7 @@ function misc.skinChanger.applyDroppedForGunTex(gunName, skinKey, texId)
 	for _, model in ipairs(folder:GetChildren()) do
 		if model:IsA("Model") and misc.skinChanger.dropNearLocal(model, S) then
 			local resolved = misc.skinChanger.resolveDroppedGunName(model)
-			if resolved == gunName then
+			if resolved and misc.skinChanger.gunsShareSkin(resolved, gunName) then
 				pcall(function()
 					model:SetAttribute("VG_DropSkin", nil)
 				end)
@@ -6243,7 +6342,7 @@ function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
 	for _, model in ipairs(folder:GetChildren()) do
 		if model:IsA("Model") and misc.skinChanger.dropNearLocal(model, S) then
 			local resolved = misc.skinChanger.resolveDroppedGunName(model)
-			if resolved == gunName then
+			if resolved and misc.skinChanger.gunsShareSkin(resolved, gunName) then
 				pcall(function()
 					model:SetAttribute("VG_DropSkin", nil)
 				end)
@@ -6304,13 +6403,18 @@ function misc.skinChanger.getSavedSkinKey(gunName)
 	if typeof(map) ~= "table" or not gunName then
 		return nil
 	end
-	local direct = map[gunName]
-	if direct then
-		return direct
+	for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+		local direct = map[key]
+		if direct then
+			return direct
+		end
 	end
-	local lower = string.lower(gunName)
+	local aliases = {}
+	for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+		aliases[string.lower(key)] = true
+	end
 	for k, v in pairs(map) do
-		if typeof(k) == "string" and string.lower(k) == lower then
+		if typeof(k) == "string" and aliases[string.lower(k)] then
 			return v
 		end
 	end
@@ -6325,10 +6429,16 @@ function misc.skinChanger.setSavedSkinKey(gunName, skinKey)
 	if typeof(S.CrimGunSkins) ~= "table" then
 		S.CrimGunSkins = {}
 	end
+	-- Always store under base (Tommy), clear Tommy-S / -1 aliases so one skin wins
+	local storeAs = misc.skinChanger.baseGunName(gunName)
+	if string.sub(storeAs, -2) == "-1" then
+		storeAs = string.sub(storeAs, 1, #storeAs - 2)
+	end
+	for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+		S.CrimGunSkins[key] = nil
+	end
 	if skinKey and skinKey ~= "" then
-		S.CrimGunSkins[gunName] = skinKey
-	else
-		S.CrimGunSkins[gunName] = nil
+		S.CrimGunSkins[storeAs] = skinKey
 	end
 end
 
