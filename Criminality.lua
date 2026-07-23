@@ -535,58 +535,138 @@ local function stopNoRagdoll()
 	end
 end
 
--- ── SELF RAGDOLL DRAG (Physics + AlignPosition WASD mobility) ──
+-- ── SELF RAGDOLL DRAG (real BallSocket ragdoll + grab-part AlignPosition) ──
 misc.ragdollDrag = {
 	conns = {},
 	active = false,
+	motors = {},
+	created = {},
+	grabPart = nil,
 	att = nil,
 	ap = nil,
-	ao = nil,
-	hrp = nil,
 	hum = nil,
+	char = nil,
+	blockNotifyAt = 0,
 }
 
 function misc.ragdollDrag.clearForces()
 	local rd = misc.ragdollDrag
-	for _, obj in ipairs({ rd.ap, rd.ao, rd.att }) do
+	for _, obj in ipairs({ rd.ap, rd.att }) do
 		if obj then
 			pcall(function()
 				obj:Destroy()
 			end)
 		end
 	end
-	rd.ap, rd.ao, rd.att = nil, nil, nil
-	rd.hrp, rd.hum = nil, nil
+	rd.ap, rd.att = nil, nil
+	rd.grabPart = nil
+end
+
+function misc.ragdollDrag.clearRagdoll()
+	local rd = misc.ragdollDrag
+	for _, m in ipairs(rd.motors) do
+		if m.motor and m.motor.Parent then
+			pcall(function()
+				m.motor.Enabled = m.enabled ~= false
+			end)
+		end
+	end
+	rd.motors = {}
+	for _, obj in ipairs(rd.created) do
+		if obj then
+			pcall(function()
+				obj:Destroy()
+			end)
+		end
+	end
+	rd.created = {}
+end
+
+function misc.ragdollDrag.buildRagdoll(char)
+	local rd = misc.ragdollDrag
+	misc.ragdollDrag.clearRagdoll()
+	if not char then
+		return
+	end
+	for _, m in ipairs(char:GetDescendants()) do
+		if m:IsA("Motor6D") and m.Part0 and m.Part1 then
+			local a0 = Instance.new("Attachment")
+			a0.Name = "VG_RD_A0"
+			a0.CFrame = m.C0
+			a0.Parent = m.Part0
+			local a1 = Instance.new("Attachment")
+			a1.Name = "VG_RD_A1"
+			a1.CFrame = m.C1
+			a1.Parent = m.Part1
+			local bs = Instance.new("BallSocketConstraint")
+			bs.Name = "VG_RD_Sock"
+			bs.Attachment0 = a0
+			bs.Attachment1 = a1
+			bs.LimitsEnabled = true
+			bs.TwistLimitsEnabled = true
+			bs.UpperAngle = 85
+			bs.TwistLowerAngle = -50
+			bs.TwistUpperAngle = 50
+			bs.Parent = m.Part0
+			table.insert(rd.created, a0)
+			table.insert(rd.created, a1)
+			table.insert(rd.created, bs)
+			table.insert(rd.motors, { motor = m, enabled = m.Enabled })
+			m.Enabled = false
+		end
+	end
+end
+
+function misc.ragdollDrag.pickGrabPart(char)
+	if not char then
+		return nil
+	end
+	return char:FindFirstChild("UpperTorso")
+		or char:FindFirstChild("Torso")
+		or char:FindFirstChild("HumanoidRootPart")
+		or char:FindFirstChild("Head")
 end
 
 function misc.ragdollDrag.exit()
 	local rd = misc.ragdollDrag
 	if not rd.active then
 		misc.ragdollDrag.clearForces()
+		misc.ragdollDrag.clearRagdoll()
+		rd.hum, rd.char = nil, nil
 		return
 	end
 	rd.active = false
 	local hum = rd.hum
+	local char = rd.char
 	misc.ragdollDrag.clearForces()
+	misc.ragdollDrag.clearRagdoll()
+	rd.hum, rd.char = nil, nil
 	if hum and hum.Parent then
 		pcall(function()
+			hum.AutoRotate = true
 			hum.PlatformStand = false
 			local st = hum:GetState()
 			if st == Enum.HumanoidStateType.Physics
 				or st == Enum.HumanoidStateType.Ragdoll
-				or st == Enum.HumanoidStateType.PlatformStanding then
+				or st == Enum.HumanoidStateType.PlatformStanding
+				or st == Enum.HumanoidStateType.FallingDown then
 				hum:ChangeState(Enum.HumanoidStateType.GettingUp)
 			end
 		end)
 	end
-	local S = _G.__VG_S
-	if S and S.CrimNoRagdoll then
-		local char = getChar()
-		if char then
-			task.defer(function()
-				misc.unragdollChar(char)
-			end)
-		end
+	if char then
+		task.defer(function()
+			-- nudge upright after motors restored
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			local h = char:FindFirstChildOfClass("Humanoid")
+			if hrp and h and h.Health > 0 then
+				pcall(function()
+					local pos = hrp.Position
+					hrp.CFrame = CFrame.new(pos) * CFrame.Angles(0, select(2, hrp.CFrame:ToEulerAnglesYXZ()), 0)
+					h:ChangeState(Enum.HumanoidStateType.GettingUp)
+				end)
+			end
+		end)
 	end
 end
 
@@ -595,6 +675,16 @@ function misc.ragdollDrag.enter()
 	if rd.active then
 		return true
 	end
+	local S = _G.__VG_S
+	if S and S.CrimNoRagdoll then
+		local now = tick()
+		if now - (rd.blockNotifyAt or 0) > 2.5 then
+			rd.blockNotifyAt = now
+			pcall(crimNotify, "Ragdoll Drag", "Wyłącz No Ragdoll — potrzebny prawdziwy ragdoll", 3)
+		end
+		return false
+	end
+
 	local hrp, char = getHRP()
 	if not hrp or not char then
 		return false
@@ -603,48 +693,52 @@ function misc.ragdollDrag.enter()
 	if not hum or hum.Health <= 0 then
 		return false
 	end
+	local grab = misc.ragdollDrag.pickGrabPart(char)
+	if not grab then
+		return false
+	end
 
 	misc.ragdollDrag.clearForces()
+	misc.ragdollDrag.clearRagdoll()
 	rd.active = true
-	rd.hrp = hrp
+	rd.char = char
 	rd.hum = hum
+	rd.grabPart = grab
 
 	pcall(function()
 		hum:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
 		hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+		hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+		hum.AutoRotate = false
 		hum.PlatformStand = true
 		hum:ChangeState(Enum.HumanoidStateType.Physics)
 	end)
 
+	misc.ragdollDrag.buildRagdoll(char)
+
+	-- Re-resolve grab after ragdoll (parts still valid)
+	grab = misc.ragdollDrag.pickGrabPart(char) or grab
+	rd.grabPart = grab
+
 	local att = Instance.new("Attachment")
 	att.Name = "VG_RagdollDragAtt"
-	att.Parent = hrp
+	att.Parent = grab
 
+	-- Soft "Explorer grab" pull — limbs flop freely (no AlignOrientation)
 	local ap = Instance.new("AlignPosition")
 	ap.Name = "VG_RagdollDragAP"
 	ap.Mode = Enum.PositionAlignmentMode.OneAttachment
 	ap.Attachment0 = att
 	ap.ApplyAtCenterOfMass = true
 	ap.RigidityEnabled = false
-	ap.MaxForce = 1e6
+	ap.MaxForce = 45000
 	ap.MaxVelocity = 50
-	ap.Responsiveness = 40
-	ap.Position = hrp.Position
-	ap.Parent = hrp
-
-	local ao = Instance.new("AlignOrientation")
-	ao.Name = "VG_RagdollDragAO"
-	ao.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	ao.Attachment0 = att
-	ao.RigidityEnabled = false
-	ao.MaxTorque = 8e4
-	ao.Responsiveness = 25
-	ao.CFrame = hrp.CFrame
-	ao.Parent = hrp
+	ap.Responsiveness = 18
+	ap.Position = grab.Position
+	ap.Parent = grab
 
 	rd.att = att
 	rd.ap = ap
-	rd.ao = ao
 	return true
 end
 
@@ -682,6 +776,12 @@ function misc.ragdollDrag.tick(S)
 		end
 		return
 	end
+	if S.CrimNoRagdoll then
+		if rd.active then
+			misc.ragdollDrag.exit()
+		end
+		return
+	end
 
 	local want = misc.ragdollDrag.keyHeld(S)
 	if want and not rd.active then
@@ -694,11 +794,10 @@ function misc.ragdollDrag.tick(S)
 		return
 	end
 
-	local hrp = rd.hrp
+	local grab = rd.grabPart
 	local hum = rd.hum
 	local ap = rd.ap
-	local ao = rd.ao
-	if not hrp or not hrp.Parent or not ap or not ap.Parent then
+	if not grab or not grab.Parent or not ap or not ap.Parent then
 		misc.ragdollDrag.exit()
 		return
 	end
@@ -709,18 +808,28 @@ function misc.ragdollDrag.tick(S)
 
 	if hum then
 		pcall(function()
+			hum.AutoRotate = false
 			if not hum.PlatformStand then
 				hum.PlatformStand = true
 			end
 			local st = hum:GetState()
-			if st ~= Enum.HumanoidStateType.Physics and st ~= Enum.HumanoidStateType.Ragdoll then
+			if st ~= Enum.HumanoidStateType.Physics
+				and st ~= Enum.HumanoidStateType.Ragdoll
+				and st ~= Enum.HumanoidStateType.FallingDown then
 				hum:ChangeState(Enum.HumanoidStateType.Physics)
 			end
 		end)
 	end
 
+	-- Keep limb motors disabled if game re-enables them
+	for _, m in ipairs(rd.motors) do
+		if m.motor and m.motor.Parent and m.motor.Enabled then
+			m.motor.Enabled = false
+		end
+	end
+
 	local Cam = workspace.CurrentCamera
-	if not Cam then
+	if not Cam or not UIS then
 		return
 	end
 	local cf = Cam.CFrame
@@ -750,26 +859,27 @@ function misc.ragdollDrag.tick(S)
 	if UIS:IsKeyDown(Enum.KeyCode.D) then
 		move = move + right
 	end
-	if UIS:IsKeyDown(Enum.KeyCode.Space) then
-		move = move + Vector3.yAxis
-	end
-	if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
-		move = move - Vector3.yAxis
-	end
 
 	local speed = math.clamp(tonumber(S.CrimRagdollDragSpeed) or 45, 10, 120)
 	ap.MaxVelocity = speed
+	-- Soft grab feel — body flops behind the pulled torso
+	ap.MaxForce = 28000 + speed * 350
+	ap.Responsiveness = 14
+
+	local y = grab.Position.Y
+	if UIS:IsKeyDown(Enum.KeyCode.Space) then
+		y = y + 1.2
+	elseif UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+		y = y - 0.8
+	end
+
 	if move.Magnitude > 0.05 then
 		local dir = move.Unit
-		ap.Position = hrp.Position + dir * math.max(8, speed * 0.28)
-		if ao and ao.Parent then
-			local flat = Vector3.new(dir.X, 0, dir.Z)
-			if flat.Magnitude > 0.05 then
-				ao.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + flat.Unit)
-			end
-		end
+		local ahead = grab.Position + dir * math.max(6, speed * 0.22)
+		ap.Position = Vector3.new(ahead.X, y, ahead.Z)
 	else
-		ap.Position = hrp.Position
+		-- Hold / scrape along current spot (gravity still acts)
+		ap.Position = Vector3.new(grab.Position.X, y, grab.Position.Z)
 	end
 end
 

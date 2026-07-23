@@ -3042,11 +3042,29 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		MakeTog(CSurv, "No Fall Damage", "CrimNoFall", 1, { flat = true })
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
-		MakeTog(CSurv, "No Ragdoll", "CrimNoRagdoll", 3, { flat = true })
+		MakeTog(CSurv, "No Ragdoll", "CrimNoRagdoll", 3, {
+			flat = true,
+			onChange = function(on)
+				if on and S.CrimRagdollDrag then
+					S.CrimRagdollDrag = false
+					refreshToggleVisual("CrimRagdollDrag")
+					refreshNestedToggles("CrimRagdollDrag")
+					local reg = sliderRegistry.CrimRagdollDragSpeed
+					if reg and reg.setEnabled then
+						reg.setEnabled(false)
+					end
+				end
+			end,
+		})
 		MakeHint(CSurv, "hint_crim_noragdoll", 4)
 		MakeTog(CSurv, "Ragdoll Drag", "CrimRagdollDrag", 5, {
 			flat = true,
 			onChange = function(on)
+				if on and S.CrimNoRagdoll then
+					S.CrimNoRagdoll = false
+					refreshToggleVisual("CrimNoRagdoll")
+					refreshNestedToggles("CrimNoRagdoll")
+				end
 				local reg = sliderRegistry.CrimRagdollDragSpeed
 				if reg and reg.setEnabled then
 					reg.setEnabled(on)
