@@ -3617,8 +3617,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			end,
 		})
 		MakeHint(CVIS, "hint_crim_skipintro", 6)
-		MakeTog(CVIS, "Gun Skin Changer", "CrimSkinChanger", 7, { flat = true })
-		MakeHint(CVIS, "hint_crim_skinchanger", 8)
 
 		if UISkinVaultModule and UISkinVaultModule.build then
 			UISkinVaultModule.build({
