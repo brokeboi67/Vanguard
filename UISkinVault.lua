@@ -234,6 +234,7 @@ function UISkinVault.build(opts)
 	local CSkins = opts.CSkins
 	local ConfigModule = opts.ConfigModule
 	local MakeTog = opts.MakeTog
+	local MakeSlider = opts.MakeSlider
 	local MakeButton = opts.MakeButton
 	local MakeHint = opts.MakeHint
 	local showNotify = opts.showNotify
@@ -268,14 +269,24 @@ function UISkinVault.build(opts)
 			persistSkins()
 		end,
 	})
-	MakeHint(CSkins, "hint_crim_skin_dropped", 3)
+	if MakeSlider then
+		MakeSlider(CSkins, "Dropped Skin Range", "CrimSkinDroppedDist", 15, 150, 3, {
+			suffix = " st",
+			step = 5,
+			requires = "CrimSkinDropped",
+			fmt = function(v)
+				return string.format("%d st", v)
+			end,
+		})
+	end
+	MakeHint(CSkins, "hint_crim_skin_dropped", 4)
 
 	local Vault = C("Frame", {
 		Name = "SkinVault",
 		Size = UDim2.new(1, 0, 0, 590),
 		BackgroundColor3 = Color3.fromRGB(12, 14, 20),
 		BorderSizePixel = 0,
-		LayoutOrder = 4,
+		LayoutOrder = 5,
 		ClipsDescendants = true,
 		ZIndex = 5,
 		Parent = CSkins,

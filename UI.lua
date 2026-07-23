@@ -58,7 +58,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local Cam = workspace.CurrentCamera
 	local W_FULL, W_COMPACT, H = 800, 600, 540
 	local W_MUSIC, H_MUSIC = 860, 620
-	local W_SKINS, H_SKINS = 1040, 760
+	local W_SKINS, H_SKINS = 1040, 800
 	local SIDE_W = 136
 	local FOOTER_PAD = 12
 	local FOOTER_RIGHT_W = 196
@@ -78,7 +78,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		W_MUSIC = math.clamp(math.floor(vp.X * 0.54), 760, 940)
 		H_MUSIC = math.clamp(math.floor(vp.Y * 0.74), 580, 700)
 		W_SKINS = math.clamp(math.floor(vp.X * 0.72), 960, 1180)
-		H_SKINS = math.clamp(math.floor(vp.Y * 0.86), 700, 860)
+		H_SKINS = math.clamp(math.floor(vp.Y * 0.88), 740, 900)
 	end
 	refreshLayout()
 
@@ -3627,6 +3627,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				CSkins = CSkins,
 				ConfigModule = ConfigModule,
 				MakeTog = MakeTog,
+				MakeSlider = MakeSlider,
 				MakeButton = MakeButton,
 				MakeHint = MakeHint,
 				showNotify = showNotify,

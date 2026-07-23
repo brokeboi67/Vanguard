@@ -758,6 +758,9 @@ function Config.EnforceRules(S)
 	if S.CrimSkinDropped == nil then
 		S.CrimSkinDropped = false
 	end
+	if S.CrimSkinDroppedDist == nil then
+		S.CrimSkinDroppedDist = 70
+	end
 	if typeof(S.CrimGunSkins) ~= "table" then
 		S.CrimGunSkins = {}
 	end

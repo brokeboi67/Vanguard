@@ -5325,12 +5325,32 @@ function misc.skinChanger.resolveDroppedGunName(model)
 	return gun
 end
 
+function misc.skinChanger.dropNearLocal(model, S)
+	local hrp = getHRP()
+	if not hrp or not model then
+		return false
+	end
+	local maxd = math.clamp(tonumber(S and S.CrimSkinDroppedDist) or 70, 15, 200)
+	local part = model:FindFirstChild("WeaponHandle", true)
+		or model:FindFirstChild("WeaponHandle2", true)
+		or model.PrimaryPart
+		or model:FindFirstChildWhichIsA("BasePart", true)
+	if not part or not part:IsA("BasePart") then
+		return false
+	end
+	return (part.Position - hrp.Position).Magnitude <= maxd
+end
+
 function misc.skinChanger.applyToDroppedModel(model)
 	local S = _G.__VG_S
 	if not S or not S.CrimSkinDropped or not misc.skinChanger.active then
 		return 0
 	end
 	if not model or not model:IsA("Model") then
+		return 0
+	end
+	-- FPS: only skin drops near local character
+	if not misc.skinChanger.dropNearLocal(model, S) then
 		return 0
 	end
 	local gunName = misc.skinChanger.resolveDroppedGunName(model)
@@ -5371,9 +5391,10 @@ function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
 	if not folder or not gunName or not tmpl then
 		return 0
 	end
+	local S = _G.__VG_S
 	local n = 0
 	for _, model in ipairs(folder:GetChildren()) do
-		if model:IsA("Model") then
+		if model:IsA("Model") and misc.skinChanger.dropNearLocal(model, S) then
 			local resolved = misc.skinChanger.resolveDroppedGunName(model)
 			if resolved == gunName then
 				pcall(function()
@@ -5391,7 +5412,7 @@ function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
 	return n
 end
 
--- Budgeted scan: max 3 models per call (round-robin) — was full folder every ~0.25s on Heartbeat
+-- Budgeted scan near player: max 3 nearby models per call
 function misc.skinChanger.applyDroppedModels()
 	local S = _G.__VG_S
 	if not S or not S.CrimSkinDropped or not misc.skinChanger.active then
@@ -5411,17 +5432,17 @@ function misc.skinChanger.applyDroppedModels()
 	local start = (misc.skinChanger._dropIdx or 0) % total
 	local n = 0
 	local checked = 0
+	-- Walk whole ring but only spend budget on nearby unresolved drops
 	while checked < total and budget > 0 do
 		local i = (start + checked) % total + 1
 		checked = checked + 1
 		local model = kids[i]
-		if model and model:IsA("Model") then
+		if model and model:IsA("Model") and misc.skinChanger.dropNearLocal(model, S) then
 			local applied = misc.skinChanger.applyToDroppedModel(model)
 			if applied > 0 then
 				n = n + applied
 				budget = budget - 1
-			elseif model:GetAttribute("VG_DropSkin") == nil and model:GetAttribute("VG_DropGun") == nil then
-				-- unresolved / no saved skin — still spend budget slot so we rotate
+			elseif model:GetAttribute("VG_DropSkin") == nil then
 				budget = budget - 1
 			end
 		end
