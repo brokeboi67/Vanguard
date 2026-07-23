@@ -5716,16 +5716,103 @@ function misc.skinChanger.findUpgradeAnchor(model)
 	if not model then
 		return nil
 	end
-	if model.PrimaryPart then
-		return model.PrimaryPart
-	end
-	for _, n in ipairs({ "Handle", "WeaponHandle", "Gun", "Base", "Receiver" }) do
+	for _, n in ipairs({ "WeaponHandle", "Handle", "MagazineHandle", "BasePart", "Base", "Gun" }) do
 		local p = model:FindFirstChild(n, true)
 		if p and p:IsA("BasePart") then
 			return p
 		end
 	end
-	return model:FindFirstChildWhichIsA("BasePart", true)
+	if model.PrimaryPart then
+		return model.PrimaryPart
+	end
+	return model:FindFirstChildWhichIsA("MeshPart", true) or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+function misc.skinChanger.findNamedMesh(model, names)
+	if not model then
+		return nil
+	end
+	for _, n in ipairs(names) do
+		local p = model:FindFirstChild(n, true)
+		if p and p:IsA("MeshPart") then
+			return p
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.upgradeScaleFactor(toolRoot, upgradeModel)
+	local a = misc.skinChanger.findNamedMesh(toolRoot, { "BasePart", "BasePart2", "Base", "Receiver" })
+	local b = misc.skinChanger.findNamedMesh(upgradeModel, { "BasePart", "BasePart2", "Base", "Receiver" })
+	if not a or not b then
+		return 1
+	end
+	local am, bm = a.Size.Magnitude, b.Size.Magnitude
+	if bm < 1e-4 then
+		return 1
+	end
+	local s = am / bm
+	-- clamp — DisplayWepModels should be close; avoid insane ratios
+	if s < 0.25 or s > 4 then
+		return 1
+	end
+	return s
+end
+
+-- Exact-name MeshId/SA only — NEVER cyclic fallback (that put GSight mesh on BasePart → giant gun)
+function misc.skinChanger.applyUpgradeMeshesExact(root, upgradeModel, skinKey)
+	if not root or not upgradeModel then
+		return 0
+	end
+	local byName = {}
+	for _, d in ipairs(upgradeModel:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			byName[string.lower(d.Name)] = d
+		end
+	end
+	local n = 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+			local ln = string.lower(d.Name)
+			if ln == "block" or ln == "handle" or ln == "weaponhandle" or ln == "hitbox" then
+				continue
+			end
+			if string.sub(d.Name, 1, 7) == "VG_Upg_" then
+				continue
+			end
+			local src = byName[ln]
+			if not src then
+				continue
+			end
+			pcall(function()
+				if d:GetAttribute("VG_DefMesh") == nil then
+					d:SetAttribute("VG_DefMesh", d.MeshId or "")
+				end
+				if d:GetAttribute("VG_DefSize") == nil then
+					d:SetAttribute("VG_DefSize", d.Size)
+				end
+				for _, ch in ipairs(d:GetChildren()) do
+					if ch:IsA("SurfaceAppearance") then
+						ch:Destroy()
+					end
+				end
+				if src.MeshId and tostring(src.MeshId) ~= "" and not string.find(tostring(src.MeshId), "ContentId", 1, true) then
+					d.MeshId = src.MeshId
+				end
+				-- keep tool Size (authored for this MeshPart) — only mesh/SA from upgrade
+				local sa = src:FindFirstChildOfClass("SurfaceAppearance")
+				if sa then
+					local neo = sa:Clone()
+					neo.Name = tostring(skinKey)
+					neo.Parent = d
+					d.TextureID = ""
+				end
+				d:SetAttribute("VG_VarSkin", skinKey)
+			end)
+			n += 1
+		end
+	end
+	return n
 end
 
 -- Visual-only: keep tool Name (server still sees base gun), look like -X/-S model
@@ -5733,10 +5820,12 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	if not root or not upgradeModel then
 		return 0
 	end
+	-- ViewModel arms only — never weld DisplayWep parts to HRP (giant FP attachments)
+	if root.Name == "ViewModel" or (root:FindFirstChild("RArmHolder") and not misc.skinChanger.findNamedMesh(root, { "BasePart", "Base" })) then
+		return 0
+	end
 	local skinKey = "U:" .. tostring(upgName)
-	-- 1) swap matching MeshParts (sight body parts that share names)
-	local n = misc.skinChanger.applyVariantToInstance(root, upgradeModel, skinKey, true)
-	-- 2) clone EXTRA parts (laser/sight) that don't exist on base tool
+	local n = misc.skinChanger.applyUpgradeMeshesExact(root, upgradeModel, skinKey)
 	local have = {}
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("MeshPart") then
@@ -5751,46 +5840,59 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 		end
 		return n
 	end
+	local scale = misc.skinChanger.upgradeScaleFactor(root, upgradeModel)
 	local added = 0
 	for _, src in ipairs(upgradeModel:GetDescendants()) do
 		if src:IsA("MeshPart") then
 			local ln = string.lower(src.Name)
-			if not have[ln] and ln ~= "handle" and ln ~= "block" and ln ~= "hitbox" then
-				-- already cloned?
-				local existing = root:FindFirstChild("VG_Upg_" .. src.Name)
-				if existing then
-					have[ln] = true
-				else
-					local ok, neo = pcall(function()
-						local c = src:Clone()
-						c.Name = "VG_Upg_" .. src.Name
-						c.CanCollide = false
-						c.CanQuery = false
-						c.CanTouch = false
-						c.Massless = true
-						c.Anchored = false
-						c:SetAttribute("VG_UpgExtra", true)
-						c:SetAttribute("VG_VarSkin", skinKey)
-						c.Parent = root
-						local offset = upgAnchor.CFrame:ToObjectSpace(src.CFrame)
-						c.CFrame = toolAnchor.CFrame * offset
-						local w = Instance.new("WeldConstraint")
-						w.Part0 = toolAnchor
-						w.Part1 = c
-						w.Parent = c
-						return c
-					end)
-					if ok and neo then
-						have[ln] = true
-						added += 1
-						n += 1
+			if ln == "" or ln == "handle" or ln == "block" or ln == "hitbox" or ln == "weaponhandle" then
+				continue
+			end
+			if have[ln] then
+				continue
+			end
+			local existingName = "VG_Upg_" .. (src.Name ~= "" and src.Name or ("Part" .. tostring(added + 1)))
+			if root:FindFirstChild(existingName) then
+				have[ln] = true
+				continue
+			end
+			local ok, neo = pcall(function()
+				local c = src:Clone()
+				c.Name = existingName
+				c.CanCollide = false
+				c.CanQuery = false
+				c.CanTouch = false
+				c.Massless = true
+				c.Anchored = false
+				c.Size = src.Size * scale
+				c:SetAttribute("VG_UpgExtra", true)
+				c:SetAttribute("VG_VarSkin", skinKey)
+				-- strip scripts from display clone
+				for _, d in ipairs(c:GetDescendants()) do
+					if d:IsA("Script") or d:IsA("LocalScript") or d:IsA("ModuleScript") then
+						d:Destroy()
 					end
 				end
+				c.Parent = root
+				local rel = upgAnchor.CFrame:ToObjectSpace(src.CFrame)
+				local pos = rel.Position * scale
+				local rot = rel - rel.Position
+				c.CFrame = toolAnchor.CFrame * CFrame.new(pos) * rot
+				local w = Instance.new("WeldConstraint")
+				w.Part0 = toolAnchor
+				w.Part1 = c
+				w.Parent = c
+				return c
+			end)
+			if ok and neo then
+				have[ln] = true
+				added += 1
+				n += 1
 			end
 		end
 	end
-	if not quiet and (n > 0 or added > 0) then
-		misc.skinChanger.log(string.format("upgradeLook %s → %s matched+extra n=%d added=%d", root.Name, tostring(upgName), n, added))
+	if not quiet then
+		misc.skinChanger.log(string.format("upgradeLook %s → %s exact+extra n=%d added=%d scale=%.3f", root.Name, tostring(upgName), n, added, scale))
 	end
 	return n
 end
@@ -5799,7 +5901,6 @@ function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
 	if not tool or not misc.skinChanger.isGunTool(tool) then
 		return 0, "not a gun"
 	end
-	-- Don't restyle if already holding the real upgrade tool
 	local nTool = tool.Name
 	if string.sub(nTool, -2) == "-X" or string.sub(nTool, -2) == "-S" then
 		return 0, "already upgrade tool"
@@ -5809,21 +5910,8 @@ function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
 		return 0, "no upgrade model"
 	end
 	misc.skinChanger.clearUpgradeExtras(tool)
+	-- Only the Tool — FP uses character tool; ViewModel HRP welds caused giant floating sights
 	local n = misc.skinChanger.applyUpgradeLookToRoot(tool, upgModel, upgName, quiet)
-	local cam = workspace.CurrentCamera
-	local vm = cam and cam:FindFirstChild("ViewModel")
-	if vm then
-		misc.skinChanger.clearUpgradeExtras(vm)
-		n += misc.skinChanger.applyUpgradeLookToRoot(vm, upgModel, upgName, true)
-	end
-	local rf = game:GetService("ReplicatedFirst")
-	local folder = rf:FindFirstChild("ViewModels")
-	if folder then
-		for _, ch in ipairs(folder:GetChildren()) do
-			misc.skinChanger.clearUpgradeExtras(ch)
-			n += misc.skinChanger.applyUpgradeLookToRoot(ch, upgModel, upgName, true)
-		end
-	end
 	return n, upgName
 end
 
@@ -5833,7 +5921,7 @@ function misc.skinChanger.upgradeHeldGun()
 		return false, "equip a gun first"
 	end
 	local n, info = misc.skinChanger.applyUpgradeLookToTool(tool, false)
-	if typeof(info) == "string" and (n == 0) and (info == "no upgrade model" or info == "already upgrade tool" or info == "not a gun") then
+	if typeof(info) == "string" and n == 0 and (info == "no upgrade model" or info == "already upgrade tool" or info == "not a gun") then
 		return false, info
 	end
 	local S = _G.__VG_S
@@ -5856,7 +5944,6 @@ function misc.skinChanger.clearUpgradeHeldGun()
 	local S = _G.__VG_S
 	if tool then
 		misc.skinChanger.clearUpgradeExtras(tool)
-		-- restore default meshes if we saved them
 		for _, d in ipairs(tool:GetDescendants()) do
 			if d:IsA("MeshPart") then
 				local def = d:GetAttribute("VG_DefMesh")
@@ -5865,9 +5952,18 @@ function misc.skinChanger.clearUpgradeHeldGun()
 						d.MeshId = def
 					end)
 				end
-				d:SetAttribute("VG_VarSkin", nil)
+				local defSz = d:GetAttribute("VG_DefSize")
+				if typeof(defSz) == "Vector3" then
+					pcall(function()
+						d.Size = defSz
+					end)
+				end
+				if typeof(d:GetAttribute("VG_VarSkin")) == "string" and string.sub(tostring(d:GetAttribute("VG_VarSkin")), 1, 2) == "U:" then
+					d:SetAttribute("VG_VarSkin", nil)
+				end
 			end
 		end
+		-- cleanup leftover ViewModel junk from older builds
 		local cam = workspace.CurrentCamera
 		local vm = cam and cam:FindFirstChild("ViewModel")
 		if vm then
@@ -5880,7 +5976,6 @@ function misc.skinChanger.clearUpgradeHeldGun()
 	if S and typeof(_G.__VG_CONFIG) == "table" and typeof(_G.__VG_CONFIG.SaveGlobals) == "function" then
 		pcall(_G.__VG_CONFIG.SaveGlobals, S)
 	end
-	-- re-apply saved skin if any
 	if tool and misc.skinChanger.active then
 		misc.skinChanger.applySavedForTool(tool, true)
 	end
@@ -5902,7 +5997,6 @@ function misc.skinChanger.tickUpgradeLooks()
 	if typeof(want) ~= "string" or want == "" then
 		return
 	end
-	-- skip if extras already present / skin key tagged
 	local tagged = false
 	for _, d in ipairs(tool:GetDescendants()) do
 		if d:GetAttribute("VG_VarSkin") == ("U:" .. want) or d:GetAttribute("VG_UpgExtra") == true then
@@ -5910,26 +6004,7 @@ function misc.skinChanger.tickUpgradeLooks()
 			break
 		end
 	end
-	if tagged and tool:FindFirstChildWhichIsA("MeshPart") then
-		-- still refresh viewmodel cheaply if empty
-		local cam = workspace.CurrentCamera
-		local vm = cam and cam:FindFirstChild("ViewModel")
-		if vm then
-			local vmOk = false
-			for _, d in ipairs(vm:GetDescendants()) do
-				if d:GetAttribute("VG_UpgExtra") == true or d:GetAttribute("VG_VarSkin") == ("U:" .. want) then
-					vmOk = true
-					break
-				end
-			end
-			if not vmOk then
-				local upgModel = misc.skinChanger.getDisplayWepModels()
-				upgModel = upgModel and upgModel:FindFirstChild(want)
-				if upgModel then
-					misc.skinChanger.applyUpgradeLookToRoot(vm, upgModel, want, true)
-				end
-			end
-		end
+	if tagged then
 		return
 	end
 	misc.skinChanger.applyUpgradeLookToTool(tool, true)
