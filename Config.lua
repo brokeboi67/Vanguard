@@ -704,6 +704,9 @@ function Config.EnforceRules(S)
 	if typeof(S.CrimGunSkins) ~= "table" then
 		S.CrimGunSkins = {}
 	end
+	if S.CrimSkinUiWeapon == nil then
+		S.CrimSkinUiWeapon = "Mare"
+	end
 	if S.CrimHideHelmetOverlay == nil then
 		S.CrimHideHelmetOverlay = false
 	end

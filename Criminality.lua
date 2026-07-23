@@ -4558,20 +4558,45 @@ function misc.skinChanger.dump()
 	return text, #lines
 end
 
-function misc.skinChanger.applyTemplateToInstance(root, template)
+function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 	if not root or not template then
 		return 0
 	end
-	local n = 0
-	local skipped = 0
+	local n, patched, skipped = 0, 0, 0
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("MeshPart") then
 			if misc.skinChanger.shouldSkinMesh(d) then
 				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
-				if not sa then
+				-- already correct — skip work (FPS)
+				if sa and sa.Name == template.Name then
+					local same = false
+					pcall(function()
+						same = sa.ColorMap == template.ColorMap
+					end)
+					if same then
+						n = n + 1
+					else
+						pcall(function()
+							sa.ColorMap = template.ColorMap
+							sa.MetalnessMap = template.MetalnessMap
+							sa.NormalMap = template.NormalMap
+							sa.RoughnessMap = template.RoughnessMap
+							sa.AlphaMode = template.AlphaMode
+							if template.TexturePack then
+								sa.TexturePack = template.TexturePack
+							end
+						end)
+						patched = patched + 1
+						n = n + 1
+					end
+				elseif not sa then
 					sa = template:Clone()
 					sa.Parent = d
-					misc.skinChanger.log(string.format("CLONE SA '%s' → %s (had tex=%s)", template.Name, d:GetFullName(), tostring(d.TextureID)))
+					patched = patched + 1
+					n = n + 1
+					if not quiet then
+						misc.skinChanger.log(string.format("CLONE SA '%s' → %s", template.Name, d.Name))
+					end
 				else
 					pcall(function()
 						sa.Name = template.Name
@@ -4584,23 +4609,120 @@ function misc.skinChanger.applyTemplateToInstance(root, template)
 							sa.TexturePack = template.TexturePack
 						end
 					end)
-					misc.skinChanger.log(string.format("PATCH SA on %s → %s", d:GetFullName(), template.Name))
+					patched = patched + 1
+					n = n + 1
 				end
-				-- clear legacy TextureID so SurfaceAppearance shows (default Mare uses TextureID only)
 				pcall(function()
 					if d.TextureID and d.TextureID ~= "" then
 						d:SetAttribute("VG_PrevTex", d.TextureID)
 						d.TextureID = ""
 					end
 				end)
-				n = n + 1
 			else
 				skipped = skipped + 1
 			end
 		end
 	end
-	misc.skinChanger.log(string.format("applyTemplate root=%s hit=%d skipMesh=%d tmpl=%s", root:GetFullName(), n, skipped, template.Name))
+	if not quiet and patched > 0 then
+		misc.skinChanger.log(string.format("applyTemplate root=%s ok=%d patched=%d skip=%d tmpl=%s", root.Name, n, patched, skipped, template.Name))
+	end
 	return n
+end
+
+function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
+	if not tool or not skinKey then
+		return false
+	end
+	local any = false
+	for _, d in ipairs(tool:GetDescendants()) do
+		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+			any = true
+			local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+			if not sa or sa.Name ~= skinKey then
+				return false
+			end
+		end
+	end
+	return any
+end
+
+function misc.skinChanger.listAllWeapons()
+	local folder = misc.skinChanger.getRepPBR()
+	local out, seen = {}, {}
+	if not folder then
+		return out
+	end
+	for _, ch in ipairs(folder:GetChildren()) do
+		if ch:IsA("SurfaceAppearance") then
+			local name = ch.Name
+			local us = string.find(name, "_", 1, true)
+			if us and us > 1 then
+				local gun = string.sub(name, 1, us - 1)
+				if not seen[gun] then
+					seen[gun] = true
+					out[#out + 1] = gun
+				end
+			end
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+function misc.skinChanger.skinLabel(fullName)
+	if typeof(fullName) ~= "string" then
+		return "?"
+	end
+	local us = string.find(fullName, "_", 1, true)
+	if us then
+		return string.sub(fullName, us + 1)
+	end
+	return fullName
+end
+
+function misc.skinChanger.applyNamed(gunName, skinKey)
+	if not gunName or not skinKey then
+		return false, "bad args"
+	end
+	misc.skinChanger.setSavedSkinKey(gunName, skinKey)
+	local tmpl = misc.skinChanger.resolveTemplate(gunName, skinKey)
+	if not tmpl then
+		return false, "template missing: " .. tostring(skinKey)
+	end
+	local n = 0
+	local lp = getLP()
+	local function tryTool(tool)
+		if tool and tool.Name == gunName and misc.skinChanger.isGunTool(tool) then
+			n = n + misc.skinChanger.applyToTool(tool, tmpl, false)
+		end
+	end
+	if lp and lp.Character then
+		tryTool(lp.Character:FindFirstChild(gunName))
+	end
+	local chars = workspace:FindFirstChild("Characters")
+	local model = chars and lp and chars:FindFirstChild(lp.Name)
+	if model then
+		tryTool(model:FindFirstChild(gunName))
+	end
+	local bp = lp and lp:FindFirstChild("Backpack")
+	if bp then
+		tryTool(bp:FindFirstChild(gunName))
+	end
+	-- always hit RF viewmodel clone if it matches
+	local rf = game:GetService("ReplicatedFirst")
+	local vmFolder = rf:FindFirstChild("ViewModels")
+	local vmTool = vmFolder and vmFolder:FindFirstChild("Tool")
+	if vmTool and (vmTool.Name == gunName or (lp and lp.Character and lp.Character:FindFirstChild(gunName))) then
+		-- ViewModels.Tool is often named "Tool" but is the equipped gun clone
+		if misc.skinChanger.isGunTool(vmTool) or vmTool:IsA("Tool") or vmTool:IsA("Model") then
+			-- match by mesh presence / current equip
+			local equipped = misc.skinChanger.findActiveGun()
+			if equipped and equipped.Name == gunName then
+				n = n + misc.skinChanger.applyTemplateToInstance(vmTool, tmpl, false)
+			end
+		end
+	end
+	return true, string.format("%s → %s (%d)", gunName, misc.skinChanger.skinLabel(skinKey), n)
 end
 
 function misc.skinChanger.findActiveGun()
@@ -4662,29 +4784,27 @@ function misc.skinChanger.setSavedSkinKey(gunName, skinKey)
 	end
 end
 
-function misc.skinChanger.applyToTool(tool, template)
+function misc.skinChanger.applyToTool(tool, template, quiet)
 	if not tool or not template then
 		return 0
 	end
-	local n = misc.skinChanger.applyTemplateToInstance(tool, template)
-	-- first-person ViewModel (Camera)
+	local n = misc.skinChanger.applyTemplateToInstance(tool, template, quiet)
 	local cam = workspace.CurrentCamera
 	local vm = cam and cam:FindFirstChild("ViewModel")
 	if vm then
-		n = n + misc.skinChanger.applyTemplateToInstance(vm, template)
+		n = n + misc.skinChanger.applyTemplateToInstance(vm, template, true)
 	end
-	-- ReplicatedFirst.ViewModels clones if present
 	local rf = game:GetService("ReplicatedFirst")
 	local folder = rf:FindFirstChild("ViewModels")
 	if folder then
 		for _, ch in ipairs(folder:GetChildren()) do
-			n = n + misc.skinChanger.applyTemplateToInstance(ch, template)
+			n = n + misc.skinChanger.applyTemplateToInstance(ch, template, quiet)
 		end
 	end
 	return n
 end
 
-function misc.skinChanger.applySavedForTool(tool)
+function misc.skinChanger.applySavedForTool(tool, quiet)
 	if not misc.skinChanger.isGunTool(tool) then
 		return false
 	end
@@ -4692,11 +4812,24 @@ function misc.skinChanger.applySavedForTool(tool)
 	if not key then
 		return false
 	end
+	-- skip if already looking correct (main FPS win)
+	if misc.skinChanger.toolAlreadyHasSkin(tool, key) then
+		-- still ensure RF.ViewModels.Tool if present and wrong
+		local rf = game:GetService("ReplicatedFirst")
+		local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
+		if vmTool and not misc.skinChanger.toolAlreadyHasSkin(vmTool, key) then
+			local tmpl = misc.skinChanger.resolveTemplate(tool.Name, key)
+			if tmpl then
+				misc.skinChanger.applyTemplateToInstance(vmTool, tmpl, true)
+			end
+		end
+		return true
+	end
 	local tmpl = misc.skinChanger.resolveTemplate(tool.Name, key)
 	if not tmpl then
 		return false
 	end
-	misc.skinChanger.applyToTool(tool, tmpl)
+	misc.skinChanger.applyToTool(tool, tmpl, quiet ~= false)
 	misc.skinChanger.lastToolName = tool.Name
 	return true
 end
@@ -4705,25 +4838,10 @@ function misc.skinChanger.tick()
 	if not misc.skinChanger.active then
 		return
 	end
-	local lp = getLP()
-	if not lp then
-		return
-	end
-	local char = lp.Character
-	if char then
-		for _, ch in ipairs(char:GetChildren()) do
-			if misc.skinChanger.isGunTool(ch) then
-				misc.skinChanger.applySavedForTool(ch)
-			end
-		end
-	end
-	local bp = lp:FindFirstChild("Backpack")
-	if bp then
-		for _, ch in ipairs(bp:GetChildren()) do
-			if misc.skinChanger.isGunTool(ch) and misc.skinChanger.getSavedSkinKey(ch.Name) then
-				misc.skinChanger.applySavedForTool(ch)
-			end
-		end
+	-- only equipped gun — do NOT spam backpack every frame
+	local tool = misc.skinChanger.findActiveGun()
+	if tool then
+		misc.skinChanger.applySavedForTool(tool, true)
 	end
 end
 
@@ -4840,34 +4958,60 @@ function misc.skinChanger.bindUi(S)
 	if typeof(S) ~= "table" then
 		return
 	end
-	S._crimSkinCycle = function()
+	local function ensureOn()
 		if not S.CrimSkinChanger then
 			S.CrimSkinChanger = true
 		end
 		if not misc.skinChanger.active then
 			misc.skinChanger.start()
 		end
+	end
+	S._crimSkinCycle = function()
+		ensureOn()
 		return misc.skinChanger.cycleForCurrent()
 	end
-	S._crimSkinClear = function()
-		return misc.skinChanger.clearCurrent()
+	S._crimSkinClear = function(gunName)
+		gunName = gunName or (misc.skinChanger.findActiveGun() and misc.skinChanger.findActiveGun().Name)
+		if not gunName then
+			return false, "no gun"
+		end
+		misc.skinChanger.setSavedSkinKey(gunName, nil)
+		return true, "cleared " .. gunName
 	end
 	S._crimSkinStatus = function()
 		return misc.skinChanger.statusText()
 	end
 	S._crimSkinApply = function()
-		if not S.CrimSkinChanger then
-			S.CrimSkinChanger = true
-		end
-		if not misc.skinChanger.active then
-			misc.skinChanger.start()
-		end
+		ensureOn()
 		misc.skinChanger.tick()
 		return true, misc.skinChanger.statusText()
 	end
 	S._crimSkinDump = function()
 		local text, n = misc.skinChanger.dump()
 		return true, string.format("dumped %d lines → Vanguard/logs/skin_dump.txt", n or 0), text
+	end
+	S._crimSkinListWeapons = function()
+		return misc.skinChanger.listAllWeapons()
+	end
+	S._crimSkinListSkins = function(gunName)
+		local skins = misc.skinChanger.listSkinsForGun(gunName)
+		local rows = {}
+		for _, sa in ipairs(skins) do
+			rows[#rows + 1] = {
+				full = sa.Name,
+				label = misc.skinChanger.skinLabel(sa.Name),
+				selected = misc.skinChanger.getSavedSkinKey(gunName) == sa.Name,
+			}
+		end
+		return rows
+	end
+	S._crimSkinPick = function(gunName, skinFull)
+		ensureOn()
+		S.CrimSkinUiWeapon = gunName
+		return misc.skinChanger.applyNamed(gunName, skinFull)
+	end
+	S._crimSkinSaved = function(gunName)
+		return misc.skinChanger.getSavedSkinKey(gunName)
 	end
 end
 
@@ -5706,7 +5850,7 @@ local function startMaster(S)
 		if featureRunning.noFog and master.frame % 12 == 0 then
 			pcall(misc.noFog.apply)
 		end
-		if featureRunning.skinChanger and master.frame % 20 == 0 then
+		if featureRunning.skinChanger and master.frame % 90 == 0 then
 			pcall(misc.skinChanger.tick)
 		end
 
