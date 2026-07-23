@@ -698,6 +698,12 @@ function Config.EnforceRules(S)
 	if S.CrimNoFog == nil then
 		S.CrimNoFog = false
 	end
+	if S.CrimSkinChanger == nil then
+		S.CrimSkinChanger = false
+	end
+	if typeof(S.CrimGunSkins) ~= "table" then
+		S.CrimGunSkins = {}
+	end
 	if S.CrimHideHelmetOverlay == nil then
 		S.CrimHideHelmetOverlay = false
 	end

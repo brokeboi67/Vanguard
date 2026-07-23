@@ -2801,6 +2801,7 @@ local featureRunning = {
 	noFailLockpick = false,
 	fullBright = false,
 	noFog = false,
+	skinChanger = false,
 	hitSounds = false,
 	autoRespawn = false,
 	removeSmoke = false,
@@ -4238,6 +4239,387 @@ function misc.noFog.stop()
 	misc.noFog.restore()
 end
 
+-- ── CLIENT GUN SKINCHANGER (RepPBR SurfaceAppearance → Tool Gun meshes + ViewModel) ──
+-- Skins live at ReplicatedStorage.Storage.CosmeticsStuff.RepPBR (e.g. Mare_Heartseeker).
+-- Tool jumps Backpack ↔ Character on equip; FP view is CurrentCamera.ViewModel.
+misc.skinChanger = {
+	conns = {},
+	active = false,
+	lastToolName = "",
+	cycleIdx = {},
+}
+
+function misc.skinChanger.clearConns()
+	for _, c in ipairs(misc.skinChanger.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.skinChanger.conns = {}
+end
+
+function misc.skinChanger.getRepPBR()
+	local storage = RepSt:FindFirstChild("Storage")
+	local cos = storage and storage:FindFirstChild("CosmeticsStuff")
+	return cos and cos:FindFirstChild("RepPBR")
+end
+
+function misc.skinChanger.isGunTool(tool)
+	if not tool or not tool:IsA("Tool") then
+		return false
+	end
+	if tool:GetAttribute("__IsGUN") == true then
+		return true
+	end
+	if tool:FindFirstChild("IsGun") then
+		return true
+	end
+	local n = tool.Name
+	if n == "Fists" or n == "Bandage" or n == "VM" then
+		return false
+	end
+	return tool:FindFirstChild("Gun", true) ~= nil
+end
+
+function misc.skinChanger.listSkinsForGun(gunName)
+	local out = {}
+	local folder = misc.skinChanger.getRepPBR()
+	if not folder or not gunName or gunName == "" then
+		return out
+	end
+	local prefix = gunName .. "_"
+	for _, ch in ipairs(folder:GetChildren()) do
+		if ch:IsA("SurfaceAppearance") and string.sub(ch.Name, 1, #prefix) == prefix then
+			out[#out + 1] = ch
+		end
+	end
+	table.sort(out, function(a, b)
+		return a.Name < b.Name
+	end)
+	return out
+end
+
+function misc.skinChanger.resolveTemplate(gunName, skinKey)
+	local folder = misc.skinChanger.getRepPBR()
+	if not folder then
+		return nil
+	end
+	if typeof(skinKey) == "string" and skinKey ~= "" then
+		local direct = folder:FindFirstChild(skinKey)
+		if direct and direct:IsA("SurfaceAppearance") then
+			return direct
+		end
+		-- suffix only: "Heartseeker" → "Mare_Heartseeker"
+		if gunName and not string.find(skinKey, "_", 1, true) then
+			local full = folder:FindFirstChild(gunName .. "_" .. skinKey)
+			if full and full:IsA("SurfaceAppearance") then
+				return full
+			end
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.shouldSkinMesh(part)
+	if not part or not part:IsA("MeshPart") then
+		return false
+	end
+	local n = part.Name
+	if n == "Left Arm" or n == "Right Arm" or n == "Head" or n == "Torso" or n == "HumanoidRootPart" then
+		return false
+	end
+	if n == "Gun" or n == "Handle" then
+		return true
+	end
+	if string.find(n, "Gun", 1, true) then
+		return true
+	end
+	if part:FindFirstChildOfClass("SurfaceAppearance") then
+		return true
+	end
+	return false
+end
+
+function misc.skinChanger.applyTemplateToInstance(root, template)
+	if not root or not template then
+		return 0
+	end
+	local n = 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if misc.skinChanger.shouldSkinMesh(d) then
+			local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+			if not sa then
+				sa = template:Clone()
+				sa.Parent = d
+			else
+				pcall(function()
+					sa.Name = template.Name
+					sa.ColorMap = template.ColorMap
+					sa.MetalnessMap = template.MetalnessMap
+					sa.NormalMap = template.NormalMap
+					sa.RoughnessMap = template.RoughnessMap
+					sa.AlphaMode = template.AlphaMode
+					if template.TexturePack then
+						sa.TexturePack = template.TexturePack
+					end
+				end)
+			end
+			n = n + 1
+		end
+	end
+	return n
+end
+
+function misc.skinChanger.findActiveGun()
+	local lp = getLP()
+	if not lp then
+		return nil
+	end
+	local char = lp.Character
+	if char then
+		for _, ch in ipairs(char:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				return ch
+			end
+		end
+	end
+	-- prefer last known / any backpack gun if none equipped
+	local bp = lp:FindFirstChild("Backpack")
+	if bp then
+		for _, ch in ipairs(bp:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				return ch
+			end
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.getSavedSkinKey(gunName)
+	local S = _G.__VG_S or {}
+	local map = S.CrimGunSkins
+	if typeof(map) ~= "table" then
+		return nil
+	end
+	return map[gunName]
+end
+
+function misc.skinChanger.setSavedSkinKey(gunName, skinKey)
+	local S = _G.__VG_S
+	if not S or not gunName then
+		return
+	end
+	if typeof(S.CrimGunSkins) ~= "table" then
+		S.CrimGunSkins = {}
+	end
+	if skinKey and skinKey ~= "" then
+		S.CrimGunSkins[gunName] = skinKey
+	else
+		S.CrimGunSkins[gunName] = nil
+	end
+end
+
+function misc.skinChanger.applyToTool(tool, template)
+	if not tool or not template then
+		return 0
+	end
+	local n = misc.skinChanger.applyTemplateToInstance(tool, template)
+	-- first-person ViewModel (Camera)
+	local cam = workspace.CurrentCamera
+	local vm = cam and cam:FindFirstChild("ViewModel")
+	if vm then
+		n = n + misc.skinChanger.applyTemplateToInstance(vm, template)
+	end
+	-- ReplicatedFirst.ViewModels clones if present
+	local rf = game:GetService("ReplicatedFirst")
+	local folder = rf:FindFirstChild("ViewModels")
+	if folder then
+		for _, ch in ipairs(folder:GetChildren()) do
+			n = n + misc.skinChanger.applyTemplateToInstance(ch, template)
+		end
+	end
+	return n
+end
+
+function misc.skinChanger.applySavedForTool(tool)
+	if not misc.skinChanger.isGunTool(tool) then
+		return false
+	end
+	local key = misc.skinChanger.getSavedSkinKey(tool.Name)
+	if not key then
+		return false
+	end
+	local tmpl = misc.skinChanger.resolveTemplate(tool.Name, key)
+	if not tmpl then
+		return false
+	end
+	misc.skinChanger.applyToTool(tool, tmpl)
+	misc.skinChanger.lastToolName = tool.Name
+	return true
+end
+
+function misc.skinChanger.tick()
+	if not misc.skinChanger.active then
+		return
+	end
+	local lp = getLP()
+	if not lp then
+		return
+	end
+	local char = lp.Character
+	if char then
+		for _, ch in ipairs(char:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				misc.skinChanger.applySavedForTool(ch)
+			end
+		end
+	end
+	local bp = lp:FindFirstChild("Backpack")
+	if bp then
+		for _, ch in ipairs(bp:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) and misc.skinChanger.getSavedSkinKey(ch.Name) then
+				misc.skinChanger.applySavedForTool(ch)
+			end
+		end
+	end
+end
+
+function misc.skinChanger.cycleForCurrent()
+	local tool = misc.skinChanger.findActiveGun()
+	if not tool then
+		return false, "no gun"
+	end
+	local skins = misc.skinChanger.listSkinsForGun(tool.Name)
+	if #skins == 0 then
+		return false, "no skins for " .. tool.Name
+	end
+	local idx = (misc.skinChanger.cycleIdx[tool.Name] or 0) % #skins + 1
+	misc.skinChanger.cycleIdx[tool.Name] = idx
+	local tmpl = skins[idx]
+	misc.skinChanger.setSavedSkinKey(tool.Name, tmpl.Name)
+	local n = misc.skinChanger.applyToTool(tool, tmpl)
+	return true, string.format("%s → %s (%d meshes)", tool.Name, tmpl.Name, n)
+end
+
+function misc.skinChanger.clearCurrent()
+	local tool = misc.skinChanger.findActiveGun()
+	if not tool then
+		return false, "no gun"
+	end
+	misc.skinChanger.setSavedSkinKey(tool.Name, nil)
+	return true, "cleared " .. tool.Name
+end
+
+function misc.skinChanger.statusText()
+	local tool = misc.skinChanger.findActiveGun()
+	local folder = misc.skinChanger.getRepPBR()
+	if not folder then
+		return "RepPBR not found"
+	end
+	if not tool then
+		return "No gun (equip one)"
+	end
+	local saved = misc.skinChanger.getSavedSkinKey(tool.Name) or "(default)"
+	local n = #misc.skinChanger.listSkinsForGun(tool.Name)
+	return string.format("%s | skin: %s | %d available", tool.Name, tostring(saved), n)
+end
+
+function misc.skinChanger.hookContainer(container)
+	if not container then
+		return
+	end
+	table.insert(
+		misc.skinChanger.conns,
+		container.ChildAdded:Connect(function(ch)
+			if misc.skinChanger.active and misc.skinChanger.isGunTool(ch) then
+				task.defer(function()
+					task.wait(0.15)
+					misc.skinChanger.applySavedForTool(ch)
+				end)
+			end
+		end)
+	)
+end
+
+function misc.skinChanger.start()
+	misc.skinChanger.clearConns()
+	misc.skinChanger.active = true
+	local lp = getLP()
+	if not lp then
+		return
+	end
+	misc.skinChanger.hookContainer(lp:FindFirstChild("Backpack"))
+	misc.skinChanger.hookContainer(lp.Character)
+	table.insert(
+		misc.skinChanger.conns,
+		lp.CharacterAdded:Connect(function(char)
+			task.defer(function()
+				misc.skinChanger.hookContainer(char)
+				task.wait(0.3)
+				misc.skinChanger.tick()
+			end)
+		end)
+	)
+	table.insert(
+		misc.skinChanger.conns,
+		lp.ChildAdded:Connect(function(ch)
+			if ch.Name == "Backpack" then
+				misc.skinChanger.hookContainer(ch)
+			end
+		end)
+	)
+	-- VM enable/disable (from game VM.lua)
+	if _G.VM and _G.VM.ChangeEvent then
+		table.insert(
+			misc.skinChanger.conns,
+			_G.VM.ChangeEvent.Event:Connect(function()
+				task.defer(function()
+					task.wait(0.05)
+					misc.skinChanger.tick()
+				end)
+			end)
+		)
+	end
+	misc.skinChanger.tick()
+	misc.skinChanger.bindUi(_G.__VG_S)
+end
+
+function misc.skinChanger.stop()
+	misc.skinChanger.active = false
+	misc.skinChanger.clearConns()
+end
+
+function misc.skinChanger.bindUi(S)
+	if typeof(S) ~= "table" then
+		return
+	end
+	S._crimSkinCycle = function()
+		if not S.CrimSkinChanger then
+			S.CrimSkinChanger = true
+		end
+		if not misc.skinChanger.active then
+			misc.skinChanger.start()
+		end
+		return misc.skinChanger.cycleForCurrent()
+	end
+	S._crimSkinClear = function()
+		return misc.skinChanger.clearCurrent()
+	end
+	S._crimSkinStatus = function()
+		return misc.skinChanger.statusText()
+	end
+	S._crimSkinApply = function()
+		if not S.CrimSkinChanger then
+			S.CrimSkinChanger = true
+		end
+		if not misc.skinChanger.active then
+			misc.skinChanger.start()
+		end
+		misc.skinChanger.tick()
+		return true, misc.skinChanger.statusText()
+	end
+end
+
 -- ── HIDE HelmetOverlayGUI (PlayerGui.HelmetOverlayGUI.Enabled = false) ───────
 -- Methods on misc.helmet — no extra chunk locals (Luau 200-register limit).
 misc.helmet = { conns = {}, active = false }
@@ -4991,6 +5373,8 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
+	syncFeatureToggle("skinChanger", "CrimSkinChanger", misc.skinChanger.start, misc.skinChanger.stop, S)
+	pcall(misc.skinChanger.bindUi, S)
 	syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 	syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
@@ -5043,6 +5427,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 			syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
+			syncFeatureToggle("skinChanger", "CrimSkinChanger", misc.skinChanger.start, misc.skinChanger.stop, S)
 			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
@@ -5069,6 +5454,9 @@ local function startMaster(S)
 		end
 		if featureRunning.noFog and master.frame % 12 == 0 then
 			pcall(misc.noFog.apply)
+		end
+		if featureRunning.skinChanger and master.frame % 20 == 0 then
+			pcall(misc.skinChanger.tick)
 		end
 
 		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
@@ -5237,6 +5625,7 @@ local function stopMaster()
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
 	pcall(misc.noFog.stop)
+	pcall(misc.skinChanger.stop)
 	pcall(misc.helmet.stop)
 	pcall(stopRemoveSmokeExplosion)
 	pcall(snd.stop)
