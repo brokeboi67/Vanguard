@@ -272,7 +272,7 @@ function UISkinVault.build(opts)
 
 	local Vault = C("Frame", {
 		Name = "SkinVault",
-		Size = UDim2.new(1, 0, 0, 560),
+		Size = UDim2.new(1, 0, 0, 590),
 		BackgroundColor3 = Color3.fromRGB(12, 14, 20),
 		BorderSizePixel = 0,
 		LayoutOrder = 4,
