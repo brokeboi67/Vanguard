@@ -724,6 +724,9 @@ function Config.EnforceRules(S)
 	if S.CrimStaffDetect == nil then
 		S.CrimStaffDetect = false
 	end
+	if S.CrimSessionStats == nil then
+		S.CrimSessionStats = false
+	end
 	if S.CrimStaffAutoKick == nil then
 		S.CrimStaffAutoKick = true
 	end

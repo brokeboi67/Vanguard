@@ -3248,6 +3248,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			fmt = function(v) return string.format("%d ms", v) end,
 		})
 		MakeHint(CCrate, "hint_crim_allowance", 26)
+		MakeSection(CCrate, L("crim_sub_session"), 27)
+		MakeTog(CCrate, "Session Economy HUD", "CrimSessionStats", 28, { flat = true })
+		MakeButton(CCrate, nil, 29, function()
+			if S._crimEcoReset then
+				S._crimEcoReset()
+			end
+		end, "btn_crim_eco_reset")
+		MakeHint(CCrate, "hint_crim_session", 30)
 
 		MakeSection(CESP, L("crim_sub_world"), 1)
 		MakeTog(CESP, "Safe ESP", "CrimSafeESP", 2, {

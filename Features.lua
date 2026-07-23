@@ -399,22 +399,17 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	}), Z.stats + 1)
 	local StatsLines = {}
 	local StatValues = {}
-	local StatRows = {}
-	local STAT_KEYS = { "Kills", "Hits", "Accuracy", "Cash", "XP", "Rate", "Time" }
-	local ECO_KEYS = { Cash = true, XP = true, Rate = true }
-	local ECO_LABEL = { Cash = "Cash ±", XP = "XP ±", Rate = "$ ±/m" }
-	for i, key in ipairs(STAT_KEYS) do
-		local rowY = 38 + (i - 1) * 20
-		local lab = tagZ(C("TextLabel", {
+	for i, key in ipairs({ "Kills", "Hits", "Accuracy", "Time" }) do
+		local rowY = 38 + (i - 1) * 22
+		tagZ(C("TextLabel", {
 			Size = UDim2.new(0.55, 0, 0, 14),
 			Position = UDim2.new(0, 12, 0, rowY),
 			BackgroundTransparency = 1,
-			Text = ECO_LABEL[key] or key,
+			Text = key,
 			Font = Enum.Font.GothamMedium,
 			TextSize = 10,
 			TextColor3 = Color3.fromRGB(145, 148, 162),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			Visible = not ECO_KEYS[key],
 			Parent = StatsPanel,
 		}), Z.stats + 1)
 		local val = tagZ(C("TextLabel", {
@@ -426,12 +421,10 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			TextSize = 11,
 			TextColor3 = ACC,
 			TextXAlignment = Enum.TextXAlignment.Right,
-			Visible = not ECO_KEYS[key],
 			Parent = StatsPanel,
 		}), Z.stats + 1)
 		StatsLines[key] = val
 		StatValues[key] = val
-		StatRows[key] = { lab = lab, val = val }
 	end
 	local AccBarBg = tagZ(C("Frame", {
 		Size = UDim2.new(1, -24, 0, 4),
@@ -448,51 +441,108 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		Parent = AccBarBg,
 	}), Z.stats + 2)
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = AccBarFill })
-	local statDisplayEco = { cashE = -1, cashS = -1, xpE = -1, xpS = -1, rate = "", ecoOn = false }
-	local statsEcoLastLayout = false
+
+	-- Criminality-only economy HUD (separate from Session Stats)
+	local CrimEcoPanel = tagZ(C("Frame", {
+		Name = "CrimSessionEco",
+		Size = UDim2.new(0, 210, 0, 148),
+		Position = UDim2.new(1, -224, 0, 152),
+		BackgroundColor3 = Color3.fromRGB(16, 16, 22),
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Visible = false,
+		Parent = HudGui,
+	}), Z.stats)
+	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = CrimEcoPanel })
+	local CrimEcoStroke = C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.62, Parent = CrimEcoPanel })
+	tagZ(C("Frame", {
+		Size = UDim2.new(1, 0, 0, 2),
+		BackgroundColor3 = ACC,
+		BorderSizePixel = 0,
+		Parent = CrimEcoPanel,
+	}), Z.stats + 1)
+	tagZ(C("TextLabel", {
+		Size = UDim2.new(1, -20, 0, 14),
+		Position = UDim2.new(0, 12, 0, 10),
+		BackgroundTransparency = 1,
+		Text = "CRIM ECONOMY",
+		Font = Enum.Font.GothamBlack,
+		TextSize = 10,
+		TextColor3 = Color3.fromRGB(235, 235, 242),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = CrimEcoPanel,
+	}), Z.stats + 1)
+	tagZ(C("TextLabel", {
+		Size = UDim2.new(1, -20, 0, 10),
+		Position = UDim2.new(0, 12, 0, 24),
+		BackgroundTransparency = 1,
+		Text = "EARNED / SPENT",
+		Font = Enum.Font.GothamMedium,
+		TextSize = 8,
+		TextColor3 = Color3.fromRGB(120, 125, 140),
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = CrimEcoPanel,
+	}), Z.stats + 1)
+	local CrimEcoLines = {}
+	local CRIM_ECO_KEYS = {
+		{ key = "Cash", lab = "Cash ±" },
+		{ key = "XP", lab = "XP ±" },
+		{ key = "Rate", lab = "$ ±/m" },
+		{ key = "Net", lab = "Net $" },
+		{ key = "Time", lab = "Time" },
+	}
+	for i, row in ipairs(CRIM_ECO_KEYS) do
+		local rowY = 40 + (i - 1) * 20
+		tagZ(C("TextLabel", {
+			Size = UDim2.new(0.42, 0, 0, 14),
+			Position = UDim2.new(0, 12, 0, rowY),
+			BackgroundTransparency = 1,
+			Text = row.lab,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(145, 148, 162),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = CrimEcoPanel,
+		}), Z.stats + 1)
+		local val = tagZ(C("TextLabel", {
+			Size = UDim2.new(0.55, -12, 0, 14),
+			Position = UDim2.new(0.42, 0, 0, rowY),
+			BackgroundTransparency = 1,
+			Text = "—",
+			Font = Enum.Font.GothamBold,
+			TextSize = 11,
+			TextColor3 = ACC,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = CrimEcoPanel,
+		}), Z.stats + 1)
+		CrimEcoLines[row.key] = val
+	end
+	local crimEcoDisp = { cashE = -1, cashS = -1, xpE = -1, xpS = -1, rate = "", net = "", time = "" }
 	local function fmtEcoAmt(n)
 		n = math.floor(tonumber(n) or 0)
+		local neg = n < 0
+		n = math.abs(n)
+		local s
 		if n >= 1000000 then
-			return string.format("%.1fM", n / 1000000)
+			s = string.format("%.1fM", n / 1000000)
+		elseif n >= 1000 then
+			s = string.format("%.1fk", n / 1000)
+		else
+			s = tostring(n)
 		end
-		if n >= 1000 then
-			return string.format("%.1fk", n / 1000)
-		end
-		return tostring(n)
+		return neg and ("−" .. s) or s
 	end
 	local function fmtEcoPair(earned, spent)
 		return "+" .. fmtEcoAmt(earned) .. " / −" .. fmtEcoAmt(spent)
 	end
-	local function layoutSessionStats(ecoOn)
-		if statsEcoLastLayout == ecoOn then
-			return
+	local function formatCrimEcoTime(startAt)
+		local sec = math.floor(tick() - (startAt or tick()))
+		if sec < 0 then
+			sec = 0
 		end
-		statsEcoLastLayout = ecoOn
-		local order = ecoOn and STAT_KEYS or { "Kills", "Hits", "Accuracy", "Time" }
-		local row = 0
-		for _, key in ipairs(STAT_KEYS) do
-			local r = StatRows[key]
-			local show = false
-			for _, k in ipairs(order) do
-				if k == key then
-					show = true
-					break
-				end
-			end
-			if r then
-				r.lab.Visible = show
-				r.val.Visible = show
-				if show then
-					local y = 38 + row * 20
-					r.lab.Position = UDim2.new(0, 12, 0, y)
-					r.val.Position = UDim2.new(0.6, 0, 0, y)
-					row += 1
-				end
-			end
-		end
-		local barY = 38 + row * 20 + 6
-		AccBarBg.Position = UDim2.new(0, 12, 0, barY)
-		StatsPanel.Size = UDim2.new(0, 196, 0, barY + 16)
+		local m = math.floor(sec / 60)
+		local s = sec % 60
+		return string.format("%02d:%02d", m, s)
 	end
 
 	local KeybindPanel = tagZ(C("Frame", {
@@ -1223,15 +1273,22 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		Tween(lbl, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextSize = 11 })
 	end
 
+	local function bumpCrimEcoLabel(key, text)
+		local lbl = CrimEcoLines[key]
+		if not lbl then
+			return
+		end
+		lbl.Text = text
+		lbl.TextSize = 13
+		Tween(lbl, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { TextSize = 11 })
+	end
+
 	local function updSessionStats()
 		if not S.SessionStats or S.MenuOpen then
 			StatsPanel.Visible = false
 			return
 		end
 		StatsPanel.Visible = true
-		local ecoMod = _G.__VG_CrimSessionEco
-		local ecoOn = typeof(ecoMod) == "table" and typeof(ecoMod.snapshot) == "function"
-		layoutSessionStats(ecoOn)
 		local acc = session.shots > 0 and math.floor(session.hits / session.shots * 100) or 0
 		if statDisplay.kills ~= session.kills then
 			statDisplay.kills = session.kills
@@ -1252,47 +1309,73 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			StatsLines.Accuracy.Text = acc .. "%"
 		end
 		StatsLines.Time.Text = formatSessionTime()
-		if ecoOn then
-			local snap = ecoMod.snapshot()
-			local cashE = snap.cashEarned or 0
-			local cashS = snap.cashSpent or 0
-			local xpE = snap.xpEarned or 0
-			local xpS = snap.xpSpent or 0
-			local cashTxt = fmtEcoPair(cashE, cashS)
-			local xpTxt = fmtEcoPair(xpE, xpS)
-			if snap.levels and snap.levels > 0 then
-				xpTxt = xpTxt .. " ·↑" .. tostring(snap.levels)
-			end
-			local rateTxt = fmtEcoPair(snap.cashPerMin or 0, snap.cashSpentPerMin or 0)
-			local changed = snap.dirty
-				or statDisplayEco.cashE ~= cashE
-				or statDisplayEco.cashS ~= cashS
-				or statDisplayEco.xpE ~= xpE
-				or statDisplayEco.xpS ~= xpS
-			if changed then
-				statDisplayEco.cashE = cashE
-				statDisplayEco.cashS = cashS
-				statDisplayEco.xpE = xpE
-				statDisplayEco.xpS = xpS
-				bumpStatLabel("Cash", cashTxt)
-				bumpStatLabel("XP", xpTxt)
-				if typeof(ecoMod.clearDirty) == "function" then
-					ecoMod.clearDirty()
-				end
-			else
-				StatsLines.Cash.Text = cashTxt
-				StatsLines.XP.Text = xpTxt
-			end
-			if statDisplayEco.rate ~= rateTxt then
-				statDisplayEco.rate = rateTxt
-				StatsLines.Rate.Text = rateTxt
-			end
-		end
 		Tween(AccBarFill, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Size = UDim2.new(math.clamp(acc / 100, 0, 1), 0, 1, 0),
 		})
 		local pulse = 0.58 + math.sin(tick() * 2.2) * 0.08
 		StatsStroke.Transparency = pulse
+	end
+
+	local function updCrimEcoStats()
+		local ecoMod = _G.__VG_CrimSessionEco
+		local hasEco = typeof(ecoMod) == "table" and typeof(ecoMod.snapshot) == "function"
+		if not S.CrimSessionStats or S.MenuOpen or not hasEco then
+			CrimEcoPanel.Visible = false
+			return
+		end
+		CrimEcoPanel.Visible = true
+		-- sit under Session Stats when both on, else top-right
+		if S.SessionStats then
+			CrimEcoPanel.Position = UDim2.new(1, -224, 0, 152)
+		else
+			CrimEcoPanel.Position = UDim2.new(1, -224, 0, 12)
+		end
+		local snap = ecoMod.snapshot()
+		local cashE = snap.cashEarned or 0
+		local cashS = snap.cashSpent or 0
+		local xpE = snap.xpEarned or 0
+		local xpS = snap.xpSpent or 0
+		local cashTxt = fmtEcoPair(cashE, cashS)
+		local xpTxt = fmtEcoPair(xpE, xpS)
+		if snap.levels and snap.levels > 0 then
+			xpTxt = xpTxt .. " ·↑" .. tostring(snap.levels)
+		end
+		local rateTxt = fmtEcoPair(snap.cashPerMin or 0, snap.cashSpentPerMin or 0)
+		local netTxt = fmtEcoAmt(snap.cashNet or (cashE - cashS))
+		local timeTxt = formatCrimEcoTime(snap.start)
+		local changed = snap.dirty
+			or crimEcoDisp.cashE ~= cashE
+			or crimEcoDisp.cashS ~= cashS
+			or crimEcoDisp.xpE ~= xpE
+			or crimEcoDisp.xpS ~= xpS
+		if changed then
+			crimEcoDisp.cashE = cashE
+			crimEcoDisp.cashS = cashS
+			crimEcoDisp.xpE = xpE
+			crimEcoDisp.xpS = xpS
+			bumpCrimEcoLabel("Cash", cashTxt)
+			bumpCrimEcoLabel("XP", xpTxt)
+			if typeof(ecoMod.clearDirty) == "function" then
+				ecoMod.clearDirty()
+			end
+		else
+			CrimEcoLines.Cash.Text = cashTxt
+			CrimEcoLines.XP.Text = xpTxt
+		end
+		if crimEcoDisp.rate ~= rateTxt then
+			crimEcoDisp.rate = rateTxt
+			CrimEcoLines.Rate.Text = rateTxt
+		end
+		if crimEcoDisp.net ~= netTxt then
+			crimEcoDisp.net = netTxt
+			CrimEcoLines.Net.Text = netTxt
+		end
+		if crimEcoDisp.time ~= timeTxt then
+			crimEcoDisp.time = timeTxt
+			CrimEcoLines.Time.Text = timeTxt
+		end
+		local pulse = 0.58 + math.sin(tick() * 2.2) * 0.08
+		CrimEcoStroke.Transparency = pulse
 	end
 
 	local function addKillFeed(name)
@@ -2127,6 +2210,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		updWatermark()
 		updKeybindList()
 		updSessionStats()
+		updCrimEcoStats()
 		updTargetInfo()
 		local shotAt = tonumber(S.LastShotAt) or 0
 		if shotAt > 0 and shotAt > lastShotTrack then
