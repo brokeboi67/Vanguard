@@ -258,35 +258,12 @@ function UISkinVault.build(opts)
 		end)
 	end
 
-	MakeTog(CSkins, "Enable Skin Changer", "CrimSkinChanger", 1, { flat = true })
-	MakeTog(CSkins, "Skins on Dropped Tools", "CrimSkinDropped", 2, {
-		flat = true,
-		requires = "CrimSkinChanger",
-		onChange = function(on)
-			if on and S._crimSkinApplyDropped then
-				pcall(S._crimSkinApplyDropped)
-			end
-			persistSkins()
-		end,
-	})
-	if MakeSlider then
-		MakeSlider(CSkins, "Dropped Skin Range", "CrimSkinDroppedDist", 15, 150, 3, {
-			suffix = " st",
-			step = 5,
-			requires = "CrimSkinDropped",
-			fmt = function(v)
-				return string.format("%d st", v)
-			end,
-		})
-	end
-	MakeHint(CSkins, "hint_crim_skin_dropped", 4)
-
 	local Vault = C("Frame", {
 		Name = "SkinVault",
 		Size = UDim2.new(1, 0, 0, 590),
 		BackgroundColor3 = Color3.fromRGB(12, 14, 20),
 		BorderSizePixel = 0,
-		LayoutOrder = 5,
+		LayoutOrder = 1,
 		ClipsDescendants = true,
 		ZIndex = 5,
 		Parent = CSkins,
@@ -1017,7 +994,30 @@ function UISkinVault.build(opts)
 		refreshSkinGrid()
 	end)
 
-	MakeButton(CSkins, nil, 3, function()
+	-- Controls below Inventory vault
+	MakeTog(CSkins, "Enable Skin Changer", "CrimSkinChanger", 10, { flat = true })
+	MakeTog(CSkins, "Skins on Dropped Tools", "CrimSkinDropped", 11, {
+		flat = true,
+		requires = "CrimSkinChanger",
+		onChange = function(on)
+			if on and S._crimSkinApplyDropped then
+				pcall(S._crimSkinApplyDropped)
+			end
+			persistSkins()
+		end,
+	})
+	if MakeSlider then
+		MakeSlider(CSkins, "Dropped Skin Range", "CrimSkinDroppedDist", 15, 150, 12, {
+			suffix = " st",
+			step = 5,
+			requires = "CrimSkinDropped",
+			fmt = function(v)
+				return string.format("%d st", v)
+			end,
+		})
+	end
+	MakeHint(CSkins, "hint_crim_skin_dropped", 13)
+	MakeButton(CSkins, nil, 14, function()
 		if S._crimSkinDump then
 			local ok, msg = S._crimSkinDump()
 			if showNotify then
@@ -1025,7 +1025,7 @@ function UISkinVault.build(opts)
 			end
 		end
 	end, "btn_crim_skin_dump")
-	MakeHint(CSkins, "hint_crim_skinchanger_vault", 4)
+	MakeHint(CSkins, "hint_crim_skinchanger_vault", 15)
 
 	local autoRefreshedOnce = false
 	local function refreshAll()
