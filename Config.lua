@@ -30,6 +30,13 @@ local GLOBAL_KEYS = {
 	MusicGlobalPersist = true,
 }
 
+-- Also always mirrored into globals.json (and kept in named configs via Serialize).
+local SKIN_PREF_KEYS = {
+	"CrimGunSkins",
+	"CrimSkinUiWeapon",
+	"CrimSkinChanger",
+}
+
 local OK_MENU_TRACKS = {
 	PolskiePola = true,
 	DiscoPolo = true,
@@ -121,6 +128,15 @@ function Config.LoadGlobals(S)
 			S[k] = coerceConfigValue(data[k], S[k])
 		end
 	end
+	for _, k in ipairs(SKIN_PREF_KEYS) do
+		if data[k] ~= nil then
+			if k == "CrimGunSkins" and typeof(data[k]) == "table" then
+				S[k] = data[k]
+			else
+				S[k] = coerceConfigValue(data[k], S[k])
+			end
+		end
+	end
 	-- Migrate the replaced "Pył i Kości" slot.
 	if S.CrimMenuMusicTrack == "PylKos" then
 		S.CrimMenuMusicTrack = "Miguel"
@@ -138,6 +154,9 @@ function Config.SaveGlobals(S)
 	ensureDirs()
 	local data = {}
 	for k in pairs(GLOBAL_KEYS) do
+		data[k] = S[k]
+	end
+	for _, k in ipairs(SKIN_PREF_KEYS) do
 		data[k] = S[k]
 	end
 	local ok = pcall(function()

@@ -4242,21 +4242,77 @@ function misc.skinChanger.getRepPBR()
 	return cos and cos:FindFirstChild("RepPBR")
 end
 
-function misc.skinChanger.isGunTool(tool)
+function misc.skinChanger.isSkinnableTool(tool)
 	if not tool or not tool:IsA("Tool") then
 		return false
 	end
+	local n = tool.Name
+	if n == "Fists" or n == "Bandage" or n == "VM" or n == "Clippers" then
+		return false
+	end
+	-- guns
 	if tool:GetAttribute("__IsGUN") == true then
 		return true
 	end
 	if tool:FindFirstChild("IsGun") then
 		return true
 	end
-	local n = tool.Name
-	if n == "Fists" or n == "Bandage" or n == "VM" then
-		return false
+	if tool:FindFirstChild("Gun", true) then
+		return true
 	end
-	return tool:FindFirstChild("Gun", true) ~= nil
+	-- melee / anything that has RepPBR entries (Bayonet, Katana, Rambo, Chainsaw, …)
+	if #misc.skinChanger.listSkinsForGun(n) > 0 then
+		return true
+	end
+	-- saved skin for this tool name
+	if misc.skinChanger.getSavedSkinKey(n) then
+		return true
+	end
+	return false
+end
+
+-- back-compat alias
+function misc.skinChanger.isGunTool(tool)
+	return misc.skinChanger.isSkinnableTool(tool)
+end
+
+function misc.skinChanger.findActiveWeapon()
+	local lp = getLP()
+	if not lp then
+		return nil
+	end
+	-- 1) Equipped on character (guns + melee) — highest priority
+	local char = lp.Character
+	if char then
+		for _, ch in ipairs(char:GetChildren()) do
+			if misc.skinChanger.isSkinnableTool(ch) then
+				return ch
+			end
+		end
+	end
+	local chars = workspace:FindFirstChild("Characters")
+	local model = chars and chars:FindFirstChild(lp.Name)
+	if model then
+		for _, ch in ipairs(model:GetChildren()) do
+			if misc.skinChanger.isSkinnableTool(ch) then
+				return ch
+			end
+		end
+	end
+	-- 2) Backpack fallback
+	local bp = lp:FindFirstChild("Backpack")
+	if bp then
+		for _, ch in ipairs(bp:GetChildren()) do
+			if misc.skinChanger.isSkinnableTool(ch) then
+				return ch
+			end
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.findActiveGun()
+	return misc.skinChanger.findActiveWeapon()
 end
 
 function misc.skinChanger.listSkinsForGun(gunName)
@@ -4725,41 +4781,6 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 	return true, string.format("%s → %s (%d)", gunName, misc.skinChanger.skinLabel(skinKey), n)
 end
 
-function misc.skinChanger.findActiveGun()
-	local lp = getLP()
-	if not lp then
-		return nil
-	end
-	-- Equipped tool is under Workspace.Characters.<name> (lp.Character)
-	local char = lp.Character
-	if char then
-		for _, ch in ipairs(char:GetChildren()) do
-			if misc.skinChanger.isGunTool(ch) then
-				return ch
-			end
-		end
-	end
-	-- fallback: Characters folder (same as dump path)
-	local chars = workspace:FindFirstChild("Characters")
-	local model = chars and lp and chars:FindFirstChild(lp.Name)
-	if model then
-		for _, ch in ipairs(model:GetChildren()) do
-			if misc.skinChanger.isGunTool(ch) then
-				return ch
-			end
-		end
-	end
-	local bp = lp:FindFirstChild("Backpack")
-	if bp then
-		for _, ch in ipairs(bp:GetChildren()) do
-			if misc.skinChanger.isGunTool(ch) then
-				return ch
-			end
-		end
-	end
-	return nil
-end
-
 function misc.skinChanger.getSavedSkinKey(gunName)
 	local S = _G.__VG_S or {}
 	local map = S.CrimGunSkins
@@ -5012,6 +5033,32 @@ function misc.skinChanger.bindUi(S)
 	end
 	S._crimSkinSaved = function(gunName)
 		return misc.skinChanger.getSavedSkinKey(gunName)
+	end
+	S._crimSkinPersist = function()
+		-- UI / Main should call Config.SaveGlobals; this is a fallback write of skin keys
+		pcall(function()
+			if typeof(writefile) ~= "function" or typeof(isfile) ~= "function" then
+				return
+			end
+			local HS = game:GetService("HttpService")
+			local path = "Vanguard/globals.json"
+			local data = {}
+			if isfile(path) and typeof(readfile) == "function" then
+				pcall(function()
+					data = HS:JSONDecode(readfile(path))
+				end)
+			end
+			if typeof(data) ~= "table" then
+				data = {}
+			end
+			data.CrimGunSkins = S.CrimGunSkins
+			data.CrimSkinUiWeapon = S.CrimSkinUiWeapon
+			data.CrimSkinChanger = S.CrimSkinChanger == true
+			if typeof(makefolder) == "function" then
+				makefolder("Vanguard")
+			end
+			writefile(path, HS:JSONEncode(data))
+		end)
 	end
 end
 

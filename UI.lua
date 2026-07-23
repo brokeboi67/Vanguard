@@ -3536,11 +3536,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 								showNotify(tostring(msg or (ok2 and "applied" or "fail")))
 							end
 						end
-						refreshWeaponList()
-						refreshSkinList()
+						if S._crimSkinPersist then
+							pcall(S._crimSkinPersist)
+						end
 						if ConfigModule and ConfigModule.SaveGlobals then
 							pcall(ConfigModule.SaveGlobals, S)
 						end
+						-- also write into active named profile
+						pcall(function()
+							local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
+							if name and name ~= "" and ConfigModule.Save then
+								ConfigModule.Save(name, S)
+							end
+						end)
+						refreshWeaponList()
+						refreshSkinList()
 					end)
 				end
 			end
@@ -3601,11 +3611,20 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 					showNotify(tostring(msg or (ok and "cleared" or "fail")))
 				end
 			end
-			refreshWeaponList()
-			refreshSkinList()
+			if S._crimSkinPersist then
+				pcall(S._crimSkinPersist)
+			end
 			if ConfigModule and ConfigModule.SaveGlobals then
 				pcall(ConfigModule.SaveGlobals, S)
 			end
+			pcall(function()
+				local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
+				if name and name ~= "" and ConfigModule.Save then
+					ConfigModule.Save(name, S)
+				end
+			end)
+			refreshWeaponList()
+			refreshSkinList()
 		end, "btn_crim_skin_clear")
 		MakeButton(CVIS, nil, 11, function()
 			if S._crimSkinDump then
