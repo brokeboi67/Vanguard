@@ -550,6 +550,133 @@ local function stopNoRagdoll()
 	end
 end
 
+-- ── FAST ACCELERATION (CharStats AccelerationModifier / AccelerationModifier2 = 1) ──
+misc.fastAccel = { conns = {}, saved = {} }
+
+function misc.fastAccel.clearConns()
+	for _, c in ipairs(misc.fastAccel.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.fastAccel.conns = {}
+end
+
+function misc.fastAccel.getStatsFolder()
+	local lp = getLP()
+	if not lp then
+		return nil
+	end
+	local root = RepSt:FindFirstChild("CharStats")
+	if not root then
+		return nil
+	end
+	return root:FindFirstChild(lp.Name)
+end
+
+function misc.fastAccel.targetValue()
+	local S = _G.__VG_S or {}
+	local v = tonumber(S.CrimFastAccelValue)
+	if not v then
+		return 1
+	end
+	return math.clamp(v, 0.1, 5)
+end
+
+function misc.fastAccel.writeVal(obj, want)
+	if not obj then
+		return
+	end
+	if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+		if misc.fastAccel.saved[obj] == nil then
+			misc.fastAccel.saved[obj] = obj.Value
+		end
+		if obj.Value ~= want then
+			pcall(function()
+				obj.Value = want
+			end)
+		end
+	end
+end
+
+function misc.fastAccel.apply()
+	local folder = misc.fastAccel.getStatsFolder()
+	if not folder then
+		return false
+	end
+	local want = misc.fastAccel.targetValue()
+	misc.fastAccel.writeVal(folder:FindFirstChild("AccelerationModifier"), want)
+	misc.fastAccel.writeVal(folder:FindFirstChild("AccelerationModifier2"), want)
+	return true
+end
+
+function misc.fastAccel.restore()
+	for obj, prev in pairs(misc.fastAccel.saved) do
+		if typeof(obj) == "Instance" and obj.Parent then
+			pcall(function()
+				obj.Value = prev
+			end)
+		end
+	end
+	table.clear(misc.fastAccel.saved)
+end
+
+function misc.fastAccel.start()
+	misc.fastAccel.clearConns()
+	misc.fastAccel.apply()
+	local function reapply()
+		if _G.__VG_S and _G.__VG_S.CrimFastAccel then
+			misc.fastAccel.apply()
+		end
+	end
+	local folder = misc.fastAccel.getStatsFolder()
+	local root = RepSt:FindFirstChild("CharStats") or RepSt
+	if not folder then
+		table.insert(
+			misc.fastAccel.conns,
+			root.ChildAdded:Connect(function()
+				task.defer(function()
+					if _G.__VG_S and _G.__VG_S.CrimFastAccel then
+						misc.fastAccel.start()
+					end
+				end)
+			end)
+		)
+		return
+	end
+	for _, name in ipairs({ "AccelerationModifier", "AccelerationModifier2" }) do
+		local obj = folder:FindFirstChild(name)
+		if obj and (obj:IsA("NumberValue") or obj:IsA("IntValue")) then
+			table.insert(
+				misc.fastAccel.conns,
+				obj:GetPropertyChangedSignal("Value"):Connect(reapply)
+			)
+		end
+	end
+	table.insert(
+		misc.fastAccel.conns,
+		folder.ChildAdded:Connect(function(ch)
+			if ch.Name == "AccelerationModifier" or ch.Name == "AccelerationModifier2" then
+				task.defer(reapply)
+			end
+		end)
+	)
+	local lp = getLP()
+	if lp then
+		table.insert(
+			misc.fastAccel.conns,
+			lp.CharacterAdded:Connect(function()
+				task.defer(reapply)
+			end)
+		)
+	end
+end
+
+function misc.fastAccel.stop()
+	misc.fastAccel.clearConns()
+	misc.fastAccel.restore()
+end
+
 
 -- â”€â”€ MELEE AURA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Packed into one table to stay under Luau's 200-local limit.
@@ -2668,6 +2795,7 @@ local featureRunning = {
 	noFall = false,
 	noSpike = false,
 	noRagdoll = false,
+	fastAccel = false,
 	gunMods = false,
 	staffDetect = false,
 	noFailLockpick = false,
@@ -4677,6 +4805,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 	syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 	syncFeatureToggle("noRagdoll", "CrimNoRagdoll", startNoRagdoll, stopNoRagdoll, S)
+	syncFeatureToggle("fastAccel", "CrimFastAccel", misc.fastAccel.start, misc.fastAccel.stop, S)
 	syncGunMods(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
@@ -4727,6 +4856,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFall", "CrimNoFall", startNoFall, stopNoFall, S)
 			syncFeatureToggle("noSpike", "CrimNoSpike", startNoSpike, stopNoSpike, S)
 			syncFeatureToggle("noRagdoll", "CrimNoRagdoll", startNoRagdoll, stopNoRagdoll, S)
+			syncFeatureToggle("fastAccel", "CrimFastAccel", misc.fastAccel.start, misc.fastAccel.stop, S)
 			syncGunMods(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
@@ -4751,6 +4881,9 @@ local function startMaster(S)
 			if char then
 				misc.unragdollChar(char)
 			end
+		end
+		if featureRunning.fastAccel and master.frame % 10 == 0 then
+			pcall(misc.fastAccel.apply)
 		end
 
 		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
@@ -4914,6 +5047,7 @@ local function stopMaster()
 	if gunWatch.folderWatch then gunWatch.folderWatch:Disconnect(); gunWatch.folderWatch=nil end
 	pcall(stopNoRecoil)
 	pcall(stopNoRagdoll)
+	pcall(misc.fastAccel.stop)
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)

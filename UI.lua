@@ -3021,10 +3021,30 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeTog(CSurv, "No Spike Damage", "CrimNoSpike", 2, { flat = true })
 		MakeTog(CSurv, "No Ragdoll", "CrimNoRagdoll", 3, { flat = true })
 		MakeHint(CSurv, "hint_crim_noragdoll", 4)
-		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 5, { flat = true })
-		MakeHint(CSurv, "hint_crim_stamina", 6)
-		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 7, { flat = true })
-		MakeHint(CSurv, "hint_crim_autorespawn", 8)
+		MakeTog(CSurv, "Fast Acceleration", "CrimFastAccel", 5, {
+			flat = true,
+			onChange = function(on)
+				local reg = sliderRegistry.CrimFastAccelValue
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+			end,
+		})
+		MakeSlider(CSurv, "Accel Value", "CrimFastAccelValue", 0.5, 3, 6, {
+			step = 0.1,
+			requires = "CrimFastAccel",
+			fmt = function(v) return string.format("%.1f", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimFastAccel == true)
+				end
+			end,
+		})
+		MakeHint(CSurv, "hint_crim_fastaccel", 7)
+		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 8, { flat = true })
+		MakeHint(CSurv, "hint_crim_stamina", 9)
+		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 10, { flat = true })
+		MakeHint(CSurv, "hint_crim_autorespawn", 11)
 
 		MakeSection(CCrate, L("crim_sub_pickup_crates"), 1)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 2, {

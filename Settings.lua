@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.53.3",
+	Version = "2.53.4",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -203,6 +203,8 @@ local Settings = {
 	CrimNoFall = false,
 	CrimNoSpike = false,
 	CrimNoRagdoll = false,
+	CrimFastAccel = false,
+	CrimFastAccelValue = 1,
 	CrimMeleeAura = false,
 	CrimMeleeRange = 5,
 	CrimWallbangTargetUserId = 0,

@@ -686,6 +686,12 @@ function Config.EnforceRules(S)
 	if S.CrimNoRagdoll == nil then
 		S.CrimNoRagdoll = false
 	end
+	if S.CrimFastAccel == nil then
+		S.CrimFastAccel = false
+	end
+	if S.CrimFastAccelValue == nil then
+		S.CrimFastAccelValue = 1
+	end
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
