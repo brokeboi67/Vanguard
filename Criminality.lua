@@ -4318,33 +4318,286 @@ function misc.skinChanger.shouldSkinMesh(part)
 	return false
 end
 
+function misc.skinChanger.log(msg)
+	pcall(function()
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("INFO", "[VG:skin] " .. tostring(msg))
+		end
+	end)
+	print("[VG:skin]", msg)
+end
+
+function misc.skinChanger.dumpAttrs(inst, prefix)
+	local lines = {}
+	pcall(function()
+		for name, val in pairs(inst:GetAttributes()) do
+			lines[#lines + 1] = string.format("%sattr %s = %s (%s)", prefix or "", name, tostring(val), typeof(val))
+		end
+	end)
+	return lines
+end
+
+function misc.skinChanger.dumpMeshTree(root, label, maxLines)
+	maxLines = maxLines or 80
+	local lines = {}
+	if not root then
+		lines[#lines + 1] = label .. ": <nil>"
+		return lines
+	end
+	lines[#lines + 1] = string.format(
+		"%s: %s (%s) parent=%s path-ish=%s",
+		label,
+		root.Name,
+		root.ClassName,
+		root.Parent and root.Parent:GetFullName() or "nil",
+		root:GetFullName()
+	)
+	local meshN, saN = 0, 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			meshN = meshN + 1
+			if #lines < maxLines then
+				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+				local tex = ""
+				pcall(function()
+					tex = tostring(d.TextureID or "")
+				end)
+				if sa then
+					saN = saN + 1
+					lines[#lines + 1] = string.format(
+						"  MeshPart '%s' size=%s SA='%s' ColorMap=%s Metal=%s Norm=%s Rough=%s tex=%s",
+						d.Name,
+						tostring(d.Size),
+						sa.Name,
+						tostring(sa.ColorMap),
+						tostring(sa.MetalnessMap),
+						tostring(sa.NormalMap),
+						tostring(sa.RoughnessMap),
+						tex
+					)
+				else
+					lines[#lines + 1] = string.format(
+						"  MeshPart '%s' size=%s SA=<none> tex=%s Material=%s",
+						d.Name,
+						tostring(d.Size),
+						tex,
+						tostring(d.Material)
+					)
+				end
+			end
+		elseif d:IsA("SurfaceAppearance") and #lines < maxLines then
+			saN = saN + 1
+			lines[#lines + 1] = string.format(
+				"  SurfaceAppearance '%s' parent=%s ColorMap=%s",
+				d.Name,
+				d.Parent and d.Parent.Name or "?",
+				tostring(d.ColorMap)
+			)
+		end
+	end
+	lines[#lines + 1] = string.format("  totals: MeshPart=%d SurfaceAppearance=%d (listed up to %d lines)", meshN, saN, maxLines)
+	-- top-level children names
+	local kids = {}
+	for _, ch in ipairs(root:GetChildren()) do
+		kids[#kids + 1] = ch.Name .. ":" .. ch.ClassName
+	end
+	lines[#lines + 1] = "  children: " .. table.concat(kids, ", ")
+	return lines
+end
+
+function misc.skinChanger.dumpRepPBR(gunName)
+	local lines = {}
+	local storage = RepSt:FindFirstChild("Storage")
+	local cos = storage and storage:FindFirstChild("CosmeticsStuff")
+	lines[#lines + 1] = "=== RepPBR / CosmeticsStuff ==="
+	lines[#lines + 1] = "Storage=" .. tostring(storage and storage:GetFullName())
+	lines[#lines + 1] = "CosmeticsStuff=" .. tostring(cos and cos:GetFullName())
+	if cos then
+		local kids = {}
+		for _, ch in ipairs(cos:GetChildren()) do
+			kids[#kids + 1] = ch.Name .. ":" .. ch.ClassName .. "(" .. #ch:GetChildren() .. ")"
+		end
+		lines[#lines + 1] = "CosmeticsStuff children: " .. table.concat(kids, ", ")
+	end
+	local folder = misc.skinChanger.getRepPBR()
+	if not folder then
+		lines[#lines + 1] = "RepPBR: NOT FOUND"
+		-- deep search
+		local hit = RepSt:FindFirstChild("RepPBR", true)
+		lines[#lines + 1] = "deep FindFirstChild RepPBR=" .. tostring(hit and hit:GetFullName())
+		return lines
+	end
+	lines[#lines + 1] = "RepPBR path=" .. folder:GetFullName() .. " count=" .. #folder:GetChildren()
+	local sample, match = {}, {}
+	local prefix = gunName and (gunName .. "_") or nil
+	for i, ch in ipairs(folder:GetChildren()) do
+		if i <= 40 then
+			sample[#sample + 1] = ch.Name .. ":" .. ch.ClassName
+		end
+		if prefix and string.sub(ch.Name, 1, #prefix) == prefix then
+			match[#match + 1] = ch.Name
+		end
+	end
+	lines[#lines + 1] = "RepPBR sample(40): " .. table.concat(sample, ", ")
+	if gunName then
+		lines[#lines + 1] = string.format("matches for '%s_*': %d → %s", gunName, #match, table.concat(match, ", "))
+	end
+	-- CasePBRs too
+	local casePbr = cos and cos:FindFirstChild("CasePBRs")
+	if casePbr then
+		lines[#lines + 1] = "CasePBRs path=" .. casePbr:GetFullName() .. " count=" .. #casePbr:GetChildren()
+		local cs = {}
+		for i, ch in ipairs(casePbr:GetChildren()) do
+			if i <= 25 then
+				cs[#cs + 1] = ch.Name .. ":" .. ch.ClassName
+			end
+		end
+		lines[#lines + 1] = "CasePBRs sample: " .. table.concat(cs, ", ")
+	end
+	return lines
+end
+
+function misc.skinChanger.dump()
+	local lines = {}
+	local stamp = os.date("%Y-%m-%d %H:%M:%S")
+	lines[#lines + 1] = "======== VG SKIN DUMP " .. stamp .. " ========"
+	local lp = getLP()
+	lines[#lines + 1] = "LocalPlayer=" .. tostring(lp and lp.Name)
+	lines[#lines + 1] = "Character=" .. tostring(lp and lp.Character and lp.Character:GetFullName())
+	lines[#lines + 1] = "_G.VM=" .. tostring(_G.VM ~= nil) .. " Enabled=" .. tostring(_G.VM and _G.VM.Enabled) .. " Tool=" .. tostring(_G.VM and _G.VM.Tool and _G.VM.Tool.Name)
+	local tool = misc.skinChanger.findActiveGun()
+	if tool then
+		lines[#lines + 1] = "ActiveGun=" .. tool.Name .. " parent=" .. (tool.Parent and tool.Parent:GetFullName() or "nil")
+		for _, a in ipairs(misc.skinChanger.dumpAttrs(tool, "  ")) do
+			lines[#lines + 1] = a
+		end
+		-- Values folder inside tool
+		local vals = tool:FindFirstChild("Values")
+		if vals then
+			local vn = {}
+			for _, v in ipairs(vals:GetChildren()) do
+				local vv = ""
+				pcall(function()
+					if v:IsA("ValueBase") then
+						vv = "=" .. tostring(v.Value)
+					end
+				end)
+				vn[#vn + 1] = v.Name .. ":" .. v.ClassName .. vv
+			end
+			lines[#lines + 1] = "  Tool.Values: " .. table.concat(vn, ", ")
+		end
+		for _, l in ipairs(misc.skinChanger.dumpMeshTree(tool, "TOOL", 100)) do
+			lines[#lines + 1] = l
+		end
+		for _, l in ipairs(misc.skinChanger.dumpRepPBR(tool.Name)) do
+			lines[#lines + 1] = l
+		end
+	else
+		lines[#lines + 1] = "ActiveGun=<none> — hold a gun then dump again"
+		for _, l in ipairs(misc.skinChanger.dumpRepPBR(nil)) do
+			lines[#lines + 1] = l
+		end
+	end
+	-- backpack tools list
+	local bp = lp and lp:FindFirstChild("Backpack")
+	if bp then
+		local bt = {}
+		for _, ch in ipairs(bp:GetChildren()) do
+			if ch:IsA("Tool") then
+				bt[#bt + 1] = ch.Name .. (misc.skinChanger.isGunTool(ch) and "[GUN]" or "")
+			end
+		end
+		lines[#lines + 1] = "Backpack tools: " .. table.concat(bt, ", ")
+	end
+	-- Character tools
+	local char = lp and lp.Character
+	if char then
+		local ct = {}
+		for _, ch in ipairs(char:GetChildren()) do
+			if ch:IsA("Tool") then
+				ct[#ct + 1] = ch.Name .. (misc.skinChanger.isGunTool(ch) and "[GUN]" or "")
+			end
+		end
+		lines[#lines + 1] = "Character tools: " .. table.concat(ct, ", ")
+	end
+	-- ViewModel
+	local cam = workspace.CurrentCamera
+	local vm = cam and cam:FindFirstChild("ViewModel")
+	for _, l in ipairs(misc.skinChanger.dumpMeshTree(vm, "ViewModel(Camera)", 80)) do
+		lines[#lines + 1] = l
+	end
+	local rf = game:GetService("ReplicatedFirst")
+	local vmFolder = rf:FindFirstChild("ViewModels")
+	if vmFolder then
+		lines[#lines + 1] = "ReplicatedFirst.ViewModels children=" .. #vmFolder:GetChildren()
+		for _, ch in ipairs(vmFolder:GetChildren()) do
+			for _, l in ipairs(misc.skinChanger.dumpMeshTree(ch, "RF.ViewModels." .. ch.Name, 40)) do
+				lines[#lines + 1] = l
+			end
+		end
+	end
+	-- workspace search for other viewmodels
+	pcall(function()
+		for _, inst in ipairs(cam:GetChildren()) do
+			if inst.Name ~= "ViewModel" and (inst.Name:lower():find("view") or inst.Name:lower():find("vm")) then
+				lines[#lines + 1] = "Camera child: " .. inst:GetFullName() .. " " .. inst.ClassName
+			end
+		end
+	end)
+	lines[#lines + 1] = "======== END SKIN DUMP ========"
+
+	local text = table.concat(lines, "\n")
+	for _, line in ipairs(lines) do
+		misc.skinChanger.log(line)
+	end
+	-- dedicated paste file
+	pcall(function()
+		if typeof(makefolder) == "function" then
+			makefolder("Vanguard")
+			makefolder("Vanguard/logs")
+		end
+		if typeof(writefile) == "function" then
+			writefile("Vanguard/logs/skin_dump.txt", text .. "\n")
+		end
+	end)
+	return text, #lines
+end
+
 function misc.skinChanger.applyTemplateToInstance(root, template)
 	if not root or not template then
 		return 0
 	end
 	local n = 0
+	local skipped = 0
 	for _, d in ipairs(root:GetDescendants()) do
-		if misc.skinChanger.shouldSkinMesh(d) then
-			local sa = d:FindFirstChildOfClass("SurfaceAppearance")
-			if not sa then
-				sa = template:Clone()
-				sa.Parent = d
+		if d:IsA("MeshPart") then
+			if misc.skinChanger.shouldSkinMesh(d) then
+				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+				if not sa then
+					sa = template:Clone()
+					sa.Parent = d
+					misc.skinChanger.log(string.format("CLONE SA '%s' → %s", template.Name, d:GetFullName()))
+				else
+					pcall(function()
+						sa.Name = template.Name
+						sa.ColorMap = template.ColorMap
+						sa.MetalnessMap = template.MetalnessMap
+						sa.NormalMap = template.NormalMap
+						sa.RoughnessMap = template.RoughnessMap
+						sa.AlphaMode = template.AlphaMode
+						if template.TexturePack then
+							sa.TexturePack = template.TexturePack
+						end
+					end)
+					misc.skinChanger.log(string.format("PATCH SA on %s → %s", d:GetFullName(), template.Name))
+				end
+				n = n + 1
 			else
-				pcall(function()
-					sa.Name = template.Name
-					sa.ColorMap = template.ColorMap
-					sa.MetalnessMap = template.MetalnessMap
-					sa.NormalMap = template.NormalMap
-					sa.RoughnessMap = template.RoughnessMap
-					sa.AlphaMode = template.AlphaMode
-					if template.TexturePack then
-						sa.TexturePack = template.TexturePack
-					end
-				end)
+				skipped = skipped + 1
 			end
-			n = n + 1
 		end
 	end
+	misc.skinChanger.log(string.format("applyTemplate root=%s hit=%d skipMesh=%d tmpl=%s", root:GetFullName(), n, skipped, template.Name))
 	return n
 end
 
@@ -4465,9 +4718,11 @@ end
 function misc.skinChanger.cycleForCurrent()
 	local tool = misc.skinChanger.findActiveGun()
 	if not tool then
+		misc.skinChanger.log("cycle: no gun (equip first — Character in Workspace, not Players)")
 		return false, "no gun"
 	end
 	local skins = misc.skinChanger.listSkinsForGun(tool.Name)
+	misc.skinChanger.log(string.format("cycle: tool=%s parent=%s skins=%d", tool.Name, tool.Parent and tool.Parent:GetFullName() or "?", #skins))
 	if #skins == 0 then
 		return false, "no skins for " .. tool.Name
 	end
@@ -4476,7 +4731,9 @@ function misc.skinChanger.cycleForCurrent()
 	local tmpl = skins[idx]
 	misc.skinChanger.setSavedSkinKey(tool.Name, tmpl.Name)
 	local n = misc.skinChanger.applyToTool(tool, tmpl)
-	return true, string.format("%s → %s (%d meshes)", tool.Name, tmpl.Name, n)
+	local msg = string.format("%s → %s (%d meshes)", tool.Name, tmpl.Name, n)
+	misc.skinChanger.log("cycle done: " .. msg)
+	return true, msg
 end
 
 function misc.skinChanger.clearCurrent()
@@ -4595,6 +4852,10 @@ function misc.skinChanger.bindUi(S)
 		end
 		misc.skinChanger.tick()
 		return true, misc.skinChanger.statusText()
+	end
+	S._crimSkinDump = function()
+		local text, n = misc.skinChanger.dump()
+		return true, string.format("dumped %d lines → Vanguard/logs/skin_dump.txt", n or 0), text
 	end
 end
 
