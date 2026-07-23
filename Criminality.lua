@@ -5006,6 +5006,51 @@ function misc.skinChanger.listTexSkinsForGun(gunName)
 	return out
 end
 
+function misc.skinChanger.isMeleeRoot(root)
+	if not root then
+		return false
+	end
+	if root:FindFirstChild("Melee") then
+		return true
+	end
+	local tool = root:IsA("Tool") and root or root:FindFirstAncestorOfClass("Tool")
+	return tool ~= nil and tool:FindFirstChild("Melee") ~= nil
+end
+
+-- Prefer real RepPBR SurfaceAppearance when catalog label matches (best UVs).
+function misc.skinChanger.resolveRepForTexKey(gunName, skinKey)
+	if not gunName or not misc.skinChanger.isTexSkinKey(skinKey) then
+		return nil
+	end
+	local label = misc.skinChanger.skinLabel(skinKey)
+	if not label or label == "" or label == "?" then
+		return nil
+	end
+	local compact = string.gsub(label, "%s+", "")
+	local unders = string.gsub(label, "%s+", "_")
+	local candidates = {
+		gunName .. "_" .. label,
+		gunName .. "_" .. compact,
+		gunName .. "_" .. unders,
+	}
+	for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+		candidates[#candidates + 1] = key .. "_" .. label
+		candidates[#candidates + 1] = key .. "_" .. compact
+	end
+	for _, name in ipairs(candidates) do
+		local tmpl = misc.skinChanger.resolveTemplate(gunName, name)
+		if tmpl then
+			return tmpl
+		end
+		local folder = misc.skinChanger.getRepPBR()
+		local direct = folder and folder:FindFirstChild(name)
+		if direct and direct:IsA("SurfaceAppearance") then
+			return direct
+		end
+	end
+	return nil
+end
+
 function misc.skinChanger.applyTextureToInstance(root, texId, quiet)
 	if not root or not texId then
 		return 0
@@ -5013,51 +5058,101 @@ function misc.skinChanger.applyTextureToInstance(root, texId, quiet)
 	misc.skinChanger.captureDefaults(root)
 	local idStr = "rbxassetid://" .. tostring(texId)
 	local saName = misc.skinChanger.texKey(texId)
+	local melee = misc.skinChanger.isMeleeRoot(root)
 	local n, patched = 0, 0
+
 	for _, d in ipairs(root:GetDescendants()) do
-		-- Catalog TextureID from cosmetics is a ColorMap-style asset (see Emerald UV preview).
-		-- Applying as MeshPart.TextureID only hits some meshes / UVs → half-skinned melee.
+		-- Crim melee: WeaponHandle + XxxMesh — skins are classic MeshPart/SpecialMesh TextureID
+		-- (SA ColorMap stretches UVs on some skins like Damascus). Guns keep SA ColorMap.
 		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
-			local sa = d:FindFirstChildOfClass("SurfaceAppearance")
-			local okMap = false
-			if sa and sa.Name == saName then
-				local cur = misc.skinChanger.contentId(sa.ColorMap)
-				okMap = cur == misc.skinChanger.contentId(idStr)
-			end
-			if okMap then
-				n = n + 1
+			if melee then
+				local cur = misc.skinChanger.contentId(d.TextureID)
+				local want = misc.skinChanger.contentId(idStr)
+				local hasSa = d:FindFirstChildOfClass("SurfaceAppearance") ~= nil
+				if cur == want and not hasSa then
+					n = n + 1
+				else
+					pcall(function()
+						for _, ch in ipairs(d:GetChildren()) do
+							if ch:IsA("SurfaceAppearance") then
+								ch:Destroy()
+							end
+						end
+						d.TextureID = idStr
+						d:SetAttribute("VG_TexSkin", tostring(texId))
+					end)
+					patched = patched + 1
+					n = n + 1
+				end
 			else
-				pcall(function()
-					if sa then
-						sa:Destroy()
-					end
-					local neo = Instance.new("SurfaceAppearance")
-					neo.Name = saName
-					neo.ColorMap = idStr
-					neo.Parent = d
-					if d.TextureID and d.TextureID ~= "" then
-						d:SetAttribute("VG_PrevTex", d.TextureID)
-						d.TextureID = ""
-					end
-					d:SetAttribute("VG_TexSkin", tostring(texId))
-				end)
-				patched = patched + 1
-				n = n + 1
+				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+				local okMap = false
+				if sa and sa.Name == saName then
+					okMap = misc.skinChanger.contentId(sa.ColorMap) == misc.skinChanger.contentId(idStr)
+				end
+				if okMap then
+					n = n + 1
+				else
+					pcall(function()
+						if sa then
+							sa:Destroy()
+						end
+						local neo = Instance.new("SurfaceAppearance")
+						neo.Name = saName
+						neo.ColorMap = idStr
+						neo.Parent = d
+						if d.TextureID and d.TextureID ~= "" then
+							d:SetAttribute("VG_PrevTex", d.TextureID)
+							d.TextureID = ""
+						end
+						d:SetAttribute("VG_TexSkin", tostring(texId))
+					end)
+					patched = patched + 1
+					n = n + 1
+				end
 			end
 		elseif d:IsA("BasePart") and not d:IsA("MeshPart") and not d:IsA("Terrain") then
-			-- Legacy SpecialMesh melee pieces
-			local sm = d:FindFirstChildOfClass("SpecialMesh")
-			if sm then
+			-- WeaponHandle + SpecialMesh / FileMesh (RamboMesh sometimes)
+			for _, ch in ipairs(d:GetChildren()) do
+				if ch:IsA("SpecialMesh") or ch:IsA("FileMesh") then
+					local cur = misc.skinChanger.contentId(ch.TextureId)
+					local want = misc.skinChanger.contentId(idStr)
+					if cur ~= want then
+						pcall(function()
+							ch.TextureId = idStr
+						end)
+						patched = patched + 1
+					end
+					n = n + 1
+				end
+			end
+		end
+	end
+	-- Also texture Mesh objects nested under WeaponHandle named *Mesh (SpecialMesh on MeshPart parent edge cases)
+	for _, d in ipairs(root:GetDescendants()) do
+		if (d:IsA("SpecialMesh") or d:IsA("FileMesh")) and d.Parent and d.Parent:IsA("MeshPart") then
+			-- MeshPart already handled above; skip
+		elseif d:IsA("SpecialMesh") or d:IsA("FileMesh") then
+			local cur = misc.skinChanger.contentId(d.TextureId)
+			local want = misc.skinChanger.contentId(idStr)
+			if cur ~= want then
 				pcall(function()
-					sm.TextureId = idStr
+					d.TextureId = idStr
 				end)
 				patched = patched + 1
 				n = n + 1
 			end
 		end
 	end
+
 	if not quiet and patched > 0 then
-		misc.skinChanger.log(string.format("applyTexSA root=%s n=%d id=%s", root.Name, n, tostring(texId)))
+		misc.skinChanger.log(string.format(
+			"applyTex root=%s melee=%s n=%d id=%s",
+			root.Name,
+			tostring(melee),
+			n,
+			tostring(texId)
+		))
 	end
 	return n
 end
@@ -5682,17 +5777,31 @@ function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
 		return false
 	end
 	if misc.skinChanger.isTexSkinKey(skinKey) then
-		local wantName = skinKey
 		local wantId = misc.skinChanger.contentId("rbxassetid://" .. tostring(misc.skinChanger.texIdFromKey(skinKey)))
+		local melee = misc.skinChanger.isMeleeRoot(tool)
 		local any = false
 		for _, d in ipairs(tool:GetDescendants()) do
 			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
 				any = true
-				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
-				if not sa or sa.Name ~= wantName then
-					return false
+				if melee then
+					if d:FindFirstChildOfClass("SurfaceAppearance") then
+						return false
+					end
+					if misc.skinChanger.contentId(d.TextureID) ~= wantId then
+						return false
+					end
+				else
+					local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+					if not sa or sa.Name ~= skinKey then
+						return false
+					end
+					if misc.skinChanger.contentId(sa.ColorMap) ~= wantId then
+						return false
+					end
 				end
-				if misc.skinChanger.contentId(sa.ColorMap) ~= wantId then
+			elseif (d:IsA("SpecialMesh") or d:IsA("FileMesh")) and (not d.Parent or not d.Parent:IsA("MeshPart")) then
+				any = true
+				if misc.skinChanger.contentId(d.TextureId) ~= wantId then
 					return false
 				end
 			end
@@ -5821,11 +5930,20 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 
 	local texId = misc.skinChanger.isTexSkinKey(skinKey) and misc.skinChanger.texIdFromKey(skinKey) or nil
 	local tmpl = nil
-	if not texId then
+	if texId then
+		-- Use RepPBR template when the same skin exists there (correct UVs)
+		tmpl = misc.skinChanger.resolveRepForTexKey(gunName, skinKey)
+		if tmpl then
+			texId = nil
+		end
+	else
 		tmpl = misc.skinChanger.resolveTemplate(gunName, skinKey)
 		if not tmpl then
 			return false, "template missing: " .. tostring(skinKey)
 		end
+	end
+	if not texId and not tmpl then
+		return false, "template missing: " .. tostring(skinKey)
 	end
 
 	local n = 0
