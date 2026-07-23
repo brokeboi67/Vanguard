@@ -4038,43 +4038,70 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CUtil, "hint_invis", 12)
 		MakeTog(CUtil, "Invis Resolver", "InvisResolver", 13, { flat = true })
 		MakeHint(CUtil, "hint_invis_resolver", 14)
-		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 15, { flat = true })
-		MakeButton(CUtil, nil, 16, function()
+		MakeSection(CUtil, "UNDER MAP", 15)
+		MakeTog(CUtil, "Under Map Clip", "UnderMapClip", 16, {
+			flat = true,
+			onChange = function(on)
+				local reg = sliderRegistry.UnderMapDepth
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+				if on and typeof(S.StopInvisibilityActive) == "function" then
+					pcall(S.StopInvisibilityActive)
+				end
+			end,
+		})
+		MakeSlider(CUtil, "Under Map Depth", "UnderMapDepth", 20, 250, 17, {
+			suffix = " st",
+			step = 5,
+			requires = "UnderMapClip",
+			fmt = function(v)
+				return string.format("%d st", v)
+			end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.UnderMapClip == true)
+				end
+			end,
+		})
+		MakeHint(CUtil, "hint_undermap", 18)
+		MakeTog(CUtil, "Remote Elevator", "CrimRemoteElevator", 19, { flat = true })
+		MakeButton(CUtil, nil, 20, function()
 			if S._crimElevatorTeleport then
 				S._crimElevatorTeleport()
 			end
 		end, "btn_crim_elevator_tp")
-		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 17, {
+		MakeBind(CUtil, "Elevator Key", "CrimRemoteElevatorKey", 21, {
 			requires = "CrimRemoteElevator",
 		})
-		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 18, {
+		MakeSlider(CUtil, "Elevator Max Distance", "CrimRemoteElevatorMaxDist", 50, 800, 22, {
 			suffix = " st",
 			step = 25,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CUtil, "hint_crim_elevator", 19)
-		MakeSection(CUtil, L("crim_sub_clientbuild"), 20)
-		MakeButton(CUtil, nil, 21, function()
+		MakeHint(CUtil, "hint_crim_elevator", 23)
+		MakeSection(CUtil, L("crim_sub_clientbuild"), 24)
+		MakeButton(CUtil, nil, 25, function()
 			if S._clientBridgeStart then
 				S._clientBridgeStart()
 			end
 		end, "btn_crim_bridge")
-		MakeButton(CUtil, nil, 22, function()
+		MakeButton(CUtil, nil, 26, function()
 			if S._clientBridgeClear then
 				S._clientBridgeClear()
 			end
 		end, "btn_crim_bridge_clear")
-		MakeButton(CUtil, nil, 23, function()
+		MakeButton(CUtil, nil, 27, function()
 			if S._clientDeleteStart then
 				S._clientDeleteStart()
 			end
 		end, "btn_crim_delete")
-		MakeButton(CUtil, nil, 24, function()
+		MakeButton(CUtil, nil, 28, function()
 			if S._clientDeleteRestore then
 				S._clientDeleteRestore()
 			end
 		end, "btn_crim_delete_restore")
-		MakeHint(CUtil, "hint_crim_clientbuild", 25)
+		MakeHint(CUtil, "hint_crim_clientbuild", 29)
 		MakeHint(CUtil, "hint_crim_util", 26)
 	end
 

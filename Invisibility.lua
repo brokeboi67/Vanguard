@@ -1,7 +1,8 @@
--- Invisibility.lua  v2.59.6
+-- Invisibility.lua  v2.60.3
 -- R6 anim-desync. Master toggle arms the feature; keybind toggles visibility.
 -- Turning Invisibility OFF disables everything.
 -- Desync: Heartbeat applies pose, RenderStepped restores (no Wait — no hitch).
+-- UnderMapClip: Heartbeat sinks Y for network, RenderStepped restores + local noclip.
 -- InvisResolver: upright others only on tilted network frames (don't freeze CFrame).
 
 local Invisibility = {}
@@ -312,6 +313,10 @@ function Invisibility.Init(S, ParentGUI)
 			stopActive()
 			notify("Invisibility", "Visible")
 		else
+			if S.UnderMapClip then
+				S.UnderMapClip = false
+				notify("Invisibility", "Under Map Clip OFF — wchodzę w invis")
+			end
 			if startActive() then
 				notify("Invisibility", "Invisible")
 			end
@@ -473,6 +478,103 @@ function Invisibility.Init(S, ParentGUI)
 	S.SetInvisibility = setFeature
 	S.IsInvisibilityActive = function()
 		return active == true
+	end
+	S.StopInvisibilityActive = function()
+		if active then
+			stopActive()
+		end
+	end
+
+	-- ── Under Map Clip (server void Y / client surface + local noclip) ────────
+	-- Opposite mental model of "invis under map": Heartbeat sinks HRP for
+	-- replication, RenderStepped restores surface pose. Local CanCollide off so
+	-- you walk through buildings while looking/interacting on the surface.
+	local underPending = false
+	local underSavedCF = nil
+	local underWasOn = false
+
+	local function underClearPending()
+		if underPending and hrp and typeof(underSavedCF) == "CFrame" then
+			pcall(function()
+				hrp.CFrame = underSavedCF
+			end)
+		end
+		underPending = false
+		underSavedCF = nil
+	end
+
+	local function underApplyNoclip(ch)
+		if not ch then
+			return
+		end
+		for _, p in ipairs(ch:GetDescendants()) do
+			if p:IsA("BasePart") then
+				pcall(function()
+					p.CanCollide = false
+				end)
+			end
+		end
+	end
+
+	S.IsUnderMapActive = function()
+		return S.UnderMapClip == true and active ~= true and not S.Unloaded
+	end
+
+	RS.Heartbeat:Connect(perfWrap("UnderMap.Main", function()
+		if S.Unloaded or not S.UnderMapClip then
+			if underWasOn then
+				underClearPending()
+				underWasOn = false
+			end
+			return
+		end
+		-- Anim-desync invis owns the same CFrame pipeline — don't stack
+		if active then
+			underClearPending()
+			underWasOn = false
+			return
+		end
+		underWasOn = true
+		refreshRefs()
+		if not char or not hum or not hrp or not hum:IsDescendantOf(workspace) or hum.Health <= 0 then
+			underClearPending()
+			return
+		end
+
+		underApplyNoclip(char)
+		underSavedCF = hrp.CFrame
+		local depth = math.clamp(tonumber(S.UnderMapDepth) or 80, 20, 250)
+		hrp.CFrame = underSavedCF * CFrame.new(0, -depth, 0)
+		underPending = true
+	end))
+
+	RS.RenderStepped:Connect(perfWrap("UnderMap.Restore", function()
+		if not underPending then
+			return
+		end
+		underPending = false
+		if not S.UnderMapClip or active or S.Unloaded then
+			if hrp and hrp:IsDescendantOf(workspace) and typeof(underSavedCF) == "CFrame" then
+				hrp.CFrame = underSavedCF
+			end
+			underSavedCF = nil
+			return
+		end
+		refreshRefs()
+		if hrp and hrp:IsDescendantOf(workspace) and typeof(underSavedCF) == "CFrame" then
+			hrp.CFrame = underSavedCF
+		end
+		underApplyNoclip(char)
+		underSavedCF = nil
+	end))
+
+	if typeof(S._configApplyHooks) == "table" then
+		table.insert(S._configApplyHooks, function()
+			if S.UnderMapClip and active then
+				stopActive()
+				notify("Under Map", "Invis wyłączony — Under Map Clip ON")
+			end
+		end)
 	end
 
 	-- ── Invis Resolver (others using same R6 desync / ~90° tilt) ─────────────
