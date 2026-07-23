@@ -394,7 +394,7 @@ local STR = {
 		hint_crim_allowance = "CLMZALOW when Claim=true. Highlights nearest ATM while allowance is ready.",
 		hint_crim_fullbright = "Forces bright lighting and removes fog (Criminality only).",
 		hint_crim_nofog = "ReplicatedStorage.Values: SetFogValue=0 + SetHazeValue=0. Also clears Lighting Fog/Atmosphere.",
-		hint_crim_skinchanger = "Client-only RepPBR. Equip a gun → Dump Skin Debug → paste Vanguard/logs/skin_dump.txt. Cycle = next skin.",
+		hint_crim_skinchanger = "Client-only RepPBR → SurfaceAppearance on ALL MeshParts (Base/Scope…). Dump = debug.",
 		btn_crim_skin_cycle = "Cycle Skin",
 		btn_crim_skin_apply = "Re-Apply Skin",
 		btn_crim_skin_clear = "Clear Skin (this gun)",

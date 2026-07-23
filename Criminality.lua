@@ -4608,6 +4608,7 @@ function misc.skinChanger.findActiveGun()
 	if not lp then
 		return nil
 	end
+	-- Equipped tool is under Workspace.Characters.<name> (lp.Character)
 	local char = lp.Character
 	if char then
 		for _, ch in ipairs(char:GetChildren()) do
@@ -4616,7 +4617,16 @@ function misc.skinChanger.findActiveGun()
 			end
 		end
 	end
-	-- prefer last known / any backpack gun if none equipped
+	-- fallback: Characters folder (same as dump path)
+	local chars = workspace:FindFirstChild("Characters")
+	local model = chars and lp and chars:FindFirstChild(lp.Name)
+	if model then
+		for _, ch in ipairs(model:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				return ch
+			end
+		end
+	end
 	local bp = lp:FindFirstChild("Backpack")
 	if bp then
 		for _, ch in ipairs(bp:GetChildren()) do
