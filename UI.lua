@@ -2,7 +2,7 @@
 
 local UI = {}
 
-function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule, AntiBypassModule)
+function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, MenusModule, GameSupportModule, UIColorPicker, UIConfigMenus, MusicModule, UIMusicModule, I18nModule, AntiBypassModule, UISkinVaultModule)
 	if AntiBypassModule then
 		if AntiBypassModule.setUiBuilding then
 			AntiBypassModule.setUiBuilding(true)
@@ -58,6 +58,8 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local Cam = workspace.CurrentCamera
 	local W_FULL, W_COMPACT, H = 800, 600, 540
 	local W_MUSIC, H_MUSIC = 860, 620
+	local W_CRIM, H_CRIM = 920, 600
+	local W_SKINS, H_SKINS = 1040, 680
 	local SIDE_W = 136
 	local FOOTER_PAD = 12
 	local FOOTER_RIGHT_W = 196
@@ -76,6 +78,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		H = math.clamp(math.floor(vp.Y * 0.68), 500, 640)
 		W_MUSIC = math.clamp(math.floor(vp.X * 0.54), 760, 940)
 		H_MUSIC = math.clamp(math.floor(vp.Y * 0.74), 580, 700)
+		W_CRIM = math.clamp(math.floor(vp.X * 0.62), 820, 1020)
+		H_CRIM = math.clamp(math.floor(vp.Y * 0.72), 560, 700)
+		W_SKINS = math.clamp(math.floor(vp.X * 0.72), 960, 1180)
+		H_SKINS = math.clamp(math.floor(vp.Y * 0.78), 620, 760)
 	end
 	refreshLayout()
 
@@ -880,6 +886,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			targetH = H_MUSIC
 			previewW = 0
 			showPreview = false
+		elseif layoutProfile == "skins" then
+			targetW = W_SKINS
+			targetH = H_SKINS
+			previewW = 0
+			showPreview = false
+		elseif layoutProfile == "criminality" then
+			targetW = W_CRIM
+			targetH = H_CRIM
+			previewW = 0
+			showPreview = false
 		else
 			targetW = showPreview and W_FULL or W_COMPACT
 			targetH = H
@@ -889,7 +905,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 
 		CancelTweens(layoutTweens)
 
-		local info = TweenInfo.new(animate and 0.22 or 0, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+		local info = TweenInfo.new(animate and 0.28 or 0, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
 		local menuProps = { Size = UDim2.new(0, targetW, 0, targetH) }
 		if not keepPosition then
@@ -968,8 +984,9 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		StyleTab(btn, true)
 
 		local profile = tabLayoutProfiles[btn] or "default"
-		local usePreview = profile ~= "music" and showPreview
-		if usePreview ~= previewVisible or profile == "music" or (oldBtn and tabLayoutProfiles[oldBtn] == "music") then
+		local oldProfile = (oldBtn and tabLayoutProfiles[oldBtn]) or "default"
+		local usePreview = (profile == "default") and showPreview
+		if usePreview ~= previewVisible or profile ~= activeLayoutProfile or profile ~= oldProfile then
 			ApplyLayout(usePreview, true, true, profile)
 		end
 
@@ -2413,7 +2430,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	-- Uses game.GameId (Universe ID = 1494262959) so it works after any in-game teleport.
 	local TCrim = nil
 	if game.GameId == 1494262959 then
-		TCrim = MakeTab("criminality", false, false, 12, { fixed = true })
+		TCrim = MakeTab("criminality", false, false, 12, { fixed = true, layout = "criminality" })
 	end
 
 	if UIMusicModule and MusicModule then
@@ -2468,13 +2485,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Parent = TabBar,
 		})
 
-		local tabCount = 8
 		local tabGap = 4
+		local tabBtnW = 78
 
-		local TabRow = C("Frame", {
+		local TabRow = C("ScrollingFrame", {
 			Size = UDim2.new(1, 0, 1, 0),
 			BackgroundTransparency = 1,
 			BorderSizePixel = 0,
+			ScrollBarThickness = 0,
+			ScrollingDirection = Enum.ScrollingDirection.X,
+			CanvasSize = UDim2.new(0, 0, 0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
 			Parent = TabBar,
 		})
 		C("UIListLayout", {
@@ -2515,6 +2536,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			{ key = "path", labelKey = "crim_tab_path" },
 			{ key = "bounty", labelKey = "crim_tab_bounty" },
 			{ key = "visual", labelKey = "crim_tab_visual" },
+			{ key = "skins", labelKey = "crim_tab_skins" },
 			{ key = "utility", labelKey = "crim_tab_utility" },
 		}
 
@@ -2547,12 +2569,22 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				panels[key].Visible = true
 				Scroll.CanvasPosition = Vector2.new(0, 0)
 			end
+			-- Skins vault needs a wider layout; other Crim tabs use criminality size
+			local curLayout = ActiveTabBtn and tabLayoutProfiles[ActiveTabBtn]
+			if curLayout == "criminality" or curLayout == "skins" or activeLayoutProfile == "criminality" or activeLayoutProfile == "skins" then
+				local profile = (key == "skins") and "skins" or "criminality"
+				if ActiveTabBtn then
+					tabLayoutProfiles[ActiveTabBtn] = profile
+				end
+				ApplyLayout(false, true, true, profile)
+			end
+			Scroll.ScrollingEnabled = key ~= "skins"
 		end
 
 		for i, def in ipairs(tabDefs) do
 			local label = L(def.labelKey)
 			local btn = C("TextButton", {
-				Size = UDim2.new(1 / tabCount, -(tabGap * (tabCount - 1) / tabCount), 1, 0),
+				Size = UDim2.new(0, tabBtnW, 1, 0),
 				BackgroundColor3 = Color3.fromRGB(20, 20, 25),
 				Text = label,
 				Font = Enum.Font.GothamSemibold,
@@ -2613,6 +2645,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		local CPath = CP.path
 		local CBounty = CP.bounty
 		local CVIS = CP.visual
+		local CSkins = CP.skins
 		local CUtil = CP.utility
 
 		MakeTog(CCombat, "Melee Aura", "CrimMeleeAura", 1, { flat = true })
@@ -3350,300 +3383,21 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		})
 		MakeHint(CVIS, "hint_crim_skipintro", 6)
 		MakeTog(CVIS, "Gun Skin Changer", "CrimSkinChanger", 7, { flat = true })
-		local SkinStatus = C("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 16),
-			BackgroundTransparency = 1,
-			Text = "Select weapon → skin",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
-			TextColor3 = Color3.fromRGB(160, 160, 175),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			LayoutOrder = 8,
-			ZIndex = 5,
-			Parent = CVIS,
-		})
+		MakeHint(CVIS, "hint_crim_skinchanger", 8)
 
-		local SkinSearch = C("TextBox", {
-			Size = UDim2.new(1, 0, 0, 30),
-			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
-			BorderSizePixel = 0,
-			Text = "",
-			PlaceholderText = "Search weapon or skin…",
-			ClearTextOnFocus = false,
-			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
-			TextColor3 = Color3.fromRGB(220, 220, 230),
-			PlaceholderColor3 = Color3.fromRGB(100, 100, 112),
-			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = 9,
-			ZIndex = 6,
-			Parent = CVIS,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = SkinSearch })
-		C("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = SkinSearch })
-
-		local SkinPanel = C("Frame", {
-			Size = UDim2.new(1, 0, 0, 220),
-			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
-			BorderSizePixel = 0,
-			LayoutOrder = 10,
-			ZIndex = 5,
-			Parent = CVIS,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = SkinPanel })
-		C("UIStroke", { Color = Color3.fromRGB(36, 36, 46), Thickness = 1, Transparency = 0.35, Parent = SkinPanel })
-
-		local WeaponList = C("ScrollingFrame", {
-			Size = UDim2.new(0.38, -6, 1, -8),
-			Position = UDim2.new(0, 4, 0, 4),
-			BackgroundColor3 = Color3.fromRGB(18, 18, 24),
-			BorderSizePixel = 0,
-			ScrollBarThickness = 3,
-			CanvasSize = UDim2.new(0, 0, 0, 0),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y,
-			ZIndex = 6,
-			Parent = SkinPanel,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = WeaponList })
-		C("UIListLayout", {
-			Padding = UDim.new(0, 3),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Parent = WeaponList,
-		})
-		C("UIPadding", {
-			PaddingTop = UDim.new(0, 4),
-			PaddingBottom = UDim.new(0, 4),
-			PaddingLeft = UDim.new(0, 4),
-			PaddingRight = UDim.new(0, 4),
-			Parent = WeaponList,
-		})
-
-		local SkinList = C("ScrollingFrame", {
-			Size = UDim2.new(0.62, -6, 1, -8),
-			Position = UDim2.new(0.38, 2, 0, 4),
-			BackgroundColor3 = Color3.fromRGB(18, 18, 24),
-			BorderSizePixel = 0,
-			ScrollBarThickness = 3,
-			CanvasSize = UDim2.new(0, 0, 0, 0),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y,
-			ZIndex = 6,
-			Parent = SkinPanel,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = SkinList })
-		C("UIListLayout", {
-			Padding = UDim.new(0, 3),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Parent = SkinList,
-		})
-		C("UIPadding", {
-			PaddingTop = UDim.new(0, 4),
-			PaddingBottom = UDim.new(0, 4),
-			PaddingLeft = UDim.new(0, 4),
-			PaddingRight = UDim.new(0, 4),
-			Parent = SkinList,
-		})
-
-		local skinUi = { weapon = S.CrimSkinUiWeapon or "Mare", filter = "" }
-
-		local function clearKids(sf)
-			for _, ch in ipairs(sf:GetChildren()) do
-				if ch:IsA("TextButton") or ch:IsA("TextLabel") then
-					ch:Destroy()
-				end
-			end
-		end
-
-		local function makeRow(parent, text, order, active, onClick)
-			local B = C("TextButton", {
-				Size = UDim2.new(1, 0, 0, 26),
-				BackgroundColor3 = active and ACC_SOFT or Color3.fromRGB(24, 24, 30),
-				Text = text,
-				Font = Enum.Font.GothamSemibold,
-				TextSize = 10,
-				TextColor3 = active and Color3.fromRGB(245, 245, 250) or Color3.fromRGB(150, 150, 160),
-				TextXAlignment = Enum.TextXAlignment.Left,
-				TextTruncate = Enum.TextTruncate.AtEnd,
-				AutoButtonColor = false,
-				BorderSizePixel = 0,
-				LayoutOrder = order,
-				ZIndex = 7,
-				Parent = parent,
+		if UISkinVaultModule and UISkinVaultModule.build then
+			UISkinVaultModule.build({
+				C = C,
+				S = S,
+				CSkins = CSkins,
+				ConfigModule = ConfigModule,
+				MakeTog = MakeTog,
+				MakeButton = MakeButton,
+				MakeHint = MakeHint,
+				showNotify = showNotify,
 			})
-			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
-			C("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 6), Parent = B })
-			if active then
-				C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.45, Parent = B })
-			end
-			B.MouseButton1Click:Connect(onClick)
-			return B
 		end
 
-		local refreshSkinList
-		local function refreshWeaponList()
-			clearKids(WeaponList)
-			local weapons = {}
-			if S._crimSkinListWeapons then
-				local ok, list = pcall(S._crimSkinListWeapons)
-				if ok and typeof(list) == "table" then
-					weapons = list
-				end
-			end
-			local q = string.lower(skinUi.filter or "")
-			local order = 0
-			for _, gun in ipairs(weapons) do
-				if q == "" or string.find(string.lower(gun), q, 1, true) then
-					order = order + 1
-					local saved = S._crimSkinSaved and S._crimSkinSaved(gun)
-					local label = saved and (gun .. "  ·") or gun
-					makeRow(WeaponList, label, order, gun == skinUi.weapon, function()
-						skinUi.weapon = gun
-						S.CrimSkinUiWeapon = gun
-						refreshWeaponList()
-						refreshSkinList()
-					end)
-				end
-			end
-			if order == 0 then
-				C("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 24),
-					BackgroundTransparency = 1,
-					Text = "No weapons",
-					Font = Enum.Font.Gotham,
-					TextSize = 10,
-					TextColor3 = Color3.fromRGB(110, 110, 120),
-					LayoutOrder = 1,
-					ZIndex = 7,
-					Parent = WeaponList,
-				})
-			end
-		end
-
-		refreshSkinList = function()
-			clearKids(SkinList)
-			local gun = skinUi.weapon
-			SkinStatus.Text = gun and ("Weapon: " .. gun) or "Select weapon"
-			local rows = {}
-			if S._crimSkinListSkins and gun then
-				local ok, list = pcall(S._crimSkinListSkins, gun)
-				if ok and typeof(list) == "table" then
-					rows = list
-				end
-			end
-			local q = string.lower(skinUi.filter or "")
-			local order = 0
-			local saved = S._crimSkinSaved and S._crimSkinSaved(gun)
-			for _, row in ipairs(rows) do
-				local lab = row.label or row.full
-				if q == "" or string.find(string.lower(lab), q, 1, true) or string.find(string.lower(gun or ""), q, 1, true) then
-					order = order + 1
-					local active = saved == row.full
-					makeRow(SkinList, lab, order, active, function()
-						if S._crimSkinPick then
-							local ok2, msg = S._crimSkinPick(gun, row.full)
-							if showNotify then
-								showNotify(tostring(msg or (ok2 and "applied" or "fail")))
-							end
-						end
-						if S._crimSkinPersist then
-							pcall(S._crimSkinPersist)
-						end
-						if ConfigModule and ConfigModule.SaveGlobals then
-							pcall(ConfigModule.SaveGlobals, S)
-						end
-						-- also write into active named profile
-						pcall(function()
-							local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
-							if name and name ~= "" and ConfigModule.Save then
-								ConfigModule.Save(name, S)
-							end
-						end)
-						refreshWeaponList()
-						refreshSkinList()
-					end)
-				end
-			end
-			if order == 0 then
-				C("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 24),
-					BackgroundTransparency = 1,
-					Text = gun and "No skins" or "← pick weapon",
-					Font = Enum.Font.Gotham,
-					TextSize = 10,
-					TextColor3 = Color3.fromRGB(110, 110, 120),
-					LayoutOrder = 1,
-					ZIndex = 7,
-					Parent = SkinList,
-				})
-			else
-				SkinStatus.Text = string.format("%s · %d skins%s", gun, order, saved and (" · " .. tostring(saved)) or "")
-			end
-		end
-
-		SkinSearch:GetPropertyChangedSignal("Text"):Connect(function()
-			skinUi.filter = SkinSearch.Text or ""
-			refreshWeaponList()
-			refreshSkinList()
-		end)
-
-		task.defer(function()
-			-- prefer currently held gun
-			if S._crimSkinStatus then
-				pcall(function()
-					local tool = nil
-					-- soft wait for bind
-					task.wait(0.2)
-					refreshWeaponList()
-					refreshSkinList()
-				end)
-			else
-				refreshWeaponList()
-				refreshSkinList()
-			end
-		end)
-		_G.__VG_RefreshSkinUi = function()
-			refreshWeaponList()
-			refreshSkinList()
-		end
-
-		MakeButton(CVIS, nil, 11, function()
-			refreshWeaponList()
-			refreshSkinList()
-			if showNotify then
-				showNotify("Skin list refreshed")
-			end
-		end, "btn_crim_skin_refresh")
-		MakeButton(CVIS, nil, 12, function()
-			if S._crimSkinClear then
-				local ok, msg = S._crimSkinClear(skinUi.weapon)
-				if showNotify then
-					showNotify(tostring(msg or (ok and "cleared" or "fail")))
-				end
-			end
-			if S._crimSkinPersist then
-				pcall(S._crimSkinPersist)
-			end
-			if ConfigModule and ConfigModule.SaveGlobals then
-				pcall(ConfigModule.SaveGlobals, S)
-			end
-			pcall(function()
-				local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
-				if name and name ~= "" and ConfigModule.Save then
-					ConfigModule.Save(name, S)
-				end
-			end)
-			refreshWeaponList()
-			refreshSkinList()
-		end, "btn_crim_skin_clear")
-		MakeButton(CVIS, nil, 13, function()
-			if S._crimSkinDump then
-				local ok, msg = S._crimSkinDump()
-				if showNotify then
-					showNotify(tostring(msg or (ok and "dumped" or "fail")))
-				end
-			end
-		end, "btn_crim_skin_dump")
-		MakeHint(CVIS, "hint_crim_skinchanger", 14)
 		MakeTog(CVIS, "Hide Helmet Overlay", "CrimHideHelmetOverlay", 15, { flat = true })
 		MakeHint(CVIS, "hint_crim_helmet", 16)
 		MakeTog(CVIS, "Menu Meme Music", "CrimMenuMusic", 17, {

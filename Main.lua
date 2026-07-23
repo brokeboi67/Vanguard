@@ -593,7 +593,7 @@ local CRIM_GAME_ID = 1494262959
 local isCriminality = game.GameId == CRIM_GAME_ID
 
 -- Base modules always fetched (Core → GameSupport). +4 Criminality modules when needed.
-local LOAD_TOTAL = 29 + (isCriminality and 4 or 0)
+local LOAD_TOTAL = 30 + (isCriminality and 4 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -664,7 +664,7 @@ local MODULE_FILES = {
 	"Config.lua", "I18n.lua", "Teleport.lua", "Session.lua", "Util.lua", "ESP.lua",
 	"TeamFriends.lua", "Aim.lua", "Rage.lua", "Movement.lua", "Invisibility.lua", "Misc.lua",
 	"Features.lua", "Animations.lua", "World.lua", "Effects.lua", "Music.lua", "UIColorPicker.lua",
-	"UIConfigMenus.lua", "UIMusic.lua", "UI.lua", "Menus.lua", "GameSupport.lua",
+	"UIConfigMenus.lua", "UIMusic.lua", "UISkinVault.lua", "UI.lua", "Menus.lua", "GameSupport.lua",
 }
 if isCriminality then
 	table.insert(MODULE_FILES, "Criminality.lua")
@@ -942,6 +942,7 @@ local Music = Get("Music.lua")
 local UIColorPicker = Get("UIColorPicker.lua")
 local UIConfigMenus = Get("UIConfigMenus.lua")
 local UIMusic = Get("UIMusic.lua")
+local UISkinVault = Get("UISkinVault.lua")
 local UI = Get("UI.lua")
 local Menus = Get("Menus.lua")
 local GameSupport = Get("GameSupport.lua")
@@ -1174,7 +1175,7 @@ task.spawn(function()
 	_kickPhase = "UI.Init-start"
 	AntiBypass.setUiBuilding(true)
 	task.wait()
-	phase("UI.Init", UI.Init, Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass)
+			phase("UI.Init", UI.Init, Settings, GUI, Config, TeamFriends, Animations, World, Menus, GameSupport, UIColorPicker, UIConfigMenus, Music, UIMusic, I18n, AntiBypass, UISkinVault)
 	_kickPhase = "post-UI.Init"
 	AntiBypass.setUiBuilding(false)
 	AntiBypass.logAdonisDiagnostics("post-UI", Settings)
