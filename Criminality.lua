@@ -5682,15 +5682,17 @@ function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
 		return false
 	end
 	if misc.skinChanger.isTexSkinKey(skinKey) then
-		local want = misc.skinChanger.contentId("rbxassetid://" .. tostring(misc.skinChanger.texIdFromKey(skinKey)))
+		local wantName = skinKey
+		local wantId = misc.skinChanger.contentId("rbxassetid://" .. tostring(misc.skinChanger.texIdFromKey(skinKey)))
 		local any = false
 		for _, d in ipairs(tool:GetDescendants()) do
 			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
 				any = true
-				if d:FindFirstChildOfClass("SurfaceAppearance") then
+				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+				if not sa or sa.Name ~= wantName then
 					return false
 				end
-				if misc.skinChanger.contentId(d.TextureID) ~= want then
+				if misc.skinChanger.contentId(sa.ColorMap) ~= wantId then
 					return false
 				end
 			end
