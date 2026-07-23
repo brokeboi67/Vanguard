@@ -4966,13 +4966,16 @@ function misc.skinChanger.texKey(texId)
 	return "T:" .. tostring(texId)
 end
 
--- Crim silencer tools: Tommy-S / Uzi-S = same gun + Attachments, not a separate skin set
+-- Crim silencer / special tools: Tommy-S, M4A1-X = same skin set as base
 function misc.skinChanger.baseGunName(gunName)
 	if typeof(gunName) ~= "string" or gunName == "" then
 		return gunName
 	end
 	local n = gunName
 	if #n > 2 and string.sub(n, -2) == "-S" then
+		n = string.sub(n, 1, #n - 2)
+	end
+	if #n > 2 and string.sub(n, -2) == "-X" then
 		n = string.sub(n, 1, #n - 2)
 	end
 	return n
@@ -5016,6 +5019,10 @@ function misc.skinChanger.catalogKeysForGun(gunName)
 	add(base)
 	if base ~= gunName then
 		add(base .. "-S")
+		add(base .. "-X")
+	else
+		add(base .. "-S")
+		add(base .. "-X")
 	end
 	for _, k in ipairs({ gunName, base }) do
 		if string.sub(k, -2) == "-1" then
@@ -5103,6 +5110,298 @@ function misc.skinChanger.getCasePBR()
 	local storage = RepSt:FindFirstChild("Storage")
 	local cos = storage and storage:FindFirstChild("CosmeticsStuff")
 	return cos and cos:FindFirstChild("CasePBRs")
+end
+
+function misc.skinChanger.getSkinVariants()
+	local storage = RepSt:FindFirstChild("Storage")
+	return storage and storage:FindFirstChild("SkinVariants")
+end
+
+function misc.skinChanger.getDisplayWepModels()
+	local storage = RepSt:FindFirstChild("Storage")
+	return storage and storage:FindFirstChild("DisplayWepModels")
+end
+
+function misc.skinChanger.isVariantSkinKey(skinKey)
+	return typeof(skinKey) == "string" and string.sub(skinKey, 1, 2) == "V:"
+end
+
+function misc.skinChanger.variantKey(category, modelName)
+	return "V:" .. tostring(category) .. "/" .. tostring(modelName)
+end
+
+function misc.skinChanger.variantPathFromKey(skinKey)
+	if not misc.skinChanger.isVariantSkinKey(skinKey) then
+		return nil, nil
+	end
+	local rest = string.sub(skinKey, 3)
+	local slash = string.find(rest, "/", 1, true)
+	if not slash then
+		return nil, rest
+	end
+	return string.sub(rest, 1, slash - 1), string.sub(rest, slash + 1)
+end
+
+function misc.skinChanger.normToken(s)
+	return string.lower(string.gsub(tostring(s or ""), "[^%w]", ""))
+end
+
+function misc.skinChanger.titleFromSlug(slug)
+	if typeof(slug) ~= "string" or slug == "" then
+		return "?"
+	end
+	local parts = {}
+	for p in string.gmatch(slug, "[^_]+") do
+		if #p > 0 then
+			parts[#parts + 1] = string.upper(string.sub(p, 1, 1)) .. string.sub(p, 2)
+		end
+	end
+	if #parts == 0 then
+		return slug
+	end
+	return table.concat(parts, " ")
+end
+
+-- Static slug → gun for SkinVariants folder names (mare_trickshot, sawnoff_eros…)
+local VARIANT_SLUG_GUN = {
+	mare = "Mare",
+	m4a1 = "M4A1",
+	sawnoff = "Sawn-Off",
+	fireaxe = "Fire-Axe",
+	ithaca = "Ithaca-37",
+	bat = "Bat",
+	mp7 = "MP7",
+	m320 = "M320",
+	sks = "SKS",
+	magnum = "Magnum",
+	bfg = "BFG",
+	katana = "Katana",
+	rambo = "Rambo",
+	chainsaw = "Chainsaw",
+	machete = "Machete",
+	balisong = "Balisong",
+	bayonet = "Bayonet",
+	metalbat = "Metal-Bat",
+	shiv = "Shiv",
+	wrench = "Wrench",
+	tommy = "Tommy",
+	uzi = "Uzi",
+	deagle = "Deagle",
+	beretta = "Beretta",
+	scout = "Scout",
+	taiga = "Taiga",
+	fnp45 = "FNP-45",
+	mac10 = "MAC-10",
+	ump45 = "UMP-45",
+	aks74u = "AKS-74U",
+	scarh = "SCAR-H",
+	rpg7 = "RPG-7",
+	sledgehammer = "Sledgehammer",
+	golfclub = "Golfclub",
+}
+
+function misc.skinChanger.parseVariantModelName(modelName)
+	if typeof(modelName) ~= "string" or modelName == "" then
+		return nil, nil
+	end
+	local us = string.find(modelName, "_", 1, true)
+	local slug = us and string.sub(modelName, 1, us - 1) or modelName
+	local rest = us and string.sub(modelName, us + 1) or modelName
+	local gun = VARIANT_SLUG_GUN[string.lower(slug)]
+	if not gun then
+		-- fuzzy: longest catalog/RepPBR gun whose norm matches prefix of compact name
+		local compact = misc.skinChanger.normToken(modelName)
+		local bestNk, bestGun = "", nil
+		local cat = misc.skinChanger.getTexCatalog()
+		for g in pairs(cat) do
+			local base = misc.skinChanger.baseGunName(g)
+			if string.sub(base, -2) == "-1" then
+				base = string.sub(base, 1, #base - 2)
+			end
+			local nk = misc.skinChanger.normToken(base)
+			if #nk > #bestNk and string.sub(compact, 1, #nk) == nk then
+				bestNk, bestGun = nk, base
+			end
+		end
+		gun = bestGun or slug
+		if bestNk ~= "" then
+			rest = string.sub(compact, #bestNk + 1)
+		end
+	end
+	return gun, misc.skinChanger.titleFromSlug(rest)
+end
+
+function misc.skinChanger.findVariantModel(skinKey)
+	local cat, name = misc.skinChanger.variantPathFromKey(skinKey)
+	if not name then
+		return nil
+	end
+	local root = misc.skinChanger.getSkinVariants()
+	if not root then
+		return nil
+	end
+	if cat and cat ~= "" then
+		local folder = root:FindFirstChild(cat)
+		local m = folder and folder:FindFirstChild(name)
+		if m and m:IsA("Model") then
+			return m
+		end
+	end
+	for _, folderName in ipairs({ "Guns", "Melees", "Charms" }) do
+		local folder = root:FindFirstChild(folderName)
+		local m = folder and folder:FindFirstChild(name)
+		if m and m:IsA("Model") then
+			return m
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.previewFromVariant(model)
+	if not model then
+		return ""
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("SurfaceAppearance") then
+			local id = misc.skinChanger.contentId(d.ColorMap)
+			if id ~= "" then
+				return id
+			end
+		end
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			local id = misc.skinChanger.contentId(d.TextureID)
+			if id ~= "" then
+				return id
+			end
+		end
+	end
+	return ""
+end
+
+function misc.skinChanger.listVariantSkinsForGun(gunName)
+	local out = {}
+	local root = misc.skinChanger.getSkinVariants()
+	if not root or not gunName then
+		return out
+	end
+	local base = misc.skinChanger.baseGunName(gunName)
+	if string.sub(base, -2) == "-1" then
+		base = string.sub(base, 1, #base - 2)
+	end
+	local want = misc.skinChanger.normToken(base)
+	for _, cat in ipairs({ "Guns", "Melees" }) do
+		local folder = root:FindFirstChild(cat)
+		if folder then
+			for _, ch in ipairs(folder:GetChildren()) do
+				if ch:IsA("Model") then
+					local g, label = misc.skinChanger.parseVariantModelName(ch.Name)
+					if g and misc.skinChanger.normToken(g) == want then
+						out[#out + 1] = {
+							full = misc.skinChanger.variantKey(cat, ch.Name),
+							label = label,
+							preview = misc.skinChanger.previewFromVariant(ch),
+						}
+					end
+				end
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		return a.label < b.label
+	end)
+	return out
+end
+
+function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, quiet)
+	if not root or not variantModel then
+		return 0
+	end
+	misc.skinChanger.captureDefaults(root)
+	local byName = {}
+	local srcList = {}
+	for _, d in ipairs(variantModel:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			byName[string.lower(d.Name)] = d
+			srcList[#srcList + 1] = d
+		end
+	end
+	if #srcList == 0 then
+		return 0
+	end
+	local targets = {}
+	if misc.skinChanger.isMeleeRoot(root) then
+		targets = misc.skinChanger.collectMeleeMeshParts(root)
+	else
+		for _, d in ipairs(root:GetDescendants()) do
+			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+				targets[#targets + 1] = d
+			end
+		end
+	end
+	local n, patched = 0, 0
+	for i, d in ipairs(targets) do
+		local src = byName[string.lower(d.Name)] or srcList[((i - 1) % #srcList) + 1]
+		if src then
+			local already = d:GetAttribute("VG_VarSkin") == skinKey
+			if already then
+				n = n + 1
+			else
+				pcall(function()
+					if d:GetAttribute("VG_DefMesh") == nil then
+						d:SetAttribute("VG_DefMesh", d.MeshId or "")
+					end
+					for _, ch in ipairs(d:GetChildren()) do
+						if ch:IsA("SurfaceAppearance") then
+							ch:Destroy()
+						end
+					end
+					if src.MeshId and tostring(src.MeshId) ~= "" and not string.find(tostring(src.MeshId), "ContentId", 1, true) then
+						d.MeshId = src.MeshId
+					end
+					local sa = src:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						local neo = sa:Clone()
+						neo.Name = tostring(skinKey)
+						neo.Parent = d
+						d.TextureID = ""
+					else
+						d.TextureID = src.TextureID or ""
+					end
+					d:SetAttribute("VG_VarSkin", skinKey)
+				end)
+				patched = patched + 1
+				n = n + 1
+			end
+		end
+	end
+	if not quiet and patched > 0 then
+		misc.skinChanger.log(string.format("applyVariant root=%s n=%d patched=%d key=%s", root.Name, n, patched, tostring(skinKey)))
+	end
+	return n
+end
+
+function misc.skinChanger.applyVariantToTool(tool, skinKey, quiet)
+	local model = misc.skinChanger.findVariantModel(skinKey)
+	if not tool or not model then
+		return 0
+	end
+	misc.skinChanger.indexMeshes(tool, tool.Name)
+	local n = misc.skinChanger.applyVariantToInstance(tool, model, skinKey, quiet)
+	local cam = workspace.CurrentCamera
+	local vm = cam and cam:FindFirstChild("ViewModel")
+	if vm then
+		n = n + misc.skinChanger.applyVariantToInstance(vm, model, skinKey, true)
+	end
+	local rf = game:GetService("ReplicatedFirst")
+	local folder = rf:FindFirstChild("ViewModels")
+	if folder then
+		for _, ch in ipairs(folder:GetChildren()) do
+			n = n + misc.skinChanger.applyVariantToInstance(ch, model, skinKey, quiet)
+		end
+	end
+	return n
 end
 
 function misc.skinChanger.findSaByGunLabel(folder, gunName, label)
@@ -5848,6 +6147,13 @@ function misc.skinChanger.restoreDefaults(root)
 				if typeof(tex) == "string" then
 					d.TextureID = tex
 				end
+				local defMesh = d:GetAttribute("VG_DefMesh")
+				if typeof(defMesh) == "string" and defMesh ~= "" then
+					pcall(function()
+						d.MeshId = defMesh
+					end)
+				end
+				d:SetAttribute("VG_VarSkin", nil)
 				n = n + 1
 			end)
 		end
@@ -5920,6 +6226,18 @@ end
 function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
 	if not tool or not skinKey then
 		return false
+	end
+	if misc.skinChanger.isVariantSkinKey(skinKey) then
+		local any = false
+		for _, d in ipairs(tool:GetDescendants()) do
+			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
+				any = true
+				if d:GetAttribute("VG_VarSkin") ~= skinKey then
+					return false
+				end
+			end
+		end
+		return any
 	end
 	if misc.skinChanger.isTexSkinKey(skinKey) then
 		local wantId = misc.skinChanger.contentId("rbxassetid://" .. tostring(misc.skinChanger.texIdFromKey(skinKey)))
@@ -5999,6 +6317,34 @@ function misc.skinChanger.listAllWeapons()
 	for gun in pairs(cat) do
 		addGun(gun)
 	end
+	-- Display models = full ItemStats-ish gun list (Tommy, Tommy-S, …)
+	local display = misc.skinChanger.getDisplayWepModels()
+	if display then
+		for _, ch in ipairs(display:GetChildren()) do
+			if ch:IsA("Model") then
+				addGun(ch.Name)
+			end
+		end
+	end
+	-- SkinVariants mesh skins (mare_trickshot → Mare)
+	local variants = misc.skinChanger.getSkinVariants()
+	if variants then
+		for _, catName in ipairs({ "Guns", "Melees" }) do
+			local folder = variants:FindFirstChild(catName)
+			if folder then
+				for _, ch in ipairs(folder:GetChildren()) do
+					if ch:IsA("Model") then
+						local g = misc.skinChanger.parseVariantModelName(ch.Name)
+						if g then
+							addGun(g)
+						end
+					end
+				end
+			end
+		end
+	end
+	-- Invalidate weaponsByLen cache when list rebuilds
+	misc.skinChanger._wepCache = nil
 	table.sort(out)
 	return out
 end
@@ -6025,6 +6371,11 @@ end
 function misc.skinChanger.skinLabel(fullName)
 	if typeof(fullName) ~= "string" then
 		return "?"
+	end
+	if misc.skinChanger.isVariantSkinKey(fullName) then
+		local _, modelName = misc.skinChanger.variantPathFromKey(fullName)
+		local _, label = misc.skinChanger.parseVariantModelName(modelName or "")
+		return label or modelName or "?"
 	end
 	if misc.skinChanger.isTexSkinKey(fullName) then
 		local id = misc.skinChanger.texIdFromKey(fullName)
@@ -6073,6 +6424,48 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 		return false, "bad args"
 	end
 	misc.skinChanger.setSavedSkinKey(gunName, skinKey)
+
+	-- Mesh variants (Storage.SkinVariants)
+	if misc.skinChanger.isVariantSkinKey(skinKey) then
+		if not misc.skinChanger.findVariantModel(skinKey) then
+			return false, "variant missing: " .. tostring(skinKey)
+		end
+		local n = 0
+		local seen = {}
+		local function tryOnce(tool)
+			if not tool or seen[tool] then
+				return
+			end
+			if not misc.skinChanger.gunsShareSkin(tool.Name, gunName) or not misc.skinChanger.isGunTool(tool) then
+				return
+			end
+			seen[tool] = true
+			n = n + misc.skinChanger.applyVariantToTool(tool, skinKey, true)
+		end
+		local function tryContainer(container)
+			if not container then
+				return
+			end
+			for _, ch in ipairs(container:GetChildren()) do
+				if misc.skinChanger.isGunTool(ch) then
+					tryOnce(ch)
+				end
+			end
+		end
+		tryOnce(misc.skinChanger.findActiveGun())
+		local lp = getLP()
+		if lp then
+			tryContainer(lp.Character)
+			local chars = workspace:FindFirstChild("Characters")
+			tryContainer(chars and chars:FindFirstChild(lp.Name))
+			tryContainer(lp:FindFirstChild("Backpack"))
+		end
+		local S = _G.__VG_S
+		if S and S.CrimSkinDropped then
+			n = n + (misc.skinChanger.applyDroppedForGunVariant(gunName, skinKey) or 0)
+		end
+		return true, string.format("%s → %s (%d)", misc.skinChanger.baseGunName(gunName), misc.skinChanger.skinLabel(skinKey), n)
+	end
 
 	local texId = misc.skinChanger.isTexSkinKey(skinKey) and misc.skinChanger.texIdFromKey(skinKey) or nil
 	local tmpl = nil
@@ -6285,7 +6678,13 @@ function misc.skinChanger.applyToDroppedModel(model)
 		return 0
 	end
 	local n = 0
-	if misc.skinChanger.isTexSkinKey(key) then
+	if misc.skinChanger.isVariantSkinKey(key) then
+		local variant = misc.skinChanger.findVariantModel(key)
+		if not variant then
+			return 0
+		end
+		n = misc.skinChanger.applyVariantToInstance(model, variant, key, true)
+	elseif misc.skinChanger.isTexSkinKey(key) then
 		local texId = misc.skinChanger.texIdFromKey(key)
 		n = misc.skinChanger.applyTextureToInstance(model, texId, true)
 	else
@@ -6350,6 +6749,35 @@ function misc.skinChanger.applyDroppedForGun(gunName, tmpl)
 				if n > 0 then
 					pcall(function()
 						model:SetAttribute("VG_DropSkin", tmpl.Name)
+					end)
+				end
+			end
+		end
+	end
+	return n
+end
+
+function misc.skinChanger.applyDroppedForGunVariant(gunName, skinKey)
+	local filter = workspace:FindFirstChild("Filter")
+	local folder = filter and filter:FindFirstChild("SpawnedTools")
+	local variant = misc.skinChanger.findVariantModel(skinKey)
+	if not folder or not gunName or not variant then
+		return 0
+	end
+	local S = _G.__VG_S
+	local n = 0
+	for _, model in ipairs(folder:GetChildren()) do
+		if model:IsA("Model") and misc.skinChanger.dropNearLocal(model, S) then
+			local resolved = misc.skinChanger.resolveDroppedGunName(model)
+			if resolved and misc.skinChanger.gunsShareSkin(resolved, gunName) then
+				pcall(function()
+					model:SetAttribute("VG_DropSkin", nil)
+				end)
+				local applied = misc.skinChanger.applyVariantToInstance(model, variant, skinKey, true)
+				n = n + applied
+				if applied > 0 then
+					pcall(function()
+						model:SetAttribute("VG_DropSkin", skinKey)
 					end)
 				end
 			end
@@ -6476,7 +6904,9 @@ function misc.skinChanger.applySavedForTool(tool, quiet)
 		local rf = game:GetService("ReplicatedFirst")
 		local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
 		if vmTool and not misc.skinChanger.toolAlreadyHasSkin(vmTool, key) then
-			if misc.skinChanger.isTexSkinKey(key) then
+			if misc.skinChanger.isVariantSkinKey(key) then
+				misc.skinChanger.applyVariantToInstance(vmTool, misc.skinChanger.findVariantModel(key), key, true)
+			elseif misc.skinChanger.isTexSkinKey(key) then
 				misc.skinChanger.applyTextureToInstance(vmTool, misc.skinChanger.texIdFromKey(key), true)
 			else
 				local tmpl = misc.skinChanger.resolveTemplate(tool.Name, key)
@@ -6485,6 +6915,11 @@ function misc.skinChanger.applySavedForTool(tool, quiet)
 				end
 			end
 		end
+		return true
+	end
+	if misc.skinChanger.isVariantSkinKey(key) then
+		misc.skinChanger.applyVariantToTool(tool, key, quiet ~= false)
+		misc.skinChanger.lastToolName = tool.Name
 		return true
 	end
 	if misc.skinChanger.isTexSkinKey(key) then
@@ -6537,6 +6972,13 @@ function misc.skinChanger.cycleForCurrent()
 	for _, row in ipairs(misc.skinChanger.listTexSkinsForGun(tool.Name)) do
 		if not saLabels[string.lower(row.label)] then
 			keys[#keys + 1] = row.full
+			saLabels[string.lower(row.label)] = true
+		end
+	end
+	for _, row in ipairs(misc.skinChanger.listVariantSkinsForGun(tool.Name)) do
+		if not saLabels[string.lower(row.label)] then
+			keys[#keys + 1] = row.full
+			saLabels[string.lower(row.label)] = true
 		end
 	end
 	misc.skinChanger.log(string.format("cycle: tool=%s skins=%d", tool.Name, #keys))
@@ -6747,11 +7189,24 @@ function misc.skinChanger.bindUi(S)
 		end
 		for _, tex in ipairs(misc.skinChanger.listTexSkinsForGun(gunName)) do
 			if not saLabels[string.lower(tex.label)] then
+				saLabels[string.lower(tex.label)] = true
 				rows[#rows + 1] = {
 					full = tex.full,
 					label = tex.label,
 					selected = misc.skinChanger.getSavedSkinKey(gunName) == tex.full,
 					preview = tex.preview,
+				}
+			end
+		end
+		for _, var in ipairs(misc.skinChanger.listVariantSkinsForGun(gunName)) do
+			local lab = var.label .. " ★"
+			if not saLabels[string.lower(var.label)] then
+				saLabels[string.lower(var.label)] = true
+				rows[#rows + 1] = {
+					full = var.full,
+					label = lab,
+					selected = misc.skinChanger.getSavedSkinKey(gunName) == var.full,
+					preview = var.preview,
 				}
 			end
 		end
