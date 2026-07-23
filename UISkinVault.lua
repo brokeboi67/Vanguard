@@ -649,17 +649,14 @@ function UISkinVault.build(opts)
 				end
 			end)
 		else
-			C("TextLabel", {
-				Size = UDim2.new(1, -12, 0, 72),
-				Position = UDim2.new(0, 6, 0, 36),
+			local ph = C("Frame", {
+				Size = UDim2.new(1, -16, 0, 96),
+				Position = UDim2.new(0, 8, 0, 22),
 				BackgroundTransparency = 1,
-				Text = "◆",
-				Font = Enum.Font.GothamBold,
-				TextSize = 36,
-				TextColor3 = accent,
 				ZIndex = 9,
 				Parent = Card,
 			})
+			iconDiamond(ph, C, accent, 9)
 		end
 
 		C("TextLabel", {
@@ -694,16 +691,14 @@ function UISkinVault.build(opts)
 				Size = UDim2.new(0, 22, 0, 22),
 				Position = UDim2.new(1, -26, 0, 4),
 				BackgroundColor3 = Color3.fromRGB(40, 42, 52),
-				Text = "×",
-				Font = Enum.Font.GothamBold,
-				TextSize = 14,
-				TextColor3 = Color3.fromRGB(180, 180, 190),
+				Text = "",
 				AutoButtonColor = false,
 				BorderSizePixel = 0,
 				ZIndex = 11,
 				Parent = Card,
 			})
 			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = X })
+			iconCloseX(X, C, 12, Color3.fromRGB(190, 190, 200))
 			X.MouseButton1Click:Connect(function()
 				if S._crimSkinClear then
 					local ok, msg = S._crimSkinClear(gun)
