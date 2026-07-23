@@ -2779,6 +2779,7 @@ local featureRunning = {
 	noFailLockpick = false,
 	fullBright = false,
 	noFog = false,
+	skipIntro = false,
 	skinChanger = false,
 	hitSounds = false,
 	autoRespawn = false,
@@ -4215,6 +4216,105 @@ end
 function misc.noFog.stop()
 	misc.noFog.clearConns()
 	misc.noFog.restore()
+end
+
+-- ── SKIP MENU INTRO (ReplicatedStorage.Values.SkipMenuIntro = true/false) ──
+misc.skipIntro = { conns = {}, saved = nil, active = false }
+
+function misc.skipIntro.clearConns()
+	for _, c in ipairs(misc.skipIntro.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.skipIntro.conns = {}
+end
+
+function misc.skipIntro.getValue()
+	local values = RepSt:FindFirstChild("Values")
+	if not values then
+		return nil
+	end
+	local v = values:FindFirstChild("SkipMenuIntro")
+	if v and (v:IsA("BoolValue") or v:IsA("NumberValue") or v:IsA("IntValue")) then
+		return v
+	end
+	return nil
+end
+
+function misc.skipIntro.apply(want)
+	local v = misc.skipIntro.getValue()
+	if not v then
+		return false
+	end
+	if misc.skipIntro.saved == nil then
+		misc.skipIntro.saved = v.Value
+	end
+	local target = want and true or false
+	if v:IsA("BoolValue") then
+		if v.Value ~= target then
+			pcall(function()
+				v.Value = target
+			end)
+		end
+	else
+		-- NumberValue fallback
+		local n = target and 1 or 0
+		if v.Value ~= n then
+			pcall(function()
+				v.Value = n
+			end)
+		end
+	end
+	return true
+end
+
+function misc.skipIntro.start()
+	misc.skipIntro.clearConns()
+	misc.skipIntro.active = true
+	misc.skipIntro.apply(true)
+	local v = misc.skipIntro.getValue()
+	if v then
+		table.insert(
+			misc.skipIntro.conns,
+			v:GetPropertyChangedSignal("Value"):Connect(function()
+				if _G.__VG_S and _G.__VG_S.CrimSkipMenuIntro then
+					misc.skipIntro.apply(true)
+				end
+			end)
+		)
+	else
+		local values = RepSt:FindFirstChild("Values") or RepSt
+		table.insert(
+			misc.skipIntro.conns,
+			values.ChildAdded:Connect(function(ch)
+				if ch.Name == "SkipMenuIntro" or ch.Name == "Values" then
+					task.defer(function()
+						if _G.__VG_S and _G.__VG_S.CrimSkipMenuIntro then
+							misc.skipIntro.start()
+						end
+					end)
+				end
+			end)
+		)
+	end
+end
+
+function misc.skipIntro.stop()
+	misc.skipIntro.active = false
+	misc.skipIntro.clearConns()
+	-- OFF → false (explicit), then restore original if we had one and it wasn't false
+	local v = misc.skipIntro.getValue()
+	if v and v:IsA("BoolValue") then
+		pcall(function()
+			v.Value = false
+		end)
+	elseif v then
+		pcall(function()
+			v.Value = 0
+		end)
+	end
+	misc.skipIntro.saved = nil
 end
 
 -- ── CLIENT GUN SKINCHANGER (RepPBR SurfaceAppearance → Tool Gun meshes + ViewModel) ──
@@ -5815,6 +5915,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
+	syncFeatureToggle("skipIntro", "CrimSkipMenuIntro", misc.skipIntro.start, misc.skipIntro.stop, S)
 	syncFeatureToggle("skinChanger", "CrimSkinChanger", misc.skinChanger.start, misc.skinChanger.stop, S)
 	pcall(misc.skinChanger.bindUi, S)
 	syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
@@ -5869,6 +5970,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 			syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
+			syncFeatureToggle("skipIntro", "CrimSkipMenuIntro", misc.skipIntro.start, misc.skipIntro.stop, S)
 			syncFeatureToggle("skinChanger", "CrimSkinChanger", misc.skinChanger.start, misc.skinChanger.stop, S)
 			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
@@ -5896,6 +5998,9 @@ local function startMaster(S)
 		end
 		if featureRunning.noFog and master.frame % 12 == 0 then
 			pcall(misc.noFog.apply)
+		end
+		if featureRunning.skipIntro and master.frame % 60 == 0 then
+			pcall(misc.skipIntro.apply, true)
 		end
 		if featureRunning.skinChanger and master.frame % 90 == 0 then
 			pcall(misc.skinChanger.tick)
@@ -6067,6 +6172,7 @@ local function stopMaster()
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
 	pcall(misc.noFog.stop)
+	pcall(misc.skipIntro.stop)
 	pcall(misc.skinChanger.stop)
 	pcall(misc.helmet.stop)
 	pcall(stopRemoveSmokeExplosion)

@@ -108,6 +108,7 @@ local STR = {
 		hint_crim_allowance = "CLMZALOW gdy Claim=true. Gdy allowance gotowe — podświetla najbliższy bankomat.",
 		hint_crim_fullbright = "Wymusza jasne oświetlenie i usuwa mgłę (tylko Criminality).",
 		hint_crim_nofog = "ReplicatedStorage.Values: SetFogValue=0 + SetHazeValue=0. Dodatkowo Lighting Fog/Atmosphere = 0.",
+		hint_crim_skipintro = "ReplicatedStorage.Values.SkipMenuIntro = true (ON) / false (OFF). Zapis globalny.",
 		hint_crim_skinchanger = "Picker: broń/melee (lewo) → skin (prawo). Skiny zapisują się w globals + aktywnym configu. Apply na equip.",
 		btn_crim_skin_refresh = "Refresh Skin List",
 		btn_crim_skin_clear = "Clear Skin (selected)",

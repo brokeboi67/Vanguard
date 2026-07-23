@@ -28,6 +28,7 @@ local GLOBAL_KEYS = {
 	CrimMenuMusic = true,
 	CrimMenuMusicTrack = true,
 	MusicGlobalPersist = true,
+	CrimSkipMenuIntro = true,
 }
 
 -- Also always mirrored into globals.json (and kept in named configs via Serialize).
@@ -716,6 +717,9 @@ function Config.EnforceRules(S)
 	end
 	if S.CrimNoFog == nil then
 		S.CrimNoFog = false
+	end
+	if S.CrimSkipMenuIntro == nil then
+		S.CrimSkipMenuIntro = false
 	end
 	if S.CrimSkinChanger == nil then
 		S.CrimSkinChanger = false

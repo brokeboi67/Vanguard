@@ -3340,7 +3340,16 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
 		MakeTog(CVIS, "No Fog", "CrimNoFog", 3, { flat = true })
 		MakeHint(CVIS, "hint_crim_nofog", 4)
-		MakeTog(CVIS, "Gun Skin Changer", "CrimSkinChanger", 5, { flat = true })
+		MakeTog(CVIS, "Skip Menu Intro", "CrimSkipMenuIntro", 5, {
+			flat = true,
+			onChange = function()
+				if ConfigModule and ConfigModule.SaveGlobals then
+					pcall(ConfigModule.SaveGlobals, S)
+				end
+			end,
+		})
+		MakeHint(CVIS, "hint_crim_skipintro", 6)
+		MakeTog(CVIS, "Gun Skin Changer", "CrimSkinChanger", 7, { flat = true })
 		local SkinStatus = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 16),
 			BackgroundTransparency = 1,
@@ -3350,7 +3359,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextColor3 = Color3.fromRGB(160, 160, 175),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
-			LayoutOrder = 6,
+			LayoutOrder = 8,
 			ZIndex = 5,
 			Parent = CVIS,
 		})
@@ -3367,7 +3376,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextColor3 = Color3.fromRGB(220, 220, 230),
 			PlaceholderColor3 = Color3.fromRGB(100, 100, 112),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = 7,
+			LayoutOrder = 9,
 			ZIndex = 6,
 			Parent = CVIS,
 		})
@@ -3378,7 +3387,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Size = UDim2.new(1, 0, 0, 220),
 			BackgroundColor3 = Color3.fromRGB(14, 14, 18),
 			BorderSizePixel = 0,
-			LayoutOrder = 8,
+			LayoutOrder = 10,
 			ZIndex = 5,
 			Parent = CVIS,
 		})
@@ -3597,14 +3606,14 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			refreshSkinList()
 		end
 
-		MakeButton(CVIS, nil, 9, function()
+		MakeButton(CVIS, nil, 11, function()
 			refreshWeaponList()
 			refreshSkinList()
 			if showNotify then
 				showNotify("Skin list refreshed")
 			end
 		end, "btn_crim_skin_refresh")
-		MakeButton(CVIS, nil, 10, function()
+		MakeButton(CVIS, nil, 12, function()
 			if S._crimSkinClear then
 				local ok, msg = S._crimSkinClear(skinUi.weapon)
 				if showNotify then
@@ -3626,7 +3635,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			refreshWeaponList()
 			refreshSkinList()
 		end, "btn_crim_skin_clear")
-		MakeButton(CVIS, nil, 11, function()
+		MakeButton(CVIS, nil, 13, function()
 			if S._crimSkinDump then
 				local ok, msg = S._crimSkinDump()
 				if showNotify then
@@ -3634,10 +3643,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end
 		end, "btn_crim_skin_dump")
-		MakeHint(CVIS, "hint_crim_skinchanger", 12)
-		MakeTog(CVIS, "Hide Helmet Overlay", "CrimHideHelmetOverlay", 13, { flat = true })
-		MakeHint(CVIS, "hint_crim_helmet", 14)
-		MakeTog(CVIS, "Menu Meme Music", "CrimMenuMusic", 15, {
+		MakeHint(CVIS, "hint_crim_skinchanger", 14)
+		MakeTog(CVIS, "Hide Helmet Overlay", "CrimHideHelmetOverlay", 15, { flat = true })
+		MakeHint(CVIS, "hint_crim_helmet", 16)
+		MakeTog(CVIS, "Menu Meme Music", "CrimMenuMusic", 17, {
 			flat = true,
 			onChange = function(on)
 				if ConfigModule and ConfigModule.SaveGlobals then
@@ -3661,7 +3670,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			{ label = "Polish Hard Killer", value = "HardKiller" },
 			{ label = "Polski Eleven", value = "Polski11" },
 			{ label = "Panpipe Polka", value = "Panpipe" },
-		}, 16, {
+		}, 18, {
 			onChange = function()
 				if ConfigModule and ConfigModule.SaveGlobals then
 					pcall(ConfigModule.SaveGlobals, S)
@@ -3671,28 +3680,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CVIS, "hint_crim_menu_music", 17)
-		MakeTog(CVIS, "Custom Hit Sounds", "CrimHitSoundSwap", 18, { flat = true })
+		MakeHint(CVIS, "hint_crim_menu_music", 19)
+		MakeTog(CVIS, "Custom Hit Sounds", "CrimHitSoundSwap", 20, { flat = true })
 		MakeChoice(CVIS, "Headshot Sound", "CrimHitSoundPreset", {
 			{ label = "UT Announcer", value = "UT" },
 			{ label = "CS:GO Dink", value = "CS" },
-		}, 19, {
+		}, 21, {
 			onChange = function()
 				if S.CrimHitSoundSwap and type(_G.__VG_ReapplyHitSounds) == "function" then
 					pcall(_G.__VG_ReapplyHitSounds)
 				end
 			end,
 		})
-		MakeSlider(CVIS, "Headshot Cooldown", "CrimHitSoundCooldown", 0, 500, 20, {
+		MakeSlider(CVIS, "Headshot Cooldown", "CrimHitSoundCooldown", 0, 500, 22, {
 			suffix = "ms",
 			step = 10,
 		})
-		MakeButton(CVIS, nil, 21, function()
+		MakeButton(CVIS, nil, 23, function()
 			if S._crimListGameSounds then
 				S._crimListGameSounds()
 			end
 		end, "btn_crim_list_sounds")
-		MakeHint(CVIS, "hint_crim_hitsounds", 22)
+		MakeHint(CVIS, "hint_crim_hitsounds", 24)
 
 		local SoundHeader = C("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 18),
@@ -3703,7 +3712,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextColor3 = Color3.fromRGB(130, 130, 140),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextWrapped = true,
-			LayoutOrder = 23,
+			LayoutOrder = 25,
 			ZIndex = 5,
 			Parent = CVIS,
 		})
@@ -3720,7 +3729,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			TextColor3 = Color3.fromRGB(220, 220, 230),
 			PlaceholderColor3 = Color3.fromRGB(100, 100, 112),
 			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = 24,
+			LayoutOrder = 26,
 			ZIndex = 6,
 			Parent = CVIS,
 		})
@@ -3741,7 +3750,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			Size = UDim2.new(1, 0, 0, 320),
 			BackgroundColor3 = Color3.fromRGB(15, 15, 19),
 			BorderSizePixel = 0,
-			LayoutOrder = 25,
+			LayoutOrder = 27,
 			ZIndex = 5,
 			Parent = CVIS,
 		})
