@@ -695,6 +695,9 @@ function Config.EnforceRules(S)
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
+	if S.CrimNoFog == nil then
+		S.CrimNoFog = false
+	end
 	if S.CrimHideHelmetOverlay == nil then
 		S.CrimHideHelmetOverlay = false
 	end

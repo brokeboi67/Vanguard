@@ -2800,6 +2800,7 @@ local featureRunning = {
 	staffDetect = false,
 	noFailLockpick = false,
 	fullBright = false,
+	noFog = false,
 	hitSounds = false,
 	autoRespawn = false,
 	removeSmoke = false,
@@ -4058,6 +4059,185 @@ local function stopFullBright()
 	end
 end
 
+-- ── NO FOG (ReplicatedStorage.Values.SetFogValue / SetHazeValue → 0) ──
+misc.noFog = { conns = {}, saved = {}, litSaved = nil, lastRemoteAt = 0 }
+
+function misc.noFog.clearConns()
+	for _, c in ipairs(misc.noFog.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.noFog.conns = {}
+end
+
+function misc.noFog.findValuesFolder()
+	local values = RepSt:FindFirstChild("Values")
+	if values then
+		return values
+	end
+	local fog = RepSt:FindFirstChild("SetFogValue", true)
+	return fog and fog.Parent or nil
+end
+
+function misc.noFog.writeZero(obj)
+	if not obj then
+		return
+	end
+	if obj:IsA("NumberValue") or obj:IsA("IntValue") then
+		if misc.noFog.saved[obj] == nil then
+			misc.noFog.saved[obj] = obj.Value
+		end
+		if obj.Value ~= 0 then
+			pcall(function()
+				obj.Value = 0
+			end)
+		end
+	elseif obj:IsA("BoolValue") then
+		if misc.noFog.saved[obj] == nil then
+			misc.noFog.saved[obj] = obj.Value
+		end
+		if obj.Value ~= false then
+			pcall(function()
+				obj.Value = false
+			end)
+		end
+	elseif obj:IsA("StringValue") then
+		if misc.noFog.saved[obj] == nil then
+			misc.noFog.saved[obj] = obj.Value
+		end
+		if obj.Value ~= "0" then
+			pcall(function()
+				obj.Value = "0"
+			end)
+		end
+	elseif obj:IsA("RemoteEvent") then
+		-- some Crim builds expose SetFogValue as a remote
+		if tick() - (misc.noFog.lastRemoteAt or 0) >= 1.25 then
+			misc.noFog.lastRemoteAt = tick()
+			pcall(function()
+				obj:FireServer(0)
+			end)
+		end
+	elseif obj:IsA("RemoteFunction") then
+		if tick() - (misc.noFog.lastRemoteAt or 0) >= 1.25 then
+			misc.noFog.lastRemoteAt = tick()
+			pcall(function()
+				obj:InvokeServer(0)
+			end)
+		end
+	end
+end
+
+function misc.noFog.applyLighting()
+	if not misc.noFog.litSaved then
+		misc.noFog.litSaved = {
+			FogStart = Lighting.FogStart,
+			FogEnd = Lighting.FogEnd,
+		}
+	end
+	if Lighting.FogStart < 100000 then
+		Lighting.FogStart = 100000
+	end
+	if Lighting.FogEnd < 100000 then
+		Lighting.FogEnd = 100000
+	end
+	for _, inst in ipairs(Lighting:GetChildren()) do
+		if inst:IsA("Atmosphere") then
+			if misc.noFog.saved[inst] == nil then
+				misc.noFog.saved[inst] = { Density = inst.Density, Haze = inst.Haze }
+			end
+			pcall(function()
+				inst.Density = 0
+				inst.Haze = 0
+			end)
+		end
+	end
+end
+
+function misc.noFog.apply()
+	local folder = misc.noFog.findValuesFolder()
+	if folder then
+		misc.noFog.writeZero(folder:FindFirstChild("SetFogValue"))
+		misc.noFog.writeZero(folder:FindFirstChild("SetHazeValue"))
+	else
+		misc.noFog.writeZero(RepSt:FindFirstChild("SetFogValue", true))
+		misc.noFog.writeZero(RepSt:FindFirstChild("SetHazeValue", true))
+	end
+	misc.noFog.applyLighting()
+	return true
+end
+
+function misc.noFog.restore()
+	for obj, prev in pairs(misc.noFog.saved) do
+		if typeof(obj) == "Instance" and obj.Parent then
+			if typeof(prev) == "table" and obj:IsA("Atmosphere") then
+				pcall(function()
+					if prev.Density ~= nil then
+						obj.Density = prev.Density
+					end
+					if prev.Haze ~= nil then
+						obj.Haze = prev.Haze
+					end
+				end)
+			elseif obj:IsA("NumberValue") or obj:IsA("IntValue") or obj:IsA("BoolValue") or obj:IsA("StringValue") then
+				pcall(function()
+					obj.Value = prev
+				end)
+			end
+		end
+	end
+	table.clear(misc.noFog.saved)
+	if misc.noFog.litSaved then
+		pcall(function()
+			Lighting.FogStart = misc.noFog.litSaved.FogStart
+			Lighting.FogEnd = misc.noFog.litSaved.FogEnd
+		end)
+		misc.noFog.litSaved = nil
+	end
+end
+
+function misc.noFog.start()
+	misc.noFog.clearConns()
+	misc.noFog.apply()
+	local function reapply()
+		if _G.__VG_S and _G.__VG_S.CrimNoFog then
+			misc.noFog.apply()
+		end
+	end
+	local folder = misc.noFog.findValuesFolder() or RepSt
+	for _, name in ipairs({ "SetFogValue", "SetHazeValue" }) do
+		local obj = folder:FindFirstChild(name) or RepSt:FindFirstChild(name, true)
+		if obj and (obj:IsA("NumberValue") or obj:IsA("IntValue") or obj:IsA("StringValue") or obj:IsA("BoolValue")) then
+			table.insert(
+				misc.noFog.conns,
+				obj:GetPropertyChangedSignal("Value"):Connect(reapply)
+			)
+		end
+	end
+	table.insert(misc.noFog.conns, Lighting:GetPropertyChangedSignal("FogEnd"):Connect(reapply))
+	table.insert(misc.noFog.conns, Lighting:GetPropertyChangedSignal("FogStart"):Connect(reapply))
+	if not folder or folder == RepSt then
+		table.insert(
+			misc.noFog.conns,
+			RepSt.ChildAdded:Connect(function(ch)
+				if ch.Name == "Values" or ch.Name == "SetFogValue" then
+					task.defer(function()
+						if _G.__VG_S and _G.__VG_S.CrimNoFog then
+							misc.noFog.start()
+						end
+					end)
+				end
+			end)
+		)
+	end
+end
+
+function misc.noFog.stop()
+	misc.noFog.clearConns()
+	misc.noFog.restore()
+end
+
 -- ── HIDE HelmetOverlayGUI (PlayerGui.HelmetOverlayGUI.Enabled = false) ───────
 -- Methods on misc.helmet — no extra chunk locals (Luau 200-register limit).
 misc.helmet = { conns = {}, active = false }
@@ -4810,6 +4990,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+	syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
 	syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 	syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
@@ -4861,6 +5042,7 @@ local function startMaster(S)
 			syncFeatureToggle("staffDetect", "CrimStaffDetect", startStaffDetect, stopStaffDetect, S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
+			syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
 			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
 			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
@@ -4884,6 +5066,9 @@ local function startMaster(S)
 		end
 		if featureRunning.fastAccel and master.frame % 10 == 0 then
 			pcall(misc.fastAccel.apply)
+		end
+		if featureRunning.noFog and master.frame % 12 == 0 then
+			pcall(misc.noFog.apply)
 		end
 
 		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
@@ -5051,6 +5236,7 @@ local function stopMaster()
 	pcall(stopStaffDetect)
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
+	pcall(misc.noFog.stop)
 	pcall(misc.helmet.stop)
 	pcall(stopRemoveSmokeExplosion)
 	pcall(snd.stop)
