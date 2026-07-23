@@ -36,7 +36,28 @@ local function isMeleeWeapon(name)
 		or string.find(lower, "sword", 1, true)
 end
 
-local function cmapImage(saName)
+local function contentToImage(val)
+	if val == nil then
+		return ""
+	end
+	local s = tostring(val)
+	if s == "" or s == "nil" or string.find(s, "ContentId", 1, true) then
+		return ""
+	end
+	local id = string.match(s, "(%d%d%d+)")
+	if id then
+		return "rbxassetid://" .. id
+	end
+	if string.find(s, "rbxasset", 1, true) then
+		return s
+	end
+	return ""
+end
+
+local function cmapImage(saName, precomputed)
+	if precomputed and precomputed ~= "" then
+		return contentToImage(precomputed)
+	end
 	local folder = game:GetService("ReplicatedStorage"):FindFirstChild("Storage")
 	folder = folder and folder:FindFirstChild("CosmeticsStuff")
 	folder = folder and folder:FindFirstChild("RepPBR")
@@ -45,15 +66,10 @@ local function cmapImage(saName)
 		return ""
 	end
 	local ok, val = pcall(function()
-		return tostring(sa.ColorMap)
+		return sa.ColorMap
 	end)
-	if ok and val and val ~= "" and val ~= "nil" and not string.find(val, "ContentId", 1, true) then
-		if string.find(val, "rbxasset", 1, true) or string.match(val, "^%d+$") then
-			if string.match(val, "^%d+$") then
-				return "rbxassetid://" .. val
-			end
-			return val
-		end
+	if ok then
+		return contentToImage(val)
 	end
 	return ""
 end
@@ -68,18 +84,27 @@ function UISkinVault.build(opts)
 	local MakeHint = opts.MakeHint
 	local showNotify = opts.showNotify
 
+	local persistToken = 0
 	local function persistSkins()
-		if S._crimSkinPersist then
-			pcall(S._crimSkinPersist)
-		end
-		if ConfigModule and ConfigModule.SaveGlobals then
-			pcall(ConfigModule.SaveGlobals, S)
-		end
-		pcall(function()
-			local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
-			if name and name ~= "" and ConfigModule.Save then
-				ConfigModule.Save(name, S)
+		-- debounce disk writes — picking skins was blocking on SaveGlobals + config
+		persistToken = persistToken + 1
+		local token = persistToken
+		task.delay(0.45, function()
+			if token ~= persistToken then
+				return
 			end
+			if S._crimSkinPersist then
+				pcall(S._crimSkinPersist)
+			end
+			if ConfigModule and ConfigModule.SaveGlobals then
+				pcall(ConfigModule.SaveGlobals, S)
+			end
+			pcall(function()
+				local name = ConfigModule and ConfigModule.GetAutoload and ConfigModule.GetAutoload()
+				if name and name ~= "" and ConfigModule.Save then
+					ConfigModule.Save(name, S)
+				end
+			end)
 		end)
 	end
 
@@ -479,17 +504,31 @@ function UISkinVault.build(opts)
 		})
 		C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Halo })
 
-		local img = cmapImage(row.full)
+		local img = cmapImage(row.full, row.preview)
 		if img ~= "" then
-			C("ImageLabel", {
+			local preview = C("ImageLabel", {
 				Size = UDim2.new(1, -16, 0, 96),
 				Position = UDim2.new(0, 8, 0, 22),
 				BackgroundTransparency = 1,
-				Image = img,
+				Image = "",
 				ScaleType = Enum.ScaleType.Fit,
 				ZIndex = 9,
 				Parent = Card,
 			})
+			-- defer image set so grid paints first; retry once if Content still resolving
+			task.defer(function()
+				if not preview.Parent then
+					return
+				end
+				preview.Image = img
+				if preview.IsLoaded == false then
+					task.delay(0.35, function()
+						if preview.Parent and (not preview.IsLoaded or preview.Image == "") then
+							preview.Image = cmapImage(row.full, row.preview)
+						end
+					end)
+				end
+			end)
 		else
 			C("TextLabel", {
 				Size = UDim2.new(1, -12, 0, 72),

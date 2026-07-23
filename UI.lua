@@ -58,7 +58,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	local Cam = workspace.CurrentCamera
 	local W_FULL, W_COMPACT, H = 800, 600, 540
 	local W_MUSIC, H_MUSIC = 860, 620
-	local W_CRIM, H_CRIM = 920, 600
 	local W_SKINS, H_SKINS = 1040, 680
 	local SIDE_W = 136
 	local FOOTER_PAD = 12
@@ -78,8 +77,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		H = math.clamp(math.floor(vp.Y * 0.68), 500, 640)
 		W_MUSIC = math.clamp(math.floor(vp.X * 0.54), 760, 940)
 		H_MUSIC = math.clamp(math.floor(vp.Y * 0.74), 580, 700)
-		W_CRIM = math.clamp(math.floor(vp.X * 0.62), 820, 1020)
-		H_CRIM = math.clamp(math.floor(vp.Y * 0.72), 560, 700)
 		W_SKINS = math.clamp(math.floor(vp.X * 0.72), 960, 1180)
 		H_SKINS = math.clamp(math.floor(vp.Y * 0.78), 620, 760)
 	end
@@ -889,11 +886,6 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		elseif layoutProfile == "skins" then
 			targetW = W_SKINS
 			targetH = H_SKINS
-			previewW = 0
-			showPreview = false
-		elseif layoutProfile == "criminality" then
-			targetW = W_CRIM
-			targetH = H_CRIM
 			previewW = 0
 			showPreview = false
 		else
@@ -2430,7 +2422,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 	-- Uses game.GameId (Universe ID = 1494262959) so it works after any in-game teleport.
 	local TCrim = nil
 	if game.GameId == 1494262959 then
-		TCrim = MakeTab("criminality", false, false, 12, { fixed = true, layout = "criminality" })
+		TCrim = MakeTab("criminality", false, false, 12, { fixed = true })
 	end
 
 	if UIMusicModule and MusicModule then
@@ -2569,14 +2561,17 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				panels[key].Visible = true
 				Scroll.CanvasPosition = Vector2.new(0, 0)
 			end
-			-- Skins vault needs a wider layout; other Crim tabs use criminality size
-			local curLayout = ActiveTabBtn and tabLayoutProfiles[ActiveTabBtn]
-			if curLayout == "criminality" or curLayout == "skins" or activeLayoutProfile == "criminality" or activeLayoutProfile == "skins" then
-				local profile = (key == "skins") and "skins" or "criminality"
+			-- Expand menu only on Skins vault; other Crim sub-tabs stay compact
+			if key == "skins" then
 				if ActiveTabBtn then
-					tabLayoutProfiles[ActiveTabBtn] = profile
+					tabLayoutProfiles[ActiveTabBtn] = "skins"
 				end
-				ApplyLayout(false, true, true, profile)
+				ApplyLayout(false, true, true, "skins")
+			elseif activeLayoutProfile == "skins" then
+				if ActiveTabBtn then
+					tabLayoutProfiles[ActiveTabBtn] = nil
+				end
+				ApplyLayout(false, true, true, "default")
 			end
 			Scroll.ScrollingEnabled = key ~= "skins"
 		end

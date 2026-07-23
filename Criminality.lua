@@ -4714,6 +4714,24 @@ function misc.skinChanger.dump()
 	return text, #lines
 end
 
+function misc.skinChanger.contentId(val)
+	if val == nil then
+		return ""
+	end
+	local s = tostring(val)
+	if s == "" or s == "nil" or string.find(s, "ContentId", 1, true) then
+		return ""
+	end
+	local id = string.match(s, "(%d%d%d+)")
+	if id then
+		return "rbxassetid://" .. id
+	end
+	if string.find(s, "rbxasset", 1, true) then
+		return s
+	end
+	return ""
+end
+
 function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 	if not root or not template then
 		return 0
@@ -4723,28 +4741,9 @@ function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 		if d:IsA("MeshPart") then
 			if misc.skinChanger.shouldSkinMesh(d) then
 				local sa = d:FindFirstChildOfClass("SurfaceAppearance")
-				-- already correct — skip work (FPS)
+				-- Name match = already applied — never rewrite maps (avoids asset refetch lag)
 				if sa and sa.Name == template.Name then
-					local same = false
-					pcall(function()
-						same = sa.ColorMap == template.ColorMap
-					end)
-					if same then
-						n = n + 1
-					else
-						pcall(function()
-							sa.ColorMap = template.ColorMap
-							sa.MetalnessMap = template.MetalnessMap
-							sa.NormalMap = template.NormalMap
-							sa.RoughnessMap = template.RoughnessMap
-							sa.AlphaMode = template.AlphaMode
-							if template.TexturePack then
-								sa.TexturePack = template.TexturePack
-							end
-						end)
-						patched = patched + 1
-						n = n + 1
-					end
+					n = n + 1
 				elseif not sa then
 					sa = template:Clone()
 					sa.Parent = d
@@ -4754,17 +4753,12 @@ function misc.skinChanger.applyTemplateToInstance(root, template, quiet)
 						misc.skinChanger.log(string.format("CLONE SA '%s' → %s", template.Name, d.Name))
 					end
 				else
+					-- Replace wrong skin: destroy + clone is faster/cleaner than rewriting 4 maps
 					pcall(function()
-						sa.Name = template.Name
-						sa.ColorMap = template.ColorMap
-						sa.MetalnessMap = template.MetalnessMap
-						sa.NormalMap = template.NormalMap
-						sa.RoughnessMap = template.RoughnessMap
-						sa.AlphaMode = template.AlphaMode
-						if template.TexturePack then
-							sa.TexturePack = template.TexturePack
-						end
+						sa:Destroy()
 					end)
+					local neo = template:Clone()
+					neo.Parent = d
 					patched = patched + 1
 					n = n + 1
 				end
@@ -4846,37 +4840,27 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 		return false, "template missing: " .. tostring(skinKey)
 	end
 	local n = 0
+	local seen = {}
+	local function tryOnce(tool)
+		if not tool or seen[tool] then
+			return
+		end
+		if tool.Name ~= gunName or not misc.skinChanger.isGunTool(tool) then
+			return
+		end
+		seen[tool] = true
+		-- quiet=true: no log spam; skip rewrite when SA name already matches
+		n = n + misc.skinChanger.applyToTool(tool, tmpl, true)
+	end
+	tryOnce(misc.skinChanger.findActiveGun())
 	local lp = getLP()
-	local function tryTool(tool)
-		if tool and tool.Name == gunName and misc.skinChanger.isGunTool(tool) then
-			n = n + misc.skinChanger.applyToTool(tool, tmpl, false)
-		end
-	end
-	if lp and lp.Character then
-		tryTool(lp.Character:FindFirstChild(gunName))
-	end
-	local chars = workspace:FindFirstChild("Characters")
-	local model = chars and lp and chars:FindFirstChild(lp.Name)
-	if model then
-		tryTool(model:FindFirstChild(gunName))
-	end
-	local bp = lp and lp:FindFirstChild("Backpack")
-	if bp then
-		tryTool(bp:FindFirstChild(gunName))
-	end
-	-- always hit RF viewmodel clone if it matches
-	local rf = game:GetService("ReplicatedFirst")
-	local vmFolder = rf:FindFirstChild("ViewModels")
-	local vmTool = vmFolder and vmFolder:FindFirstChild("Tool")
-	if vmTool and (vmTool.Name == gunName or (lp and lp.Character and lp.Character:FindFirstChild(gunName))) then
-		-- ViewModels.Tool is often named "Tool" but is the equipped gun clone
-		if misc.skinChanger.isGunTool(vmTool) or vmTool:IsA("Tool") or vmTool:IsA("Model") then
-			-- match by mesh presence / current equip
-			local equipped = misc.skinChanger.findActiveGun()
-			if equipped and equipped.Name == gunName then
-				n = n + misc.skinChanger.applyTemplateToInstance(vmTool, tmpl, false)
-			end
-		end
+	if lp then
+		tryOnce(lp.Character and lp.Character:FindFirstChild(gunName))
+		local chars = workspace:FindFirstChild("Characters")
+		local model = chars and chars:FindFirstChild(lp.Name)
+		tryOnce(model and model:FindFirstChild(gunName))
+		local bp = lp:FindFirstChild("Backpack")
+		tryOnce(bp and bp:FindFirstChild(gunName))
 	end
 	return true, string.format("%s → %s (%d)", gunName, misc.skinChanger.skinLabel(skinKey), n)
 end
@@ -5122,6 +5106,7 @@ function misc.skinChanger.bindUi(S)
 				full = sa.Name,
 				label = misc.skinChanger.skinLabel(sa.Name),
 				selected = misc.skinChanger.getSavedSkinKey(gunName) == sa.Name,
+				preview = misc.skinChanger.contentId(sa.ColorMap),
 			}
 		end
 		return rows
@@ -6002,7 +5987,7 @@ local function startMaster(S)
 		if featureRunning.skipIntro and master.frame % 60 == 0 then
 			pcall(misc.skipIntro.apply, true)
 		end
-		if featureRunning.skinChanger and master.frame % 90 == 0 then
+		if featureRunning.skinChanger and master.frame % 180 == 0 then
 			pcall(misc.skinChanger.tick)
 		end
 
