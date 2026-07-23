@@ -4303,19 +4303,14 @@ function misc.skinChanger.shouldSkinMesh(part)
 		return false
 	end
 	local n = part.Name
-	if n == "Left Arm" or n == "Right Arm" or n == "Head" or n == "Torso" or n == "HumanoidRootPart" then
+	-- limbs / holders only (ViewModel arms) — never skin those
+	if n == "Left Arm" or n == "Right Arm" or n == "Head" or n == "Torso" or n == "HumanoidRootPart"
+		or n == "LArmHolder" or n == "RArmHolder" then
 		return false
 	end
-	if n == "Gun" or n == "Handle" then
-		return true
-	end
-	if string.find(n, "Gun", 1, true) then
-		return true
-	end
-	if part:FindFirstChildOfClass("SurfaceAppearance") then
-		return true
-	end
-	return false
+	-- Crim guns use MeshParts like Base/Scope/Glass/LeverPart (NOT named "Gun").
+	-- "Gun" on the tool is often a ModuleScript. Default skins = TextureID, no SurfaceAppearance.
+	return true
 end
 
 function misc.skinChanger.log(msg)
@@ -4576,7 +4571,7 @@ function misc.skinChanger.applyTemplateToInstance(root, template)
 				if not sa then
 					sa = template:Clone()
 					sa.Parent = d
-					misc.skinChanger.log(string.format("CLONE SA '%s' → %s", template.Name, d:GetFullName()))
+					misc.skinChanger.log(string.format("CLONE SA '%s' → %s (had tex=%s)", template.Name, d:GetFullName(), tostring(d.TextureID)))
 				else
 					pcall(function()
 						sa.Name = template.Name
@@ -4591,6 +4586,13 @@ function misc.skinChanger.applyTemplateToInstance(root, template)
 					end)
 					misc.skinChanger.log(string.format("PATCH SA on %s → %s", d:GetFullName(), template.Name))
 				end
+				-- clear legacy TextureID so SurfaceAppearance shows (default Mare uses TextureID only)
+				pcall(function()
+					if d.TextureID and d.TextureID ~= "" then
+						d:SetAttribute("VG_PrevTex", d.TextureID)
+						d.TextureID = ""
+					end
+				end)
 				n = n + 1
 			else
 				skipped = skipped + 1

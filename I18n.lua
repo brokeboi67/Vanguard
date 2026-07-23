@@ -108,7 +108,7 @@ local STR = {
 		hint_crim_allowance = "CLMZALOW gdy Claim=true. Gdy allowance gotowe — podświetla najbliższy bankomat.",
 		hint_crim_fullbright = "Wymusza jasne oświetlenie i usuwa mgłę (tylko Criminality).",
 		hint_crim_nofog = "ReplicatedStorage.Values: SetFogValue=0 + SetHazeValue=0. Dodatkowo Lighting Fog/Atmosphere = 0.",
-		hint_crim_skinchanger = "Client-only RepPBR. Najpierw WYJMJ broń → Dump Skin Debug → wklej Vanguard/logs/skin_dump.txt. Cycle = kolejny skin.",
+		hint_crim_skinchanger = "Client-only RepPBR → SurfaceAppearance na WSZYSTKICH MeshPart (Base/Scope…). Dump = debug. Linki ze ScriptBlox to zamknięte loadstringi.",
 		btn_crim_skin_cycle = "Cycle Skin",
 		btn_crim_skin_apply = "Re-Apply Skin",
 		btn_crim_skin_clear = "Clear Skin (this gun)",
