@@ -5563,16 +5563,325 @@ function misc.skinChanger.rollCase(caseId)
 	return items[#items]
 end
 
-function misc.skinChanger.fakeOpenCase(caseId)
-	local win = misc.skinChanger.rollCase(caseId)
+function misc.skinChanger.fakeOpenCase(caseId, existingWin)
+	local win = existingWin or misc.skinChanger.rollCase(caseId)
 	if not win then
 		return false, "empty case", nil
 	end
 	if not win.full or not win.gun then
 		return false, "bad item", win
 	end
+	pcall(function()
+		misc.skinChanger.playNativeUnbox(caseId, win)
+	end)
 	local ok, msg = misc.skinChanger.applyNamed(win.gun, win.full)
 	return ok, msg or win.label, win
+end
+
+function misc.skinChanger.getCasesFolder()
+	local storage = RepSt:FindFirstChild("Storage")
+	local cos = storage and storage:FindFirstChild("CosmeticsStuff")
+	return cos and cos:FindFirstChild("Cases")
+end
+
+function misc.skinChanger.getCaseAnimsFolder()
+	local storage = RepSt:FindFirstChild("Storage")
+	local cos = storage and storage:FindFirstChild("CosmeticsStuff")
+	return cos and cos:FindFirstChild("CaseAnims")
+end
+
+function misc.skinChanger.resolveCaseModelName(caseId)
+	local folder = misc.skinChanger.getCasesFolder()
+	if not folder then
+		return "DefaultCase"
+	end
+	local entry = misc.skinChanger.getCaseCatalog()[caseId]
+	local candidates = {}
+	local function add(s)
+		if typeof(s) == "string" and s ~= "" then
+			candidates[#candidates + 1] = s
+		end
+	end
+	if entry then
+		add(entry.name)
+		add(entry.type)
+		add(entry.display)
+	end
+	add(caseId)
+	for _, name in ipairs(candidates) do
+		if folder:FindFirstChild(name) then
+			return name
+		end
+	end
+	local blob = string.lower(table.concat(candidates, " "))
+	if string.find(blob, "package", 1, true) and folder:FindFirstChild("PackageCase") then
+		return "PackageCase"
+	end
+	if string.find(blob, "games", 1, true) then
+		if folder:FindFirstChild("GamesCase2") then
+			return "GamesCase2"
+		end
+		if folder:FindFirstChild("GamesCase") then
+			return "GamesCase"
+		end
+	end
+	if folder:FindFirstChild("DefaultCase") then
+		return "DefaultCase"
+	end
+	local kids = folder:GetChildren()
+	return kids[1] and kids[1].Name or "DefaultCase"
+end
+
+function misc.skinChanger.makeUnboxSkinPayload(win)
+	if typeof(win) ~= "table" then
+		return {}
+	end
+	return {
+		ItemName = win.gun,
+		DisplayName = win.label,
+		Rarity = win.rarity,
+		TextureID = win.texId,
+		MeshVariant = win.mesh,
+		SkinClass = win.skinClass or win.pool,
+		Odds = win.odds,
+		JustObtained = true,
+		Sellable = true,
+		TradeLocked = false,
+		Killtrack = false,
+		TotalKills = 0,
+	}
+end
+
+function misc.skinChanger.findSkinsSystemsModule()
+	local nm = RepSt:FindFirstChild("NewModules")
+	if not nm then
+		return nil
+	end
+	local cur = nm
+	for _, part in ipairs({
+		"Client",
+		"Services",
+		"Interface",
+		"Modules",
+		"Skins",
+		"Systems",
+		"Skins",
+	}) do
+		cur = cur and cur:FindFirstChild(part)
+	end
+	if cur and cur:IsA("ModuleScript") then
+		return cur
+	end
+	-- fallback: search by name under NewModules
+	for _, d in ipairs(nm:GetDescendants()) do
+		if d:IsA("ModuleScript") and d.Name == "Skins" and d.Parent and d.Parent.Name == "Systems" then
+			return d
+		end
+	end
+	return nil
+end
+
+function misc.skinChanger.callSkinsUnboxEffect(caseId, payload)
+	local mod = misc.skinChanger.findSkinsSystemsModule()
+	if not mod then
+		return false
+	end
+	local ok, api = pcall(require, mod)
+	if not ok or typeof(api) ~= "table" or typeof(api.UnboxEffect) ~= "function" then
+		return false
+	end
+	local fn = api.UnboxEffect
+	-- try common call shapes (method / free / ordered args)
+	if pcall(fn, api, payload) then
+		return true
+	end
+	if pcall(fn, payload) then
+		return true
+	end
+	if pcall(fn, caseId, payload) then
+		return true
+	end
+	if pcall(fn, api, caseId, payload) then
+		return true
+	end
+	if pcall(fn, payload, caseId) then
+		return true
+	end
+	return false
+end
+
+function misc.skinChanger.fireCaseUnboxEffectHandlers(caseId, payload)
+	local events = RepSt:FindFirstChild("Events")
+	local re = events and events:FindFirstChild("CaseUnboxEffect")
+	if not re then
+		return false
+	end
+	if typeof(getconnections) ~= "function" then
+		return false
+	end
+	local ok, cons = pcall(getconnections, re.OnClientEvent)
+	if not ok or typeof(cons) ~= "table" then
+		return false
+	end
+	local fired = false
+	for _, c in ipairs(cons) do
+		-- executor APIs differ: Fire / Function
+		if pcall(function()
+			if typeof(c.Fire) == "function" then
+				c:Fire(payload)
+			end
+		end) then
+			fired = true
+		end
+		if pcall(function()
+			if typeof(c.Function) == "function" then
+				c.Function(payload)
+			end
+		end) then
+			fired = true
+		end
+		if pcall(function()
+			if typeof(c.Fire) == "function" then
+				c:Fire(caseId, payload)
+			end
+		end) then
+			fired = true
+		end
+		if pcall(function()
+			if typeof(c.Function) == "function" then
+				c.Function(caseId, payload)
+			end
+		end) then
+			fired = true
+		end
+	end
+	return fired
+end
+
+function misc.skinChanger.cleanupCaseUnboxModel()
+	local folder = workspace:FindFirstChild("VG_CaseUnbox")
+	if folder then
+		pcall(function()
+			folder:Destroy()
+		end)
+	end
+	if misc.skinChanger._caseTrack then
+		pcall(function()
+			misc.skinChanger._caseTrack:Stop(0)
+		end)
+		misc.skinChanger._caseTrack = nil
+	end
+end
+
+-- Clone Storage.Cases + play CaseAnims (original 3D lid open)
+function misc.skinChanger.playCaseModelAnim(caseId)
+	misc.skinChanger.cleanupCaseUnboxModel()
+	local cases = misc.skinChanger.getCasesFolder()
+	local anims = misc.skinChanger.getCaseAnimsFolder()
+	if not cases then
+		return 0
+	end
+	local modelName = misc.skinChanger.resolveCaseModelName(caseId)
+	local tmpl = cases:FindFirstChild(modelName)
+	if not tmpl then
+		return 0
+	end
+	local okClone, model = pcall(function()
+		return tmpl:Clone()
+	end)
+	if not okClone or not model then
+		return 0
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "VG_CaseUnbox"
+	folder.Parent = workspace
+	model.Name = "UnboxCase"
+	model.Parent = folder
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.Massless = true
+			-- Motor6D anim needs non-base parts unanchored
+			d.Anchored = (d.Name == "BasePart")
+		end
+	end
+	local base = model:FindFirstChild("BasePart")
+	if base and base:IsA("BasePart") then
+		pcall(function()
+			model.PrimaryPart = base
+		end)
+	end
+	local cam = workspace.CurrentCamera
+	local pivot = cam and (cam.CFrame * CFrame.new(0, -1.2, -7) * CFrame.Angles(0, math.rad(180), 0))
+		or CFrame.new(0, 5, 0)
+	pcall(function()
+		model:PivotTo(pivot)
+	end)
+
+	local ac = model:FindFirstChildOfClass("AnimationController")
+		or model:FindFirstChildWhichIsA("AnimationController", true)
+	local animator = ac and (ac:FindFirstChildOfClass("Animator") or ac:FindFirstChildWhichIsA("Animator", true))
+	if not animator then
+		-- still show static case briefly
+		task.wait(1.2)
+		misc.skinChanger.cleanupCaseUnboxModel()
+		return 1.2
+	end
+	local animInst = anims and (anims:FindFirstChild(modelName) or anims:FindFirstChild("DefaultCase"))
+	if not animInst or not animInst:IsA("Animation") then
+		task.wait(1.5)
+		misc.skinChanger.cleanupCaseUnboxModel()
+		return 1.5
+	end
+	local okTrack, track = pcall(function()
+		return animator:LoadAnimation(animInst)
+	end)
+	if not okTrack or not track then
+		task.wait(1.5)
+		misc.skinChanger.cleanupCaseUnboxModel()
+		return 1.5
+	end
+	misc.skinChanger._caseTrack = track
+	pcall(function()
+		track.Priority = Enum.AnimationPriority.Action4
+		track.Looped = false
+		track:Play(0.05, 1, 1)
+	end)
+	local len = 3.2
+	pcall(function()
+		local l = track.Length
+		if typeof(l) == "number" and l > 0.2 then
+			len = l
+		end
+	end)
+	-- keep case parented through anim; destroy after
+	task.wait(len + 0.15)
+	misc.skinChanger.cleanupCaseUnboxModel()
+	return len
+end
+
+-- Full native unbox: game UnboxEffect handlers + 3D CaseAnims (no custom reel)
+-- Yields until case anim finishes. Does NOT apply skin.
+function misc.skinChanger.playNativeUnbox(caseId, win)
+	local payload = misc.skinChanger.makeUnboxSkinPayload(win)
+	-- Prefer official client VFX path (SpinUnboxFrame / particles)
+	local usedFx = false
+	if misc.skinChanger.callSkinsUnboxEffect(caseId, payload) then
+		usedFx = true
+	end
+	if misc.skinChanger.fireCaseUnboxEffectHandlers(caseId, payload) then
+		usedFx = true
+	end
+	-- Always play real case model anim (CaseAnims) — this is the in-world open
+	local dur = misc.skinChanger.playCaseModelAnim(caseId)
+	if usedFx and dur < 2 then
+		-- give UI unbox a moment if model anim missing
+		task.wait(2.5 - dur)
+		dur = 2.5
+	end
+	return dur, usedFx
 end
 
 function misc.skinChanger.lookupMeshVariant(gunName, displayName)
@@ -8144,9 +8453,12 @@ function misc.skinChanger.bindUi(S)
 	S._crimSkinRollCase = function(caseId)
 		return misc.skinChanger.rollCase(caseId)
 	end
-	S._crimSkinOpenCase = function(caseId)
+	S._crimSkinPlayNativeUnbox = function(caseId, win)
+		return misc.skinChanger.playNativeUnbox(caseId, win)
+	end
+	S._crimSkinOpenCase = function(caseId, existingWin)
 		ensureOn()
-		return misc.skinChanger.fakeOpenCase(caseId)
+		return misc.skinChanger.fakeOpenCase(caseId, existingWin)
 	end
 	S._crimSkinPick = function(gunName, skinFull)
 		ensureOn()

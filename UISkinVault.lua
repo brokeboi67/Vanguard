@@ -1272,193 +1272,50 @@ function UISkinVault.build(opts)
 			end
 			return
 		end
-		if not S._crimSkinRollCase or not S._crimSkinOpenCase then
+		if not S._crimSkinRollCase then
 			if showNotify then
 				showNotify("Case open not ready")
-			end
-			return
-		end
-		local pool = {}
-		if S._crimSkinCaseContents then
-			local okL, list = pcall(S._crimSkinCaseContents, caseId, "all")
-			if okL and typeof(list) == "table" then
-				pool = list
-			end
-		end
-		if #pool == 0 then
-			if showNotify then
-				showNotify("Case empty / still harvesting")
 			end
 			return
 		end
 		local win = S._crimSkinRollCase(caseId)
 		if typeof(win) ~= "table" then
 			if showNotify then
-				showNotify("Roll failed")
+				showNotify("Roll failed / empty case")
 			end
 			return
 		end
 		unboxBusy = true
-
-		local Overlay = C("Frame", {
-			Name = "CaseReel",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 0.4,
-			BorderSizePixel = 0,
-			ZIndex = 40,
-			Parent = Vault,
-		})
-		local Panel = C("Frame", {
-			Size = UDim2.new(0, 420, 0, 200),
-			Position = UDim2.new(0.5, -210, 0.5, -100),
-			BackgroundColor3 = Color3.fromRGB(16, 18, 26),
-			BorderSizePixel = 0,
-			ClipsDescendants = true,
-			ZIndex = 41,
-			Parent = Overlay,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Panel })
-		C("UIStroke", { Color = Color3.fromRGB(255, 200, 90), Thickness = 1.5, Transparency = 0.15, Parent = Panel })
-		local Title = C("TextLabel", {
-			Size = UDim2.new(1, -20, 0, 22),
-			Position = UDim2.new(0, 10, 0, 8),
-			BackgroundTransparency = 1,
-			Text = "Opening · " .. tostring(caseId),
-			Font = Enum.Font.GothamBold,
-			TextSize = 14,
-			TextColor3 = Color3.fromRGB(255, 220, 140),
-			ZIndex = 42,
-			Parent = Panel,
-		})
-		local ReelClip = C("Frame", {
-			Size = UDim2.new(1, -24, 0, 120),
-			Position = UDim2.new(0, 12, 0, 36),
-			BackgroundColor3 = Color3.fromRGB(12, 14, 20),
-			BorderSizePixel = 0,
-			ClipsDescendants = true,
-			ZIndex = 42,
-			Parent = Panel,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = ReelClip })
-		local Marker = C("Frame", {
-			Size = UDim2.new(0, 2, 1, 0),
-			Position = UDim2.new(0.5, -1, 0, 0),
-			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-			BorderSizePixel = 0,
-			ZIndex = 50,
-			Parent = ReelClip,
-		})
-		local Reel = C("Frame", {
-			Size = UDim2.new(0, 0, 1, 0),
-			Position = UDim2.new(0, 0, 0, 0),
-			BackgroundTransparency = 1,
-			ZIndex = 43,
-			Parent = ReelClip,
-		})
-		local Hint = C("TextLabel", {
-			Size = UDim2.new(1, -20, 0, 16),
-			Position = UDim2.new(0, 10, 1, -24),
-			BackgroundTransparency = 1,
-			Text = "client-only · Odds from CaseContents",
-			Font = Enum.Font.Gotham,
-			TextSize = 10,
-			TextColor3 = Color3.fromRGB(120, 130, 150),
-			ZIndex = 42,
-			Parent = Panel,
-		})
-
-		local CARD_W, CARD_GAP = 88, 6
-		local reelItems = {}
-		local pre = 28
-		for i = 1, pre do
-			reelItems[#reelItems + 1] = pool[math.random(1, #pool)]
+		StatusLbl.Text = "Opening (native)…"
+		if showNotify then
+			showNotify("Opening case…")
 		end
-		local winIdx = pre + 1
-		reelItems[winIdx] = win
-		for i = 1, 8 do
-			reelItems[#reelItems + 1] = pool[math.random(1, #pool)]
-		end
-		for i, row in ipairs(reelItems) do
-			local col = skinAccent(row)
-			local card = C("Frame", {
-				Size = UDim2.new(0, CARD_W, 1, -12),
-				Position = UDim2.new(0, (i - 1) * (CARD_W + CARD_GAP), 0, 6),
-				BackgroundColor3 = Color3.fromRGB(22, 24, 34),
-				BorderSizePixel = 0,
-				ZIndex = 44,
-				Parent = Reel,
-			})
-			C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = card })
-			C("UIStroke", { Color = col, Thickness = 1.5, Transparency = 0.25, Parent = card })
-			local img = cmapImage(row.full, row.preview)
-			if img ~= "" then
-				C("ImageLabel", {
-					Size = UDim2.new(1, -8, 0, 64),
-					Position = UDim2.new(0, 4, 0, 6),
-					BackgroundTransparency = 1,
-					Image = img,
-					ScaleType = Enum.ScaleType.Fit,
-					ZIndex = 45,
-					Parent = card,
-				})
-			end
-			C("TextLabel", {
-				Size = UDim2.new(1, -6, 0, 28),
-				Position = UDim2.new(0, 3, 1, -32),
-				BackgroundTransparency = 1,
-				Text = (row.gun or "?") .. "\n" .. (row.label or "?"),
-				Font = Enum.Font.GothamSemibold,
-				TextSize = 9,
-				TextColor3 = Color3.fromRGB(230, 235, 245),
-				TextWrapped = true,
-				ZIndex = 45,
-				Parent = card,
-			})
-		end
-		Reel.Size = UDim2.new(0, #reelItems * (CARD_W + CARD_GAP), 1, 0)
-
-		-- center win card under marker
-		local clipW = ReelClip.AbsoluteSize.X
-		if clipW < 10 then
-			clipW = 396
-		end
-		local targetX = clipW * 0.5 - ((winIdx - 0.5) * (CARD_W + CARD_GAP))
-
 		task.spawn(function()
-			local startX = 40
-			Reel.Position = UDim2.new(0, startX, 0, 0)
-			local steps = 42
-			for s = 1, steps do
-				if not Overlay.Parent then
-					unboxBusy = false
-					return
+			-- Original Crim CaseAnims + UnboxEffect / CaseUnboxEffect handlers
+			if S._crimSkinPlayNativeUnbox then
+				pcall(S._crimSkinPlayNativeUnbox, caseId, win)
+			elseif S._crimSkinOpenCase then
+				-- OpenCase also plays native then applies
+				local ok, msg = S._crimSkinOpenCase(caseId, win)
+				persistSkins()
+				refreshWeaponSidebar()
+				refreshSkinGrid()
+				if showNotify then
+					showNotify(tostring(msg or (ok and win.label or "fail")))
 				end
-				local t = s / steps
-				-- ease out cubic
-				local e = 1 - (1 - t) ^ 3
-				local x = startX + (targetX - startX) * e
-				Reel.Position = UDim2.new(0, x, 0, 0)
-				task.wait(0.028 + t * 0.02)
+				unboxBusy = false
+				return
 			end
-			Reel.Position = UDim2.new(0, targetX, 0, 0)
 			local ok, msg
 			if S._crimSkinPick and win.gun and win.full then
 				ok, msg = S._crimSkinPick(win.gun, win.full)
-			else
-				ok, msg = S._crimSkinOpenCase(caseId)
 			end
-			Title.Text = ok and ("Won · " .. tostring(win.label)) or "Fail"
-			Hint.Text = string.format("%s · %s · %s", tostring(win.gun), tostring(win.rarity), tostring(msg or ""))
 			persistSkins()
 			refreshWeaponSidebar()
 			refreshSkinGrid()
+			StatusLbl.Text = string.format("Won · %s (%s)", tostring(win.label), tostring(win.gun))
 			if showNotify then
-				showNotify(string.format("Unboxed %s (%s)", tostring(win.label), tostring(win.gun)))
-			end
-			task.wait(1.35)
-			if Overlay.Parent then
-				Overlay:Destroy()
+				showNotify(string.format("Unboxed %s · %s", tostring(win.label), tostring(win.gun)))
 			end
 			unboxBusy = false
 		end)
