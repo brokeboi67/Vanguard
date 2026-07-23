@@ -5003,9 +5003,10 @@ function misc.skinChanger.getTexCatalog()
 	misc.skinChanger._texCat = cat
 	misc.skinChanger._meshVarCat = meshCat
 	misc.skinChanger._rarityCat = misc.skinChanger._rarityCat or {}
-	-- Live getgc fill for MeshVariant + Rarity
+	-- Live getgc fill for MeshVariant + Rarity + Cases
 	task.defer(function()
 		misc.skinChanger.harvestMeshVariantsFromGc()
+		misc.skinChanger.harvestCasesFromGc()
 	end)
 	return cat
 end
@@ -5191,6 +5192,387 @@ function misc.skinChanger.harvestMeshVariantsFromGc()
 	end
 	misc.skinChanger.log(string.format("Cosmetic meta harvest meshGuns=%d rarityGuns=%d", meshGuns, rarGuns))
 	return meshCat
+end
+
+-- ── CaseContents harvest (official case pools + Odds) ──
+function misc.skinChanger.resolveCaseItemSkinKey(gun, disp, texId, mesh)
+	gun = typeof(gun) == "string" and gun or nil
+	disp = typeof(disp) == "string" and disp or nil
+	texId = tonumber(texId)
+	mesh = typeof(mesh) == "string" and mesh ~= "" and mesh or nil
+	local folder = misc.skinChanger.getRepPBR()
+	if folder and gun and disp then
+		local sa = folder:FindFirstChild(gun .. "_" .. disp)
+		if not sa then
+			-- CasePBRs sometimes hold skin SAs too
+			local casePbr = misc.skinChanger.getCasePBR()
+			sa = casePbr and casePbr:FindFirstChild(gun .. "_" .. disp)
+		end
+		if sa then
+			return sa.Name
+		end
+	end
+	if mesh then
+		local vk = misc.skinChanger.meshVariantToSkinKey(mesh)
+		if vk then
+			return vk
+		end
+	end
+	if texId and texId > 1000 then
+		return misc.skinChanger.texKey(texId)
+	end
+	return nil
+end
+
+function misc.skinChanger.normalizeCaseItem(raw, poolName, fallbackSlug)
+	if typeof(raw) ~= "table" then
+		return nil
+	end
+	local ok, gun, disp, rar, tex, odds, mesh, skinClass = pcall(function()
+		return raw.ItemName, raw.DisplayName, raw.Rarity, raw.TextureID, raw.Odds, raw.MeshVariant, raw.SkinClass
+	end)
+	if not ok then
+		return nil
+	end
+	if (typeof(gun) ~= "string" or gun == "") and typeof(fallbackSlug) == "string" then
+		-- slug like "tommy_currant" → gun/disp guess
+		local us = string.find(fallbackSlug, "_", 1, true)
+		if us then
+			gun = gun or string.sub(fallbackSlug, 1, us - 1)
+			disp = disp or string.sub(fallbackSlug, us + 1)
+		end
+	end
+	if typeof(gun) ~= "string" or gun == "" then
+		return nil
+	end
+	if typeof(disp) ~= "string" or disp == "" then
+		disp = typeof(fallbackSlug) == "string" and fallbackSlug or gun
+	end
+	tex = tonumber(tex)
+	odds = tonumber(odds) or 0
+	local rarity = misc.skinChanger.normalizeRarity(rar)
+	if poolName == "limiteds" and rarity == "unknown" then
+		rarity = "limited"
+	elseif poolName == "exotics" and rarity == "unknown" then
+		rarity = "exotic"
+	end
+	local full = misc.skinChanger.resolveCaseItemSkinKey(gun, disp, tex, mesh)
+	if not full and tex and tex > 1000 then
+		full = misc.skinChanger.texKey(tex)
+	end
+	if not full then
+		-- still listable for browse; apply may fail
+		full = gun .. "_" .. disp
+	end
+	local preview = ""
+	if tex and tex > 1000 then
+		preview = "rbxassetid://" .. tostring(tex)
+	end
+	return {
+		gun = gun,
+		label = disp,
+		rarity = rarity,
+		rarityColor = misc.skinChanger.rarityColor(rarity),
+		odds = odds,
+		texId = tex,
+		mesh = mesh,
+		skinClass = typeof(skinClass) == "string" and skinClass or nil,
+		pool = poolName or "skins",
+		full = full,
+		preview = preview,
+	}
+end
+
+function misc.skinChanger.flattenCasePool(poolTable, poolName)
+	local out = {}
+	if typeof(poolTable) ~= "table" then
+		return out
+	end
+	local function push(item, slug)
+		local row = misc.skinChanger.normalizeCaseItem(item, poolName, slug)
+		if row then
+			out[#out + 1] = row
+		end
+	end
+	if #poolTable > 0 then
+		for _, item in ipairs(poolTable) do
+			if typeof(item) == "table" then
+				push(item, nil)
+			end
+		end
+		return out
+	end
+	for k, v in pairs(poolTable) do
+		if typeof(v) == "table" then
+			local hasFields = false
+			pcall(function()
+				hasFields = v.ItemName ~= nil or v.DisplayName ~= nil or v.TextureID ~= nil or v.Odds ~= nil
+			end)
+			if hasFields then
+				push(v, typeof(k) == "string" and k or nil)
+			else
+				-- nested dict (e.g. LIMITED bucket) — one level
+				for k2, v2 in pairs(v) do
+					if typeof(v2) == "table" then
+						local nested = false
+						pcall(function()
+							nested = v2.ItemName ~= nil or v2.TextureID ~= nil or v2.DisplayName ~= nil
+						end)
+						if nested then
+							push(v2, typeof(k2) == "string" and k2 or (typeof(k) == "string" and k or nil))
+						end
+					end
+				end
+			end
+		end
+	end
+	return out
+end
+
+function misc.skinChanger.harvestCasesFromGc()
+	if misc.skinChanger._caseGcDone then
+		return misc.skinChanger._caseCat or {}
+	end
+	local now = os.clock()
+	if misc.skinChanger._caseGcAttemptAt and (now - misc.skinChanger._caseGcAttemptAt) < 6 then
+		return misc.skinChanger._caseCat or {}
+	end
+	misc.skinChanger._caseGcAttemptAt = now
+	local caseCat = misc.skinChanger._caseCat or {}
+	-- optional JSON cache
+	pcall(function()
+		if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+			return
+		end
+		local HS = game:GetService("HttpService")
+		for _, path in ipairs({
+			"VG_CrimCases.json",
+			"CrimCases.json",
+			"Vanguard/CrimCases.json",
+			"VG_FullDump/15_gc_cases.json",
+		}) do
+			if isfile(path) then
+				local ok, decoded = pcall(function()
+					return HS:JSONDecode(readfile(path))
+				end)
+				if ok and typeof(decoded) == "table" then
+					for id, entry in pairs(decoded) do
+						if typeof(entry) == "table" and typeof(entry.items) == "table" then
+							caseCat[tostring(id)] = entry
+						end
+					end
+				end
+			end
+		end
+		if typeof(_G.__VG_CrimCases) == "table" then
+			for id, entry in pairs(_G.__VG_CrimCases) do
+				if typeof(entry) == "table" then
+					caseCat[tostring(id)] = entry
+				end
+			end
+		end
+	end)
+
+	if typeof(getgc) == "function" then
+		local ok, gc = pcall(getgc, true)
+		if ok and typeof(gc) == "table" then
+			local n = 0
+			for _, v in ipairs(gc) do
+				n += 1
+				if n % 400 == 0 then
+					task.wait()
+				end
+				if typeof(v) ~= "table" then
+					continue
+				end
+				local ok2, contents, name, display, casetype, layout, enabled, isNew, rarities = pcall(function()
+					return v.CaseContents, v.Name, v.DisplayName, v.Casetype, v.LayoutOrder, v.Enabled, v.IsNew, v.Rarities
+				end)
+				if not ok2 or typeof(contents) ~= "table" then
+					continue
+				end
+				if typeof(name) ~= "string" or name == "" then
+					continue
+				end
+				local skins, limiteds, exotics = nil, nil, nil
+				pcall(function()
+					skins, limiteds, exotics = contents.skins, contents.limiteds, contents.exotics
+				end)
+				local items = {}
+				local counts = { skins = 0, limiteds = 0, exotics = 0 }
+				for _, poolName in ipairs({ "skins", "limiteds", "exotics" }) do
+					local pool = poolName == "skins" and skins or (poolName == "limiteds" and limiteds or exotics)
+					local flat = misc.skinChanger.flattenCasePool(pool, poolName)
+					counts[poolName] = #flat
+					for _, row in ipairs(flat) do
+						items[#items + 1] = row
+						-- enrich tex/rarity catalogs
+						if row.texId and row.texId > 1000 then
+							local cat = misc.skinChanger._texCat
+							if cat then
+								cat[row.gun] = cat[row.gun] or {}
+								if not cat[row.gun][row.label] then
+									cat[row.gun][row.label] = row.texId
+								end
+							end
+						end
+						if row.mesh then
+							local meshCat = misc.skinChanger._meshVarCat or {}
+							meshCat[row.gun] = meshCat[row.gun] or {}
+							meshCat[row.gun][row.label] = row.mesh
+							misc.skinChanger._meshVarCat = meshCat
+						end
+						if row.rarity and row.rarity ~= "unknown" then
+							local rarityCat = misc.skinChanger._rarityCat or {}
+							rarityCat[row.gun] = rarityCat[row.gun] or {}
+							rarityCat[row.gun][row.label] = row.rarity
+							misc.skinChanger._rarityCat = rarityCat
+						end
+					end
+				end
+				if #items == 0 then
+					continue
+				end
+				caseCat[name] = {
+					id = name,
+					name = name,
+					display = typeof(display) == "string" and display ~= "" and display or name,
+					type = typeof(casetype) == "string" and casetype or "",
+					layout = tonumber(layout) or 9999,
+					enabled = enabled ~= false,
+					isNew = isNew == true,
+					counts = counts,
+					items = items,
+				}
+			end
+		end
+	end
+
+	misc.skinChanger._caseCat = caseCat
+	local nCases = 0
+	for _ in pairs(caseCat) do
+		nCases += 1
+	end
+	if nCases > 0 then
+		misc.skinChanger._caseGcDone = true
+	end
+	misc.skinChanger.log(string.format("Case harvest cases=%d", nCases))
+	return caseCat
+end
+
+function misc.skinChanger.getCaseCatalog()
+	misc.skinChanger.getTexCatalog()
+	local cat = misc.skinChanger._caseCat or {}
+	local n = 0
+	for _ in pairs(cat) do
+		n += 1
+	end
+	if not misc.skinChanger._caseGcDone or n == 0 then
+		misc.skinChanger.harvestCasesFromGc()
+	end
+	return misc.skinChanger._caseCat or {}
+end
+
+function misc.skinChanger.listCases()
+	local cat = misc.skinChanger.getCaseCatalog()
+	local out = {}
+	for _, entry in pairs(cat) do
+		if typeof(entry) == "table" and entry.id then
+			out[#out + 1] = {
+				id = entry.id,
+				name = entry.name,
+				display = entry.display,
+				type = entry.type,
+				layout = entry.layout or 9999,
+				enabled = entry.enabled ~= false,
+				isNew = entry.isNew == true,
+				counts = entry.counts or { skins = 0, limiteds = 0, exotics = 0 },
+			}
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.layout == b.layout then
+			return tostring(a.display) < tostring(b.display)
+		end
+		return a.layout < b.layout
+	end)
+	return out
+end
+
+function misc.skinChanger.listCaseContents(caseId, poolFilter)
+	local cat = misc.skinChanger.getCaseCatalog()
+	local entry = cat[caseId]
+	if not entry and typeof(caseId) == "string" then
+		-- match by display
+		local want = string.lower(caseId)
+		for _, e in pairs(cat) do
+			if typeof(e) == "table" and (string.lower(tostring(e.display)) == want or string.lower(tostring(e.name)) == want) then
+				entry = e
+				break
+			end
+		end
+	end
+	if not entry or typeof(entry.items) ~= "table" then
+		return {}
+	end
+	local out = {}
+	for _, row in ipairs(entry.items) do
+		if not poolFilter or poolFilter == "all" or row.pool == poolFilter then
+			out[#out + 1] = row
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.pool == b.pool then
+			if a.rarity == b.rarity then
+				return tostring(a.label) < tostring(b.label)
+			end
+			return tostring(a.rarity) < tostring(b.rarity)
+		end
+		local order = { skins = 1, limiteds = 2, exotics = 3 }
+		return (order[a.pool] or 9) < (order[b.pool] or 9)
+	end)
+	return out
+end
+
+function misc.skinChanger.rollCase(caseId)
+	local items = misc.skinChanger.listCaseContents(caseId, "all")
+	if #items == 0 then
+		return nil
+	end
+	local total = 0
+	local weights = table.create(#items)
+	for i, row in ipairs(items) do
+		local w = tonumber(row.odds) or 0
+		if w <= 0 then
+			w = misc.skinChanger.RARITY_WEIGHT[misc.skinChanger.normalizeRarity(row.rarity)] or 20
+		end
+		weights[i] = w
+		total += w
+	end
+	if total <= 0 then
+		return items[math.random(1, #items)]
+	end
+	local roll = math.random() * total
+	local acc = 0
+	for i, row in ipairs(items) do
+		acc += weights[i]
+		if roll <= acc then
+			return row
+		end
+	end
+	return items[#items]
+end
+
+function misc.skinChanger.fakeOpenCase(caseId)
+	local win = misc.skinChanger.rollCase(caseId)
+	if not win then
+		return false, "empty case", nil
+	end
+	if not win.full or not win.gun then
+		return false, "bad item", win
+	end
+	local ok, msg = misc.skinChanger.applyNamed(win.gun, win.full)
+	return ok, msg or win.label, win
 end
 
 function misc.skinChanger.lookupMeshVariant(gunName, displayName)
@@ -7718,7 +8100,7 @@ function misc.skinChanger.bindUi(S)
 		end
 		return rows
 	end
-	-- Client-only weighted roll + apply (menusense-style fake unbox)
+	-- Client-only weighted roll + apply (legacy per-weapon; prefer case Open)
 	S._crimSkinFakeUnbox = function(gunName)
 		gunName = gunName or (misc.skinChanger.findActiveGun() and misc.skinChanger.findActiveGun().Name)
 		if not gunName then
@@ -7752,6 +8134,19 @@ function misc.skinChanger.bindUi(S)
 		end
 		local ok, msg = misc.skinChanger.applyNamed(gunName, win.full)
 		return ok, msg or win.label, win
+	end
+	S._crimSkinListCases = function()
+		return misc.skinChanger.listCases()
+	end
+	S._crimSkinCaseContents = function(caseId, poolFilter)
+		return misc.skinChanger.listCaseContents(caseId, poolFilter)
+	end
+	S._crimSkinRollCase = function(caseId)
+		return misc.skinChanger.rollCase(caseId)
+	end
+	S._crimSkinOpenCase = function(caseId)
+		ensureOn()
+		return misc.skinChanger.fakeOpenCase(caseId)
 	end
 	S._crimSkinPick = function(gunName, skinFull)
 		ensureOn()

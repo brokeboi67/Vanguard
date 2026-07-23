@@ -317,8 +317,8 @@ function UISkinVault.build(opts)
 	})
 
 	local BtnSelect = C("TextButton", {
-		Size = UDim2.new(0, 72, 0, 24),
-		Position = UDim2.new(0, 12, 0.5, -12),
+		Size = UDim2.new(0, 56, 0, 24),
+		Position = UDim2.new(0, 8, 0.5, -12),
 		BackgroundTransparency = 1,
 		Text = "Select",
 		Font = Enum.Font.GothamSemibold,
@@ -329,8 +329,8 @@ function UISkinVault.build(opts)
 		Parent = Header,
 	})
 	local BtnClear = C("TextButton", {
-		Size = UDim2.new(0, 72, 0, 24),
-		Position = UDim2.new(0, 84, 0.5, -12),
+		Size = UDim2.new(0, 48, 0, 24),
+		Position = UDim2.new(0, 62, 0.5, -12),
 		BackgroundTransparency = 1,
 		Text = "Clear",
 		Font = Enum.Font.GothamSemibold,
@@ -340,32 +340,50 @@ function UISkinVault.build(opts)
 		ZIndex = 7,
 		Parent = Header,
 	})
-	local BtnUnbox = C("TextButton", {
-		Size = UDim2.new(0, 72, 0, 24),
-		Position = UDim2.new(0, 156, 0.5, -12),
+	local BtnOpen = C("TextButton", {
+		Size = UDim2.new(0, 52, 0, 24),
+		Position = UDim2.new(0, 112, 0.5, -12),
 		BackgroundTransparency = 1,
-		Text = "Unbox",
+		Text = "Open",
 		Font = Enum.Font.GothamSemibold,
 		TextSize = 12,
 		TextColor3 = Color3.fromRGB(255, 200, 90),
 		AutoButtonColor = false,
+		Visible = false,
 		ZIndex = 7,
 		Parent = Header,
 	})
-	C("TextLabel", {
-		Size = UDim2.new(0, 200, 1, 0),
-		Position = UDim2.new(0.5, -100, 0, 0),
-		BackgroundTransparency = 1,
+	local TabInv = C("TextButton", {
+		Size = UDim2.new(0, 78, 0, 24),
+		Position = UDim2.new(0.5, -84, 0.5, -12),
+		BackgroundColor3 = Color3.fromRGB(30, 36, 52),
 		Text = "Inventory",
 		Font = Enum.Font.GothamBold,
-		TextSize = 16,
+		TextSize = 12,
 		TextColor3 = Color3.fromRGB(235, 240, 250),
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
 		ZIndex = 7,
 		Parent = Header,
 	})
+	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = TabInv })
+	local TabCases = C("TextButton", {
+		Size = UDim2.new(0, 70, 0, 24),
+		Position = UDim2.new(0.5, 2, 0.5, -12),
+		BackgroundColor3 = Color3.fromRGB(22, 24, 34),
+		Text = "Cases",
+		Font = Enum.Font.GothamBold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(160, 170, 190),
+		AutoButtonColor = false,
+		BorderSizePixel = 0,
+		ZIndex = 7,
+		Parent = Header,
+	})
+	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = TabCases })
 	local StatusLbl = C("TextLabel", {
-		Size = UDim2.new(0, 220, 0, 18),
-		Position = UDim2.new(1, -232, 0.5, -9),
+		Size = UDim2.new(0, 200, 0, 18),
+		Position = UDim2.new(1, -212, 0.5, -9),
 		BackgroundTransparency = 1,
 		Text = "",
 		Font = Enum.Font.GothamMedium,
@@ -424,6 +442,7 @@ function UISkinVault.build(opts)
 		Parent = FilterRow,
 	})
 	C("TextLabel", {
+		Name = "ClassCaption",
 		Size = UDim2.new(0, 80, 0, 14),
 		Position = UDim2.new(0, 216, 0, 0),
 		BackgroundTransparency = 1,
@@ -435,6 +454,7 @@ function UISkinVault.build(opts)
 		ZIndex = 7,
 		Parent = FilterRow,
 	})
+	local ClassCaption = FilterRow:FindFirstChild("ClassCaption")
 	C("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
 		Padding = UDim.new(0, 6),
@@ -444,7 +464,8 @@ function UISkinVault.build(opts)
 	})
 
 	local classFilter = "all"
-	local classDefs = {
+	local poolFilter = "all"
+	local rarityDefs = {
 		{ key = "all", label = "All", color = Color3.fromRGB(180, 190, 210) },
 		{ key = "exotic", label = "Exotic", color = RARITY_COLORS.exotic },
 		{ key = "legendary", label = "Legendary", color = RARITY_COLORS.legendary },
@@ -453,8 +474,16 @@ function UISkinVault.build(opts)
 		{ key = "common", label = "Common", color = RARITY_COLORS.common },
 		{ key = "limited", label = "Limited", color = RARITY_COLORS.limited },
 	}
+	local poolDefs = {
+		{ key = "all", label = "All", color = Color3.fromRGB(180, 190, 210) },
+		{ key = "skins", label = "Skins", color = RARITY_COLORS.rare },
+		{ key = "limiteds", label = "Limiteds", color = RARITY_COLORS.limited },
+		{ key = "exotics", label = "Exotics", color = RARITY_COLORS.exotic },
+	}
+	local classDefs = rarityDefs
 	local classBtns = {}
 	local unboxBusy = false
+	local SideCaption
 
 	local Body = C("Frame", {
 		Size = UDim2.new(1, -16, 1, -118),
@@ -488,6 +517,7 @@ function UISkinVault.build(opts)
 		Parent = TypeSide,
 	})
 	C("TextLabel", {
+		Name = "SideCaption",
 		Size = UDim2.new(1, 0, 0, 18),
 		BackgroundTransparency = 1,
 		Text = "Type",
@@ -499,6 +529,7 @@ function UISkinVault.build(opts)
 		ZIndex = 8,
 		Parent = TypeSide,
 	})
+	SideCaption = TypeSide:FindFirstChild("SideCaption")
 
 	local GridScroll = C("ScrollingFrame", {
 		Size = UDim2.new(1, -176, 1, 0),
@@ -529,13 +560,17 @@ function UISkinVault.build(opts)
 	})
 
 	local skinUi = {
+		mode = "inventory", -- inventory | cases
 		weapon = S.CrimSkinUiWeapon or "Mare",
+		caseId = S.CrimSkinUiCase or nil,
 		filter = "",
 		expanded = { Melee = true, Firearms = true },
 	}
 
 	local refreshWeaponSidebar
 	local refreshSkinGrid
+	local rebuildClassChips
+	local setVaultMode
 
 	local function makeWeaponBtn(parent, gun, order, active)
 		local saved = S._crimSkinSaved and S._crimSkinSaved(gun)
@@ -627,10 +662,104 @@ function UISkinVault.build(opts)
 
 	refreshWeaponSidebar = function()
 		for _, ch in ipairs(TypeSide:GetChildren()) do
-			if ch:IsA("TextButton") or (ch:IsA("TextLabel") and ch.Text ~= "Type") then
+			if ch:IsA("TextButton") or (ch:IsA("TextLabel") and ch.Name ~= "SideCaption") then
 				ch:Destroy()
 			end
 		end
+		if SideCaption then
+			SideCaption.Text = skinUi.mode == "cases" and "Cases" or "Type"
+		end
+
+		if skinUi.mode == "cases" then
+			local cases = {}
+			if S._crimSkinListCases then
+				local ok, list = pcall(S._crimSkinListCases)
+				if ok and typeof(list) == "table" then
+					cases = list
+				end
+			end
+			local q = string.lower(skinUi.filter or "")
+			local order = 1
+			if #cases == 0 then
+				C("TextLabel", {
+					Size = UDim2.new(1, 0, 0, 40),
+					BackgroundTransparency = 1,
+					Text = "Loading cases…\n(rejoin / wait getgc)",
+					Font = Enum.Font.GothamMedium,
+					TextSize = 10,
+					TextColor3 = Color3.fromRGB(140, 150, 170),
+					TextWrapped = true,
+					LayoutOrder = order,
+					ZIndex = 8,
+					Parent = TypeSide,
+				})
+				return
+			end
+			if not skinUi.caseId and cases[1] then
+				skinUi.caseId = cases[1].id
+				S.CrimSkinUiCase = skinUi.caseId
+			end
+			for _, cs in ipairs(cases) do
+				local lab = cs.display or cs.name or cs.id
+				if q ~= "" and not string.find(string.lower(lab), q, 1, true)
+					and not string.find(string.lower(tostring(cs.type or "")), q, 1, true)
+				then
+					continue
+				end
+				local active = cs.id == skinUi.caseId
+				local counts = cs.counts or {}
+				local total = (counts.skins or 0) + (counts.limiteds or 0) + (counts.exotics or 0)
+				local B = C("TextButton", {
+					Size = UDim2.new(1, 0, 0, 36),
+					BackgroundColor3 = active and Color3.fromRGB(28, 36, 55) or Color3.fromRGB(20, 22, 30),
+					Text = "",
+					AutoButtonColor = false,
+					BorderSizePixel = 0,
+					LayoutOrder = order,
+					ZIndex = 8,
+					Parent = TypeSide,
+				})
+				order = order + 1
+				C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
+				if active then
+					C("UIStroke", { Color = Color3.fromRGB(255, 200, 90), Thickness = 1, Transparency = 0.3, Parent = B })
+				end
+				C("TextLabel", {
+					Size = UDim2.new(1, -10, 0, 16),
+					Position = UDim2.new(0, 6, 0, 3),
+					BackgroundTransparency = 1,
+					Text = lab .. (cs.isNew and " ·NEW" or ""),
+					Font = Enum.Font.GothamSemibold,
+					TextSize = 10,
+					TextColor3 = active and Color3.fromRGB(245, 248, 255) or Color3.fromRGB(150, 155, 170),
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					ZIndex = 9,
+					Parent = B,
+				})
+				C("TextLabel", {
+					Size = UDim2.new(1, -10, 0, 12),
+					Position = UDim2.new(0, 6, 0, 20),
+					BackgroundTransparency = 1,
+					Text = string.format("%s · %d", tostring(cs.type ~= "" and cs.type or "case"), total),
+					Font = Enum.Font.Gotham,
+					TextSize = 9,
+					TextColor3 = Color3.fromRGB(110, 120, 140),
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextTruncate = Enum.TextTruncate.AtEnd,
+					ZIndex = 9,
+					Parent = B,
+				})
+				B.MouseButton1Click:Connect(function()
+					skinUi.caseId = cs.id
+					S.CrimSkinUiCase = cs.id
+					refreshWeaponSidebar()
+					refreshSkinGrid()
+				end)
+			end
+			return
+		end
+
 		local weapons = {}
 		if S._crimSkinListWeapons then
 			local ok, list = pcall(S._crimSkinListWeapons)
@@ -672,7 +801,7 @@ function UISkinVault.build(opts)
 		local lab = row.label or row.full
 		local rarKey = normalizeRarity(row.rarity)
 		local accent = skinAccent(row)
-		if classFilter ~= "all" and classFilter ~= rarKey then
+		if skinUi.mode ~= "cases" and classFilter ~= "all" and classFilter ~= rarKey then
 			return false
 		end
 
@@ -804,8 +933,9 @@ function UISkinVault.build(opts)
 		end
 
 		Card.MouseButton1Click:Connect(function()
-			if S._crimSkinPick then
-				local ok2, msg = S._crimSkinPick(gun, row.full)
+			local targetGun = row.gun or gun
+			if S._crimSkinPick and targetGun then
+				local ok2, msg = S._crimSkinPick(targetGun, row.full)
 				if showNotify then
 					showNotify(tostring(msg or (ok2 and "applied" or "fail")))
 				end
@@ -823,6 +953,41 @@ function UISkinVault.build(opts)
 				ch:Destroy()
 			end
 		end
+
+		-- Cases mode: browse official CaseContents
+		if skinUi.mode == "cases" then
+			local caseId = skinUi.caseId
+			local rows = {}
+			if S._crimSkinCaseContents and caseId then
+				local ok, list = pcall(S._crimSkinCaseContents, caseId, poolFilter)
+				if ok and typeof(list) == "table" then
+					rows = list
+				end
+			end
+			local q = string.lower(skinUi.filter or "")
+			local order = 0
+			local shown = 0
+			for _, row in ipairs(rows) do
+				local lab = row.label or row.full
+				local gun = row.gun or "?"
+				if q == "" or string.find(string.lower(lab), q, 1, true) or string.find(string.lower(gun), q, 1, true) then
+					order = order + 1
+					local saved = S._crimSkinSaved and S._crimSkinSaved(gun)
+					if makeSkinCard(GridScroll, gun, row, order, saved == row.full) then
+						shown = shown + 1
+					end
+				end
+			end
+			if not caseId then
+				StatusLbl.Text = "Pick a case"
+			elseif shown == 0 then
+				StatusLbl.Text = string.format("%s | empty pool", tostring(caseId))
+			else
+				StatusLbl.Text = string.format("%s | %d items | Open to roll", tostring(caseId), shown)
+			end
+			return
+		end
+
 		local gun = skinUi.weapon
 		local rows = {}
 		if S._crimSkinListSkins and gun then
@@ -994,37 +1159,75 @@ function UISkinVault.build(opts)
 		end
 	end
 
-	for i, def in ipairs(classDefs) do
-		local B = C("TextButton", {
-			Size = UDim2.new(0, 0, 0, 26),
-			AutomaticSize = Enum.AutomaticSize.X,
-			BackgroundColor3 = Color3.fromRGB(22, 24, 34),
-			Text = "  " .. def.label .. "  ",
-			Font = Enum.Font.GothamSemibold,
-			TextSize = 10,
-			TextColor3 = Color3.fromRGB(200, 205, 220),
-			AutoButtonColor = false,
-			BorderSizePixel = 0,
-			LayoutOrder = i,
-			ZIndex = 8,
-			Parent = ClassWrap,
-		})
-		C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
-		local stroke = C("UIStroke", { Color = def.color, Thickness = 1.5, Transparency = 0.35, Parent = B })
-		classBtns[def.key] = { btn = B, stroke = stroke, color = def.color }
-		B.MouseButton1Click:Connect(function()
-			classFilter = def.key
-			for k, info in pairs(classBtns) do
-				info.stroke.Transparency = (k == classFilter) and 0.05 or 0.45
-				info.btn.BackgroundColor3 = (k == classFilter) and Color3.fromRGB(30, 36, 52) or Color3.fromRGB(22, 24, 34)
+	rebuildClassChips = function()
+		for _, ch in ipairs(ClassWrap:GetChildren()) do
+			if ch:IsA("TextButton") then
+				ch:Destroy()
 			end
-			refreshSkinGrid()
-		end)
+		end
+		classBtns = {}
+		local defs = skinUi.mode == "cases" and poolDefs or rarityDefs
+		classDefs = defs
+		if ClassCaption then
+			ClassCaption.Text = skinUi.mode == "cases" and "Pool" or "Skin class"
+		end
+		local activeKey = skinUi.mode == "cases" and poolFilter or classFilter
+		for i, def in ipairs(defs) do
+			local B = C("TextButton", {
+				Size = UDim2.new(0, 0, 0, 26),
+				AutomaticSize = Enum.AutomaticSize.X,
+				BackgroundColor3 = Color3.fromRGB(22, 24, 34),
+				Text = "  " .. def.label .. "  ",
+				Font = Enum.Font.GothamSemibold,
+				TextSize = 10,
+				TextColor3 = Color3.fromRGB(200, 205, 220),
+				AutoButtonColor = false,
+				BorderSizePixel = 0,
+				LayoutOrder = i,
+				ZIndex = 8,
+				Parent = ClassWrap,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
+			local stroke = C("UIStroke", { Color = def.color, Thickness = 1.5, Transparency = 0.35, Parent = B })
+			classBtns[def.key] = { btn = B, stroke = stroke, color = def.color }
+			B.MouseButton1Click:Connect(function()
+				if skinUi.mode == "cases" then
+					poolFilter = def.key
+				else
+					classFilter = def.key
+				end
+				local sel = skinUi.mode == "cases" and poolFilter or classFilter
+				for k, info in pairs(classBtns) do
+					info.stroke.Transparency = (k == sel) and 0.05 or 0.45
+					info.btn.BackgroundColor3 = (k == sel) and Color3.fromRGB(30, 36, 52) or Color3.fromRGB(22, 24, 34)
+				end
+				refreshSkinGrid()
+			end)
+		end
+		if classBtns[activeKey] then
+			classBtns[activeKey].stroke.Transparency = 0.05
+			classBtns[activeKey].btn.BackgroundColor3 = Color3.fromRGB(30, 36, 52)
+		elseif classBtns.all then
+			classBtns.all.stroke.Transparency = 0.05
+			classBtns.all.btn.BackgroundColor3 = Color3.fromRGB(30, 36, 52)
+		end
 	end
-	if classBtns.all then
-		classBtns.all.stroke.Transparency = 0.05
-		classBtns.all.btn.BackgroundColor3 = Color3.fromRGB(30, 36, 52)
+
+	setVaultMode = function(mode)
+		skinUi.mode = mode == "cases" and "cases" or "inventory"
+		BtnOpen.Visible = skinUi.mode == "cases"
+		BtnClear.Visible = skinUi.mode == "inventory"
+		BtnSelect.Visible = skinUi.mode == "inventory"
+		TabInv.BackgroundColor3 = skinUi.mode == "inventory" and Color3.fromRGB(30, 36, 52) or Color3.fromRGB(22, 24, 34)
+		TabInv.TextColor3 = skinUi.mode == "inventory" and Color3.fromRGB(235, 240, 250) or Color3.fromRGB(160, 170, 190)
+		TabCases.BackgroundColor3 = skinUi.mode == "cases" and Color3.fromRGB(40, 34, 28) or Color3.fromRGB(22, 24, 34)
+		TabCases.TextColor3 = skinUi.mode == "cases" and Color3.fromRGB(255, 220, 140) or Color3.fromRGB(160, 170, 190)
+		rebuildClassChips()
+		refreshWeaponSidebar()
+		refreshSkinGrid()
 	end
+
+	rebuildClassChips()
 
 	SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 		skinUi.filter = SearchBox.Text or ""
@@ -1051,119 +1254,113 @@ function UISkinVault.build(opts)
 		refreshSkinGrid()
 	end)
 
-	local function runFakeUnbox()
+	TabInv.MouseButton1Click:Connect(function()
+		setVaultMode("inventory")
+	end)
+	TabCases.MouseButton1Click:Connect(function()
+		setVaultMode("cases")
+	end)
+
+	local function runCaseOpen()
 		if unboxBusy then
 			return
 		end
-		local gun = skinUi.weapon
-		if not gun then
+		local caseId = skinUi.caseId
+		if not caseId then
 			if showNotify then
-				showNotify("Pick a weapon first")
+				showNotify("Pick a case first")
 			end
 			return
 		end
-		if not S._crimSkinFakeUnbox then
+		if not S._crimSkinRollCase or not S._crimSkinOpenCase then
 			if showNotify then
-				showNotify("Fake unbox not ready")
+				showNotify("Case open not ready")
 			end
 			return
 		end
-		unboxBusy = true
 		local pool = {}
-		if S._crimSkinListSkins then
-			local okL, list = pcall(S._crimSkinListSkins, gun)
+		if S._crimSkinCaseContents then
+			local okL, list = pcall(S._crimSkinCaseContents, caseId, "all")
 			if okL and typeof(list) == "table" then
 				pool = list
 			end
 		end
 		if #pool == 0 then
-			unboxBusy = false
 			if showNotify then
-				showNotify("No skins for " .. tostring(gun))
+				showNotify("Case empty / still harvesting")
 			end
 			return
 		end
+		local win = S._crimSkinRollCase(caseId)
+		if typeof(win) ~= "table" then
+			if showNotify then
+				showNotify("Roll failed")
+			end
+			return
+		end
+		unboxBusy = true
 
 		local Overlay = C("Frame", {
-			Name = "FakeUnbox",
+			Name = "CaseReel",
 			Size = UDim2.fromScale(1, 1),
 			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 0.35,
+			BackgroundTransparency = 0.4,
 			BorderSizePixel = 0,
 			ZIndex = 40,
 			Parent = Vault,
 		})
 		local Panel = C("Frame", {
-			Size = UDim2.new(0, 320, 0, 220),
-			Position = UDim2.new(0.5, -160, 0.5, -110),
-			BackgroundColor3 = Color3.fromRGB(18, 20, 28),
+			Size = UDim2.new(0, 420, 0, 200),
+			Position = UDim2.new(0.5, -210, 0.5, -100),
+			BackgroundColor3 = Color3.fromRGB(16, 18, 26),
 			BorderSizePixel = 0,
+			ClipsDescendants = true,
 			ZIndex = 41,
 			Parent = Overlay,
 		})
 		C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Panel })
-		C("UIStroke", { Color = Color3.fromRGB(255, 200, 90), Thickness = 1.5, Transparency = 0.2, Parent = Panel })
+		C("UIStroke", { Color = Color3.fromRGB(255, 200, 90), Thickness = 1.5, Transparency = 0.15, Parent = Panel })
 		local Title = C("TextLabel", {
 			Size = UDim2.new(1, -20, 0, 22),
-			Position = UDim2.new(0, 10, 0, 10),
+			Position = UDim2.new(0, 10, 0, 8),
 			BackgroundTransparency = 1,
-			Text = "Fake Unbox · " .. tostring(gun),
+			Text = "Opening · " .. tostring(caseId),
 			Font = Enum.Font.GothamBold,
 			TextSize = 14,
 			TextColor3 = Color3.fromRGB(255, 220, 140),
 			ZIndex = 42,
 			Parent = Panel,
 		})
-		local SpinCard = C("Frame", {
-			Size = UDim2.new(0, 160, 0, 130),
-			Position = UDim2.new(0.5, -80, 0, 42),
-			BackgroundColor3 = Color3.fromRGB(24, 26, 36),
+		local ReelClip = C("Frame", {
+			Size = UDim2.new(1, -24, 0, 120),
+			Position = UDim2.new(0, 12, 0, 36),
+			BackgroundColor3 = Color3.fromRGB(12, 14, 20),
 			BorderSizePixel = 0,
+			ClipsDescendants = true,
 			ZIndex = 42,
 			Parent = Panel,
 		})
-		C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = SpinCard })
-		local SpinStroke = C("UIStroke", {
-			Color = Color3.fromRGB(180, 190, 210),
-			Thickness = 2,
-			Parent = SpinCard,
+		C("UICorner", { CornerRadius = UDim.new(0, 8), Parent = ReelClip })
+		local Marker = C("Frame", {
+			Size = UDim2.new(0, 2, 1, 0),
+			Position = UDim2.new(0.5, -1, 0, 0),
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BorderSizePixel = 0,
+			ZIndex = 50,
+			Parent = ReelClip,
 		})
-		local SpinImg = C("ImageLabel", {
-			Size = UDim2.new(1, -20, 0, 78),
-			Position = UDim2.new(0, 10, 0, 12),
+		local Reel = C("Frame", {
+			Size = UDim2.new(0, 0, 1, 0),
+			Position = UDim2.new(0, 0, 0, 0),
 			BackgroundTransparency = 1,
-			ScaleType = Enum.ScaleType.Fit,
 			ZIndex = 43,
-			Parent = SpinCard,
-		})
-		local SpinName = C("TextLabel", {
-			Size = UDim2.new(1, -12, 0, 18),
-			Position = UDim2.new(0, 6, 1, -36),
-			BackgroundTransparency = 1,
-			Text = "...",
-			Font = Enum.Font.GothamSemibold,
-			TextSize = 12,
-			TextColor3 = Color3.fromRGB(235, 238, 245),
-			TextTruncate = Enum.TextTruncate.AtEnd,
-			ZIndex = 43,
-			Parent = SpinCard,
-		})
-		local SpinRar = C("TextLabel", {
-			Size = UDim2.new(1, -12, 0, 14),
-			Position = UDim2.new(0, 6, 1, -18),
-			BackgroundTransparency = 1,
-			Text = "",
-			Font = Enum.Font.GothamMedium,
-			TextSize = 11,
-			TextColor3 = Color3.fromRGB(180, 190, 210),
-			ZIndex = 43,
-			Parent = SpinCard,
+			Parent = ReelClip,
 		})
 		local Hint = C("TextLabel", {
 			Size = UDim2.new(1, -20, 0, 16),
-			Position = UDim2.new(0, 10, 1, -28),
+			Position = UDim2.new(0, 10, 1, -24),
 			BackgroundTransparency = 1,
-			Text = "client-only · no real case",
+			Text = "client-only · Odds from CaseContents",
 			Font = Enum.Font.Gotham,
 			TextSize = 10,
 			TextColor3 = Color3.fromRGB(120, 130, 150),
@@ -1171,46 +1368,95 @@ function UISkinVault.build(opts)
 			Parent = Panel,
 		})
 
+		local CARD_W, CARD_GAP = 88, 6
+		local reelItems = {}
+		local pre = 28
+		for i = 1, pre do
+			reelItems[#reelItems + 1] = pool[math.random(1, #pool)]
+		end
+		local winIdx = pre + 1
+		reelItems[winIdx] = win
+		for i = 1, 8 do
+			reelItems[#reelItems + 1] = pool[math.random(1, #pool)]
+		end
+		for i, row in ipairs(reelItems) do
+			local col = skinAccent(row)
+			local card = C("Frame", {
+				Size = UDim2.new(0, CARD_W, 1, -12),
+				Position = UDim2.new(0, (i - 1) * (CARD_W + CARD_GAP), 0, 6),
+				BackgroundColor3 = Color3.fromRGB(22, 24, 34),
+				BorderSizePixel = 0,
+				ZIndex = 44,
+				Parent = Reel,
+			})
+			C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = card })
+			C("UIStroke", { Color = col, Thickness = 1.5, Transparency = 0.25, Parent = card })
+			local img = cmapImage(row.full, row.preview)
+			if img ~= "" then
+				C("ImageLabel", {
+					Size = UDim2.new(1, -8, 0, 64),
+					Position = UDim2.new(0, 4, 0, 6),
+					BackgroundTransparency = 1,
+					Image = img,
+					ScaleType = Enum.ScaleType.Fit,
+					ZIndex = 45,
+					Parent = card,
+				})
+			end
+			C("TextLabel", {
+				Size = UDim2.new(1, -6, 0, 28),
+				Position = UDim2.new(0, 3, 1, -32),
+				BackgroundTransparency = 1,
+				Text = (row.gun or "?") .. "\n" .. (row.label or "?"),
+				Font = Enum.Font.GothamSemibold,
+				TextSize = 9,
+				TextColor3 = Color3.fromRGB(230, 235, 245),
+				TextWrapped = true,
+				ZIndex = 45,
+				Parent = card,
+			})
+		end
+		Reel.Size = UDim2.new(0, #reelItems * (CARD_W + CARD_GAP), 1, 0)
+
+		-- center win card under marker
+		local clipW = ReelClip.AbsoluteSize.X
+		if clipW < 10 then
+			clipW = 396
+		end
+		local targetX = clipW * 0.5 - ((winIdx - 0.5) * (CARD_W + CARD_GAP))
+
 		task.spawn(function()
-			local steps = 18 + math.random(0, 8)
-			for i = 1, steps do
+			local startX = 40
+			Reel.Position = UDim2.new(0, startX, 0, 0)
+			local steps = 42
+			for s = 1, steps do
 				if not Overlay.Parent then
 					unboxBusy = false
 					return
 				end
-				local row = pool[math.random(1, #pool)]
-				local rar = normalizeRarity(row.rarity)
-				local col = skinAccent(row)
-				SpinStroke.Color = col
-				SpinName.Text = row.label or "?"
-				SpinRar.Text = RARITY_LABELS[rar] or rar
-				SpinRar.TextColor3 = col
-				SpinImg.Image = cmapImage(row.full, row.preview)
-				Title.Text = "Opening…"
-				task.wait(0.04 + i * 0.012)
+				local t = s / steps
+				-- ease out cubic
+				local e = 1 - (1 - t) ^ 3
+				local x = startX + (targetX - startX) * e
+				Reel.Position = UDim2.new(0, x, 0, 0)
+				task.wait(0.028 + t * 0.02)
 			end
-			local ok, msg, win = S._crimSkinFakeUnbox(gun)
-			if Overlay.Parent and typeof(win) == "table" then
-				local rar = normalizeRarity(win.rarity)
-				local col = skinAccent(win)
-				SpinStroke.Color = col
-				SpinName.Text = win.label or "?"
-				SpinRar.Text = RARITY_LABELS[rar] or rar
-				SpinRar.TextColor3 = col
-				SpinImg.Image = cmapImage(win.full, win.preview)
-				Title.Text = ok and ("Won · " .. (win.label or "?")) or "Fail"
-				Hint.Text = tostring(msg or "")
-			elseif Overlay.Parent then
-				Title.Text = "Fail"
-				Hint.Text = tostring(msg or "no result")
+			Reel.Position = UDim2.new(0, targetX, 0, 0)
+			local ok, msg
+			if S._crimSkinPick and win.gun and win.full then
+				ok, msg = S._crimSkinPick(win.gun, win.full)
+			else
+				ok, msg = S._crimSkinOpenCase(caseId)
 			end
+			Title.Text = ok and ("Won · " .. tostring(win.label)) or "Fail"
+			Hint.Text = string.format("%s · %s · %s", tostring(win.gun), tostring(win.rarity), tostring(msg or ""))
 			persistSkins()
 			refreshWeaponSidebar()
 			refreshSkinGrid()
-			if showNotify and typeof(win) == "table" then
-				showNotify("Unboxed: " .. tostring(win.label or msg))
+			if showNotify then
+				showNotify(string.format("Unboxed %s (%s)", tostring(win.label), tostring(win.gun)))
 			end
-			task.wait(1.15)
+			task.wait(1.35)
 			if Overlay.Parent then
 				Overlay:Destroy()
 			end
@@ -1218,7 +1464,7 @@ function UISkinVault.build(opts)
 		end)
 	end
 
-	BtnUnbox.MouseButton1Click:Connect(runFakeUnbox)
+	BtnOpen.MouseButton1Click:Connect(runCaseOpen)
 
 	-- Controls below Inventory vault
 	MakeTog(CSkins, "Enable Skin Changer", "CrimSkinChanger", 10, { flat = true })
