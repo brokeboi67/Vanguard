@@ -4500,6 +4500,8 @@ misc.skinChanger = {
 	active = false,
 	lastToolName = "",
 	cycleIdx = {},
+	meshToGun = {}, -- MeshId → gunName (dropped Models are all named "Model")
+	_dropAt = 0,
 }
 
 function misc.skinChanger.clearConns()
@@ -4889,6 +4891,48 @@ function misc.skinChanger.dump()
 	return text, #lines
 end
 
+function misc.skinChanger.indexMeshes(root, gunName)
+	if not root or not gunName or gunName == "" then
+		return
+	end
+	local map = misc.skinChanger.meshToGun
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			local mid = ""
+			pcall(function()
+				mid = tostring(d.MeshId or "")
+			end)
+			if mid ~= "" and mid ~= "rbxassetid://0" and not string.find(mid, "ContentId", 1, true) then
+				map[mid] = gunName
+			end
+		end
+	end
+end
+
+function misc.skinChanger.indexInventory()
+	local lp = getLP()
+	if not lp then
+		return
+	end
+	local function scan(container)
+		if not container then
+			return
+		end
+		for _, ch in ipairs(container:GetChildren()) do
+			if misc.skinChanger.isSkinnableTool(ch) then
+				misc.skinChanger.indexMeshes(ch, ch.Name)
+			end
+		end
+	end
+	scan(lp:FindFirstChild("Backpack"))
+	scan(lp.Character)
+	local chars = workspace:FindFirstChild("Characters")
+	local model = chars and chars:FindFirstChild(lp.Name)
+	if model then
+		scan(model)
+	end
+end
+
 function misc.skinChanger.contentId(val)
 	if val == nil then
 		return ""
@@ -5182,11 +5226,45 @@ function misc.skinChanger.resolveDroppedGunName(model)
 	if not model then
 		return nil
 	end
+	for _, key in ipairs({ "Name", "Item", "ToolName", "GunName", "DisplayName", "Weapon", "WeaponName" }) do
+		local val = model:GetAttribute(key)
+		if val ~= nil and tostring(val) ~= "" then
+			return tostring(val)
+		end
+	end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("StringValue") or d:IsA("ObjectValue") then
+			local n = d.Name
+			if n == "Name" or n == "Item" or n == "ToolName" or n == "GunName" or n == "Weapon" then
+				local v = d.Value
+				if typeof(v) == "string" and v ~= "" then
+					return v
+				end
+				if typeof(v) == "Instance" and v.Name ~= "" then
+					return v.Name
+				end
+			end
+		end
+	end
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("SurfaceAppearance") then
 			local us = string.find(d.Name, "_", 1, true)
 			if us and us > 1 then
 				return string.sub(d.Name, 1, us - 1)
+			end
+		end
+	end
+	-- MeshId fingerprint (indexed from held/backpack tools)
+	local map = misc.skinChanger.meshToGun
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			local mid = ""
+			pcall(function()
+				mid = tostring(d.MeshId or "")
+			end)
+			local gun = map[mid]
+			if gun then
+				return gun
 			end
 		end
 	end
@@ -5286,10 +5364,20 @@ end
 function misc.skinChanger.getSavedSkinKey(gunName)
 	local S = _G.__VG_S or {}
 	local map = S.CrimGunSkins
-	if typeof(map) ~= "table" then
+	if typeof(map) ~= "table" or not gunName then
 		return nil
 	end
-	return map[gunName]
+	local direct = map[gunName]
+	if direct then
+		return direct
+	end
+	local lower = string.lower(gunName)
+	for k, v in pairs(map) do
+		if typeof(k) == "string" and string.lower(k) == lower then
+			return v
+		end
+	end
+	return nil
 end
 
 function misc.skinChanger.setSavedSkinKey(gunName, skinKey)
@@ -5311,6 +5399,7 @@ function misc.skinChanger.applyToTool(tool, template, quiet)
 	if not tool or not template then
 		return 0
 	end
+	misc.skinChanger.indexMeshes(tool, tool.Name)
 	local n = misc.skinChanger.applyTemplateToInstance(tool, template, quiet)
 	local cam = workspace.CurrentCamera
 	local vm = cam and cam:FindFirstChild("ViewModel")
@@ -5364,12 +5453,13 @@ function misc.skinChanger.tick()
 	-- only equipped gun — do NOT spam backpack every frame
 	local tool = misc.skinChanger.findActiveGun()
 	if tool then
+		misc.skinChanger.indexMeshes(tool, tool.Name)
 		misc.skinChanger.applySavedForTool(tool, true)
 	end
 	local S = _G.__VG_S
 	if S and S.CrimSkinDropped then
 		local now = tick()
-		if (now - (misc.skinChanger._dropAt or 0)) >= 0.75 then
+		if (now - (misc.skinChanger._dropAt or 0)) >= 0.35 then
 			misc.skinChanger._dropAt = now
 			misc.skinChanger.applyDroppedModels()
 		end
@@ -5475,9 +5565,17 @@ function misc.skinChanger.start()
 					return
 				end
 				task.defer(function()
-					task.wait(0.25)
 					local S = _G.__VG_S
-					if S and S.CrimSkinDropped then
+					if not S or not S.CrimSkinDropped then
+						return
+					end
+					-- meshes stream in late — retry
+					for _, delaySec in ipairs({ 0.15, 0.5, 1.2 }) do
+						task.wait(delaySec)
+						if not ch.Parent then
+							return
+						end
+						misc.skinChanger.indexInventory()
 						misc.skinChanger.applyToDroppedModel(ch)
 					end
 				end)
@@ -5523,6 +5621,7 @@ function misc.skinChanger.start()
 		)
 	end
 	misc.skinChanger.tick()
+	misc.skinChanger.indexInventory()
 	misc.skinChanger.bindUi(_G.__VG_S)
 end
 
@@ -6465,8 +6564,16 @@ local function startMaster(S)
 		if featureRunning.skipIntro and master.frame % 60 == 0 then
 			pcall(misc.skipIntro.apply, true)
 		end
-		if featureRunning.skinChanger and master.frame % 180 == 0 then
-			pcall(misc.skinChanger.tick)
+		if featureRunning.skinChanger then
+			-- held gun + dropped skins (was %180 — drops never looked skinned)
+			if master.frame % 20 == 0 then
+				pcall(misc.skinChanger.tick)
+			elseif S.CrimSkinDropped and master.frame % 15 == 7 then
+				pcall(misc.skinChanger.applyDroppedModels)
+			end
+			if master.frame % 120 == 0 then
+				pcall(misc.skinChanger.indexInventory)
+			end
 		end
 
 		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
