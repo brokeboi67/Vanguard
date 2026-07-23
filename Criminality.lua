@@ -5002,7 +5002,8 @@ function misc.skinChanger.getTexCatalog()
 	end)
 	misc.skinChanger._texCat = cat
 	misc.skinChanger._meshVarCat = meshCat
-	-- Live getgc fill for MeshVariant (official link → SkinVariants)
+	misc.skinChanger._rarityCat = misc.skinChanger._rarityCat or {}
+	-- Live getgc fill for MeshVariant + Rarity
 	task.defer(function()
 		misc.skinChanger.harvestMeshVariantsFromGc()
 	end)
@@ -5014,6 +5015,80 @@ function misc.skinChanger.getMeshVariantCatalog()
 	return misc.skinChanger._meshVarCat or {}
 end
 
+function misc.skinChanger.getRarityCatalog()
+	misc.skinChanger.getTexCatalog()
+	return misc.skinChanger._rarityCat or {}
+end
+
+-- Crim rarity → CS-like card colors
+misc.skinChanger.RARITY_COLORS = {
+	common = Color3.fromRGB(176, 195, 217),
+	subcommon = Color3.fromRGB(160, 175, 195),
+	uncommon = Color3.fromRGB(94, 152, 217),
+	rare = Color3.fromRGB(75, 105, 255),
+	legendary = Color3.fromRGB(211, 44, 230),
+	exotic = Color3.fromRGB(235, 75, 75),
+	limited = Color3.fromRGB(255, 215, 50),
+	unknown = Color3.fromRGB(120, 125, 140),
+}
+
+misc.skinChanger.RARITY_WEIGHT = {
+	common = 100,
+	subcommon = 70,
+	uncommon = 35,
+	rare = 12,
+	legendary = 3,
+	exotic = 1,
+	limited = 0.5,
+	unknown = 20,
+}
+
+function misc.skinChanger.normalizeRarity(r)
+	if typeof(r) ~= "string" or r == "" then
+		return "unknown"
+	end
+	local s = string.lower(r)
+	if s == "sub-common" or s == "sub_common" then
+		return "subcommon"
+	end
+	if misc.skinChanger.RARITY_COLORS[s] then
+		return s
+	end
+	return "unknown"
+end
+
+function misc.skinChanger.rarityColor(r)
+	local key = misc.skinChanger.normalizeRarity(r)
+	return misc.skinChanger.RARITY_COLORS[key] or misc.skinChanger.RARITY_COLORS.unknown
+end
+
+function misc.skinChanger.lookupRarity(gunName, displayName)
+	if typeof(displayName) ~= "string" or displayName == "" then
+		return nil
+	end
+	local rarityCat = misc.skinChanger.getRarityCatalog()
+	local want = string.lower(displayName)
+	local wantC = string.gsub(want, "%s+", "")
+	for _, key in ipairs(misc.skinChanger.catalogKeysForGun(gunName)) do
+		local bucket = rarityCat[key]
+		if typeof(bucket) == "table" then
+			local direct = bucket[displayName]
+			if typeof(direct) == "string" and direct ~= "" then
+				return misc.skinChanger.normalizeRarity(direct)
+			end
+			for disp, rar in pairs(bucket) do
+				if typeof(disp) == "string" and typeof(rar) == "string" then
+					local d = string.lower(disp)
+					if d == want or string.gsub(d, "%s+", "") == wantC then
+						return misc.skinChanger.normalizeRarity(rar)
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
 function misc.skinChanger.harvestMeshVariantsFromGc()
 	if misc.skinChanger._meshGcDone then
 		return misc.skinChanger._meshVarCat or {}
@@ -5023,6 +5098,51 @@ function misc.skinChanger.harvestMeshVariantsFromGc()
 		return misc.skinChanger._meshVarCat or {}
 	end
 	local meshCat = misc.skinChanger._meshVarCat or {}
+	local rarityCat = misc.skinChanger._rarityCat or {}
+	-- Also load rarity JSON if present
+	pcall(function()
+		if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+			return
+		end
+		local HS = game:GetService("HttpService")
+		for _, path in ipairs({
+			"VG_CrimSkinRarities.json",
+			"CrimSkinRarities.json",
+			"Vanguard/CrimSkinRarities.json",
+			"VG_FullDump/12_gc_skin_rarities.json",
+		}) do
+			if isfile(path) then
+				local ok, decoded = pcall(function()
+					return HS:JSONDecode(readfile(path))
+				end)
+				if ok and typeof(decoded) == "table" then
+					for gun, skins in pairs(decoded) do
+						if typeof(skins) == "table" then
+							rarityCat[gun] = rarityCat[gun] or {}
+							for disp, rar in pairs(skins) do
+								if typeof(disp) == "string" and typeof(rar) == "string" then
+									rarityCat[gun][disp] = misc.skinChanger.normalizeRarity(rar)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+		if typeof(_G.__VG_CrimSkinRarities) == "table" then
+			for gun, skins in pairs(_G.__VG_CrimSkinRarities) do
+				if typeof(skins) == "table" then
+					rarityCat[gun] = rarityCat[gun] or {}
+					for disp, rar in pairs(skins) do
+						if typeof(disp) == "string" and typeof(rar) == "string" then
+							rarityCat[gun][disp] = misc.skinChanger.normalizeRarity(rar)
+						end
+					end
+				end
+			end
+		end
+	end)
+
 	local ok, gc = pcall(getgc, true)
 	if ok and typeof(gc) == "table" then
 		local n = 0
@@ -5032,15 +5152,20 @@ function misc.skinChanger.harvestMeshVariantsFromGc()
 				task.wait()
 			end
 			if typeof(v) == "table" then
-				local ok2, tex, name, disp, mesh = pcall(function()
-					return v.TextureID, v.ItemName, v.DisplayName, v.MeshVariant
+				local ok2, tex, name, disp, mesh, rarity = pcall(function()
+					return v.TextureID, v.ItemName, v.DisplayName, v.MeshVariant, v.Rarity
 				end)
 				if ok2 and typeof(name) == "string" and name ~= ""
 					and typeof(disp) == "string" and disp ~= ""
-					and typeof(mesh) == "string" and mesh ~= ""
 				then
-					meshCat[name] = meshCat[name] or {}
-					meshCat[name][disp] = mesh
+					if typeof(mesh) == "string" and mesh ~= "" then
+						meshCat[name] = meshCat[name] or {}
+						meshCat[name][disp] = mesh
+					end
+					if typeof(rarity) == "string" and rarity ~= "" then
+						rarityCat[name] = rarityCat[name] or {}
+						rarityCat[name][disp] = misc.skinChanger.normalizeRarity(rarity)
+					end
 					if typeof(tex) == "number" and tex > 1000 then
 						local cat = misc.skinChanger._texCat
 						if cat then
@@ -5055,14 +5180,16 @@ function misc.skinChanger.harvestMeshVariantsFromGc()
 		end
 	end
 	misc.skinChanger._meshVarCat = meshCat
+	misc.skinChanger._rarityCat = rarityCat
 	misc.skinChanger._meshGcDone = true
-	misc.skinChanger.log(string.format("MeshVariant harvest guns=%d", (function()
-		local c = 0
-		for _ in pairs(meshCat) do
-			c += 1
-		end
-		return c
-	end)()))
+	local meshGuns, rarGuns = 0, 0
+	for _ in pairs(meshCat) do
+		meshGuns += 1
+	end
+	for _ in pairs(rarityCat) do
+		rarGuns += 1
+	end
+	misc.skinChanger.log(string.format("Cosmetic meta harvest meshGuns=%d rarityGuns=%d", meshGuns, rarGuns))
 	return meshCat
 end
 
@@ -5246,6 +5373,7 @@ function misc.skinChanger.listTexSkinsForGun(gunName)
 						texId = id,
 						preview = "rbxassetid://" .. tostring(id),
 						meshVariant = misc.skinChanger.lookupMeshVariant(gunName, disp),
+						rarity = misc.skinChanger.lookupRarity(gunName, disp),
 					}
 				end
 			end
@@ -7541,26 +7669,33 @@ function misc.skinChanger.bindUi(S)
 	S._crimSkinListSkins = function(gunName)
 		local rows = {}
 		local saLabels = {}
+		local function attachRarity(row, lookupName)
+			local rar = row.rarity or misc.skinChanger.lookupRarity(gunName, lookupName or row.label)
+			row.rarity = rar or "unknown"
+			row.rarityColor = misc.skinChanger.rarityColor(row.rarity)
+			return row
+		end
 		local skins = misc.skinChanger.listSkinsForGun(gunName)
 		for _, sa in ipairs(skins) do
 			local label = misc.skinChanger.skinLabel(sa.Name)
 			saLabels[string.lower(label)] = true
-			rows[#rows + 1] = {
+			rows[#rows + 1] = attachRarity({
 				full = sa.Name,
 				label = label,
 				selected = misc.skinChanger.getSavedSkinKey(gunName) == sa.Name,
 				preview = misc.skinChanger.contentId(sa.ColorMap),
-			}
+			}, label)
 		end
 		for _, tex in ipairs(misc.skinChanger.listTexSkinsForGun(gunName)) do
 			if not saLabels[string.lower(tex.label)] then
 				saLabels[string.lower(tex.label)] = true
-				rows[#rows + 1] = {
+				rows[#rows + 1] = attachRarity({
 					full = tex.full,
 					label = tex.label,
 					selected = misc.skinChanger.getSavedSkinKey(gunName) == tex.full,
 					preview = tex.preview,
-				}
+					rarity = tex.rarity,
+				}, tex.label)
 			end
 		end
 		for _, var in ipairs(misc.skinChanger.listVariantSkinsForGun(gunName)) do
@@ -7572,16 +7707,51 @@ function misc.skinChanger.bindUi(S)
 				local lab = tmpl and misc.skinChanger.skinLabel(tmpl.Name) or (var.label .. " ★")
 				saLabels[string.lower(lab)] = true
 				saLabels[labKey] = true
-				rows[#rows + 1] = {
+				rows[#rows + 1] = attachRarity({
 					full = tmpl and tmpl.Name or var.full,
 					label = lab,
 					selected = misc.skinChanger.getSavedSkinKey(gunName) == (tmpl and tmpl.Name or var.full)
 						or misc.skinChanger.getSavedSkinKey(gunName) == var.full,
 					preview = tmpl and misc.skinChanger.contentId(tmpl.ColorMap) or var.preview,
-				}
+				}, tmpl and misc.skinChanger.skinLabel(tmpl.Name) or var.label)
 			end
 		end
 		return rows
+	end
+	-- Client-only weighted roll + apply (menusense-style fake unbox)
+	S._crimSkinFakeUnbox = function(gunName)
+		gunName = gunName or (misc.skinChanger.findActiveGun() and misc.skinChanger.findActiveGun().Name)
+		if not gunName then
+			return false, "pick a weapon", nil
+		end
+		ensureOn()
+		local rows = S._crimSkinListSkins(gunName)
+		if typeof(rows) ~= "table" or #rows == 0 then
+			return false, "no skins", nil
+		end
+		local total = 0
+		local weights = table.create(#rows)
+		for i, row in ipairs(rows) do
+			local key = misc.skinChanger.normalizeRarity(row.rarity)
+			local w = misc.skinChanger.RARITY_WEIGHT[key] or 20
+			weights[i] = w
+			total += w
+		end
+		if total <= 0 then
+			return false, "bad odds", nil
+		end
+		local roll = math.random() * total
+		local acc = 0
+		local win = rows[1]
+		for i, row in ipairs(rows) do
+			acc += weights[i]
+			if roll <= acc then
+				win = row
+				break
+			end
+		end
+		local ok, msg = misc.skinChanger.applyNamed(gunName, win.full)
+		return ok, msg or win.label, win
 	end
 	S._crimSkinPick = function(gunName, skinFull)
 		ensureOn()

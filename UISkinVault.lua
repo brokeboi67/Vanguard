@@ -3,13 +3,58 @@
 local UISkinVault = {}
 
 local SKIN_ACCENT = Color3.fromRGB(70, 140, 255)
-local RARITY = {
-	Color3.fromRGB(235, 75, 75),
-	Color3.fromRGB(211, 44, 230),
-	Color3.fromRGB(136, 71, 255),
-	Color3.fromRGB(75, 105, 255),
-	Color3.fromRGB(176, 195, 217),
+local FALLBACK_RARITY = Color3.fromRGB(120, 125, 140)
+local RARITY_COLORS = {
+	exotic = Color3.fromRGB(235, 75, 75),
+	legendary = Color3.fromRGB(211, 44, 230),
+	rare = Color3.fromRGB(75, 105, 255),
+	uncommon = Color3.fromRGB(94, 152, 217),
+	common = Color3.fromRGB(176, 195, 217),
+	subcommon = Color3.fromRGB(160, 175, 195),
+	limited = Color3.fromRGB(255, 215, 50),
+	unknown = FALLBACK_RARITY,
 }
+local RARITY_LABELS = {
+	exotic = "Exotic",
+	legendary = "Legendary",
+	rare = "Rare",
+	uncommon = "Uncommon",
+	common = "Common",
+	subcommon = "Subcommon",
+	limited = "Limited",
+	unknown = "?",
+}
+
+local function normalizeRarity(r)
+	if typeof(r) ~= "string" or r == "" then
+		return "unknown"
+	end
+	local s = string.lower(r)
+	if s == "sub-common" or s == "sub_common" then
+		return "subcommon"
+	end
+	if RARITY_COLORS[s] then
+		return s
+	end
+	return "unknown"
+end
+
+local function rarityColor(r)
+	return RARITY_COLORS[normalizeRarity(r)] or FALLBACK_RARITY
+end
+
+local function skinAccent(row)
+	if typeof(row) == "table" then
+		if typeof(row.rarityColor) == "Color3" then
+			return row.rarityColor
+		end
+		if row.rarity then
+			return rarityColor(row.rarity)
+		end
+	end
+	return FALLBACK_RARITY
+end
+
 local MELEE_NAMES = {
 	Bayonet = true, Katana = true, Rambo = true, Chainsaw = true,
 	Crowbar = true, Club = true, Wrench = true, Knife = true,
@@ -17,14 +62,6 @@ local MELEE_NAMES = {
 	Karambit = true, Kukri = true, Cleaver = true, Tactical = true,
 	Shiv = true, Pipe = true, Hammer = true,
 }
-
-local function skinHashColor(name)
-	local h = 0
-	for i = 1, #name do
-		h = (h * 31 + string.byte(name, i)) % 2147483647
-	end
-	return RARITY[(h % #RARITY) + 1]
-end
 
 local function isMeleeWeapon(name)
 	if MELEE_NAMES[name] then
@@ -303,6 +340,18 @@ function UISkinVault.build(opts)
 		ZIndex = 7,
 		Parent = Header,
 	})
+	local BtnUnbox = C("TextButton", {
+		Size = UDim2.new(0, 72, 0, 24),
+		Position = UDim2.new(0, 156, 0.5, -12),
+		BackgroundTransparency = 1,
+		Text = "Unbox",
+		Font = Enum.Font.GothamSemibold,
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(255, 200, 90),
+		AutoButtonColor = false,
+		ZIndex = 7,
+		Parent = Header,
+	})
 	C("TextLabel", {
 		Size = UDim2.new(0, 200, 1, 0),
 		Position = UDim2.new(0.5, -100, 0, 0),
@@ -397,13 +446,15 @@ function UISkinVault.build(opts)
 	local classFilter = "all"
 	local classDefs = {
 		{ key = "all", label = "All", color = Color3.fromRGB(180, 190, 210) },
-		{ key = 1, label = "Covert", color = RARITY[1] },
-		{ key = 2, label = "Classified", color = RARITY[2] },
-		{ key = 3, label = "Restricted", color = RARITY[3] },
-		{ key = 4, label = "Mil-Spec", color = RARITY[4] },
-		{ key = 5, label = "Industrial", color = RARITY[5] },
+		{ key = "exotic", label = "Exotic", color = RARITY_COLORS.exotic },
+		{ key = "legendary", label = "Legendary", color = RARITY_COLORS.legendary },
+		{ key = "rare", label = "Rare", color = RARITY_COLORS.rare },
+		{ key = "uncommon", label = "Uncommon", color = RARITY_COLORS.uncommon },
+		{ key = "common", label = "Common", color = RARITY_COLORS.common },
+		{ key = "limited", label = "Limited", color = RARITY_COLORS.limited },
 	}
 	local classBtns = {}
+	local unboxBusy = false
 
 	local Body = C("Frame", {
 		Size = UDim2.new(1, -16, 1, -118),
@@ -619,15 +670,9 @@ function UISkinVault.build(opts)
 
 	local function makeSkinCard(parent, gun, row, order, selected)
 		local lab = row.label or row.full
-		local accent = skinHashColor(lab)
-		local rarityIdx = 1
-		for i, c in ipairs(RARITY) do
-			if c == accent then
-				rarityIdx = i
-				break
-			end
-		end
-		if classFilter ~= "all" and classFilter ~= rarityIdx then
+		local rarKey = normalizeRarity(row.rarity)
+		local accent = skinAccent(row)
+		if classFilter ~= "all" and classFilter ~= rarKey then
 			return false
 		end
 
@@ -720,13 +765,25 @@ function UISkinVault.build(opts)
 			Parent = Card,
 		})
 		C("TextLabel", {
+			Size = UDim2.new(1, -12, 0, 14),
+			Position = UDim2.new(0, 6, 1, -36),
+			BackgroundTransparency = 1,
+			Text = RARITY_LABELS[rarKey] or rarKey,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 10,
+			TextColor3 = accent,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 10,
+			Parent = Card,
+		})
+		C("TextLabel", {
 			Size = UDim2.new(1, -12, 0, 16),
-			Position = UDim2.new(0, 6, 1, -22),
+			Position = UDim2.new(0, 6, 1, -20),
 			BackgroundTransparency = 1,
 			Text = selected and (gun .. "  EQUIPPED") or gun,
 			Font = Enum.Font.GothamBold,
-			TextSize = 12,
-			TextColor3 = selected and SKIN_ACCENT or accent,
+			TextSize = 11,
+			TextColor3 = selected and SKIN_ACCENT or Color3.fromRGB(170, 180, 200),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			ZIndex = 10,
@@ -993,6 +1050,175 @@ function UISkinVault.build(opts)
 		refreshWeaponSidebar()
 		refreshSkinGrid()
 	end)
+
+	local function runFakeUnbox()
+		if unboxBusy then
+			return
+		end
+		local gun = skinUi.weapon
+		if not gun then
+			if showNotify then
+				showNotify("Pick a weapon first")
+			end
+			return
+		end
+		if not S._crimSkinFakeUnbox then
+			if showNotify then
+				showNotify("Fake unbox not ready")
+			end
+			return
+		end
+		unboxBusy = true
+		local pool = {}
+		if S._crimSkinListSkins then
+			local okL, list = pcall(S._crimSkinListSkins, gun)
+			if okL and typeof(list) == "table" then
+				pool = list
+			end
+		end
+		if #pool == 0 then
+			unboxBusy = false
+			if showNotify then
+				showNotify("No skins for " .. tostring(gun))
+			end
+			return
+		end
+
+		local Overlay = C("Frame", {
+			Name = "FakeUnbox",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			BackgroundTransparency = 0.35,
+			BorderSizePixel = 0,
+			ZIndex = 40,
+			Parent = Vault,
+		})
+		local Panel = C("Frame", {
+			Size = UDim2.new(0, 320, 0, 220),
+			Position = UDim2.new(0.5, -160, 0.5, -110),
+			BackgroundColor3 = Color3.fromRGB(18, 20, 28),
+			BorderSizePixel = 0,
+			ZIndex = 41,
+			Parent = Overlay,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Panel })
+		C("UIStroke", { Color = Color3.fromRGB(255, 200, 90), Thickness = 1.5, Transparency = 0.2, Parent = Panel })
+		local Title = C("TextLabel", {
+			Size = UDim2.new(1, -20, 0, 22),
+			Position = UDim2.new(0, 10, 0, 10),
+			BackgroundTransparency = 1,
+			Text = "Fake Unbox · " .. tostring(gun),
+			Font = Enum.Font.GothamBold,
+			TextSize = 14,
+			TextColor3 = Color3.fromRGB(255, 220, 140),
+			ZIndex = 42,
+			Parent = Panel,
+		})
+		local SpinCard = C("Frame", {
+			Size = UDim2.new(0, 160, 0, 130),
+			Position = UDim2.new(0.5, -80, 0, 42),
+			BackgroundColor3 = Color3.fromRGB(24, 26, 36),
+			BorderSizePixel = 0,
+			ZIndex = 42,
+			Parent = Panel,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = SpinCard })
+		local SpinStroke = C("UIStroke", {
+			Color = Color3.fromRGB(180, 190, 210),
+			Thickness = 2,
+			Parent = SpinCard,
+		})
+		local SpinImg = C("ImageLabel", {
+			Size = UDim2.new(1, -20, 0, 78),
+			Position = UDim2.new(0, 10, 0, 12),
+			BackgroundTransparency = 1,
+			ScaleType = Enum.ScaleType.Fit,
+			ZIndex = 43,
+			Parent = SpinCard,
+		})
+		local SpinName = C("TextLabel", {
+			Size = UDim2.new(1, -12, 0, 18),
+			Position = UDim2.new(0, 6, 1, -36),
+			BackgroundTransparency = 1,
+			Text = "...",
+			Font = Enum.Font.GothamSemibold,
+			TextSize = 12,
+			TextColor3 = Color3.fromRGB(235, 238, 245),
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			ZIndex = 43,
+			Parent = SpinCard,
+		})
+		local SpinRar = C("TextLabel", {
+			Size = UDim2.new(1, -12, 0, 14),
+			Position = UDim2.new(0, 6, 1, -18),
+			BackgroundTransparency = 1,
+			Text = "",
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(180, 190, 210),
+			ZIndex = 43,
+			Parent = SpinCard,
+		})
+		local Hint = C("TextLabel", {
+			Size = UDim2.new(1, -20, 0, 16),
+			Position = UDim2.new(0, 10, 1, -28),
+			BackgroundTransparency = 1,
+			Text = "client-only · no real case",
+			Font = Enum.Font.Gotham,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(120, 130, 150),
+			ZIndex = 42,
+			Parent = Panel,
+		})
+
+		task.spawn(function()
+			local steps = 18 + math.random(0, 8)
+			for i = 1, steps do
+				if not Overlay.Parent then
+					unboxBusy = false
+					return
+				end
+				local row = pool[math.random(1, #pool)]
+				local rar = normalizeRarity(row.rarity)
+				local col = skinAccent(row)
+				SpinStroke.Color = col
+				SpinName.Text = row.label or "?"
+				SpinRar.Text = RARITY_LABELS[rar] or rar
+				SpinRar.TextColor3 = col
+				SpinImg.Image = cmapImage(row.full, row.preview)
+				Title.Text = "Opening…"
+				task.wait(0.04 + i * 0.012)
+			end
+			local ok, msg, win = S._crimSkinFakeUnbox(gun)
+			if Overlay.Parent and typeof(win) == "table" then
+				local rar = normalizeRarity(win.rarity)
+				local col = skinAccent(win)
+				SpinStroke.Color = col
+				SpinName.Text = win.label or "?"
+				SpinRar.Text = RARITY_LABELS[rar] or rar
+				SpinRar.TextColor3 = col
+				SpinImg.Image = cmapImage(win.full, win.preview)
+				Title.Text = ok and ("Won · " .. (win.label or "?")) or "Fail"
+				Hint.Text = tostring(msg or "")
+			elseif Overlay.Parent then
+				Title.Text = "Fail"
+				Hint.Text = tostring(msg or "no result")
+			end
+			persistSkins()
+			refreshWeaponSidebar()
+			refreshSkinGrid()
+			if showNotify and typeof(win) == "table" then
+				showNotify("Unboxed: " .. tostring(win.label or msg))
+			end
+			task.wait(1.15)
+			if Overlay.Parent then
+				Overlay:Destroy()
+			end
+			unboxBusy = false
+		end)
+	end
+
+	BtnUnbox.MouseButton1Click:Connect(runFakeUnbox)
 
 	-- Controls below Inventory vault
 	MakeTog(CSkins, "Enable Skin Changer", "CrimSkinChanger", 10, { flat = true })
