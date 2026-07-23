@@ -1,0 +1,198 @@
+-- Criminality skin TextureID dump 2026-07-23 20:44:15
+-- format: ItemName | DisplayName | TextureID | ...
+
+AKS-74U | Battleworn Camo | 13842105937 | rarity=common | class=Guns
+AKS-74U | Draco | 13388089214 | rarity=common | class=Guns
+AKS-74U | Formula | 16010501274 | rarity=rare | class=Guns
+AKS-74U | Jadestone | 13712930979 | rarity=legendary | class=Guns
+AKS-74U | Sharkbite | 11684759812 | rarity=rare | class=Guns
+BBaton | Magic Wand | 15447733301 | rarity=common | class=Melees
+BBaton | Marbleized | 16688079257 | rarity=rare | class=Melees
+BBaton | Silver-banded | 16688298201 | rarity=common | class=Melees
+Balisong | Black Pearl | 16259029052 | rarity=exotic | class=Melees
+Balisong | Bluegem | 16259042388 | rarity=exotic | class=Melees
+Balisong | Damascus | 16259055593 | rarity=exotic | class=Melees
+Balisong | Emerald | 16302919829 | rarity=exotic | class=Melees
+Balisong | Fade | 16688046816 | rarity=rare | class=Melees
+Balisong | Forest | 16259072166 | rarity=exotic | class=Melees
+Balisong | Olive Drift | 16259085913 | rarity=exotic | class=Melees
+Balisong | Rustic | 16259093221 | rarity=exotic | class=Melees
+Balisong | Tan | 15445188373 | rarity=common | class=Melees
+Balisong | Vanilla | 16259021346 | rarity=exotic | class=Melees
+Balisong | Viper | 14983742104 | rarity=uncommon | class=Melees
+Bat | Black Pearl | 15449155266 | rarity=exotic | class=Melees
+Bat | Blackjack | 16687987095 | rarity=legendary | class=Melees
+Bat | Bluegem | 15449171966 | rarity=exotic | class=Melees
+Bat | Cosmic | 15445293206 | rarity=rare | class=Melees
+Bat | Damascus | 15449190167 | rarity=exotic | class=Melees
+Bat | Emerald | 15449096192 | rarity=exotic | class=Melees
+Bat | Forest | 15449106139 | rarity=exotic | class=Melees
+Bat | Laminate | 14983660185 | rarity=uncommon | class=Melees
+Bat | Neapolitan | 16688469496 | rarity=common | class=Melees
+Bat | Olive Drift | 15449137460 | rarity=exotic | class=Melees
+Bat | Rustic | 15449148208 | rarity=exotic | class=Melees
+Bat | Spiffle | 15445297130 | rarity=common | class=Melees
+Bat | Vanilla | 15449203020 | rarity=exotic | class=Melees
+Bayonet | Hydrographed | 16688339293 | rarity=uncommon | class=Melees
+Bayonet | Red Topo | 14983041766 | rarity=common | class=Melees
+Bayonet | Violet | 15448020909 | rarity=uncommon | class=Melees
+Beretta | Clef | 13387793497 | rarity=uncommon | class=Guns
+Beretta | Moss | 13443011965 | rarity=common | class=Guns
+Beretta | Silvered | 15998401350 | rarity=common | class=Guns
+Beretta | Tiger | 13704090301 | rarity=uncommon | class=Guns
+Beretta | Urban Red | 13841598427 | rarity=common | class=Guns
+Chainsaw | Chromatic | 16688110086 | rarity=rare | class=Melees
+Chainsaw | Skull Forged | 15445199244 | rarity=uncommon | class=Melees
+Chainsaw | Teal Coat | 14983382088 | rarity=common | class=Melees
+Crowbar | Cobalt | 14982803953 | rarity=common | class=Melees
+Crowbar | Hazardous | 16688168392 | rarity=uncommon | class=Melees
+Deagle | Acrylic | 15178293739 | rarity=common | class=Guns
+Deagle | Ember | 16041800350 | rarity=rare | class=Guns
+Deagle | Federation | 15178328946 | rarity=legendary | class=Guns
+Deagle | Park Ranger | 82890912949650 | rarity=common | class=Guns
+Deagle | Plasma | 15178268561 | rarity=rare | class=Guns
+FN-FAL | Majesty | 13343296728 | rarity=rare | class=Guns
+FN-FAL | Merlot | 13566086660 | rarity=common | class=Guns
+FN-FAL | Purpleheart | 16040566709 | rarity=uncommon | class=Guns
+FNP-45 | Bloodshot | 13566144332 | rarity=uncommon | class=Guns
+FNP-45 | Route 66 | 97900310186218 | rarity=common | class=Guns
+FNP-45 | Tan | 15998535930 | rarity=common | class=Guns
+Fire-Axe | Axon | 16688204992 | rarity=uncommon | class=Melees
+Fire-Axe | Black Pearl | 15448222326 | rarity=exotic | class=Melees
+Fire-Axe | Bluegem | 15039861739 | rarity=exotic | class=Melees
+Fire-Axe | Damascus | 15039856279 | rarity=exotic | class=Melees
+Fire-Axe | Diesel | 15014647825 | rarity=rare | class=Melees
+Fire-Axe | Emerald | 16303083602 | rarity=exotic | class=Melees
+Fire-Axe | Forest | 15039850470 | rarity=exotic | class=Melees
+Fire-Axe | Jaws | 15450295670 | rarity=uncommon | class=Melees
+Fire-Axe | Kintsugi | 15039866167 | rarity=exotic | class=Melees
+Fire-Axe | Oak | 14983489673 | rarity=common | class=Melees
+Fire-Axe | Olive Drift | 15070266784 | rarity=exotic | class=Melees
+Fire-Axe | Rustic | 15039869342 | rarity=exotic | class=Melees
+Fire-Axe | Vanilla | 14984257142 | rarity=exotic | class=Melees
+G-17 | Amethyst | 9344560860 | rarity=legendary | class=Guns
+G-17 | Hot Pink | 15998559023 | rarity=legendary | class=Guns
+G-17 | Night | 10899181873 | rarity=common | class=Guns
+G-17 | Oxide | 13556396197 | rarity=rare | class=Guns
+G-17 | Sage | 10898774042 | rarity=common | class=Guns
+G-17 | Spitfire | 10898479150 | rarity=uncommon | class=Guns
+G-17 | Tan | 13841573907 | rarity=common | class=Guns
+Golfclub | Mocha | 15445223443 | rarity=common | class=Melees
+Golfclub | Orange Shift | 14983567442 | rarity=uncommon | class=Melees
+Ithaca-37 | Blaze | 13715287969 | rarity=rare | class=Guns
+Ithaca-37 | Darkmatter | 15998588320 | rarity=rare | class=Guns
+Ithaca-37 | Reserve | 13841786305 | rarity=uncommon | class=Guns
+Katana | Acacia | 16688145580 | rarity=uncommon | class=Melees
+Katana | Modest | 15445242510 | rarity=common | class=Melees
+Katana | Saphira | 14983772470 | rarity=rare | class=Melees
+M1911 | Apollo | 103849255254086 | rarity=uncommon | class=Guns
+M1911 | Darkheart | 13556210238 | rarity=legendary | class=Guns
+M1911 | Ironsight | 13388235569 | rarity=common | class=Guns
+M1911 | Rebel | 13410200181 | rarity=rare | class=Guns
+M1911 | Sandwaves | 15998637813 | rarity=common | class=Guns
+M1911 | Stainless | 13842570127 | rarity=uncommon | class=Guns
+M320-1 | Paintball | 13842616391 | rarity=uncommon | class=Guns
+M320-1 | Starburst | 73054764423158 | rarity=rare | class=Guns
+M4A1-1 | Aureus | 13714597872 | rarity=legendary | class=Guns
+M4A1-1 | Circuit | 13841653101 | rarity=rare | class=Guns
+M4A1-1 | Colonial | 79089334219309 | rarity=rare | class=Guns
+M4A1-1 | Monochrome | 13388680352 | rarity=common | class=Guns
+M4A1-1 | Tiles | 13387863271 | rarity=uncommon | class=Guns
+M4A1-1 | Yellowstone | 15998612264 | rarity=uncommon | class=Guns
+MAC-10 | & Cheese | 13556186332 | rarity=uncommon | class=Guns
+MAC-10 | Digital | 13388146611 | rarity=uncommon | class=Guns
+MAC-10 | Lost & Found | 13841550040 | rarity=common | class=Guns
+MAC-10 | Tropical | 13712974251 | rarity=rare | class=Guns
+MAC-10 | Urban Dispatch | 15998655169 | rarity=common | class=Guns
+MP7 | Hellrazor | 13842806014 | rarity=legendary | class=Guns
+MP7 | Navy | 13714361744 | rarity=common | class=Guns
+MP7 | Olive | 13404171867 | rarity=common | class=Guns
+Machete | Black Pearl | 15448244904 | rarity=exotic | class=Melees
+Machete | Bluegem | 15039202907 | rarity=exotic | class=Melees
+Machete | Damascus | 15039195623 | rarity=exotic | class=Melees
+Machete | Emerald | 16303081728 | rarity=exotic | class=Melees
+Machete | Forest | 15039175283 | rarity=exotic | class=Melees
+Machete | Olive Drift | 15070281320 | rarity=exotic | class=Melees
+Machete | Rustic | 15039186771 | rarity=exotic | class=Melees
+Machete | Scepter | 14984201334 | rarity=legendary | class=Melees
+Machete | Tix | 15445249285 | rarity=rare | class=Melees
+Machete | Undead | 15039210788 | rarity=exotic | class=Melees
+Machete | Vanilla | 15029004407 | rarity=exotic | class=Melees
+Machete | Wallwriter | 16688358515 | rarity=common | class=Melees
+Magnum | Abstract | 13851642216 | rarity=uncommon | class=Guns
+Magnum | Bronze | 13402004314 | rarity=common | class=Guns
+Mare | Maritime | 15998688712 | rarity=uncommon | class=Guns
+Mare | Old Banner | 107300431467219 | rarity=common | class=Guns
+Mare | Stallion | 13564997857 | rarity=uncommon | class=Guns
+Metal-Bat | Battle-scarred | 16688459862 | rarity=common | class=Melees
+Metal-Bat | Serpentine | 15028975758 | rarity=legendary | class=Melees
+Metal-Bat | Urban Leather | 14982908326 | rarity=common | class=Melees
+Metal-Bat | Vibecheck'd | 15445259400 | rarity=uncommon | class=Melees
+RPG-7 | Two-Tone | 13388376607 | rarity=uncommon | class=Guns
+Rambo | Black Pearl | 16268374444 | rarity=exotic | class=Melees
+Rambo | Bluegem | 16268374887 | rarity=exotic | class=Melees
+Rambo | Cocoa | 15449254329 | rarity=common | class=Melees
+Rambo | Damascus | 16268375476 | rarity=exotic | class=Melees
+Rambo | Emerald | 16268308309 | rarity=exotic | class=Melees
+Rambo | Forest | 16268376292 | rarity=exotic | class=Melees
+Rambo | Olive Drift | 16268376667 | rarity=exotic | class=Melees
+Rambo | Rustic | 16268377036 | rarity=exotic | class=Melees
+Rambo | SLASHA | 14983934299 | rarity=rare | class=Melees
+Rambo | Scorched | 16688015251 | rarity=legendary | class=Melees
+Rambo | Vanilla | 16268315355 | rarity=exotic | class=Melees
+SCAR-H-1 | Gridlines | 16010528228 | rarity=uncommon | class=Guns
+SCAR-H-1 | Kingbreaker | 74075354313356 | rarity=legendary | class=Guns
+SCAR-H-1 | MIL-SPEC | 13703883944 | rarity=uncommon | class=Guns
+SKS | Copper | 13388317796 | rarity=common | class=Guns
+SKS | Jester | 13343195152 | rarity=legendary | class=Guns
+SKS | Modern | 13388174747 | rarity=common | class=Guns
+SKS | Paragon | 15998710650 | rarity=common | class=Guns
+SKS | Umbrella | 13841609325 | rarity=uncommon | class=Guns
+Sawn-Off | Banana | 13387477962 | rarity=uncommon | class=Guns
+Sawn-Off | Caution | 10959354994 | rarity=common | class=Guns
+Sawn-Off | Grand Prix | 13842331455 | rarity=rare | class=Guns
+Sawn-Off | Logs | 13556265064 | rarity=common | class=Guns
+Sawn-Off | Multicam | 15998421683 | rarity=common | class=Guns
+Scout | Redwood | 13713221958 | rarity=uncommon | class=Guns
+Shovel | Olive-worn | 16688313893 | rarity=common | class=Melees
+Shovel | Smiley 2 | 14984663303 | rarity=uncommon | class=Melees
+Shovel | Sovereign | 15445272453 | rarity=legendary | class=Melees
+Sledgehammer | Porcelain | 15447463984 | rarity=legendary | class=Melees
+Sledgehammer | Weighted Bronze | 16689250659 | rarity=uncommon | class=Melees
+Super-Shorty | Checkmate | 13713148936 | rarity=uncommon | class=Guns
+Super-Shorty | Steel | 13394160404 | rarity=common | class=Guns
+TEC-9 | Cotton Cloud | 15998727136 | rarity=uncommon | class=Guns
+TEC-9 | Diner | 13713002732 | rarity=rare | class=Guns
+TEC-9 | Import | 13556236652 | rarity=common | class=Guns
+TEC-9 | Lilac | 13841536261 | rarity=common | class=Guns
+TEC-9 | Snakeskin | 13566205064 | rarity=common | class=Guns
+TEC-9 | Star-9 | 13387517349 | rarity=uncommon | class=Guns
+Taiga | 404 | 15448951687 | rarity=rare | class=Melees
+Taiga | Bubblegum | 14983890123 | rarity=uncommon | class=Melees
+Taiga | Conductor | 14982945679 | rarity=common | class=Melees
+Taiga | Scale Mail | 16688381364 | rarity=common | class=Melees
+Taiga | Scuffed | 15449276653 | rarity=common | class=Melees
+Tommy | Currant | 13841589575 | rarity=common | class=Guns
+Tommy | Leatherworks | 13565052794 | rarity=legendary | class=Guns
+Tommy | Mobster | 13402012166 | rarity=common | class=Guns
+Tommy | Plum | 13388353769 | rarity=common | class=Guns
+Tommy | Tailgunner | 127730181277980 | rarity=uncommon | class=Guns
+UMP-45 | Burnt Umber | 13842577137 | rarity=common | class=Guns
+UMP-45 | Honeycomb | 13713093970 | rarity=uncommon | class=Guns
+Uzi | Crimson Jaw | 13343333197 | rarity=rare | class=Guns
+Uzi | Grape | 13387916321 | rarity=common | class=Guns
+Uzi | Guilded | 15998742287 | rarity=legendary | class=Guns
+Uzi | Rust | 13715501813 | rarity=common | class=Guns
+Uzi | Smiley | 13841671610 | rarity=rare | class=Guns
+Wrench | Black Pearl | 15448181005 | rarity=exotic | class=Melees
+Wrench | Bluegem | 15039886621 | rarity=exotic | class=Melees
+Wrench | Contractor | 14982843649 | rarity=common | class=Melees
+Wrench | Corrosion | 15039908965 | rarity=exotic | class=Melees
+Wrench | Damascus | 15039883793 | rarity=exotic | class=Melees
+Wrench | Emerald | 15448075670 | rarity=exotic | class=Melees
+Wrench | Green Mask | 15451673831 | rarity=uncommon | class=Melees
+Wrench | Kintsugi | 15039897126 | rarity=exotic | class=Melees
+Wrench | Mr. Wrench | 16688443083 | rarity=common | class=Melees
+Wrench | Olive Drift | 15070249049 | rarity=exotic | class=Melees
+Wrench | Rustic | 15039905170 | rarity=exotic | class=Melees
+Wrench | Vanilla | 14984302065 | rarity=exotic | class=Melees

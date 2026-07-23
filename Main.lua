@@ -593,7 +593,7 @@ local CRIM_GAME_ID = 1494262959
 local isCriminality = game.GameId == CRIM_GAME_ID
 
 -- Base modules always fetched (Core → GameSupport). +4 Criminality modules when needed.
-local LOAD_TOTAL = 30 + (isCriminality and 4 or 0)
+local LOAD_TOTAL = 30 + (isCriminality and 5 or 0)
 local loadStep = 0
 
 local function bootProgress(label, pct, countText, animate)
@@ -668,6 +668,7 @@ local MODULE_FILES = {
 }
 if isCriminality then
 	table.insert(MODULE_FILES, "Criminality.lua")
+	table.insert(MODULE_FILES, "CrimSkinIds.lua")
 	table.insert(MODULE_FILES, "PathDisplay.lua")
 	table.insert(MODULE_FILES, "ClientBuild.lua")
 	table.insert(MODULE_FILES, "BountyTracker.lua")
@@ -951,6 +952,13 @@ local GameSupport = Get("GameSupport.lua")
 -- Heavy game-specific module: don't HttpGet/compile outside Criminality
 local Criminality = nil
 if isCriminality then
+	-- TextureID skin catalog (getgc dump) — merged with RepPBR in skinChanger
+	pcall(function()
+		local ids = Get("CrimSkinIds.lua")
+		if typeof(ids) == "table" then
+			_G.__VG_CrimSkinIds = ids
+		end
+	end)
 	Criminality = Get("Criminality.lua")
 	if Criminality and Criminality.StartMenuMusicEarly then
 		pcall(Criminality.StartMenuMusicEarly, Settings)
