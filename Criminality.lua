@@ -9021,6 +9021,229 @@ function Criminality.ScanInventories()
 	return out
 end
 
+-- ── SESSION ECO (GotCash / GotXP / LevelUp — listen only, no Fire) ──────────
+-- Event-driven: zero Heartbeat work. UpdateClient skipped (cosmetics spam +
+-- would double-count with GotCash/GotXP).
+misc.sessionEco = {
+	cash = 0,
+	xp = 0,
+	levels = 0,
+	start = 0,
+	hooked = false,
+	dirty = true,
+	conns = {},
+	bound = {},
+	lastLevel = nil,
+}
+
+function misc.sessionEco.extractNum(v)
+	local t = typeof(v)
+	if t == "number" then
+		return v
+	end
+	if t == "string" then
+		return tonumber(v)
+	end
+	if t ~= "table" then
+		return nil
+	end
+	local keys = {
+		"Amount", "amount", "Cash", "cash", "Money", "money",
+		"XP", "xp", "Exp", "exp", "Value", "value", "Delta", "delta", "n",
+	}
+	for i = 1, #keys do
+		local n = tonumber(v[keys[i]])
+		if n ~= nil then
+			return n
+		end
+	end
+	-- first numeric array slot (some remotes fire {amount})
+	local n0 = tonumber(v[1])
+	if n0 ~= nil then
+		return n0
+	end
+	return nil
+end
+
+function misc.sessionEco.extractFromArgs(...)
+	local n = select("#", ...)
+	for i = 1, n do
+		local v = misc.sessionEco.extractNum(select(i, ...))
+		if v ~= nil then
+			return v
+		end
+	end
+	return nil
+end
+
+function misc.sessionEco.mark()
+	misc.sessionEco.dirty = true
+end
+
+function misc.sessionEco.addCash(n)
+	n = tonumber(n)
+	if not n or n <= 0 then
+		return
+	end
+	misc.sessionEco.cash += n
+	misc.sessionEco.mark()
+end
+
+function misc.sessionEco.addXp(n)
+	n = tonumber(n)
+	if not n or n <= 0 then
+		return
+	end
+	misc.sessionEco.xp += n
+	misc.sessionEco.mark()
+end
+
+function misc.sessionEco.onLevel(...)
+	misc.sessionEco.levels += 1
+	local n = misc.sessionEco.extractFromArgs(...)
+	if n and n > 0 and n < 10000 then
+		misc.sessionEco.lastLevel = math.floor(n)
+	end
+	misc.sessionEco.mark()
+end
+
+function misc.sessionEco.reset()
+	misc.sessionEco.cash = 0
+	misc.sessionEco.xp = 0
+	misc.sessionEco.levels = 0
+	misc.sessionEco.start = tick()
+	misc.sessionEco.lastLevel = nil
+	misc.sessionEco.mark()
+end
+
+function misc.sessionEco.snapshot()
+	local e = misc.sessionEco
+	local elapsed = math.max(tick() - (e.start > 0 and e.start or tick()), 1e-3)
+	local mins = elapsed / 60
+	return {
+		cash = e.cash,
+		xp = e.xp,
+		levels = e.levels,
+		start = e.start,
+		elapsed = elapsed,
+		cashPerMin = e.cash / mins,
+		xpPerMin = e.xp / mins,
+		level = e.lastLevel,
+		dirty = e.dirty,
+	}
+end
+
+function misc.sessionEco.clearDirty()
+	misc.sessionEco.dirty = false
+end
+
+function misc.sessionEco.disconnect()
+	for _, c in ipairs(misc.sessionEco.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.sessionEco.conns = {}
+	misc.sessionEco.bound = {}
+	misc.sessionEco.hooked = false
+end
+
+function misc.sessionEco.bindRemote(evFolder, name, kind)
+	if misc.sessionEco.bound[name] then
+		return false
+	end
+	local rem = evFolder:FindFirstChild(name)
+	if not rem then
+		return false
+	end
+	-- RemoteEvent / UnreliableRemoteEvent
+	local sig = rem.OnClientEvent
+	if not sig then
+		return false
+	end
+	local conn
+	if kind == "cash" then
+		conn = sig:Connect(function(...)
+			misc.sessionEco.addCash(misc.sessionEco.extractFromArgs(...))
+		end)
+	elseif kind == "xp" then
+		conn = sig:Connect(function(...)
+			misc.sessionEco.addXp(misc.sessionEco.extractFromArgs(...))
+		end)
+	elseif kind == "level" then
+		conn = sig:Connect(function(...)
+			misc.sessionEco.onLevel(...)
+		end)
+	else
+		return false
+	end
+	misc.sessionEco.bound[name] = true
+	table.insert(misc.sessionEco.conns, conn)
+	return true
+end
+
+function misc.sessionEco.tryHookFolder(evFolder)
+	if not evFolder then
+		return 0
+	end
+	local n = 0
+	if misc.sessionEco.bindRemote(evFolder, "GotCash", "cash") then
+		n += 1
+	end
+	if misc.sessionEco.bindRemote(evFolder, "GotXP", "xp") then
+		n += 1
+	end
+	if misc.sessionEco.bindRemote(evFolder, "LevelUp", "level") then
+		n += 1
+	end
+	return n
+end
+
+function misc.sessionEco.start()
+	if misc.sessionEco.hooked then
+		return
+	end
+	misc.sessionEco.disconnect()
+	misc.sessionEco.reset()
+	local hooked = 0
+	local ev = RepSt:FindFirstChild("Events")
+	if ev then
+		hooked = misc.sessionEco.tryHookFolder(ev)
+	end
+	-- Events may replicate late
+	if hooked < 3 then
+		local w
+		w = RepSt.ChildAdded:Connect(function(ch)
+			if ch.Name ~= "Events" then
+				return
+			end
+			misc.sessionEco.tryHookFolder(ch)
+			if w then
+				pcall(function()
+					w:Disconnect()
+				end)
+			end
+		end)
+		table.insert(misc.sessionEco.conns, w)
+		if ev then
+			local wa
+			wa = ev.ChildAdded:Connect(function(ch)
+				local nm = ch.Name
+				if nm == "GotCash" then
+					misc.sessionEco.bindRemote(ev, "GotCash", "cash")
+				elseif nm == "GotXP" then
+					misc.sessionEco.bindRemote(ev, "GotXP", "xp")
+				elseif nm == "LevelUp" then
+					misc.sessionEco.bindRemote(ev, "LevelUp", "level")
+				end
+			end)
+			table.insert(misc.sessionEco.conns, wa)
+		end
+	end
+	misc.sessionEco.hooked = true
+	_G.__VG_CrimSessionEco = misc.sessionEco
+end
+
 -- â”€â”€ INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Criminality.Init(S)
 	if not Criminality.IsCriminality() then return end
@@ -9111,10 +9334,19 @@ function Criminality.Init(S)
 		pcall(teleportToElevator, S)
 	end
 	S._crimListGameSounds = snd.listGameSounds
+	S._crimEcoSnapshot = function()
+		return misc.sessionEco.snapshot()
+	end
+	S._crimEcoReset = function()
+		misc.sessionEco.reset()
+	end
 	S._configApplyHooks = S._configApplyHooks or {}
 	table.insert(S._configApplyHooks, function()
 		syncFromConfig(S)
 	end)
+
+	-- Listen-only economy stats (GotCash / GotXP / LevelUp)
+	pcall(misc.sessionEco.start)
 
 	startFastPickupInput()
 

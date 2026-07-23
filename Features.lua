@@ -399,17 +399,21 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	}), Z.stats + 1)
 	local StatsLines = {}
 	local StatValues = {}
-	for i, key in ipairs({ "Kills", "Hits", "Accuracy", "Time" }) do
-		local rowY = 38 + (i - 1) * 22
-		tagZ(C("TextLabel", {
+	local StatRows = {}
+	local STAT_KEYS = { "Kills", "Hits", "Accuracy", "Cash", "XP", "Rate", "Time" }
+	local ECO_KEYS = { Cash = true, XP = true, Rate = true }
+	for i, key in ipairs(STAT_KEYS) do
+		local rowY = 38 + (i - 1) * 20
+		local lab = tagZ(C("TextLabel", {
 			Size = UDim2.new(0.55, 0, 0, 14),
 			Position = UDim2.new(0, 12, 0, rowY),
 			BackgroundTransparency = 1,
-			Text = key,
+			Text = (key == "Rate" and "$/min") or key,
 			Font = Enum.Font.GothamMedium,
 			TextSize = 10,
 			TextColor3 = Color3.fromRGB(145, 148, 162),
 			TextXAlignment = Enum.TextXAlignment.Left,
+			Visible = not ECO_KEYS[key],
 			Parent = StatsPanel,
 		}), Z.stats + 1)
 		local val = tagZ(C("TextLabel", {
@@ -421,10 +425,12 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			TextSize = 11,
 			TextColor3 = ACC,
 			TextXAlignment = Enum.TextXAlignment.Right,
+			Visible = not ECO_KEYS[key],
 			Parent = StatsPanel,
 		}), Z.stats + 1)
 		StatsLines[key] = val
 		StatValues[key] = val
+		StatRows[key] = { lab = lab, val = val }
 	end
 	local AccBarBg = tagZ(C("Frame", {
 		Size = UDim2.new(1, -24, 0, 4),
@@ -441,6 +447,49 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		Parent = AccBarBg,
 	}), Z.stats + 2)
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = AccBarFill })
+	local statDisplayEco = { cash = -1, xp = -1, rate = "", ecoOn = false }
+	local statsEcoLastLayout = false
+	local function fmtEcoAmt(n)
+		n = math.floor(tonumber(n) or 0)
+		if n >= 1000000 then
+			return string.format("%.1fM", n / 1000000)
+		end
+		if n >= 1000 then
+			return string.format("%.1fk", n / 1000)
+		end
+		return tostring(n)
+	end
+	local function layoutSessionStats(ecoOn)
+		if statsEcoLastLayout == ecoOn then
+			return
+		end
+		statsEcoLastLayout = ecoOn
+		local order = ecoOn and STAT_KEYS or { "Kills", "Hits", "Accuracy", "Time" }
+		local row = 0
+		for _, key in ipairs(STAT_KEYS) do
+			local r = StatRows[key]
+			local show = false
+			for _, k in ipairs(order) do
+				if k == key then
+					show = true
+					break
+				end
+			end
+			if r then
+				r.lab.Visible = show
+				r.val.Visible = show
+				if show then
+					local y = 38 + row * 20
+					r.lab.Position = UDim2.new(0, 12, 0, y)
+					r.val.Position = UDim2.new(0.6, 0, 0, y)
+					row += 1
+				end
+			end
+		end
+		local barY = 38 + row * 20 + 6
+		AccBarBg.Position = UDim2.new(0, 12, 0, barY)
+		StatsPanel.Size = UDim2.new(0, 196, 0, barY + 16)
+	end
 
 	local KeybindPanel = tagZ(C("Frame", {
 		Name = "KeybindList",
@@ -1176,6 +1225,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			return
 		end
 		StatsPanel.Visible = true
+		local ecoMod = _G.__VG_CrimSessionEco
+		local ecoOn = typeof(ecoMod) == "table" and typeof(ecoMod.snapshot) == "function"
+		layoutSessionStats(ecoOn)
 		local acc = session.shots > 0 and math.floor(session.hits / session.shots * 100) or 0
 		if statDisplay.kills ~= session.kills then
 			statDisplay.kills = session.kills
@@ -1196,6 +1248,31 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			StatsLines.Accuracy.Text = acc .. "%"
 		end
 		StatsLines.Time.Text = formatSessionTime()
+		if ecoOn then
+			local snap = ecoMod.snapshot()
+			local cashTxt = fmtEcoAmt(snap.cash)
+			local xpTxt = fmtEcoAmt(snap.xp)
+			if snap.levels and snap.levels > 0 then
+				xpTxt = xpTxt .. " · L" .. tostring(snap.levels)
+			end
+			local rateTxt = fmtEcoAmt(snap.cashPerMin) .. "/m"
+			if snap.dirty or statDisplayEco.cash ~= snap.cash or statDisplayEco.xp ~= snap.xp then
+				statDisplayEco.cash = snap.cash
+				statDisplayEco.xp = snap.xp
+				bumpStatLabel("Cash", cashTxt)
+				bumpStatLabel("XP", xpTxt)
+				if typeof(ecoMod.clearDirty) == "function" then
+					ecoMod.clearDirty()
+				end
+			else
+				StatsLines.Cash.Text = cashTxt
+				StatsLines.XP.Text = xpTxt
+			end
+			if statDisplayEco.rate ~= rateTxt then
+				statDisplayEco.rate = rateTxt
+				StatsLines.Rate.Text = rateTxt
+			end
+		end
 		Tween(AccBarFill, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			Size = UDim2.new(math.clamp(acc / 100, 0, 1), 0, 1, 0),
 		})
