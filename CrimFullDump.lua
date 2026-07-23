@@ -19,9 +19,8 @@
       12_gc_skins.json / .txt
       13_gc_weapon_stats.txt    ← FireRate / Recoil / Damage tables
       14_gc_interesting.txt     ← odd tables (Dealer, Economy, …)
-      15_gc_cases.json / .txt    ← CaseContents pools + Odds sample
-      16_sounds_anims_sample.txt
-      17_charstats_sample.txt
+      15_sounds_anims_sample.txt
+      16_charstats_sample.txt
 
   Also: VG_CrimSkinIds.json + .txt at workspace root (skin merge).
 ]]
@@ -702,124 +701,11 @@ do
 	summary[#summary + 1] = "statTables=" .. #weaponStats
 	summary[#summary + 1] = "interestingGC=" .. #interesting
 	print("[VG:full] skins", #skinRows, "meshes", meshN, "stats", #weaponStats)
-
-	-- dedicated case dump (CaseContents / Odds)
-	local caseMap = {}
-	local caseTxt = { "-- CaseContents dump " .. stamp, "-- Name | Display | type | skins/limiteds/exotics", "" }
-	local caseN = 0
-	if typeof(getgc) == "function" then
-		local okc, gcc = pcall(getgc, true)
-		if okc and typeof(gcc) == "table" then
-			local n = 0
-			for _, v in ipairs(gcc) do
-				n += 1
-				if n % 500 == 0 then
-					task.wait()
-				end
-				if typeof(v) ~= "table" then
-					continue
-				end
-				local ok2, contents, name, display, casetype, layout, enabled = pcall(function()
-					return v.CaseContents, v.Name, v.DisplayName, v.Casetype, v.LayoutOrder, v.Enabled
-				end)
-				if not ok2 or typeof(contents) ~= "table" or typeof(name) ~= "string" or name == "" then
-					continue
-				end
-				local function samplePool(pool, limit)
-					local samples = {}
-					if typeof(pool) ~= "table" then
-						return samples, 0
-					end
-					local count = 0
-					local function take(item)
-						if #samples >= (limit or 3) then
-							return
-						end
-						if typeof(item) ~= "table" then
-							return
-						end
-						local ok3, gun, disp, rar, odds, tex = pcall(function()
-							return item.ItemName, item.DisplayName, item.Rarity, item.Odds, item.TextureID
-						end)
-						if ok3 and (gun or disp) then
-							samples[#samples + 1] = {
-								item = gun,
-								display = disp,
-								rarity = rar,
-								odds = odds,
-								tex = tex,
-							}
-						end
-					end
-					if #pool > 0 then
-						count = #pool
-						for _, item in ipairs(pool) do
-							take(item)
-						end
-					else
-						for _, val in pairs(pool) do
-							if typeof(val) == "table" then
-								local has = false
-								pcall(function()
-									has = val.ItemName ~= nil or val.TextureID ~= nil
-								end)
-								if has then
-									count += 1
-									take(val)
-								else
-									for _, nested in pairs(val) do
-										if typeof(nested) == "table" then
-											count += 1
-											take(nested)
-										end
-									end
-								end
-							end
-						end
-					end
-					return samples, count
-				end
-				local skinsS, skinsC = samplePool(contents.skins, 3)
-				local limS, limC = samplePool(contents.limiteds, 3)
-				local exoS, exoC = samplePool(contents.exotics, 3)
-				caseN += 1
-				caseMap[name] = {
-					id = name,
-					name = name,
-					display = display,
-					type = casetype,
-					layout = layout,
-					enabled = enabled,
-					counts = { skins = skinsC, limiteds = limC, exotics = exoC },
-					sample = { skins = skinsS, limiteds = limS, exotics = exoS },
-				}
-				caseTxt[#caseTxt + 1] = string.format(
-					"%s | %s | type=%s | skins=%d limiteds=%d exotics=%d",
-					name,
-					tostring(display),
-					tostring(casetype),
-					skinsC,
-					limC,
-					exoC
-				)
-			end
-		end
-	end
-	write(OUT .. "/15_gc_cases.txt", table.concat(caseTxt, "\n") .. "\n")
-	local cok, cjson = pcall(function()
-		return HttpService:JSONEncode(caseMap)
-	end)
-	if cok then
-		write(OUT .. "/15_gc_cases.json", cjson)
-		write("VG_CrimCases.json", cjson)
-	end
-	summary[#summary + 1] = "cases=" .. caseN
-	print("[VG:full] cases", caseN)
 end
 
 task.wait()
 
--- 16 sounds / anims sample
+-- 15 sounds / anims sample
 do
 	local lines = { "=== Sounds / Animations sample under Storage ===", "" }
 	local storage = RepSt:FindFirstChild("Storage")
@@ -838,12 +724,12 @@ do
 		lines[#lines + 1] = "## Animations"
 		lines[#lines + 1] = table.concat(anim, "\n")
 	end
-	write(OUT .. "/16_sounds_anims_sample.txt", table.concat(lines, "\n") .. "\n")
+	write(OUT .. "/15_sounds_anims_sample.txt", table.concat(lines, "\n") .. "\n")
 end
 
 task.wait()
 
--- 17 CharStats sample
+-- 16 CharStats sample
 do
 	local lines = { "=== CharStats sample ===", "" }
 	local cs = RepSt:FindFirstChild("CharStats")
@@ -863,12 +749,12 @@ do
 			end
 		end
 	end
-	write(OUT .. "/17_charstats_sample.txt", table.concat(lines, "\n") .. "\n")
+	write(OUT .. "/16_charstats_sample.txt", table.concat(lines, "\n") .. "\n")
 end
 
 summary[#summary + 1] = ""
 summary[#summary + 1] = "Done → " .. OUT .. "/"
-summary[#summary + 1] = "Open 00_summary + 03_itemstats + 05_events + 06_newmodules + 13/14/15_gc_*"
+summary[#summary + 1] = "Open 00_summary + 03_itemstats + 05_events + 06_newmodules + 13/14_gc_*"
 write(OUT .. "/00_summary.txt", table.concat(summary, "\n") .. "\n")
 print("[VG:full] DONE")
 print(table.concat(summary, "\n"))

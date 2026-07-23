@@ -340,47 +340,17 @@ function UISkinVault.build(opts)
 		ZIndex = 7,
 		Parent = Header,
 	})
-	local BtnOpen = C("TextButton", {
-		Size = UDim2.new(0, 52, 0, 24),
-		Position = UDim2.new(0, 112, 0.5, -12),
+	local TitleLbl = C("TextLabel", {
+		Size = UDim2.new(0, 120, 0, 24),
+		Position = UDim2.new(0.5, -60, 0.5, -12),
 		BackgroundTransparency = 1,
-		Text = "Open",
-		Font = Enum.Font.GothamSemibold,
-		TextSize = 12,
-		TextColor3 = Color3.fromRGB(255, 200, 90),
-		AutoButtonColor = false,
-		Visible = false,
-		ZIndex = 7,
-		Parent = Header,
-	})
-	local TabInv = C("TextButton", {
-		Size = UDim2.new(0, 78, 0, 24),
-		Position = UDim2.new(0.5, -84, 0.5, -12),
-		BackgroundColor3 = Color3.fromRGB(30, 36, 52),
 		Text = "Inventory",
 		Font = Enum.Font.GothamBold,
-		TextSize = 12,
+		TextSize = 14,
 		TextColor3 = Color3.fromRGB(235, 240, 250),
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
 		ZIndex = 7,
 		Parent = Header,
 	})
-	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = TabInv })
-	local TabCases = C("TextButton", {
-		Size = UDim2.new(0, 70, 0, 24),
-		Position = UDim2.new(0.5, 2, 0.5, -12),
-		BackgroundColor3 = Color3.fromRGB(22, 24, 34),
-		Text = "Cases",
-		Font = Enum.Font.GothamBold,
-		TextSize = 12,
-		TextColor3 = Color3.fromRGB(160, 170, 190),
-		AutoButtonColor = false,
-		BorderSizePixel = 0,
-		ZIndex = 7,
-		Parent = Header,
-	})
-	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = TabCases })
 	local StatusLbl = C("TextLabel", {
 		Size = UDim2.new(0, 200, 0, 18),
 		Position = UDim2.new(1, -212, 0.5, -9),
@@ -464,7 +434,6 @@ function UISkinVault.build(opts)
 	})
 
 	local classFilter = "all"
-	local poolFilter = "all"
 	local rarityDefs = {
 		{ key = "all", label = "All", color = Color3.fromRGB(180, 190, 210) },
 		{ key = "exotic", label = "Exotic", color = RARITY_COLORS.exotic },
@@ -474,15 +443,8 @@ function UISkinVault.build(opts)
 		{ key = "common", label = "Common", color = RARITY_COLORS.common },
 		{ key = "limited", label = "Limited", color = RARITY_COLORS.limited },
 	}
-	local poolDefs = {
-		{ key = "all", label = "All", color = Color3.fromRGB(180, 190, 210) },
-		{ key = "skins", label = "Skins", color = RARITY_COLORS.rare },
-		{ key = "limiteds", label = "Limiteds", color = RARITY_COLORS.limited },
-		{ key = "exotics", label = "Exotics", color = RARITY_COLORS.exotic },
-	}
 	local classDefs = rarityDefs
 	local classBtns = {}
-	local unboxBusy = false
 	local SideCaption
 
 	local Body = C("Frame", {
@@ -560,9 +522,7 @@ function UISkinVault.build(opts)
 	})
 
 	local skinUi = {
-		mode = "inventory", -- inventory | cases
 		weapon = S.CrimSkinUiWeapon or "Mare",
-		caseId = S.CrimSkinUiCase or nil,
 		filter = "",
 		expanded = { Melee = true, Firearms = true },
 	}
@@ -570,7 +530,6 @@ function UISkinVault.build(opts)
 	local refreshWeaponSidebar
 	local refreshSkinGrid
 	local rebuildClassChips
-	local setVaultMode
 
 	local function makeWeaponBtn(parent, gun, order, active)
 		local saved = S._crimSkinSaved and S._crimSkinSaved(gun)
@@ -666,99 +625,6 @@ function UISkinVault.build(opts)
 				ch:Destroy()
 			end
 		end
-		if SideCaption then
-			SideCaption.Text = skinUi.mode == "cases" and "Cases" or "Type"
-		end
-
-		if skinUi.mode == "cases" then
-			local cases = {}
-			if S._crimSkinListCases then
-				local ok, list = pcall(S._crimSkinListCases)
-				if ok and typeof(list) == "table" then
-					cases = list
-				end
-			end
-			local q = string.lower(skinUi.filter or "")
-			local order = 1
-			if #cases == 0 then
-				C("TextLabel", {
-					Size = UDim2.new(1, 0, 0, 40),
-					BackgroundTransparency = 1,
-					Text = "Loading cases…\n(rejoin / wait getgc)",
-					Font = Enum.Font.GothamMedium,
-					TextSize = 10,
-					TextColor3 = Color3.fromRGB(140, 150, 170),
-					TextWrapped = true,
-					LayoutOrder = order,
-					ZIndex = 8,
-					Parent = TypeSide,
-				})
-				return
-			end
-			if not skinUi.caseId and cases[1] then
-				skinUi.caseId = cases[1].id
-				S.CrimSkinUiCase = skinUi.caseId
-			end
-			for _, cs in ipairs(cases) do
-				local lab = cs.display or cs.name or cs.id
-				if q ~= "" and not string.find(string.lower(lab), q, 1, true)
-					and not string.find(string.lower(tostring(cs.type or "")), q, 1, true)
-				then
-					continue
-				end
-				local active = cs.id == skinUi.caseId
-				local counts = cs.counts or {}
-				local total = (counts.skins or 0) + (counts.limiteds or 0) + (counts.exotics or 0)
-				local B = C("TextButton", {
-					Size = UDim2.new(1, 0, 0, 36),
-					BackgroundColor3 = active and Color3.fromRGB(28, 36, 55) or Color3.fromRGB(20, 22, 30),
-					Text = "",
-					AutoButtonColor = false,
-					BorderSizePixel = 0,
-					LayoutOrder = order,
-					ZIndex = 8,
-					Parent = TypeSide,
-				})
-				order = order + 1
-				C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = B })
-				if active then
-					C("UIStroke", { Color = Color3.fromRGB(255, 200, 90), Thickness = 1, Transparency = 0.3, Parent = B })
-				end
-				C("TextLabel", {
-					Size = UDim2.new(1, -10, 0, 16),
-					Position = UDim2.new(0, 6, 0, 3),
-					BackgroundTransparency = 1,
-					Text = lab .. (cs.isNew and " ·NEW" or ""),
-					Font = Enum.Font.GothamSemibold,
-					TextSize = 10,
-					TextColor3 = active and Color3.fromRGB(245, 248, 255) or Color3.fromRGB(150, 155, 170),
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextTruncate = Enum.TextTruncate.AtEnd,
-					ZIndex = 9,
-					Parent = B,
-				})
-				C("TextLabel", {
-					Size = UDim2.new(1, -10, 0, 12),
-					Position = UDim2.new(0, 6, 0, 20),
-					BackgroundTransparency = 1,
-					Text = string.format("%s · %d", tostring(cs.type ~= "" and cs.type or "case"), total),
-					Font = Enum.Font.Gotham,
-					TextSize = 9,
-					TextColor3 = Color3.fromRGB(110, 120, 140),
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextTruncate = Enum.TextTruncate.AtEnd,
-					ZIndex = 9,
-					Parent = B,
-				})
-				B.MouseButton1Click:Connect(function()
-					skinUi.caseId = cs.id
-					S.CrimSkinUiCase = cs.id
-					refreshWeaponSidebar()
-					refreshSkinGrid()
-				end)
-			end
-			return
-		end
 
 		local weapons = {}
 		if S._crimSkinListWeapons then
@@ -801,7 +667,7 @@ function UISkinVault.build(opts)
 		local lab = row.label or row.full
 		local rarKey = normalizeRarity(row.rarity)
 		local accent = skinAccent(row)
-		if skinUi.mode ~= "cases" and classFilter ~= "all" and classFilter ~= rarKey then
+		if classFilter ~= "all" and classFilter ~= rarKey then
 			return false
 		end
 
@@ -952,40 +818,6 @@ function UISkinVault.build(opts)
 			if ch:IsA("GuiObject") and not ch:IsA("UIGridLayout") and not ch:IsA("UIPadding") then
 				ch:Destroy()
 			end
-		end
-
-		-- Cases mode: browse official CaseContents
-		if skinUi.mode == "cases" then
-			local caseId = skinUi.caseId
-			local rows = {}
-			if S._crimSkinCaseContents and caseId then
-				local ok, list = pcall(S._crimSkinCaseContents, caseId, poolFilter)
-				if ok and typeof(list) == "table" then
-					rows = list
-				end
-			end
-			local q = string.lower(skinUi.filter or "")
-			local order = 0
-			local shown = 0
-			for _, row in ipairs(rows) do
-				local lab = row.label or row.full
-				local gun = row.gun or "?"
-				if q == "" or string.find(string.lower(lab), q, 1, true) or string.find(string.lower(gun), q, 1, true) then
-					order = order + 1
-					local saved = S._crimSkinSaved and S._crimSkinSaved(gun)
-					if makeSkinCard(GridScroll, gun, row, order, saved == row.full) then
-						shown = shown + 1
-					end
-				end
-			end
-			if not caseId then
-				StatusLbl.Text = "Pick a case"
-			elseif shown == 0 then
-				StatusLbl.Text = string.format("%s | empty pool", tostring(caseId))
-			else
-				StatusLbl.Text = string.format("%s | %d items | Open to roll", tostring(caseId), shown)
-			end
-			return
 		end
 
 		local gun = skinUi.weapon
@@ -1166,13 +998,11 @@ function UISkinVault.build(opts)
 			end
 		end
 		classBtns = {}
-		local defs = skinUi.mode == "cases" and poolDefs or rarityDefs
-		classDefs = defs
+		classDefs = rarityDefs
 		if ClassCaption then
-			ClassCaption.Text = skinUi.mode == "cases" and "Pool" or "Skin class"
+			ClassCaption.Text = "Skin class"
 		end
-		local activeKey = skinUi.mode == "cases" and poolFilter or classFilter
-		for i, def in ipairs(defs) do
+		for i, def in ipairs(rarityDefs) do
 			local B = C("TextButton", {
 				Size = UDim2.new(0, 0, 0, 26),
 				AutomaticSize = Enum.AutomaticSize.X,
@@ -1191,40 +1021,21 @@ function UISkinVault.build(opts)
 			local stroke = C("UIStroke", { Color = def.color, Thickness = 1.5, Transparency = 0.35, Parent = B })
 			classBtns[def.key] = { btn = B, stroke = stroke, color = def.color }
 			B.MouseButton1Click:Connect(function()
-				if skinUi.mode == "cases" then
-					poolFilter = def.key
-				else
-					classFilter = def.key
-				end
-				local sel = skinUi.mode == "cases" and poolFilter or classFilter
+				classFilter = def.key
 				for k, info in pairs(classBtns) do
-					info.stroke.Transparency = (k == sel) and 0.05 or 0.45
-					info.btn.BackgroundColor3 = (k == sel) and Color3.fromRGB(30, 36, 52) or Color3.fromRGB(22, 24, 34)
+					info.stroke.Transparency = (k == classFilter) and 0.05 or 0.45
+					info.btn.BackgroundColor3 = (k == classFilter) and Color3.fromRGB(30, 36, 52) or Color3.fromRGB(22, 24, 34)
 				end
 				refreshSkinGrid()
 			end)
 		end
-		if classBtns[activeKey] then
-			classBtns[activeKey].stroke.Transparency = 0.05
-			classBtns[activeKey].btn.BackgroundColor3 = Color3.fromRGB(30, 36, 52)
+		if classBtns[classFilter] then
+			classBtns[classFilter].stroke.Transparency = 0.05
+			classBtns[classFilter].btn.BackgroundColor3 = Color3.fromRGB(30, 36, 52)
 		elseif classBtns.all then
 			classBtns.all.stroke.Transparency = 0.05
 			classBtns.all.btn.BackgroundColor3 = Color3.fromRGB(30, 36, 52)
 		end
-	end
-
-	setVaultMode = function(mode)
-		skinUi.mode = mode == "cases" and "cases" or "inventory"
-		BtnOpen.Visible = skinUi.mode == "cases"
-		BtnClear.Visible = skinUi.mode == "inventory"
-		BtnSelect.Visible = skinUi.mode == "inventory"
-		TabInv.BackgroundColor3 = skinUi.mode == "inventory" and Color3.fromRGB(30, 36, 52) or Color3.fromRGB(22, 24, 34)
-		TabInv.TextColor3 = skinUi.mode == "inventory" and Color3.fromRGB(235, 240, 250) or Color3.fromRGB(160, 170, 190)
-		TabCases.BackgroundColor3 = skinUi.mode == "cases" and Color3.fromRGB(40, 34, 28) or Color3.fromRGB(22, 24, 34)
-		TabCases.TextColor3 = skinUi.mode == "cases" and Color3.fromRGB(255, 220, 140) or Color3.fromRGB(160, 170, 190)
-		rebuildClassChips()
-		refreshWeaponSidebar()
-		refreshSkinGrid()
 	end
 
 	rebuildClassChips()
@@ -1253,75 +1064,6 @@ function UISkinVault.build(opts)
 		refreshWeaponSidebar()
 		refreshSkinGrid()
 	end)
-
-	TabInv.MouseButton1Click:Connect(function()
-		setVaultMode("inventory")
-	end)
-	TabCases.MouseButton1Click:Connect(function()
-		setVaultMode("cases")
-	end)
-
-	local function runCaseOpen()
-		if unboxBusy then
-			return
-		end
-		local caseId = skinUi.caseId
-		if not caseId then
-			if showNotify then
-				showNotify("Pick a case first")
-			end
-			return
-		end
-		if not S._crimSkinRollCase then
-			if showNotify then
-				showNotify("Case open not ready")
-			end
-			return
-		end
-		local win = S._crimSkinRollCase(caseId)
-		if typeof(win) ~= "table" then
-			if showNotify then
-				showNotify("Roll failed / empty case")
-			end
-			return
-		end
-		unboxBusy = true
-		StatusLbl.Text = "Opening (native)…"
-		if showNotify then
-			showNotify("Opening case…")
-		end
-		task.spawn(function()
-			-- Original Crim CaseAnims + UnboxEffect / CaseUnboxEffect handlers
-			if S._crimSkinPlayNativeUnbox then
-				pcall(S._crimSkinPlayNativeUnbox, caseId, win)
-			elseif S._crimSkinOpenCase then
-				-- OpenCase also plays native then applies
-				local ok, msg = S._crimSkinOpenCase(caseId, win)
-				persistSkins()
-				refreshWeaponSidebar()
-				refreshSkinGrid()
-				if showNotify then
-					showNotify(tostring(msg or (ok and win.label or "fail")))
-				end
-				unboxBusy = false
-				return
-			end
-			local ok, msg
-			if S._crimSkinPick and win.gun and win.full then
-				ok, msg = S._crimSkinPick(win.gun, win.full)
-			end
-			persistSkins()
-			refreshWeaponSidebar()
-			refreshSkinGrid()
-			StatusLbl.Text = string.format("Won · %s (%s)", tostring(win.label), tostring(win.gun))
-			if showNotify then
-				showNotify(string.format("Unboxed %s · %s", tostring(win.label), tostring(win.gun)))
-			end
-			unboxBusy = false
-		end)
-	end
-
-	BtnOpen.MouseButton1Click:Connect(runCaseOpen)
 
 	-- Controls below Inventory vault
 	MakeTog(CSkins, "Enable Skin Changer", "CrimSkinChanger", 10, { flat = true })
