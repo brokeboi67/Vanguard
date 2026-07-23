@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.56.0",
+	Version = "2.57.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -154,6 +154,8 @@ local Settings = {
 	InvisShowWarning = true,
 	InvisWalkSpeed = 12,
 	InvisKey = "X",
+	-- Local upright for others using same desync/tilt invis
+	InvisResolver = false,
 
 	-- ANIMATIONS
 	AnimSpeed = 1,

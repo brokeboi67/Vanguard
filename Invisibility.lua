@@ -1,7 +1,8 @@
--- Invisibility.lua  v2.52.37
+-- Invisibility.lua  v2.57.0
 -- R6 anim-desync. Master toggle arms the feature; keybind toggles visibility.
 -- Turning Invisibility OFF disables everything.
 -- Desync: Heartbeat applies pose, RenderStepped restores (no Wait — no hitch).
+-- InvisResolver: detect others' sustained ~90° tilt and locally upright HRP.
 
 local Invisibility = {}
 
@@ -473,6 +474,102 @@ function Invisibility.Init(S, ParentGUI)
 	S.IsInvisibilityActive = function()
 		return active == true
 	end
+
+	-- ── Invis Resolver (others using same R6 desync / ~90° tilt) ─────────────
+	-- Detect sustained weird pitch — NOT low Y (undergrounds are legitimate).
+	-- Once armed, keep uprighting until death/leave (our upright write would
+	-- otherwise clear a miss-based detector between replication pulses).
+	local RESOLVE_PITCH_MIN = math.rad(65)
+	local RESOLVE_PITCH_MAX = math.rad(125)
+	local RESOLVE_LOOK_Y = 0.82
+	local RESOLVE_SUSTAIN = 5
+	local resolveState = {} -- [userId] = { hit = n, on = bool }
+
+	local function isDesyncPose(root)
+		local pitch = select(1, root.CFrame:ToOrientation())
+		local ap = math.abs(pitch)
+		if ap >= RESOLVE_PITCH_MIN and ap <= RESOLVE_PITCH_MAX then
+			return true
+		end
+		return math.abs(root.CFrame.LookVector.Y) >= RESOLVE_LOOK_Y
+	end
+
+	local function uprightCF(root)
+		local pos = root.Position
+		local up = root.CFrame.UpVector
+		local look = root.CFrame.LookVector
+		-- After +90° pitch, original forward is roughly in UpVector XZ
+		local flat = Vector3.new(up.X, 0, up.Z)
+		if flat.Magnitude < 0.15 then
+			flat = Vector3.new(look.X, 0, look.Z)
+		end
+		if flat.Magnitude < 0.15 then
+			local r = root.CFrame.RightVector
+			flat = Vector3.new(r.Z, 0, -r.X)
+		end
+		if flat.Magnitude < 0.05 then
+			return CFrame.new(pos)
+		end
+		return CFrame.lookAt(pos, pos + flat.Unit)
+	end
+
+	S.IsInvisResolved = function(plr)
+		if not plr then
+			return false
+		end
+		local st = resolveState[plr.UserId]
+		return st and st.on == true
+	end
+
+	RS.RenderStepped:Connect(perfWrap("Invis.Resolver", function()
+		if S.Unloaded or not S.InvisResolver then
+			if next(resolveState) then
+				table.clear(resolveState)
+			end
+			return
+		end
+
+		local seen = {}
+		for _, plr in ipairs(Players:GetPlayers()) do
+			if plr ~= LP then
+				local c = plr.Character
+				local root = c and c:FindFirstChild("HumanoidRootPart")
+				local humO = c and c:FindFirstChildOfClass("Humanoid")
+				if root and humO and humO.Health > 0 and root:IsDescendantOf(workspace) then
+					seen[plr.UserId] = true
+					local st = resolveState[plr.UserId]
+					if not st then
+						st = { hit = 0, on = false }
+						resolveState[plr.UserId] = st
+					end
+
+					-- Sample BEFORE upright so network tilt still counts
+					if not st.on then
+						if isDesyncPose(root) then
+							st.hit += 1
+							if st.hit >= RESOLVE_SUSTAIN then
+								st.on = true
+							end
+						else
+							st.hit = 0
+						end
+					end
+
+					if st.on then
+						pcall(function()
+							root.CFrame = uprightCF(root)
+						end)
+					end
+				end
+			end
+		end
+
+		for uid in pairs(resolveState) do
+			if not seen[uid] then
+				resolveState[uid] = nil
+			end
+		end
+	end))
 end
 
 return Invisibility

@@ -368,6 +368,9 @@ function Config.EnforceRules(S)
 		S.InvisKey = "X"
 	end
 	S.InvisKeybindEnabled = nil -- keybind works whenever Invisibility master is on
+	if S.InvisResolver == nil then
+		S.InvisResolver = false
+	end
 	if S.NoFog == nil then
 		S.NoFog = false
 	end
