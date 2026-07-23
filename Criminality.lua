@@ -5012,22 +5012,44 @@ function misc.skinChanger.applyTextureToInstance(root, texId, quiet)
 	end
 	misc.skinChanger.captureDefaults(root)
 	local idStr = "rbxassetid://" .. tostring(texId)
+	local saName = misc.skinChanger.texKey(texId)
 	local n, patched = 0, 0
 	for _, d in ipairs(root:GetDescendants()) do
+		-- Catalog TextureID from cosmetics is a ColorMap-style asset (see Emerald UV preview).
+		-- Applying as MeshPart.TextureID only hits some meshes / UVs → half-skinned melee.
 		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
-			local cur = misc.skinChanger.contentId(d.TextureID)
-			local want = misc.skinChanger.contentId(idStr)
-			if cur == want and not d:FindFirstChildOfClass("SurfaceAppearance") then
+			local sa = d:FindFirstChildOfClass("SurfaceAppearance")
+			local okMap = false
+			if sa and sa.Name == saName then
+				local cur = misc.skinChanger.contentId(sa.ColorMap)
+				okMap = cur == misc.skinChanger.contentId(idStr)
+			end
+			if okMap then
 				n = n + 1
 			else
 				pcall(function()
-					for _, ch in ipairs(d:GetChildren()) do
-						if ch:IsA("SurfaceAppearance") then
-							ch:Destroy()
-						end
+					if sa then
+						sa:Destroy()
 					end
-					d.TextureID = idStr
+					local neo = Instance.new("SurfaceAppearance")
+					neo.Name = saName
+					neo.ColorMap = idStr
+					neo.Parent = d
+					if d.TextureID and d.TextureID ~= "" then
+						d:SetAttribute("VG_PrevTex", d.TextureID)
+						d.TextureID = ""
+					end
 					d:SetAttribute("VG_TexSkin", tostring(texId))
+				end)
+				patched = patched + 1
+				n = n + 1
+			end
+		elseif d:IsA("BasePart") and not d:IsA("MeshPart") and not d:IsA("Terrain") then
+			-- Legacy SpecialMesh melee pieces
+			local sm = d:FindFirstChildOfClass("SpecialMesh")
+			if sm then
+				pcall(function()
+					sm.TextureId = idStr
 				end)
 				patched = patched + 1
 				n = n + 1
@@ -5035,7 +5057,7 @@ function misc.skinChanger.applyTextureToInstance(root, texId, quiet)
 		end
 	end
 	if not quiet and patched > 0 then
-		misc.skinChanger.log(string.format("applyTex root=%s n=%d id=%s", root.Name, n, tostring(texId)))
+		misc.skinChanger.log(string.format("applyTexSA root=%s n=%d id=%s", root.Name, n, tostring(texId)))
 	end
 	return n
 end
