@@ -305,37 +305,15 @@ function misc.noRagdoll.applyCharStats()
 	if not folder then
 		return false
 	end
-	-- Primary flags from CharStats.<nick>
+	-- Only these two (per user): NoRagdoll=true, RagdollTime=0
 	misc.noRagdoll.writeVal(folder:FindFirstChild("NoRagdoll"), true)
-	-- Related stun that often chains into ragdoll
-	misc.noRagdoll.writeVal(folder:FindFirstChild("NoFlameGasStun"), true)
-
 	local rt = folder:FindFirstChild("RagdollTime")
 	if rt then
-		-- Some builds expose RagdollTime as a NumberValue; others as a Folder.
-		if rt:IsA("BoolValue") or rt:IsA("NumberValue") or rt:IsA("IntValue") then
+		if rt:IsA("NumberValue") or rt:IsA("IntValue") then
 			misc.noRagdoll.writeVal(rt, 0)
-		end
-		misc.noRagdoll.writeVal(rt:FindFirstChild("RagdollTime2"), 0)
-		misc.noRagdoll.writeVal(rt:FindFirstChild("SRagdolled"), false)
-		local tickVal = rt:FindFirstChild("Tick")
-		if tickVal and (tickVal:IsA("NumberValue") or tickVal:IsA("IntValue")) then
-			misc.noRagdoll.writeVal(tickVal, 0)
-		end
-		for _, swName in ipairs({ "RagdollSwitch", "RagdollSwitch2" }) do
-			local sw = rt:FindFirstChild(swName)
-			if sw then
-				if sw:IsA("BoolValue") or sw:IsA("NumberValue") or sw:IsA("IntValue") then
-					misc.noRagdoll.writeVal(sw, typeof(sw.Value) == "boolean" and false or 0)
-				end
-				for _, ch in ipairs(sw:GetChildren()) do
-					if ch:IsA("BoolValue") then
-						misc.noRagdoll.writeVal(ch, false)
-					elseif ch:IsA("NumberValue") or ch:IsA("IntValue") then
-						misc.noRagdoll.writeVal(ch, 0)
-					end
-				end
-			end
+		else
+			-- RagdollTime is a Folder → the timer value is RagdollTime2
+			misc.noRagdoll.writeVal(rt:FindFirstChild("RagdollTime2"), 0)
 		end
 	end
 	return true
@@ -376,25 +354,25 @@ function misc.noRagdoll.hookCharStats()
 			misc.noRagdoll.applyCharStats()
 		end
 	end
-	table.insert(misc.noRagdoll.statsConns, folder.DescendantAdded:Connect(function()
-		task.defer(reapply)
+	table.insert(misc.noRagdoll.statsConns, folder.DescendantAdded:Connect(function(ch)
+		if ch.Name == "NoRagdoll" or ch.Name == "RagdollTime" or ch.Name == "RagdollTime2" then
+			task.defer(reapply)
+		end
 	end))
-	for _, d in ipairs(folder:GetDescendants()) do
-		if d:IsA("BoolValue") or d:IsA("NumberValue") or d:IsA("IntValue") then
-			local n = d.Name
-			if n == "NoRagdoll"
-				or n == "NoFlameGasStun"
-				or n == "RagdollTime"
-				or n == "RagdollTime2"
-				or n == "SRagdolled"
-				or n == "Tick"
-				or n:find("Ragdoll", 1, true)
-			then
-				table.insert(
-					misc.noRagdoll.statsConns,
-					d:GetPropertyChangedSignal("Value"):Connect(reapply)
-				)
-			end
+	local watch = {
+		folder:FindFirstChild("NoRagdoll"),
+		folder:FindFirstChild("RagdollTime"),
+	}
+	local rt = folder:FindFirstChild("RagdollTime")
+	if rt then
+		watch[#watch + 1] = rt:FindFirstChild("RagdollTime2")
+	end
+	for _, d in ipairs(watch) do
+		if d and (d:IsA("BoolValue") or d:IsA("NumberValue") or d:IsA("IntValue")) then
+			table.insert(
+				misc.noRagdoll.statsConns,
+				d:GetPropertyChangedSignal("Value"):Connect(reapply)
+			)
 		end
 	end
 end

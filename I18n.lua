@@ -116,7 +116,7 @@ local STR = {
 		hint_crim_menu_music = "Tylko podmienia SoundId na PlayerGui.Intro.music — gra sama puszcza. Publiczne PL tracki (copyright Cypis/Multi = 403).",
 		hint_crim_norecoil = "Lokalne tabele broni (getgc): zeruje Recoil, kąty Angle*, CameraRecoil oraz pola Kick/Shake/WalkSpread — działa też w 3. osobie na kick klienta.",
 		hint_crim_autorespawn = "Po śmierci spamuje DeathRespawn co ~0.6s aż faktycznie zrespisz.",
-		hint_crim_noragdoll = "CharStats.<nick>: NoRagdoll=true, RagdollTime/RagdollTime2=0, SRagdolled=false (+ NoFlameGasStun). Dodatkowo blokuje PlatformStand po stronie clienta.",
+		hint_crim_noragdoll = "CharStats.<nick>: tylko NoRagdoll=true i RagdollTime/RagdollTime2=0.",
 		hint_crim_fastaccel = "CharStats.<nick>: AccelerationModifier + AccelerationModifier2 = Accel Value (domyślnie 1). Serwer może resetować — skrypt trzyma wartość.",
 		hint_crim_nospread = "Osobno zeruje Spread (+ Hip/Aim/WalkSpread jeśli są w tabeli). Możesz włączyć bez No Recoil.",
 		hint_crim_gunextra = "Auto Reload = GunGUI.Frame.Main: Current=0 i Stored≥1 → R. Przy 0/0 nie przeładowuje.",
