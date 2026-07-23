@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.67.3",
+	Version = "2.68.0",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -242,6 +242,8 @@ local Settings = {
 	CrimDealerESP = false,
 	CrimDealerColor = Color3.fromRGB(100, 200, 255),
 	CrimRebelDealerColor = Color3.fromRGB(255, 90, 70),
+	CrimDealerStockFilter = "",
+	CrimDealerStockOnly = true,
 	CrimCrateESP = false,
 	CrimCrateBasic = true,
 	CrimCrateRare = true,

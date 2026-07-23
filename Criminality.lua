@@ -1429,6 +1429,32 @@ local function dealerEspMeta(shop, S)
 	return col, "DEALER", false
 end
 
+-- Workspace.Map.Shopz.*.CurrentStocks children = item names in stock
+local function matchDealerStock(shop, query)
+	query = tostring(query or "")
+	query = string.lower((string.gsub(query, "^%s+", "")))
+	query = (string.gsub(query, "%s+$", ""))
+	if query == "" then
+		return false, nil
+	end
+	local stocks = shop and shop:FindFirstChild("CurrentStocks")
+	if not stocks then
+		return false, nil
+	end
+	local hits = {}
+	for _, ch in ipairs(stocks:GetChildren()) do
+		local n = ch.Name
+		if string.find(string.lower(n), query, 1, true) then
+			hits[#hits + 1] = n
+		end
+	end
+	if #hits == 0 then
+		return false, nil
+	end
+	table.sort(hits)
+	return true, hits
+end
+
 local function styleRebelDealerEntry(entry, fill)
 	if not entry then
 		return
@@ -1457,6 +1483,99 @@ local function styleRebelDealerEntry(entry, fill)
 		entry.lbl.TextColor3 = Color3.fromRGB(255, 210, 90)
 		entry.lbl.TextSize = 12
 	end
+end
+
+local function styleStockMatchEntry(entry, fill)
+	if not entry then
+		return
+	end
+	entry.stockHit = true
+	if alive(entry.h) then
+		entry.h.FillTransparency = 0.4
+		entry.h.OutlineTransparency = 0
+		entry.h.FillColor = fill
+		entry.h.OutlineColor = Color3.fromRGB(180, 255, 140)
+	end
+	if alive(entry.bg) then
+		entry.bg.Size = UDim2.new(0, 160, 0, 22)
+		entry.bg.StudsOffset = Vector3.new(0, 4.8, 0)
+	end
+	if alive(entry.pill) then
+		entry.pill.BackgroundColor3 = Color3.fromRGB(8, 22, 12)
+		entry.pill.BackgroundTransparency = 0.1
+	end
+	if entry.stroke and entry.stroke.Parent then
+		entry.stroke.Color = fill
+		entry.stroke.Thickness = 1.8
+		entry.stroke.Transparency = 0.15
+	end
+	if alive(entry.lbl) then
+		entry.lbl.TextColor3 = Color3.fromRGB(190, 255, 160)
+		entry.lbl.TextSize = 11
+	end
+end
+
+local function refreshDealerStockLabels(S)
+	local filter = tostring(S.CrimDealerStockFilter or "")
+	local filterActive = string.find(filter, "%S") ~= nil
+	local stockColor = Color3.fromRGB(80, 220, 120)
+	local matchN = 0
+	for _, e in ipairs(ESP.dealers) do
+		local shop = e.model
+		if not alive(shop) then
+			continue
+		end
+		local color, baseLabel, isRebel = dealerEspMeta(shop, S)
+		e.rebel = isRebel == true
+		e.baseLabel = baseLabel
+		if filterActive then
+			local ok, hits = matchDealerStock(shop, filter)
+			e.stockMatch = ok and hits or nil
+			if e.stockMatch then
+				matchN += 1
+				local show = e.stockMatch[1]
+				if #e.stockMatch > 1 then
+					show = show .. " +" .. tostring(#e.stockMatch - 1)
+				end
+				local prefix = isRebel and "\u{2605} REBEL" or "DEALER"
+				local txt = prefix .. " · " .. show
+				if alive(e.lbl) and e.lbl.Text ~= txt then
+					e.lbl.Text = txt
+				end
+				if alive(e.bg) then
+					e.bg.Size = UDim2.new(0, math.clamp(#txt * 7 + 24, 90, 200), 0, 22)
+				end
+				styleStockMatchEntry(e, stockColor)
+			else
+				e.stockMatch = nil
+				if alive(e.lbl) then
+					e.lbl.Text = baseLabel
+					e.lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+					e.lbl.TextSize = 11
+				end
+				if alive(e.h) then
+					e.h.FillColor = color
+					e.h.OutlineColor = isRebel and Color3.fromRGB(255, 230, 120) or Color3.fromRGB(255, 255, 255)
+					e.h.FillTransparency = 0.55
+				end
+				if isRebel then
+					styleRebelDealerEntry(e, color)
+				end
+			end
+		else
+			e.stockMatch = nil
+			if alive(e.lbl) and e.lbl.Text ~= baseLabel then
+				e.lbl.Text = baseLabel
+			end
+			if isRebel then
+				styleRebelDealerEntry(e, color)
+			elseif alive(e.h) then
+				e.h.FillColor = color
+				e.h.OutlineColor = Color3.fromRGB(255, 255, 255)
+			end
+		end
+	end
+	return matchN, filterActive
 end
 
 local function clearDealerESP()
@@ -1507,6 +1626,7 @@ local function syncDealerESP(S)
 		end
 	end
 	espBuilt.dealers = #ESP.dealers > 0
+	refreshDealerStockLabels(S)
 end
 
 -- One-shot alias kept for older call sites / init race
@@ -2447,12 +2567,25 @@ local function tickESP(S)
 		end
 	end
 
-	-- Dealers (RebelDealer = map-wide, ignore CrimESPMaxDist)
+	-- Dealers (RebelDealer / stock match = map-wide, ignore CrimESPMaxDist)
 	local showDlr = S.CrimDealerESP
+	local stockFilter = tostring(S.CrimDealerStockFilter or "")
+	local stockFilterActive = string.find(stockFilter, "%S") ~= nil
+	local stockOnly = S.CrimDealerStockOnly ~= false
 	for _, e in ipairs(ESP.dealers) do
 		local vis = false
 		if showDlr and alive(e.part) then
-			if e.rebel then
+			if stockFilterActive then
+				if e.stockMatch then
+					vis = true -- map-wide for stock hits
+				elseif not stockOnly then
+					if e.rebel then
+						vis = true
+					else
+						vis = (camPos - e.part.Position).Magnitude <= maxDist
+					end
+				end
+			elseif e.rebel then
 				vis = true
 			else
 				vis = (camPos - e.part.Position).Magnitude <= maxDist
@@ -8942,6 +9075,27 @@ function Criminality.Init(S)
 			pcall(gunWatch.sync, S)
 			pcall(tickESP, S)
 		end
+	end
+	S._crimSyncDealerESP = function()
+		if crimFlag(S.CrimDealerESP) then
+			pcall(syncDealerESP, S)
+			pcall(tickESP, S)
+		else
+			pcall(clearDealerESP)
+		end
+	end
+	S._crimDealerStockCount = function()
+		local n = 0
+		for _, e in ipairs(ESP.dealers) do
+			if e.stockMatch then
+				n += 1
+			end
+		end
+		-- ensure labels fresh when UI asks
+		if crimFlag(S.CrimDealerESP) then
+			n = select(1, refreshDealerStockLabels(S)) or n
+		end
+		return n
 	end
 	S._crimRefreshGunMods = function()
 		if gunModsWant(S) then

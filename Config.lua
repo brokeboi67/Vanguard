@@ -590,6 +590,12 @@ function Config.EnforceRules(S)
 	if S.CrimDealerESP == nil then
 		S.CrimDealerESP = false
 	end
+	if typeof(S.CrimDealerStockFilter) ~= "string" then
+		S.CrimDealerStockFilter = ""
+	end
+	if S.CrimDealerStockOnly == nil then
+		S.CrimDealerStockOnly = true
+	end
 	if typeof(S.CrimRebelDealerColor) ~= "Color3" then
 		S.CrimRebelDealerColor = Color3.fromRGB(255, 90, 70)
 	end

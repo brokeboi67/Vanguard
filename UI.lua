@@ -3260,15 +3260,96 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 			flat = true,
 			requires = "CrimSafeESP",
 		})
-		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 4, { flat = true })
-		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 5, {
+		MakeTog(CESP, "Dealer ESP", "CrimDealerESP", 4, {
+			flat = true,
+			onChange = function()
+				if S._crimSyncDealerESP then
+					pcall(S._crimSyncDealerESP)
+				end
+			end,
+		})
+		local DealerStockRow = C("Frame", {
+			Size = UDim2.new(1, 0, 0, 30),
+			BackgroundTransparency = 1,
+			LayoutOrder = 5,
+			ZIndex = 5,
+			Parent = CESP,
+		})
+		local DealerStockSearch = C("TextBox", {
+			Size = UDim2.new(1, 0, 1, 0),
+			BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+			BorderSizePixel = 0,
+			Text = tostring(S.CrimDealerStockFilter or ""),
+			PlaceholderText = "Stock search (AKS, Mare, Bat…)",
+			ClearTextOnFocus = false,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(220, 220, 230),
+			PlaceholderColor3 = Color3.fromRGB(100, 100, 112),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			ZIndex = 6,
+			Parent = DealerStockRow,
+		})
+		C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = DealerStockSearch })
+		C("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = DealerStockSearch })
+		local DealerStockStatus = C("TextLabel", {
+			Size = UDim2.new(1, 0, 0, 16),
+			BackgroundTransparency = 1,
+			Text = "",
+			Font = Enum.Font.GothamMedium,
+			TextSize = 10,
+			TextColor3 = Color3.fromRGB(130, 140, 160),
+			TextXAlignment = Enum.TextXAlignment.Left,
+			LayoutOrder = 6,
+			ZIndex = 5,
+			Parent = CESP,
+		})
+		local function refreshDealerStockStatus()
+			local n = 0
+			if S._crimDealerStockCount then
+				local ok, c = pcall(S._crimDealerStockCount)
+				if ok and typeof(c) == "number" then
+					n = c
+				end
+			end
+			local q = tostring(S.CrimDealerStockFilter or "")
+			if string.find(q, "%S") then
+				DealerStockStatus.Text = string.format("%d dealer(s) with \"%s\"", n, q)
+				DealerStockStatus.TextColor3 = n > 0 and Color3.fromRGB(140, 220, 150) or Color3.fromRGB(200, 120, 120)
+			else
+				DealerStockStatus.Text = "Empty filter = all dealers (normal ESP)"
+				DealerStockStatus.TextColor3 = Color3.fromRGB(130, 140, 160)
+			end
+		end
+		DealerStockSearch:GetPropertyChangedSignal("Text"):Connect(function()
+			S.CrimDealerStockFilter = DealerStockSearch.Text or ""
+			if S._crimSyncDealerESP then
+				pcall(S._crimSyncDealerESP)
+			end
+			refreshDealerStockStatus()
+			if ConfigModule and ConfigModule.SaveGlobals then
+				pcall(ConfigModule.SaveGlobals, S)
+			end
+		end)
+		MakeTog(CESP, "Stock Matches Only", "CrimDealerStockOnly", 7, {
+			flat = true,
+			requires = "CrimDealerESP",
+			onChange = function()
+				if S._crimSyncDealerESP then
+					pcall(S._crimSyncDealerESP)
+				end
+				refreshDealerStockStatus()
+			end,
+		})
+		MakeSlider(CESP, "Safe/Dealer Max Distance", "CrimESPMaxDist", 50, 600, 8, {
 			suffix = " st",
 			step = 10,
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CESP, "hint_crim_safe_broken", 6)
-		MakeSection(CESP, L("crim_sub_guns"), 7)
-		MakeTog(CESP, "Gun ESP", "CrimGunESP", 8, {
+		MakeHint(CESP, "hint_crim_dealer", 9)
+		MakeHint(CESP, "hint_crim_safe_broken", 10)
+		MakeSection(CESP, L("crim_sub_guns"), 11)
+		MakeTog(CESP, "Gun ESP", "CrimGunESP", 12, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimGunESPMaxDist
@@ -3278,28 +3359,28 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				refreshNestedToggles("CrimGunESP")
 			end,
 		})
-		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 9, {
+		MakeTog(CESP, "Show Guns", "CrimGunESPGuns", 13, {
 			flat = true,
 			requires = "CrimGunESP",
 			onChange = function()
 				if S._crimSyncGunESP then S._crimSyncGunESP() end
 			end,
 		})
-		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 10, {
+		MakeTog(CESP, "Show Melee", "CrimGunESPMelee", 14, {
 			flat = true,
 			requires = "CrimGunESP",
 			onChange = function()
 				if S._crimSyncGunESP then S._crimSyncGunESP() end
 			end,
 		})
-		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 11, {
+		MakeSlider(CESP, "Gun View Distance", "CrimGunESPMaxDist", 30, 500, 15, {
 			suffix = " st",
 			step = 10,
 			requires = "CrimGunESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeSection(CESP, L("crim_sub_crates"), 12)
-		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 13, {
+		MakeSection(CESP, L("crim_sub_crates"), 16)
+		MakeTog(CESP, "Crate ESP", "CrimCrateESP", 17, {
 			flat = true,
 			onChange = function(on)
 				local dist = sliderRegistry.CrimCrateMaxDist
@@ -3308,26 +3389,27 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 14, {
+		MakeTog(CESP, "Basic Crates", "CrimCrateBasic", 18, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 15, {
+		MakeTog(CESP, "Rare Crates", "CrimCrateRare", 19, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeTog(CESP, "Airdrop Crates", "CrimCrateAirdrop", 16, {
+		MakeTog(CESP, "Airdrop Crates", "CrimCrateAirdrop", 20, {
 			flat = true,
 			requires = "CrimCrateESP",
 		})
-		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 17, {
+		MakeSlider(CESP, "Crate View Distance", "CrimCrateMaxDist", 50, 2500, 21, {
 			suffix = " st",
 			step = 25,
 			requires = "CrimCrateESP",
 			fmt = function(v) return string.format("%d st", v) end,
 		})
-		MakeHint(CESP, "hint_crim_crate", 18)
-		MakeHint(CESP, "hint_crim_gun", 19)
+		MakeHint(CESP, "hint_crim_crate", 22)
+		MakeHint(CESP, "hint_crim_gun", 23)
+		task.defer(refreshDealerStockStatus)
 
 		MakeSection(CPath, L("crim_sub_path"), 1)
 		MakeTog(CPath, "Path Display", "CrimPathDisplay", 2, { flat = true })
