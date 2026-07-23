@@ -8,8 +8,8 @@ local SCRIPTS = {
 		url = "https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source",
 	},
 	Dex = {
-		label = "Dex Explorer",
-		url = "https://raw.githubusercontent.com/infyiff/backup/main/dex.lua",
+		label = "Dex++",
+		url = "https://github.com/AZYsGithub/DexPlusPlus/releases/latest/download/out.lua",
 	},
 	SimpleSpy = {
 		label = "SimpleSpy",
