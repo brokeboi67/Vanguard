@@ -22,7 +22,7 @@ local RARITY_LABELS = {
 	common = "Common",
 	subcommon = "Subcommon",
 	limited = "Limited",
-	unknown = "?",
+	unknown = "—",
 }
 
 local function normalizeRarity(r)
@@ -209,51 +209,40 @@ local function iconCloseX(parent, C, z, color)
 end
 
 local function iconCheck(parent, C, z, color)
-	-- centered ✓ inside parent badge
-	local holder = C("Frame", {
+	-- Unicode check — cleaner than rotated Frame bars
+	return C("TextLabel", {
 		Name = "CheckIcon",
-		Size = UDim2.fromOffset(12, 12),
-		Position = UDim2.fromScale(0.5, 0.5),
-		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
+		Text = "\u{2713}",
+		Font = Enum.Font.GothamBold,
+		TextSize = 13,
+		TextColor3 = color or Color3.fromRGB(255, 255, 255),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Center,
 		ZIndex = z or 12,
 		Parent = parent,
 	})
-	-- short leg
-	C("Frame", {
-		Size = UDim2.fromOffset(4, 2),
-		Position = UDim2.new(0, 0, 0, 6),
-		BackgroundColor3 = color,
-		BorderSizePixel = 0,
-		Rotation = 45,
-		ZIndex = z or 12,
-		Parent = holder,
-	})
-	-- long leg
-	C("Frame", {
-		Size = UDim2.fromOffset(8, 2),
-		Position = UDim2.new(0, 3, 0, 5),
-		BackgroundColor3 = color,
-		BorderSizePixel = 0,
-		Rotation = -48,
-		ZIndex = z or 12,
-		Parent = holder,
-	})
-	return holder
 end
 
 local function makeEquippedBadge(parent, C)
 	local badge = C("Frame", {
 		Name = "EquippedBadge",
-		Size = UDim2.fromOffset(18, 18),
-		Position = UDim2.new(1, -8, 0, 8),
+		Size = UDim2.fromOffset(20, 20),
+		Position = UDim2.new(1, -6, 0, 6),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = SKIN_ACCENT,
 		BorderSizePixel = 0,
 		ZIndex = 11,
 		Parent = parent,
 	})
-	C("UICorner", { CornerRadius = UDim.new(0, 5), Parent = badge })
+	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = badge })
+	C("UIStroke", {
+		Color = Color3.fromRGB(255, 255, 255),
+		Thickness = 1,
+		Transparency = 0.55,
+		Parent = badge,
+	})
 	iconCheck(badge, C, 12, Color3.fromRGB(255, 255, 255))
 	return badge
 end
@@ -794,18 +783,21 @@ function UISkinVault.build(opts)
 			ZIndex = 10,
 			Parent = Card,
 		})
-		C("TextLabel", {
-			Size = UDim2.new(1, -12, 0, 14),
-			Position = UDim2.new(0, 6, 1, -36),
-			BackgroundTransparency = 1,
-			Text = RARITY_LABELS[rarKey] or rarKey,
-			Font = Enum.Font.GothamMedium,
-			TextSize = 10,
-			TextColor3 = accent,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			ZIndex = 10,
-			Parent = Card,
-		})
+		-- Only show rarity when known (unknown was showing "?")
+		if rarKey ~= "unknown" then
+			C("TextLabel", {
+				Size = UDim2.new(1, -12, 0, 14),
+				Position = UDim2.new(0, 6, 1, -36),
+				BackgroundTransparency = 1,
+				Text = RARITY_LABELS[rarKey] or rarKey,
+				Font = Enum.Font.GothamMedium,
+				TextSize = 10,
+				TextColor3 = accent,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				ZIndex = 10,
+				Parent = Card,
+			})
+		end
 		C("TextLabel", {
 			Size = UDim2.new(1, -12, 0, 16),
 			Position = UDim2.new(0, 6, 1, -20),
