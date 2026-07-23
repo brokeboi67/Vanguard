@@ -5319,6 +5319,7 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 		return 0
 	end
 	misc.skinChanger.captureDefaults(root)
+	local melee = misc.skinChanger.isMeleeRoot(root)
 	local byName = {}
 	local srcList = {}
 	for _, d in ipairs(variantModel:GetDescendants()) do
@@ -5331,12 +5332,17 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 		return 0
 	end
 	local targets = {}
-	if misc.skinChanger.isMeleeRoot(root) then
+	if melee then
 		targets = misc.skinChanger.collectMeleeMeshParts(root)
 	else
 		for _, d in ipairs(root:GetDescendants()) do
 			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
-				targets[#targets + 1] = d
+				local ln = string.lower(d.Name)
+				-- never touch hitbox / block / handle roots (Melee.Equip uses .Block)
+				if ln ~= "block" and ln ~= "handle" and ln ~= "weaponhandle" and ln ~= "hitbox"
+					and not d:FindFirstChild("Block") then
+					targets[#targets + 1] = d
+				end
 			end
 		end
 	end
@@ -5357,8 +5363,11 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 							ch:Destroy()
 						end
 					end
-					if src.MeshId and tostring(src.MeshId) ~= "" and not string.find(tostring(src.MeshId), "ContentId", 1, true) then
-						d.MeshId = src.MeshId
+					-- Melee: NEVER swap MeshId — breaks Melee.Equip (... .Block = nil)
+					if not melee then
+						if src.MeshId and tostring(src.MeshId) ~= "" and not string.find(tostring(src.MeshId), "ContentId", 1, true) then
+							d.MeshId = src.MeshId
+						end
 					end
 					local sa = src:FindFirstChildOfClass("SurfaceAppearance")
 					if sa then
@@ -5367,7 +5376,10 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 						neo.Parent = d
 						d.TextureID = ""
 					else
-						d.TextureID = src.TextureID or ""
+						local tex = src.TextureID
+						if typeof(tex) == "string" and tex ~= "" then
+							d.TextureID = tex
+						end
 					end
 					d:SetAttribute("VG_VarSkin", skinKey)
 				end)
@@ -5377,16 +5389,75 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 		end
 	end
 	if not quiet and patched > 0 then
-		misc.skinChanger.log(string.format("applyVariant root=%s n=%d patched=%d key=%s", root.Name, n, patched, tostring(skinKey)))
+		misc.skinChanger.log(string.format("applyVariant root=%s n=%d patched=%d melee=%s key=%s", root.Name, n, patched, tostring(melee), tostring(skinKey)))
 	end
 	return n
 end
 
+-- Prefer RepPBR SA for SkinVariants (safe). Mesh swap only as fallback (guns).
+function misc.skinChanger.resolveVariantAsTemplate(skinKey, gunName)
+	if not misc.skinChanger.isVariantSkinKey(skinKey) then
+		return nil
+	end
+	local _, modelName = misc.skinChanger.variantPathFromKey(skinKey)
+	local g, label = misc.skinChanger.parseVariantModelName(modelName or "")
+	gunName = gunName or g
+	if not gunName or not label then
+		return nil
+	end
+	local tmpl = misc.skinChanger.resolveTemplate(gunName, label)
+	if tmpl then
+		return tmpl
+	end
+	tmpl = misc.skinChanger.findSaByGunLabel(misc.skinChanger.getRepPBR(), gunName, label)
+	if tmpl then
+		return tmpl
+	end
+	-- Cashcane → Cash Cane etc. (slug without spaces)
+	local spaced = string.gsub(label, "(%l)(%u)", "%1 %2")
+	if spaced ~= label then
+		tmpl = misc.skinChanger.findSaByGunLabel(misc.skinChanger.getRepPBR(), gunName, spaced)
+		if tmpl then
+			return tmpl
+		end
+	end
+	-- cashcane → try inserting space before common second word heuristics via RepPBR scan
+	local folder = misc.skinChanger.getRepPBR()
+	if folder then
+		local labelC = string.lower(string.gsub(label, "%s+", ""))
+		local gunL = string.lower(misc.skinChanger.baseGunName(gunName))
+		for _, ch in ipairs(folder:GetChildren()) do
+			if ch:IsA("SurfaceAppearance") then
+				local us = string.find(ch.Name, "_", 1, true)
+				if us then
+					local gpart = string.lower(string.sub(ch.Name, 1, us - 1))
+					local skin = string.sub(ch.Name, us + 1)
+					local skinC = string.lower(string.gsub(skin, "%s+", ""))
+					if skinC == labelC and (gpart == gunL or misc.skinChanger.normToken(gpart) == misc.skinChanger.normToken(gunName)) then
+						return ch
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
 function misc.skinChanger.applyVariantToTool(tool, skinKey, quiet)
-	local model = misc.skinChanger.findVariantModel(skinKey)
-	if not tool or not model then
+	if not tool or not skinKey then
 		return 0
 	end
+	-- Safe path: Bat Cash Cane etc. exist as RepPBR — don't mesh-swap (breaks Melee.Block)
+	local tmpl = misc.skinChanger.resolveVariantAsTemplate(skinKey, tool.Name)
+	if tmpl then
+		misc.skinChanger.log(string.format("variant→RepPBR %s → %s", tostring(skinKey), tmpl.Name))
+		return misc.skinChanger.applyToTool(tool, tmpl, quiet)
+	end
+	local model = misc.skinChanger.findVariantModel(skinKey)
+	if not model then
+		return 0
+	end
+	-- Melee without RepPBR: texture/SA only (no MeshId) inside applyVariantToInstance
 	misc.skinChanger.indexMeshes(tool, tool.Name)
 	local n = misc.skinChanger.applyVariantToInstance(tool, model, skinKey, quiet)
 	local cam = workspace.CurrentCamera
@@ -6679,11 +6750,16 @@ function misc.skinChanger.applyToDroppedModel(model)
 	end
 	local n = 0
 	if misc.skinChanger.isVariantSkinKey(key) then
-		local variant = misc.skinChanger.findVariantModel(key)
-		if not variant then
-			return 0
+		local tmpl = misc.skinChanger.resolveVariantAsTemplate(key, gunName)
+		if tmpl then
+			n = misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+		else
+			local variant = misc.skinChanger.findVariantModel(key)
+			if not variant then
+				return 0
+			end
+			n = misc.skinChanger.applyVariantToInstance(model, variant, key, true)
 		end
-		n = misc.skinChanger.applyVariantToInstance(model, variant, key, true)
 	elseif misc.skinChanger.isTexSkinKey(key) then
 		local texId = misc.skinChanger.texIdFromKey(key)
 		n = misc.skinChanger.applyTextureToInstance(model, texId, true)
@@ -7199,14 +7275,20 @@ function misc.skinChanger.bindUi(S)
 			end
 		end
 		for _, var in ipairs(misc.skinChanger.listVariantSkinsForGun(gunName)) do
-			local lab = var.label .. " ★"
-			if not saLabels[string.lower(var.label)] then
-				saLabels[string.lower(var.label)] = true
+			local labKey = string.lower(string.gsub(var.label, "%s+", ""))
+			local skip = saLabels[string.lower(var.label)] or saLabels[labKey]
+			if not skip then
+				-- Prefer showing RepPBR name if we can resolve it (Cashcane → Cash Cane)
+				local tmpl = misc.skinChanger.resolveVariantAsTemplate(var.full, gunName)
+				local lab = tmpl and misc.skinChanger.skinLabel(tmpl.Name) or (var.label .. " ★")
+				saLabels[string.lower(lab)] = true
+				saLabels[labKey] = true
 				rows[#rows + 1] = {
-					full = var.full,
+					full = tmpl and tmpl.Name or var.full,
 					label = lab,
-					selected = misc.skinChanger.getSavedSkinKey(gunName) == var.full,
-					preview = var.preview,
+					selected = misc.skinChanger.getSavedSkinKey(gunName) == (tmpl and tmpl.Name or var.full)
+						or misc.skinChanger.getSavedSkinKey(gunName) == var.full,
+					preview = tmpl and misc.skinChanger.contentId(tmpl.ColorMap) or var.preview,
 				}
 			end
 		end
