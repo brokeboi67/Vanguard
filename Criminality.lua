@@ -4377,7 +4377,7 @@ end
 
 -- ── STAFF DETECTOR ───────────────────────────────────────────────────────────
 -- Packed into one table to stay under Luau's 200-local limit.
-local staff = { conn = nil }
+local staff = { conn = nil, childConns = {}, alertGui = nil, alerted = {}, scanTok = 0 }
 
 staff.GROUPS = {
 	[4165692] = {
@@ -4455,39 +4455,207 @@ local function isStaffPlayer(player)
 end
 
 local function formatStaffKick(staffList)
-	local msg = "Staff detected:\n"
-	for i, staff in ipairs(staffList) do
+	local msg = ""
+	for i, s in ipairs(staffList) do
 		local idType = "Role"
-		local idValue = staff.Role or "Unknown"
-		if staff.Role == "UserID" then
+		local idValue = s.Role or "Unknown"
+		if s.Role == "UserID" then
 			idType = "UserID"
-			idValue = tostring(staff.GroupId or "Unknown")
-		elseif staff.Role == "Tracker User" then
+			idValue = tostring(s.GroupId or "Unknown")
+		elseif s.Role == "Tracker User" then
 			idType = "Tracker"
 			idValue = "Active"
 		end
 		msg = msg .. string.format(
-			"- %s (%s: %s)%s",
-			staff.Name or "Unknown",
+			"• %s  (%s: %s)%s",
+			s.Name or "Unknown",
 			idType,
 			idValue,
-			staff.TrackedPlayer and (" - Tracking: " .. staff.TrackedPlayer) or ""
+			s.TrackedPlayer and ("  → tracking " .. s.TrackedPlayer) or ""
 		)
 		if i < #staffList then msg = msg .. "\n" end
 	end
 	return msg
 end
 
+local function staffAlertParent()
+	local lp = getLP()
+	local pg = lp and lp:FindFirstChildOfClass("PlayerGui")
+	if pg then
+		return pg
+	end
+	if typeof(gethui) == "function" then
+		local ok, h = pcall(gethui)
+		if ok and h then
+			return h
+		end
+	end
+	return game:GetService("CoreGui")
+end
+
+local function dismissStaffAlert()
+	if staff.alertGui then
+		pcall(function()
+			staff.alertGui:Destroy()
+		end)
+		staff.alertGui = nil
+	end
+end
+
+local function showStaffAlert(staffList, willKick)
+	dismissStaffAlert()
+	local parent = staffAlertParent()
+	if not parent then
+		return
+	end
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "VG_StaffAlert"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 2147483646
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	pcall(function()
+		gui.Parent = parent
+	end)
+	if not gui.Parent then
+		return
+	end
+	staff.alertGui = gui
+
+	local dim = Instance.new("Frame")
+	dim.Name = "Dim"
+	dim.Size = UDim2.fromScale(1, 1)
+	dim.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	dim.BackgroundTransparency = 0.4
+	dim.BorderSizePixel = 0
+	dim.Parent = gui
+
+	local card = Instance.new("Frame")
+	card.Name = "Card"
+	card.AnchorPoint = Vector2.new(0.5, 0.5)
+	card.Position = UDim2.fromScale(0.5, 0.42)
+	card.Size = UDim2.new(0, 540, 0, 0)
+	card.AutomaticSize = Enum.AutomaticSize.Y
+	card.BackgroundColor3 = Color3.fromRGB(16, 8, 10)
+	card.BorderSizePixel = 0
+	card.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 16)
+	corner.Parent = card
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(255, 55, 70)
+	stroke.Thickness = 2.5
+	stroke.Transparency = 0.05
+	stroke.Parent = card
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, 18)
+	pad.PaddingBottom = UDim.new(0, 22)
+	pad.PaddingLeft = UDim.new(0, 22)
+	pad.PaddingRight = UDim.new(0, 22)
+	pad.Parent = card
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Vertical
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 10)
+	layout.Parent = card
+
+	local header = Instance.new("Frame")
+	header.BackgroundTransparency = 1
+	header.Size = UDim2.new(1, 0, 0, 44)
+	header.LayoutOrder = 1
+	header.Parent = card
+
+	local title = Instance.new("TextLabel")
+	title.BackgroundTransparency = 1
+	title.Size = UDim2.new(1, -48, 1, 0)
+	title.Font = Enum.Font.GothamBlack
+	title.TextSize = 34
+	title.Text = "STAFF DETECTED"
+	title.TextColor3 = Color3.fromRGB(255, 70, 85)
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.TextYAlignment = Enum.TextYAlignment.Center
+	title.Parent = header
+
+	local close = Instance.new("TextButton")
+	close.Name = "Close"
+	close.AnchorPoint = Vector2.new(1, 0.5)
+	close.Position = UDim2.new(1, 0, 0.5, 0)
+	close.Size = UDim2.new(0, 40, 0, 40)
+	close.BackgroundColor3 = Color3.fromRGB(48, 14, 18)
+	close.BorderSizePixel = 0
+	close.Text = "✕"
+	close.Font = Enum.Font.GothamBold
+	close.TextSize = 20
+	close.TextColor3 = Color3.fromRGB(255, 210, 210)
+	close.AutoButtonColor = true
+	close.Parent = header
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, 10)
+	closeCorner.Parent = close
+	close.MouseButton1Click:Connect(function()
+		dismissStaffAlert()
+	end)
+
+	local sub = Instance.new("TextLabel")
+	sub.BackgroundTransparency = 1
+	sub.Size = UDim2.new(1, 0, 0, 20)
+	sub.LayoutOrder = 2
+	sub.Font = Enum.Font.GothamMedium
+	sub.TextSize = 13
+	sub.TextColor3 = Color3.fromRGB(180, 140, 145)
+	sub.TextXAlignment = Enum.TextXAlignment.Left
+	sub.Text = willKick and "Auto Kick ON — leaving server…" or "Auto Kick OFF — close with ✕ (monitoring stays on)"
+	sub.Parent = card
+
+	local body = Instance.new("TextLabel")
+	body.BackgroundTransparency = 1
+	body.Size = UDim2.new(1, 0, 0, 0)
+	body.AutomaticSize = Enum.AutomaticSize.Y
+	body.LayoutOrder = 3
+	body.Font = Enum.Font.GothamMedium
+	body.TextSize = 15
+	body.TextColor3 = Color3.fromRGB(240, 230, 232)
+	body.TextXAlignment = Enum.TextXAlignment.Left
+	body.TextYAlignment = Enum.TextYAlignment.Top
+	body.TextWrapped = true
+	body.Text = formatStaffKick(staffList)
+	body.Parent = card
+end
+
+local function markStaffAlerted(staffList)
+	for _, s in ipairs(staffList) do
+		local plr = Plrs:FindFirstChild(s.Name)
+		if plr then
+			staff.alerted[plr.UserId] = true
+		end
+	end
+end
+
 local function kickForStaff(staffList)
 	local lp = getLP()
-	if not lp then return end
+	if not lp or not staffList or #staffList == 0 then
+		return
+	end
+	local S = _G.__VG_S
+	local autoKick = S and S.CrimStaffAutoKick == true
+	markStaffAlerted(staffList)
+	showStaffAlert(staffList, autoKick)
 	local body = formatStaffKick(staffList)
 	crimNotify("Staff Detected", body, 8)
+	if not autoKick then
+		return
+	end
 	task.delay(1.5, function()
-		local S = _G.__VG_S
-		if not S or not S.CrimStaffDetect then return end
-		if S.CrimStaffAutoKick ~= true then return end
-		pcall(function() lp:Kick("Staff joined\n\n" .. body) end)
+		local cur = _G.__VG_S
+		if not cur or not cur.CrimStaffDetect then
+			return
+		end
+		if cur.CrimStaffAutoKick ~= true then
+			return
+		end
+		pcall(function()
+			lp:Kick("Staff joined\n\n" .. body)
+		end)
 	end)
 end
 
@@ -4507,42 +4675,92 @@ local function onStaffPlayerAdded(player)
 	local S = _G.__VG_S
 	if not S or not S.CrimStaffDetect then return end
 	if player == getLP() then return end
-	local info = collectStaffInfo(player)
-	if info then
-		kickForStaff({ info })
+	if staff.alerted[player.UserId] then return end
+	-- Rank/role can lag on join — retry a few times
+	task.spawn(function()
+		for _ = 1, 4 do
+			if not player.Parent then
+				return
+			end
+			local info = collectStaffInfo(player)
+			if info then
+				if not staff.alerted[player.UserId] then
+					kickForStaff({ info })
+				end
+				return
+			end
+			task.wait(1.25)
+		end
+	end)
+	-- Tracker$ often appears after join
+	if not staff.childConns[player] then
+		staff.childConns[player] = player.ChildAdded:Connect(function(ch)
+			if not (_G.__VG_S and _G.__VG_S.CrimStaffDetect) then
+				return
+			end
+			if typeof(ch.Name) == "string" and string.sub(ch.Name, -8) == "Tracker$" then
+				if staff.alerted[player.UserId] then
+					return
+				end
+				local info = collectStaffInfo(player)
+				if info then
+					kickForStaff({ info })
+				end
+			end
+		end)
 	end
 end
 
 local function checkExistingStaff()
-	local found = {}
 	local lp = getLP()
 	for _, player in ipairs(Plrs:GetPlayers()) do
 		if player ~= lp then
-			local info = collectStaffInfo(player)
-			if info then table.insert(found, info) end
+			onStaffPlayerAdded(player)
 		end
 	end
-	if #found > 0 then
-		kickForStaff(found)
-		return true
-	end
-	return false
 end
 
 local function startStaffDetect()
-	if staff.conn then staff.conn:Disconnect() end
+	if staff.conn then
+		staff.conn:Disconnect()
+		staff.conn = nil
+	end
+	for plr, c in pairs(staff.childConns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+		staff.childConns[plr] = nil
+	end
+	table.clear(staff.alerted)
+	dismissStaffAlert()
 	staff.conn = Plrs.PlayerAdded:Connect(onStaffPlayerAdded)
-	crimNotify("Staff Detection", "Monitoring active", 5)
+	crimNotify("Staff Detection", "Monitoring active", 4)
+	staff.scanTok += 1
+	local tok = staff.scanTok
 	task.spawn(function()
-		if checkExistingStaff() and staff.conn then
-			staff.conn:Disconnect()
-			staff.conn = nil
+		task.wait(0.4)
+		if tok ~= staff.scanTok then
+			return
 		end
+		-- Keep PlayerAdded alive — do NOT disconnect after first hit (needed when Auto Kick off)
+		checkExistingStaff()
 	end)
 end
 
 local function stopStaffDetect()
-	if staff.conn then staff.conn:Disconnect(); staff.conn = nil end
+	staff.scanTok += 1
+	if staff.conn then
+		staff.conn:Disconnect()
+		staff.conn = nil
+	end
+	for plr, c in pairs(staff.childConns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+		staff.childConns[plr] = nil
+	end
+	table.clear(staff.alerted)
+	dismissStaffAlert()
 end
 
 -- â”€â”€ NO FAIL LOCKPICK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
