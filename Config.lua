@@ -782,6 +782,18 @@ function Config.EnforceRules(S)
 	if S.CrimFullBright == nil then
 		S.CrimFullBright = false
 	end
+	if S.CrimShotTracers == nil then
+		S.CrimShotTracers = false
+	end
+	if S.CrimShotTracersSelf == nil then
+		S.CrimShotTracersSelf = true
+	end
+	if S.CrimShotTracersOthers == nil then
+		S.CrimShotTracersOthers = true
+	end
+	if S.CrimShotTracersLife == nil then
+		S.CrimShotTracersLife = 0.55
+	end
 	if S.CrimNoFog == nil then
 		S.CrimNoFog = false
 	end

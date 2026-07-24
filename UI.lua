@@ -3744,7 +3744,35 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CVIS, "hint_crim_fullbright", 2)
 		MakeTog(CVIS, "No Fog", "CrimNoFog", 3, { flat = true })
 		MakeHint(CVIS, "hint_crim_nofog", 4)
-		MakeTog(CVIS, "Skip Menu Intro", "CrimSkipMenuIntro", 5, {
+		MakeTog(CVIS, "Shot Tracers (Crim)", "CrimShotTracers", 5, {
+			flat = true,
+			onChange = function(on)
+				local reg = sliderRegistry.CrimShotTracersLife
+				if reg and reg.setEnabled then
+					reg.setEnabled(on)
+				end
+			end,
+		})
+		MakeTog(CVIS, "Own Shots", "CrimShotTracersSelf", 6, {
+			flat = true,
+			requires = "CrimShotTracers",
+		})
+		MakeTog(CVIS, "Other Players", "CrimShotTracersOthers", 7, {
+			flat = true,
+			requires = "CrimShotTracers",
+		})
+		MakeSlider(CVIS, "Tracer Lifetime", "CrimShotTracersLife", 0.2, 1.5, 8, {
+			step = 0.05,
+			requires = "CrimShotTracers",
+			fmt = function(v) return string.format("%.2fs", v) end,
+			onRowCreated = function(_, __, setEnabled)
+				if setEnabled then
+					setEnabled(S.CrimShotTracers == true)
+				end
+			end,
+		})
+		MakeHint(CVIS, "hint_crim_shottracers", 9)
+		MakeTog(CVIS, "Skip Menu Intro", "CrimSkipMenuIntro", 10, {
 			flat = true,
 			onChange = function()
 				if ConfigModule and ConfigModule.SaveGlobals then
@@ -3752,7 +3780,7 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 				end
 			end,
 		})
-		MakeHint(CVIS, "hint_crim_skipintro", 6)
+		MakeHint(CVIS, "hint_crim_skipintro", 11)
 
 		if UISkinVaultModule and UISkinVaultModule.build then
 			UISkinVaultModule.build({

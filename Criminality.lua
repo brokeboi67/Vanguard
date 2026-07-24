@@ -3651,6 +3651,7 @@ local featureRunning = {
 	noFailLockpick = false,
 	fullBright = false,
 	noFog = false,
+	shotTracers = false,
 	skipIntro = false,
 	skinChanger = false,
 	hitSounds = false,
@@ -5127,6 +5128,443 @@ local function stopFullBright()
 		Lighting.FogStart = fb.saved.FogStart
 		Lighting.FogEnd = fb.saved.FogEnd
 		Lighting.GlobalShadows = fb.saved.GlobalShadows
+	end
+end
+
+-- ── CRIM SHOT TRACERS (listen Gun_Shoot / Gun_Hit — dedicated, not Visuals→ShotTracers) ──
+misc.shotTracers = {
+	conns = {},
+	active = false,
+	folder = nil,
+	pending = {}, -- recent shoots waiting for hit
+	loggedSig = {},
+	logLeft = 8,
+}
+
+local function shotTracersDebris()
+	return game:GetService("Debris")
+end
+
+function misc.shotTracers.clearConns()
+	for _, c in ipairs(misc.shotTracers.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.shotTracers.conns = {}
+end
+
+function misc.shotTracers.ensureFolder()
+	local f = misc.shotTracers.folder
+	if f and f.Parent then
+		return f
+	end
+	f = Instance.new("Folder")
+	f.Name = "VG_CrimShotTracers"
+	f.Parent = workspace
+	misc.shotTracers.folder = f
+	return f
+end
+
+function misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth, v)
+	if depth > 4 or v == nil then
+		return
+	end
+	local t = typeof(v)
+	if t == "Vector3" then
+		outVec[#outVec + 1] = v
+	elseif t == "CFrame" then
+		outVec[#outVec + 1] = v.Position
+		outDir[#outDir + 1] = v.LookVector
+	elseif t == "Instance" then
+		if v:IsA("Player") then
+			outPlr[#outPlr + 1] = v
+		elseif v:IsA("BasePart") then
+			outVec[#outVec + 1] = v.Position
+		elseif v:IsA("Model") then
+			local hrp = v:FindFirstChild("HumanoidRootPart") or v.PrimaryPart
+			if hrp and hrp:IsA("BasePart") then
+				outVec[#outVec + 1] = hrp.Position
+			end
+		end
+	elseif t == "number" then
+		outNum[#outNum + 1] = v
+	elseif t == "table" then
+		local keys = {
+			"Origin", "origin", "From", "from", "Start", "start", "Muzzle", "muzzle",
+			"Position", "position", "Pos", "pos", "Hit", "hit", "HitPos", "hitPos",
+			"End", "end", "To", "to", "Point", "point",
+			"Direction", "direction", "Dir", "dir", "Look", "look", "Normal", "normal",
+		}
+		for i = 1, #keys do
+			local x = v[keys[i]]
+			if x ~= nil then
+				misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth + 1, x)
+			end
+		end
+		for k, x in pairs(v) do
+			if typeof(k) == "number" then
+				misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth + 1, x)
+			end
+		end
+	end
+end
+
+function misc.shotTracers.parseArgs(...)
+	local vecs, dirs, plrs, nums = {}, {}, {}, {}
+	local n = select("#", ...)
+	for i = 1, n do
+		misc.shotTracers.collectArgs(vecs, dirs, plrs, nums, 0, select(i, ...))
+	end
+	return vecs, dirs, plrs, nums, n
+end
+
+function misc.shotTracers.argSignature(...)
+	local parts = {}
+	local n = select("#", ...)
+	for i = 1, n do
+		local a = select(i, ...)
+		local t = typeof(a)
+		if t == "table" then
+			local keys = {}
+			for k in pairs(a) do
+				keys[#keys + 1] = tostring(k)
+			end
+			table.sort(keys)
+			parts[#parts + 1] = "table{" .. table.concat(keys, ",") .. "}"
+		elseif t == "Instance" then
+			parts[#parts + 1] = a.ClassName .. ":" .. a.Name
+		else
+			parts[#parts + 1] = t
+		end
+	end
+	return table.concat(parts, "|")
+end
+
+function misc.shotTracers.maybeLog(kind, ...)
+	if misc.shotTracers.logLeft <= 0 then
+		return
+	end
+	local sig = kind .. "::" .. misc.shotTracers.argSignature(...)
+	if misc.shotTracers.loggedSig[sig] then
+		return
+	end
+	misc.shotTracers.loggedSig[sig] = true
+	misc.shotTracers.logLeft -= 1
+	pcall(function()
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("INFO", "[VG:shotTrace] " .. sig)
+		end
+	end)
+	print("[VG:shotTrace]", sig)
+end
+
+function misc.shotTracers.isOwnShot(plrs)
+	local lp = getLP()
+	if not lp then
+		return false
+	end
+	for i = 1, #plrs do
+		if plrs[i] == lp then
+			return true
+		end
+	end
+	return false
+end
+
+function misc.shotTracers.muzzleFromPlayer(plr)
+	local char = plr and plr.Character
+	if not char then
+		return nil
+	end
+	local head = char:FindFirstChild("Head")
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if head and head:IsA("BasePart") then
+		return head.Position
+	end
+	if hrp and hrp:IsA("BasePart") then
+		return hrp.Position
+	end
+	return nil
+end
+
+function misc.shotTracers.draw(from, to, isOwn)
+	if typeof(from) ~= "Vector3" or typeof(to) ~= "Vector3" then
+		return
+	end
+	local diff = to - from
+	local dist = diff.Magnitude
+	if dist < 1 or dist > 2500 then
+		return
+	end
+	local S = _G.__VG_S
+	if not S or not S.CrimShotTracers then
+		return
+	end
+	if isOwn and S.CrimShotTracersSelf == false then
+		return
+	end
+	if not isOwn and S.CrimShotTracersOthers == false then
+		return
+	end
+	local folder = misc.shotTracers.ensureFolder()
+	local mid = from + diff * 0.5
+	local col = isOwn and (S.V or Color3.fromRGB(80, 220, 140)) or Color3.fromRGB(255, 90, 70)
+	local life = tonumber(S.CrimShotTracersLife) or 0.55
+	life = math.clamp(life, 0.2, 2)
+	local width = isOwn and 0.22 or 0.28
+	local Debris = shotTracersDebris()
+
+	local function seg(w, color, transp)
+		local p = Instance.new("Part")
+		p.Name = "VG_CrimTrace"
+		p.Anchored = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Material = Enum.Material.Neon
+		p.Color = color
+		p.Transparency = transp
+		p.Size = Vector3.new(w, w, dist)
+		p.CFrame = CFrame.lookAt(mid, to)
+		p.Parent = folder
+		Debris:AddItem(p, life + 0.15)
+		return p
+	end
+	seg(width, col, 0.12)
+	seg(width * 0.45, Color3.new(1, 1, 1), 0.05)
+end
+
+function misc.shotTracers.resolveLine(vecs, dirs, plrs)
+	local from, to = nil, nil
+	if #vecs >= 2 then
+		-- Prefer longer segment as the tracer line
+		local bestI, bestJ, bestD = 1, 2, -1
+		for i = 1, #vecs do
+			for j = i + 1, #vecs do
+				local d = (vecs[i] - vecs[j]).Magnitude
+				if d > bestD then
+					bestD, bestI, bestJ = d, i, j
+				end
+			end
+		end
+		from, to = vecs[bestI], vecs[bestJ]
+		-- Orient: if one vec is near a player muzzle, that is from
+		for i = 1, #plrs do
+			local m = misc.shotTracers.muzzleFromPlayer(plrs[i])
+			if m then
+				if (from - m).Magnitude < (to - m).Magnitude then
+					-- ok
+				else
+					from, to = to, from
+				end
+				break
+			end
+		end
+	elseif #vecs == 1 and #dirs >= 1 then
+		from = vecs[1]
+		local range = 400
+		to = from + dirs[1].Unit * range
+	elseif #vecs == 1 and #plrs >= 1 then
+		local m = misc.shotTracers.muzzleFromPlayer(plrs[1])
+		if m and (vecs[1] - m).Magnitude > 2 then
+			from, to = m, vecs[1]
+		end
+	end
+	return from, to
+end
+
+function misc.shotTracers.pushPending(from, dir, isOwn)
+	local list = misc.shotTracers.pending
+	list[#list + 1] = { from = from, dir = dir, own = isOwn, t = tick() }
+	-- prune
+	local now = tick()
+	local keep = {}
+	for i = 1, #list do
+		if now - list[i].t < 0.8 then
+			keep[#keep + 1] = list[i]
+		end
+	end
+	misc.shotTracers.pending = keep
+end
+
+function misc.shotTracers.matchPending(hitPos)
+	local list = misc.shotTracers.pending
+	local now = tick()
+	local best, bestScore = nil, -1
+	local bestIdx = nil
+	for i = 1, #list do
+		local p = list[i]
+		if now - p.t > 0.8 then
+			continue
+		end
+		local score = 0
+		if p.dir and p.dir.Magnitude > 0 then
+			local toHit = hitPos - p.from
+			if toHit.Magnitude > 1 then
+				score = p.dir.Unit:Dot(toHit.Unit)
+			end
+		else
+			score = 1 / math.max(1, (hitPos - p.from).Magnitude)
+		end
+		if score > bestScore then
+			bestScore, best, bestIdx = score, p, i
+		end
+	end
+	if best and bestIdx then
+		table.remove(list, bestIdx)
+		return best
+	end
+	return nil
+end
+
+function misc.shotTracers.onShoot(...)
+	local S = _G.__VG_S
+	if not S or not S.CrimShotTracers then
+		return
+	end
+	misc.shotTracers.maybeLog("Gun_Shoot", ...)
+	local vecs, dirs, plrs = misc.shotTracers.parseArgs(...)
+	local isOwn = misc.shotTracers.isOwnShot(plrs)
+	-- If no player in args, assume local when we just fired (heuristic: very recent)
+	if #plrs == 0 then
+		isOwn = true
+	end
+	local from, to = misc.shotTracers.resolveLine(vecs, dirs, plrs)
+	if from and to then
+		misc.shotTracers.draw(from, to, isOwn)
+		return
+	end
+	if from and #dirs >= 1 then
+		misc.shotTracers.pushPending(from, dirs[1], isOwn)
+	elseif #vecs == 1 then
+		misc.shotTracers.pushPending(vecs[1], dirs[1], isOwn)
+	elseif #plrs >= 1 then
+		local m = misc.shotTracers.muzzleFromPlayer(plrs[1])
+		if m then
+			misc.shotTracers.pushPending(m, dirs[1], isOwn)
+		end
+	end
+end
+
+function misc.shotTracers.onHit(...)
+	local S = _G.__VG_S
+	if not S or not S.CrimShotTracers then
+		return
+	end
+	misc.shotTracers.maybeLog("Gun_Hit", ...)
+	local vecs, dirs, plrs = misc.shotTracers.parseArgs(...)
+	local isOwn = misc.shotTracers.isOwnShot(plrs)
+	local from, to = misc.shotTracers.resolveLine(vecs, dirs, plrs)
+	if from and to then
+		if #plrs == 0 then
+			isOwn = true
+		end
+		misc.shotTracers.draw(from, to, isOwn)
+		return
+	end
+	-- Single hit position — pair with pending shoot
+	local hit = vecs[1]
+	if not hit then
+		return
+	end
+	local pend = misc.shotTracers.matchPending(hit)
+	if pend and pend.from then
+		misc.shotTracers.draw(pend.from, hit, pend.own == true)
+	elseif #plrs >= 1 then
+		local m = misc.shotTracers.muzzleFromPlayer(plrs[1])
+		if m then
+			misc.shotTracers.draw(m, hit, isOwn)
+		end
+	end
+end
+
+function misc.shotTracers.bindRemote(ev, handler)
+	if not ev then
+		return
+	end
+	if ev:IsA("RemoteEvent") then
+		table.insert(
+			misc.shotTracers.conns,
+			ev.OnClientEvent:Connect(function(...)
+				handler(...)
+			end)
+		)
+	end
+end
+
+function misc.shotTracers.start()
+	if misc.shotTracers.active then
+		return
+	end
+	misc.shotTracers.active = true
+	misc.shotTracers.clearConns()
+	misc.shotTracers.ensureFolder()
+	local events = RepSt:FindFirstChild("Events")
+	if events then
+		misc.shotTracers.bindRemote(events:FindFirstChild("Gun_Shoot"), misc.shotTracers.onShoot)
+		misc.shotTracers.bindRemote(events:FindFirstChild("Gun_Hit"), misc.shotTracers.onHit)
+		-- Some builds also push visuals on Update
+		misc.shotTracers.bindRemote(events:FindFirstChild("Gun_Update"), function(...)
+			misc.shotTracers.maybeLog("Gun_Update", ...)
+			local vecs = misc.shotTracers.parseArgs(...)
+			if #vecs >= 2 then
+				misc.shotTracers.onShoot(...)
+			end
+		end)
+		misc.shotTracers.bindRemote(events:FindFirstChild("Shoot"), misc.shotTracers.onShoot)
+	end
+	-- Own shots often only FireServer (no OnClientEvent echo) — catch namecall
+	if not misc.shotTracers._ncHooked
+		and typeof(hookmetamethod) == "function"
+		and typeof(getnamecallmethod) == "function"
+	then
+		misc.shotTracers._ncHooked = true
+		local old
+		local function isGunRemote(self)
+			local ok, nm = pcall(function()
+				return self.Name
+			end)
+			if not ok or typeof(nm) ~= "string" then
+				return false
+			end
+			return nm == "Gun_Shoot" or nm == "Gun_Hit" or nm == "Gun_Update" or nm == "Shoot"
+		end
+		local function handler(self, ...)
+			local method = getnamecallmethod()
+			if method == "FireServer" and isGunRemote(self) then
+				local nm = self.Name
+				if nm == "Gun_Hit" then
+					task.defer(misc.shotTracers.onHit, ...)
+				else
+					task.defer(misc.shotTracers.onShoot, ...)
+				end
+			end
+			return old(self, ...)
+		end
+		if typeof(newcclosure) == "function" then
+			old = hookmetamethod(game, "__namecall", newcclosure(handler))
+		else
+			old = hookmetamethod(game, "__namecall", handler)
+		end
+	end
+	pcall(function()
+		if typeof(_G.__VG_LOG_FILE) == "function" then
+			_G.__VG_LOG_FILE("INFO", "[VG:shotTrace] listening Gun_Shoot/Gun_Hit (+ FireServer)")
+		end
+	end)
+end
+
+function misc.shotTracers.stop()
+	misc.shotTracers.active = false
+	misc.shotTracers.clearConns()
+	misc.shotTracers.pending = {}
+	if misc.shotTracers.folder then
+		pcall(function()
+			misc.shotTracers.folder:Destroy()
+		end)
+		misc.shotTracers.folder = nil
 	end
 end
 
@@ -9680,6 +10118,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 	syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 	syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
+	syncFeatureToggle("shotTracers", "CrimShotTracers", misc.shotTracers.start, misc.shotTracers.stop, S)
 	syncFeatureToggle("skipIntro", "CrimSkipMenuIntro", misc.skipIntro.start, misc.skipIntro.stop, S)
 	syncFeatureToggle("skinChanger", "CrimSkinChanger", misc.skinChanger.start, misc.skinChanger.stop, S)
 	pcall(misc.skinChanger.bindUi, S)
@@ -9737,6 +10176,7 @@ local function startMaster(S)
 			syncFeatureToggle("noFailLockpick", "CrimNoFailLockpick", startNoFailLockpick, stopNoFailLockpick, S)
 			syncFeatureToggle("fullBright", "CrimFullBright", startFullBright, stopFullBright, S)
 			syncFeatureToggle("noFog", "CrimNoFog", misc.noFog.start, misc.noFog.stop, S)
+			syncFeatureToggle("shotTracers", "CrimShotTracers", misc.shotTracers.start, misc.shotTracers.stop, S)
 			syncFeatureToggle("skipIntro", "CrimSkipMenuIntro", misc.skipIntro.start, misc.skipIntro.stop, S)
 			syncFeatureToggle("skinChanger", "CrimSkinChanger", misc.skinChanger.start, misc.skinChanger.stop, S)
 			syncFeatureToggle("hideHelmet", "CrimHideHelmetOverlay", misc.helmet.start, misc.helmet.stop, S)
@@ -9960,6 +10400,7 @@ local function stopMaster()
 	pcall(stopNoFailLockpick)
 	pcall(stopFullBright)
 	pcall(misc.noFog.stop)
+	pcall(misc.shotTracers.stop)
 	pcall(misc.skipIntro.stop)
 	pcall(misc.skinChanger.stop)
 	pcall(misc.helmet.stop)
