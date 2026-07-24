@@ -1,7 +1,7 @@
 -- Plik: workspace/Vanguard/Settings.lua
 
 local Settings = {
-	Version = "2.75.0",
+	Version = "2.75.1",
 	-- ESP
 	ESP = false,
 	Box = false,
@@ -280,6 +280,7 @@ local Settings = {
 	CrimRemoteElevatorKey = "T",
 	CrimRemoteElevatorMaxDist = 400,
 	CrimInfStamina = false,
+	CrimWaterBreathing = false,
 	CrimFullBright = false,
 	CrimNoFog = false,
 	CrimSkipMenuIntro = false,

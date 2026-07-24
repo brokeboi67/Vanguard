@@ -304,6 +304,28 @@ local function wbDrawBeam(a, b)
 	wb.beam = p
 end
 
+local function wbIsWaterPart(part)
+	if not part then
+		return false
+	end
+	local p = part
+	while p and p ~= game do
+		if p.Name == "WaterCurrents" then
+			return true
+		end
+		p = p.Parent
+	end
+	-- WaterCurrents children often have Force NumberValue (current strength)
+	local force = part:FindFirstChild("Force")
+	if force and (force:IsA("NumberValue") or force:IsA("IntValue")) then
+		local filt = workspace:FindFirstChild("Filter")
+		if filt and part:IsDescendantOf(filt) then
+			return true
+		end
+	end
+	return false
+end
+
 local function wbShouldPunch(part, feetSkip)
 	if not part or not part:IsA("BasePart") then
 		return false
@@ -312,6 +334,10 @@ local function wbShouldPunch(part, feetSkip)
 		return false
 	end
 	if part:IsA("Terrain") then
+		return false
+	end
+	-- Never punch water volumes — kills CheckWater / drowning for local client
+	if wbIsWaterPart(part) then
 		return false
 	end
 	if part:IsDescendantOf(ensureFolder()) then

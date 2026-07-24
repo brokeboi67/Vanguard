@@ -101,6 +101,132 @@ local function stopNoSpike()
 	end
 end
 
+-- ── WATER BREATHING (mute Filter.WaterCurrents so CheckWater never sees you) ──
+-- Same side-effect you hit with wallbang: CanQuery=false on water parts = no drown.
+misc.waterBreath = { conns = {}, saved = {}, active = false }
+
+local function waterBreathClearConns()
+	for _, c in ipairs(misc.waterBreath.conns) do
+		pcall(function()
+			c:Disconnect()
+		end)
+	end
+	misc.waterBreath.conns = {}
+end
+
+local function waterBreathMutePart(part)
+	if not part or not part:IsA("BasePart") then
+		return
+	end
+	local wb = misc.waterBreath
+	if wb.saved[part] == nil then
+		wb.saved[part] = {
+			canQuery = part.CanQuery,
+			canTouch = part.CanTouch,
+		}
+	end
+	pcall(function()
+		part.CanQuery = false
+		part.CanTouch = false
+	end)
+end
+
+local function waterBreathApplyFolder(folder)
+	if not folder then
+		return
+	end
+	for _, d in ipairs(folder:GetDescendants()) do
+		if d:IsA("BasePart") then
+			waterBreathMutePart(d)
+		end
+	end
+end
+
+local function waterBreathGetFolder()
+	local filt = workspace:FindFirstChild("Filter")
+	return filt and filt:FindFirstChild("WaterCurrents")
+end
+
+local function startWaterBreath()
+	if misc.waterBreath.active then
+		return
+	end
+	misc.waterBreath.active = true
+	waterBreathClearConns()
+	local function hookFolder(folder)
+		if not folder then
+			return
+		end
+		waterBreathApplyFolder(folder)
+		table.insert(
+			misc.waterBreath.conns,
+			folder.DescendantAdded:Connect(function(d)
+				if not misc.waterBreath.active then
+					return
+				end
+				if d:IsA("BasePart") then
+					waterBreathMutePart(d)
+				elseif d:IsA("Folder") or d:IsA("Model") then
+					task.defer(function()
+						if misc.waterBreath.active then
+							waterBreathApplyFolder(d)
+						end
+					end)
+				end
+			end)
+		)
+	end
+	local folder = waterBreathGetFolder()
+	if folder then
+		hookFolder(folder)
+	else
+		table.insert(
+			misc.waterBreath.conns,
+			workspace.ChildAdded:Connect(function(ch)
+				if ch.Name ~= "Filter" then
+					return
+				end
+				task.defer(function()
+					if not misc.waterBreath.active then
+						return
+					end
+					local wc = ch:FindFirstChild("WaterCurrents")
+					if wc then
+						hookFolder(wc)
+					else
+						table.insert(
+							misc.waterBreath.conns,
+							ch.ChildAdded:Connect(function(kid)
+								if kid.Name == "WaterCurrents" and misc.waterBreath.active then
+									hookFolder(kid)
+								end
+							end)
+						)
+					end
+				end)
+			end)
+		)
+	end
+end
+
+local function stopWaterBreath()
+	misc.waterBreath.active = false
+	waterBreathClearConns()
+	for part, prev in pairs(misc.waterBreath.saved) do
+		if part and part.Parent and typeof(prev) == "table" then
+			pcall(function()
+				if prev.canQuery ~= nil then
+					part.CanQuery = prev.canQuery
+				end
+				if prev.canTouch ~= nil then
+					part.CanTouch = prev.canTouch
+				end
+			end)
+		end
+	end
+	table.clear(misc.waterBreath.saved)
+end
+
 -- ── REMOVE smoke FX (Debris.SmokeExplosion + PlayerGui SmokeScreenGUI) ───────
 -- Opt: shallow GetChildren + ChildAdded only. Rate-limit destroys to avoid recreate storms.
 local function smokeClearConns()
@@ -3508,6 +3634,7 @@ local featureRunning = {
 	autoRespawn = false,
 	removeSmoke = false,
 	hideHelmet = false,
+	waterBreath = false,
 }
 local gunMod = {
 	conns = {},
@@ -9319,6 +9446,7 @@ local function syncFromConfig(S)
 	syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 	syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 	syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
+	syncFeatureToggle("waterBreath", "CrimWaterBreathing", startWaterBreath, stopWaterBreath, S)
 	if crimFlag(S.CrimInfStamina) then
 		refillCrimStamina()
 	end
@@ -9374,6 +9502,7 @@ local function startMaster(S)
 			syncFeatureToggle("removeSmoke", "CrimRemoveSmokeExplosion", startRemoveSmokeExplosion, stopRemoveSmokeExplosion, S)
 			syncFeatureToggle("hitSounds", "CrimHitSoundSwap", snd.start, snd.stop, S)
 			syncFeatureToggle("autoRespawn", "CrimAutoRespawn", autoRespawn.start, autoRespawn.stop, S)
+			syncFeatureToggle("waterBreath", "CrimWaterBreathing", startWaterBreath, stopWaterBreath, S)
 			pcall(syncRemoteElevator, S)
 		end
 

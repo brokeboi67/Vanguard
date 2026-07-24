@@ -3110,8 +3110,10 @@ function UI.Init(S, ParentGUI, ConfigModule, TF, AnimationsModule, WorldModule, 
 		MakeHint(CSurv, "hint_crim_fastaccel", 11)
 		MakeTog(CSurv, "Infinite Stamina", "CrimInfStamina", 12, { flat = true })
 		MakeHint(CSurv, "hint_crim_stamina", 13)
-		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 14, { flat = true })
-		MakeHint(CSurv, "hint_crim_autorespawn", 15)
+		MakeTog(CSurv, "Water Breathing", "CrimWaterBreathing", 14, { flat = true })
+		MakeHint(CSurv, "hint_crim_waterbreath", 15)
+		MakeTog(CSurv, "Auto Respawn", "CrimAutoRespawn", 16, { flat = true })
+		MakeHint(CSurv, "hint_crim_autorespawn", 17)
 
 		MakeSection(CCrate, L("crim_sub_pickup_crates"), 1)
 		MakeTog(CCrate, "Auto Pickup Crates", "CrimCratePickup", 2, {

@@ -758,6 +758,9 @@ function Config.EnforceRules(S)
 	if S.CrimInfStamina == nil then
 		S.CrimInfStamina = false
 	end
+	if S.CrimWaterBreathing == nil then
+		S.CrimWaterBreathing = false
+	end
 	if S.CrimNoRagdoll == nil then
 		S.CrimNoRagdoll = false
 	end
