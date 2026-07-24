@@ -116,7 +116,7 @@ local STR = {
 		hint_crim_skinchanger_vault = "Inventory = skiny z RepPBR · kolory rarity z GC (getgc) · filtry Exotic/Legendary itd.",
 		btn_crim_upgrade_held = "Upgrade look (held gun)",
 		btn_crim_upgrade_clear = "Clear upgrade look",
-		hint_crim_upgrade_look = "Wizualnie nakłada model -X/-S (np. AKS-74U → AKS-74U-X ze sight/laser). Tool Name bez zmian — serwer nadal widzi bazę.",
+		hint_crim_upgrade_look = "Dokleja Attachments z DisplayWepModels *-X/*-S (GSight/GLaser) do tool.Attachments. Bazowy model bez zmian — bez klonowania całej broni.",
 		btn_crim_skin_refresh = "Refresh Skin List",
 		btn_crim_skin_clear = "Clear Skin (selected)",
 		btn_crim_skin_dump = "Dump Skin Debug",

@@ -5703,6 +5703,16 @@ function misc.skinChanger.clearUpgradeExtras(root)
 			end)
 		end
 	end
+	local att = root:FindFirstChild("Attachments")
+	if att then
+		for _, ch in ipairs(att:GetChildren()) do
+			if ch:GetAttribute("VG_UpgAtt") == true then
+				pcall(function()
+					ch:Destroy()
+				end)
+			end
+		end
+	end
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("BasePart") and d:GetAttribute("VG_UpgExtra") == true then
 			pcall(function()
@@ -5719,6 +5729,29 @@ function misc.skinChanger.clearUpgradeExtras(root)
 				d:SetAttribute("VG_UpgHidden", nil)
 				d:SetAttribute("VG_UpgPrevLTM", nil)
 			end)
+		end
+	end
+	-- restore MeshId from older broken builds
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			local def = d:GetAttribute("VG_DefMesh")
+			if typeof(def) == "string" and def ~= "" then
+				pcall(function()
+					d.MeshId = def
+				end)
+				d:SetAttribute("VG_DefMesh", nil)
+			end
+			local defSz = d:GetAttribute("VG_DefSize")
+			if typeof(defSz) == "Vector3" then
+				pcall(function()
+					d.Size = defSz
+				end)
+				d:SetAttribute("VG_DefSize", nil)
+			end
+			local vs = d:GetAttribute("VG_VarSkin")
+			if typeof(vs) == "string" and string.sub(vs, 1, 2) == "U:" then
+				d:SetAttribute("VG_VarSkin", nil)
+			end
 		end
 	end
 end
@@ -5739,158 +5772,134 @@ function misc.skinChanger.findUpgradeAnchor(model)
 	return model:FindFirstChildWhichIsA("MeshPart", true) or model:FindFirstChildWhichIsA("BasePart", true)
 end
 
-function misc.skinChanger.findNamedMesh(model, names)
-	if not model then
+function misc.skinChanger.attPrimary(inst)
+	if not inst then
 		return nil
 	end
-	for _, n in ipairs(names) do
-		local p = model:FindFirstChild(n, true)
-		if p and p:IsA("MeshPart") then
-			return p
-		end
+	if inst:IsA("BasePart") then
+		return inst
 	end
-	return nil
+	if inst:IsA("Model") then
+		if inst.PrimaryPart then
+			return inst.PrimaryPart
+		end
+		return inst:FindFirstChildWhichIsA("BasePart", true)
+	end
+	return inst:FindFirstChildWhichIsA("BasePart", true)
 end
 
-function misc.skinChanger.hideToolMeshesForUpgrade(root)
-	if not root then
-		return
-	end
-	local vis = root:FindFirstChild("VG_UpgradeVisual")
-	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("MeshPart") then
-			if vis and d:IsDescendantOf(vis) then
-				continue
-			end
-			if string.sub(d.Name, 1, 3) == "VG_" then
-				continue
-			end
-			if not d:GetAttribute("VG_UpgHidden") then
-				d:SetAttribute("VG_UpgPrevLTM", d.LocalTransparencyModifier)
-				d:SetAttribute("VG_UpgHidden", true)
-			end
-			d.LocalTransparencyModifier = 1
-		end
-	end
-end
-
--- Safe upgrade look: ONE overlay model (renamed parts so SG_Check won't FindFirstChild GSight).
--- Never MeshId-swap body parts — that broke scale + ToolHandler.
+-- ONLY Attachments (GSight / GLaser …) from DisplayWepModels *-X/*-S.
+-- Full-model overlay broke scale + ToolHandler SG_Check.
 function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, quiet)
 	if not root or not upgradeModel then
 		return 0
 	end
-	if root.Name == "ViewModel" or (root:FindFirstChild("RArmHolder") and not misc.skinChanger.findNamedMesh(root, { "BasePart", "Base" })) then
+	if root.Name == "ViewModel" and not root:IsA("Tool") then
 		return 0
 	end
 	misc.skinChanger.clearUpgradeExtras(root)
-	-- undo any leftover MeshId swaps from older builds
-	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("MeshPart") then
-			local def = d:GetAttribute("VG_DefMesh")
-			if typeof(def) == "string" and def ~= "" then
-				pcall(function()
-					d.MeshId = def
-				end)
-			end
-			local defSz = d:GetAttribute("VG_DefSize")
-			if typeof(defSz) == "Vector3" then
-				pcall(function()
-					d.Size = defSz
-				end)
-			end
-			local vs = d:GetAttribute("VG_VarSkin")
-			if typeof(vs) == "string" and string.sub(vs, 1, 2) == "U:" then
-				d:SetAttribute("VG_VarSkin", nil)
-			end
-		end
-	end
 
-	local toolAnchor = misc.skinChanger.findUpgradeAnchor(root)
-	local toolBase = misc.skinChanger.findNamedMesh(root, { "BasePart", "BasePart2", "Base" })
-	local upgBaseSrc = misc.skinChanger.findNamedMesh(upgradeModel, { "BasePart", "BasePart2", "Base" })
-	if not toolAnchor then
+	local toolHandle = misc.skinChanger.findUpgradeAnchor(root)
+	local upgHandle = misc.skinChanger.findUpgradeAnchor(upgradeModel)
+	if not toolHandle or not upgHandle then
 		if not quiet then
-			misc.skinChanger.log("upgrade: no WeaponHandle on " .. root.Name)
+			misc.skinChanger.log("upgrade: missing WeaponHandle")
 		end
 		return 0
 	end
 
-	local ok, overlay = pcall(function()
-		local m = upgradeModel:Clone()
-		m.Name = "VG_UpgradeVisual"
-		for _, d in ipairs(m:GetDescendants()) do
-			if d:IsA("BaseScript") or d:IsA("ModuleScript") or d:IsA("RemoteEvent")
-				or d:IsA("RemoteFunction") or d:IsA("BindableEvent") or d:IsA("BindableFunction") then
-				d:Destroy()
-			end
-		end
-		-- rename so tool:FindFirstChild("GSight", true) cannot hit overlay (SG_Check nil.Parent)
-		local i = 0
-		for _, d in ipairs(m:GetDescendants()) do
-			i += 1
-			d.Name = "VG_" .. tostring(i) .. "_" .. tostring(d.ClassName)
-		end
-		for _, d in ipairs(m:GetDescendants()) do
-			if d:IsA("BasePart") then
-				d.CanCollide = false
-				d.CanQuery = false
-				d.CanTouch = false
-				d.Massless = true
-				d.Anchored = false
-				d:SetAttribute("VG_UpgExtra", true)
-			end
-		end
-		if toolBase and upgBaseSrc and typeof(m.ScaleTo) == "function" then
-			local ratio = toolBase.Size.Magnitude / math.max(upgBaseSrc.Size.Magnitude, 1e-4)
-			ratio = math.clamp(ratio, 0.35, 2.5)
-			local cur = 1
-			pcall(function()
-				cur = m:GetScale()
-			end)
-			pcall(function()
-				m:ScaleTo(cur * ratio)
-			end)
-		end
-		m.Parent = root
-		local alignUpg = nil
-		for _, d in ipairs(m:GetDescendants()) do
-			if d:IsA("MeshPart") then
-				alignUpg = d
-				break
-			end
-		end
-		local alignTool = toolBase or toolAnchor
-		if alignTool and alignUpg then
-			pcall(function()
-				m.PrimaryPart = alignUpg
-				m:PivotTo(alignTool.CFrame)
-			end)
-		end
-		for _, d in ipairs(m:GetDescendants()) do
-			if d:IsA("BasePart") then
-				local w = Instance.new("WeldConstraint")
-				w.Part0 = toolAnchor
-				w.Part1 = d
-				w.Parent = d
-			end
-		end
-		return m
-	end)
-
-	if not ok or not overlay then
+	local srcFolder = upgradeModel:FindFirstChild("Attachments")
+	if not srcFolder then
 		if not quiet then
-			misc.skinChanger.log("upgrade overlay fail: " .. tostring(overlay))
+			misc.skinChanger.log("upgrade: no Attachments on " .. tostring(upgName))
 		end
 		return 0
 	end
 
-	misc.skinChanger.hideToolMeshesForUpgrade(root)
-	overlay:SetAttribute("VG_VarSkin", "U:" .. tostring(upgName))
+	local dstFolder = root:FindFirstChild("Attachments")
+	if not dstFolder then
+		dstFolder = Instance.new("Folder")
+		dstFolder.Name = "Attachments"
+		dstFolder.Parent = root
+	end
+
+	local n = 0
+	for _, src in ipairs(srcFolder:GetChildren()) do
+		-- skip if already present (real unlock) without our tag
+		local existing = dstFolder:FindFirstChild(src.Name)
+		if existing and existing:GetAttribute("VG_UpgAtt") ~= true then
+			continue
+		end
+		if existing then
+			pcall(function()
+				existing:Destroy()
+			end)
+		end
+		local srcPrim = misc.skinChanger.attPrimary(src)
+		if not srcPrim then
+			continue
+		end
+		local offset = upgHandle.CFrame:ToObjectSpace(srcPrim.CFrame)
+		local ok, clone = pcall(function()
+			local c = src:Clone()
+			c:SetAttribute("VG_UpgAtt", true)
+			c:SetAttribute("VG_VarSkin", "U:" .. tostring(upgName))
+			for _, d in ipairs(c:GetDescendants()) do
+				if d:IsA("BaseScript") or d:IsA("ModuleScript") then
+					d:Destroy()
+				elseif d:IsA("BasePart") then
+					d.CanCollide = false
+					d.CanQuery = false
+					d.CanTouch = false
+					d.Massless = true
+					d.Anchored = false
+					d:SetAttribute("VG_UpgExtra", true)
+				end
+			end
+			if c:IsA("BasePart") then
+				c.CanCollide = false
+				c.Massless = true
+				c.Anchored = false
+				c:SetAttribute("VG_UpgExtra", true)
+			end
+			c.Parent = dstFolder
+			local prim = misc.skinChanger.attPrimary(c)
+			if prim then
+				-- move model/part so primary matches toolHandle * offset
+				if c:IsA("Model") then
+					pcall(function()
+						c.PrimaryPart = prim
+						c:PivotTo(toolHandle.CFrame * offset)
+					end)
+				else
+					prim.CFrame = toolHandle.CFrame * offset
+				end
+				for _, d in ipairs(c:GetDescendants()) do
+					if d:IsA("BasePart") then
+						local w = Instance.new("WeldConstraint")
+						w.Part0 = toolHandle
+						w.Part1 = d
+						w.Parent = d
+					end
+				end
+				if c:IsA("BasePart") then
+					local w = Instance.new("WeldConstraint")
+					w.Part0 = toolHandle
+					w.Part1 = c
+					w.Parent = c
+				end
+			end
+			return c
+		end)
+		if ok and clone then
+			n += 1
+		end
+	end
+
 	if not quiet then
-		misc.skinChanger.log(string.format("upgradeLook OVERLAY %s → %s", root.Name, tostring(upgName)))
+		misc.skinChanger.log(string.format("upgradeLook ATTACH %s → %s count=%d", root.Name, tostring(upgName), n))
 	end
-	return 1
+	return n
 end
 
 function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
@@ -5906,11 +5915,9 @@ function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
 		return 0, "no upgrade model"
 	end
 	local n = misc.skinChanger.applyUpgradeLookToRoot(tool, upgModel, upgName, quiet)
-	-- Also overlay FP copy if present (same safe rename rules)
 	local rf = game:GetService("ReplicatedFirst")
-	local folder = rf:FindFirstChild("ViewModels")
-	local vmTool = folder and folder:FindFirstChild("Tool")
-	if vmTool and misc.skinChanger.isGunTool(vmTool) then
+	local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
+	if vmTool then
 		n += misc.skinChanger.applyUpgradeLookToRoot(vmTool, upgModel, upgName, true)
 	end
 	return n, upgName
@@ -5929,50 +5936,30 @@ function misc.skinChanger.upgradeHeldGun()
 	if S then
 		S.CrimGunUpgradeLooks = S.CrimGunUpgradeLooks or {}
 		local key = misc.skinChanger.upgradeStoreKey(tool.Name)
-		S.CrimGunUpgradeLooks[key] = typeof(info) == "string" and info or misc.skinChanger.resolveUpgradeModelName(tool.Name)
+		if n > 0 then
+			S.CrimGunUpgradeLooks[key] = typeof(info) == "string" and info or misc.skinChanger.resolveUpgradeModelName(tool.Name)
+		else
+			S.CrimGunUpgradeLooks[key] = nil
+		end
 		if typeof(_G.__VG_CONFIG) == "table" and typeof(_G.__VG_CONFIG.SaveGlobals) == "function" then
 			pcall(_G.__VG_CONFIG.SaveGlobals, S)
 		end
 	end
 	if n <= 0 then
-		return false, "apply failed"
+		return false, "no Attachments on upgrade model"
 	end
-	return true, "look → " .. tostring(info)
+	return true, "attach → " .. tostring(info) .. " (" .. tostring(n) .. ")"
 end
 
 function misc.skinChanger.clearUpgradeHeldGun()
 	local tool = misc.skinChanger.findActiveGun()
 	local S = _G.__VG_S
 	local function wipe(root)
-		if not root then
-			return
-		end
 		misc.skinChanger.clearUpgradeExtras(root)
-		for _, d in ipairs(root:GetDescendants()) do
-			if d:IsA("MeshPart") then
-				local def = d:GetAttribute("VG_DefMesh")
-				if typeof(def) == "string" and def ~= "" then
-					pcall(function()
-						d.MeshId = def
-					end)
-				end
-				local defSz = d:GetAttribute("VG_DefSize")
-				if typeof(defSz) == "Vector3" then
-					pcall(function()
-						d.Size = defSz
-					end)
-				end
-				local vs = d:GetAttribute("VG_VarSkin")
-				if typeof(vs) == "string" and string.sub(vs, 1, 2) == "U:" then
-					d:SetAttribute("VG_VarSkin", nil)
-				end
-			end
-		end
 	end
 	wipe(tool)
 	local rf = game:GetService("ReplicatedFirst")
-	local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
-	wipe(vmTool)
+	wipe(rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool"))
 	local cam = workspace.CurrentCamera
 	wipe(cam and cam:FindFirstChild("ViewModel"))
 	if tool and S and S.CrimGunUpgradeLooks then
@@ -6002,8 +5989,17 @@ function misc.skinChanger.tickUpgradeLooks()
 	if typeof(want) ~= "string" or want == "" then
 		return
 	end
+	local att = tool:FindFirstChild("Attachments")
+	if att then
+		for _, ch in ipairs(att:GetChildren()) do
+			if ch:GetAttribute("VG_UpgAtt") == true then
+				return
+			end
+		end
+	end
+	-- clear leftover broken overlay from older versions
 	if tool:FindFirstChild("VG_UpgradeVisual") then
-		return
+		misc.skinChanger.clearUpgradeExtras(tool)
 	end
 	misc.skinChanger.applyUpgradeLookToTool(tool, true)
 end
