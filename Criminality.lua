@@ -6825,6 +6825,121 @@ function misc.skinChanger.findVariantWeaponHandle(model)
 	return model:FindFirstChild("WeaponHandle", true) or model:FindFirstChild("WeaponHandle2", true)
 end
 
+-- Align SkinVariants parts onto live tool (WeaponHandle pivots often differ — chainsaw_ripper).
+function misc.skinChanger.variantAlignCFrame(root, liveWH, srcWH)
+	local prefer = {
+		"base", "blade", "staff_lopoly", "batmesh", "rambomesh", "bayonetmesh",
+		"chain1mesh", "body", "main",
+	}
+	local function findMesh(rootInst, wantLower)
+		for _, d in ipairs(rootInst:GetDescendants()) do
+			if d:IsA("MeshPart") and string.lower(d.Name) == wantLower then
+				return d
+			end
+		end
+		return nil
+	end
+	for i = 1, #prefer do
+		local live = findMesh(root, prefer[i]) or (liveWH and findMesh(liveWH, prefer[i]))
+		local src = findMesh(srcWH, prefer[i])
+		if live and src then
+			return live.CFrame * src.CFrame:Inverse(), live.Name
+		end
+	end
+	-- Same-name MeshPart pair (largest volume as anchor)
+	local bestLive, bestSrc, bestVol = nil, nil, -1
+	for _, src in ipairs(srcWH:GetDescendants()) do
+		if src:IsA("MeshPart") then
+			local live = findMesh(root, string.lower(src.Name))
+			if live then
+				local vol = live.Size.X * live.Size.Y * live.Size.Z
+				if vol > bestVol then
+					bestVol, bestLive, bestSrc = vol, live, src
+				end
+			end
+		end
+	end
+	if bestLive and bestSrc then
+		return bestLive.CFrame * bestSrc.CFrame:Inverse(), bestLive.Name
+	end
+	return liveWH.CFrame * srcWH.CFrame:Inverse(), "WeaponHandle"
+end
+
+-- Melee/gun parts that share names with SkinVariants: swap MeshId+SA in place (keeps welds/grip).
+function misc.skinChanger.applyVariantNameMatch(root, variantModel, skinKey, quiet, allowMeshId)
+	if not root or not variantModel then
+		return 0
+	end
+	local byName = {}
+	for _, d in ipairs(variantModel:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			byName[string.lower(d.Name)] = d
+		end
+	end
+	if not next(byName) then
+		return 0
+	end
+	local n = 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) and not d:GetAttribute("VG_VarOverlay") then
+			local ln = string.lower(d.Name)
+			if misc.skinChanger.isVariantCriticalName(ln) then
+				continue
+			end
+			local src = byName[ln]
+			if not src then
+				continue
+			end
+			local already = d:GetAttribute("VG_VarSkin") == skinKey and d:GetAttribute("VG_VarMatch") == true
+			if already then
+				n = n + 1
+			else
+				pcall(function()
+					if d:GetAttribute("VG_DefMesh") == nil then
+						d:SetAttribute("VG_DefMesh", d.MeshId or "")
+					end
+					for _, ch in ipairs(d:GetChildren()) do
+						if ch:IsA("SurfaceAppearance") then
+							ch:Destroy()
+						end
+					end
+					if allowMeshId then
+						local mid = tostring(src.MeshId or "")
+						if mid ~= "" and not string.find(mid, "ContentId", 1, true) then
+							d.MeshId = src.MeshId
+						end
+					end
+					local sa = src:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						local neo = sa:Clone()
+						neo.Name = tostring(skinKey)
+						neo.Parent = d
+						d.TextureID = ""
+					else
+						local tex = src.TextureID
+						if typeof(tex) == "string" and tex ~= "" then
+							d.TextureID = tex
+						end
+					end
+					d:SetAttribute("VG_VarSkin", skinKey)
+					d:SetAttribute("VG_VarMatch", true)
+				end)
+				n = n + 1
+			end
+		end
+	end
+	if not quiet and n > 0 then
+		misc.skinChanger.log(string.format(
+			"variantNameMatch root=%s n=%d meshId=%s key=%s",
+			root.Name,
+			n,
+			tostring(allowMeshId),
+			tostring(skinKey)
+		))
+	end
+	return n
+end
+
 -- SkinVariants (cashcane / heritage…): clone visuals under live WeaponHandle.
 -- Never touches MeshId / Block — Melee.Equip stays intact.
 function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey, quiet)
@@ -6843,9 +6958,13 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 	misc.skinChanger.clearVariantOverlay(root)
 	misc.skinChanger.captureDefaults(root)
 
-	-- Hide original visual meshes under live handle (keep handle + Block / joints).
-	for _, d in ipairs(liveWH:GetDescendants()) do
+	-- Hide original visuals on whole tool (meshes are often siblings of WeaponHandle, not children).
+	-- Skip parts already name-matched in place.
+	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("BasePart") and d ~= liveWH and not misc.skinChanger.isVariantCriticalPart(d) then
+			if d:GetAttribute("VG_VarOverlay") == true or d:GetAttribute("VG_VarMatch") == true then
+				continue
+			end
 			pcall(function()
 				if d:GetAttribute("VG_VarHidden") ~= true then
 					d:SetAttribute("VG_VarPrevLTM", d.LocalTransparencyModifier)
@@ -6853,17 +6972,6 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 				end
 				d.LocalTransparencyModifier = 1
 			end)
-		elseif (d:IsA("SpecialMesh") or d:IsA("FileMesh")) and d.Parent and d.Parent:IsA("BasePart") then
-			local p = d.Parent
-			if p ~= liveWH and not misc.skinChanger.isVariantCriticalPart(p) then
-				pcall(function()
-					if p:GetAttribute("VG_VarHidden") ~= true then
-						p:SetAttribute("VG_VarPrevLTM", p.LocalTransparencyModifier)
-						p:SetAttribute("VG_VarHidden", true)
-					end
-					p.LocalTransparencyModifier = 1
-				end)
-			end
 		end
 	end
 
@@ -6873,17 +6981,27 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 	folder:SetAttribute("VG_VarSkin", skinKey)
 	folder.Parent = liveWH
 
-	local srcCF = srcWH.CFrame
+	local align, alignName = misc.skinChanger.variantAlignCFrame(root, liveWH, srcWH)
+	local matchedNames = {}
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and d:GetAttribute("VG_VarMatch") == true then
+			matchedNames[string.lower(d.Name)] = true
+		end
+	end
+
 	local n = 0
 	for _, src in ipairs(srcWH:GetDescendants()) do
 		if src:IsA("BasePart") and src ~= srcWH and not misc.skinChanger.isVariantCriticalPart(src) then
+			-- Skip parts already name-matched onto live meshes
+			if matchedNames[string.lower(src.Name)] then
+				continue
+			end
 			local ok, clone = pcall(function()
 				return src:Clone()
 			end)
 			if ok and clone then
 				pcall(function()
 					misc.skinChanger.stripVariantCloneJunk(clone)
-					local rel = srcCF:ToObjectSpace(src.CFrame)
 					clone.Name = "VG_" .. src.Name
 					clone.Anchored = false
 					clone.CanCollide = false
@@ -6893,7 +7011,7 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 					clone.CastShadow = src.CastShadow
 					clone:SetAttribute("VG_VarOverlay", true)
 					clone:SetAttribute("VG_VarSkin", skinKey)
-					clone.CFrame = liveWH.CFrame * rel
+					clone.CFrame = align * src.CFrame
 					clone.Parent = folder
 					local w = Instance.new("WeldConstraint")
 					w.Part0 = liveWH
@@ -6906,7 +7024,7 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 	end
 
 	-- Single-mesh variants where the only mesh is WeaponHandle itself (e.g. bat_cricket).
-	if n == 0 and srcWH:IsA("MeshPart") then
+	if n == 0 and srcWH:IsA("MeshPart") and not next(matchedNames) then
 		local meshId = tostring(srcWH.MeshId or "")
 		if meshId ~= "" and not string.find(meshId, "ContentId", 1, true) then
 			local ok, clone = pcall(function()
@@ -6916,7 +7034,6 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 				pcall(function()
 					misc.skinChanger.stripVariantCloneJunk(clone)
 					clone:ClearAllChildren()
-					-- re-copy SA only
 					local sa = srcWH:FindFirstChildOfClass("SurfaceAppearance")
 					if sa then
 						local neo = sa:Clone()
@@ -6936,7 +7053,6 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 					w.Part0 = liveWH
 					w.Part1 = clone
 					w.Parent = clone
-					-- hide live handle mesh visually (keep part for welds/Block)
 					if liveWH:IsA("MeshPart") then
 						liveWH:SetAttribute("VG_VarPrevLTM", liveWH.LocalTransparencyModifier)
 						liveWH:SetAttribute("VG_VarHidden", true)
@@ -6953,10 +7069,11 @@ function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey,
 	end)
 	if not quiet then
 		misc.skinChanger.log(string.format(
-			"variantOverlay root=%s wh=%s parts=%d key=%s",
+			"variantOverlay root=%s wh=%s parts=%d align=%s key=%s",
 			root.Name,
 			liveWH.Name,
 			n,
+			tostring(alignName),
 			tostring(skinKey)
 		))
 	end
@@ -6971,11 +7088,25 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 	local melee = misc.skinChanger.isMeleeRoot(root)
 	local srcWH = misc.skinChanger.findVariantWeaponHandle(variantModel)
 
-	-- Melee mesh skins (cashcane…): WeaponHandle overlay only — never MeshId.
+	-- Melee SkinVariants:
+	-- 1) name-match MeshId+SA when parts share names (chainsaw_ripper Base/Blade/Chain*) — keeps grip welds
+	-- 2) overlay only when names don't line up (cashcane dollars) — align to Base, not WeaponHandle pivot
 	if melee and srcWH then
+		local matched = misc.skinChanger.applyVariantNameMatch(root, variantModel, skinKey, quiet, true)
+		local srcMeshes = 0
+		for _, d in ipairs(variantModel:GetDescendants()) do
+			if d:IsA("MeshPart") then
+				srcMeshes += 1
+			end
+		end
+		-- Enough name hits → stay in-place (no overlay; avoids double mesh / sunk ripper)
+		if matched > 0 and matched >= math.max(1, math.floor(srcMeshes * 0.45)) then
+			misc.skinChanger.clearVariantOverlay(root)
+			return matched
+		end
 		local over = misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey, quiet)
-		if over > 0 then
-			return over
+		if matched > 0 or over > 0 then
+			return matched + over
 		end
 	end
 
@@ -8153,6 +8284,7 @@ function misc.skinChanger.restoreDefaults(root)
 					end)
 				end
 				d:SetAttribute("VG_VarSkin", nil)
+				d:SetAttribute("VG_VarMatch", nil)
 				n = n + 1
 			end)
 		end
