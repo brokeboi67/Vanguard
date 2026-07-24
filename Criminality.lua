@@ -5851,11 +5851,13 @@ function misc.skinChanger.looksLikeUpdtReplicate(fn)
 	return hasRepTable and hasSG
 end
 
--- Patch the LIVE SG_Check upvalue inside updtReplicate (hookfunction(getgc) missed it).
+-- Patch the LIVE SG_Check upvalue inside updtReplicate.
+-- ONE getgc scan max — never from Heartbeat (was ~775ms Criminality.Main hitch).
 function misc.skinChanger.patchSGCheck()
-	if misc.skinChanger._sgPatchDone and misc.skinChanger._sgSetupvalue then
-		return true
+	if misc.skinChanger._sgPatchAttempted then
+		return misc.skinChanger._sgPatchDone == true
 	end
+	misc.skinChanger._sgPatchAttempted = true
 	local setupN, hookN = 0, 0
 	misc.skinChanger._sgSetupvalue = false
 	pcall(function()
@@ -5878,21 +5880,6 @@ function misc.skinChanger.patchSGCheck()
 					break
 				end
 			end
-			if not hasRep and typeof(debug.getupvalues) == "function" then
-				local okU, uvs = pcall(debug.getupvalues, fn)
-				if okU and typeof(uvs) == "table" then
-					for _, uv in pairs(uvs) do
-						local v = uv
-						if typeof(uv) == "table" and uv.value ~= nil then
-							v = uv.value
-						end
-						if typeof(v) == "table" and typeof(v.ReplicationParts) == "table" then
-							hasRep = true
-							break
-						end
-					end
-				end
-			end
 			if not hasRep then
 				return
 			end
@@ -5910,7 +5897,11 @@ function misc.skinChanger.patchSGCheck()
 				end
 			end
 		end
-		for _, fn in ipairs(getgc(false)) do
+		local okGc, gcList = pcall(getgc, false)
+		if not okGc or typeof(gcList) ~= "table" then
+			return
+		end
+		for _, fn in ipairs(gcList) do
 			if typeof(fn) ~= "function" then
 				continue
 			end
@@ -5932,6 +5923,7 @@ function misc.skinChanger.patchSGCheck()
 		)
 		return true
 	end
+	misc.skinChanger.log("SG_Check patch: no match (won't retry getgc)")
 	return false
 end
 
@@ -6007,11 +5999,11 @@ function misc.skinChanger.clearOrphanVmToolGui(vmTool)
 end
 
 -- Emergency: wipe all upgrade junk, clear saved map, scrub RF.Tool orphan GUI, re-equip.
-function misc.skinChanger.repairViewModel()
-	misc.skinChanger._sgPatchDone = false
-	misc.skinChanger._sgSetupvalue = false
-	misc.skinChanger._updtHooked = false
-	misc.skinChanger.patchSGCheck()
+-- Does NOT re-run getgc every call (patch is one-shot).
+function misc.skinChanger.repairViewModel(opts)
+	opts = opts or {}
+	local doReequip = opts.reequip ~= false
+	local doPatch = opts.patch == true
 
 	local lp = getLP()
 	local wipedTools = 0
@@ -6045,35 +6037,42 @@ function misc.skinChanger.repairViewModel()
 		end
 	end
 
-	-- re-equip held gun so ToolHandler rebuilds ReplicationParts
-	local held = misc.skinChanger.findActiveGun()
-	local heldName = held and held.Name
-	pcall(function()
-		local char = lp and lp.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum:UnequipTools()
-		end
-	end)
-	if heldName and lp then
+	if doPatch then
 		task.defer(function()
-			task.wait(0.05)
-			local bp = lp:FindFirstChild("Backpack")
-			local t = bp and bp:FindFirstChild(heldName)
-			local char = lp.Character
-			if t and char then
-				pcall(function()
-					t.Parent = char
-				end)
-			end
-			if misc.skinChanger.active and t then
-				misc.skinChanger.applySavedForTool(t, true)
-			end
 			misc.skinChanger.patchSGCheck()
 		end)
 	end
 
-	misc.skinChanger.log(string.format("repairViewModel tools=%d setupvalue=%s", wipedTools, tostring(misc.skinChanger._sgSetupvalue)))
+	-- re-equip held gun so ToolHandler rebuilds ReplicationParts
+	local held = misc.skinChanger.findActiveGun()
+	local heldName = held and held.Name
+	if doReequip then
+		pcall(function()
+			local char = lp and lp.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				hum:UnequipTools()
+			end
+		end)
+		if heldName and lp then
+			task.defer(function()
+				task.wait(0.05)
+				local bp = lp:FindFirstChild("Backpack")
+				local t = bp and bp:FindFirstChild(heldName)
+				local char = lp.Character
+				if t and char then
+					pcall(function()
+						t.Parent = char
+					end)
+				end
+				if misc.skinChanger.active and t then
+					misc.skinChanger.applySavedForTool(t, true)
+				end
+			end)
+		end
+	end
+
+	misc.skinChanger.log(string.format("repairViewModel tools=%d", wipedTools))
 	return true, "VM repaired (wiped upgrades)"
 end
 
@@ -6091,7 +6090,7 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	end
 
 	misc.skinChanger.clearUpgradeExtras(root)
-	misc.skinChanger.patchSGCheck()
+	-- patchSGCheck is one-shot; never block upgrade apply on getgc
 
 	local toolHandle = misc.skinChanger.findUpgradeAnchor(root)
 	local upgHandle = misc.skinChanger.findUpgradeAnchor(upgradeModel)
@@ -6216,7 +6215,6 @@ function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
 		misc.skinChanger.clearUpgradeExtras(vmTool)
 		misc.skinChanger.clearOrphanVmToolGui(vmTool)
 	end
-	misc.skinChanger.patchSGCheck()
 	return n, upgName
 end
 
@@ -6225,6 +6223,8 @@ function misc.skinChanger.upgradeHeldGun()
 	if not tool then
 		return false, "equip a gun first"
 	end
+	-- ensure SG_Check patched once (deferred off Heartbeat)
+	task.defer(misc.skinChanger.patchSGCheck)
 	local n, info = misc.skinChanger.applyUpgradeLookToTool(tool, false)
 	if typeof(info) == "string" and n == 0 and (info == "no upgrade model" or info == "already upgrade tool" or info == "not a gun") then
 		return false, info
@@ -6247,12 +6247,11 @@ function misc.skinChanger.upgradeHeldGun()
 end
 
 function misc.skinChanger.clearUpgradeHeldGun()
-	return misc.skinChanger.repairViewModel()
+	return misc.skinChanger.repairViewModel({ reequip = true, patch = false })
 end
 
--- Auto-reapply disabled — it kept re-injecting broken Attachments and killing VM.
+-- Auto-reapply disabled. Never call getgc from here.
 function misc.skinChanger.tickUpgradeLooks()
-	misc.skinChanger.patchSGCheck()
 end
 
 function misc.skinChanger.isVariantSkinKey(skinKey)
@@ -7236,6 +7235,7 @@ function misc.skinChanger.dumpToolHandler(lp)
 	lines[#lines + 1] = "=== Backpack.VM / ToolHandler (SG_Check source) ==="
 	lines[#lines + 1] = "SG_Check_patched=" .. tostring(misc.skinChanger._sgPatchDone == true)
 	lines[#lines + 1] = "SG_Check_setupvalue=" .. tostring(misc.skinChanger._sgSetupvalue == true)
+	lines[#lines + 1] = "SG_Check_attempted=" .. tostring(misc.skinChanger._sgPatchAttempted == true)
 	pcall(function()
 		misc.skinChanger.patchSGCheck()
 		lines[#lines + 1] = "SG_Check_patched_after_dump_try=" .. tostring(misc.skinChanger._sgPatchDone == true)
@@ -8675,12 +8675,14 @@ end
 function misc.skinChanger.start()
 	misc.skinChanger.clearConns()
 	misc.skinChanger.active = true
+	misc.skinChanger._sgPatchAttempted = false
 	misc.skinChanger._sgPatchDone = false
 	misc.skinChanger._sgSetupvalue = false
 	misc.skinChanger._updtHooked = false
 	task.defer(function()
 		task.wait(0.35)
-		misc.skinChanger.repairViewModel()
+		-- wipe junk + one deferred getgc patch (never on Heartbeat)
+		misc.skinChanger.repairViewModel({ reequip = true, patch = true })
 	end)
 	local lp = getLP()
 	if not lp then
@@ -8695,7 +8697,8 @@ function misc.skinChanger.start()
 				misc.skinChanger.hookContainer(char)
 				task.wait(0.3)
 				misc.skinChanger.tick()
-				misc.skinChanger.repairViewModel()
+				-- light wipe only — no unequip / no getgc (was hitching on respawn)
+				misc.skinChanger.repairViewModel({ reequip = false, patch = false })
 			end)
 		end)
 	)
@@ -9780,10 +9783,7 @@ local function startMaster(S)
 				end)
 			end
 		end
-		-- Upgrade look (DisplayWepModels -X/-S) — independent of skin changer toggle
-		if typeof(S.CrimGunUpgradeLooks) == "table" and master.frame % 30 == 5 then
-			pcall(misc.skinChanger.tickUpgradeLooks)
-		end
+		-- Upgrade look auto-tick removed (was getgc every 0.5s → Criminality.Main ~775ms)
 
 		-- Gun mods: never getgc / apply on Heartbeat thread (was max~250ms hitch)
 		if featureRunning.gunMods and gunModsWant(S) then
