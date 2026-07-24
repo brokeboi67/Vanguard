@@ -443,76 +443,128 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 	C("UICorner", { CornerRadius = UDim.new(1, 0), Parent = AccBarFill })
 
 	-- Criminality-only economy HUD (separate from Session Stats)
+	local ECO_EARN = Color3.fromRGB(110, 230, 150)
+	local ECO_SPEND = Color3.fromRGB(255, 120, 130)
+	local ECO_MUTED = Color3.fromRGB(120, 128, 145)
+	local ECO_NET = Color3.fromRGB(255, 205, 95)
 	local CrimEcoPanel = tagZ(C("Frame", {
 		Name = "CrimSessionEco",
-		Size = UDim2.new(0, 210, 0, 148),
-		Position = UDim2.new(1, -224, 0, 152),
-		BackgroundColor3 = Color3.fromRGB(16, 16, 22),
-		BackgroundTransparency = 0.08,
+		Size = UDim2.new(0, 228, 0, 172),
+		Position = UDim2.new(1, -242, 0, 152),
+		BackgroundColor3 = Color3.fromRGB(12, 14, 18),
+		BackgroundTransparency = 0.06,
 		BorderSizePixel = 0,
 		Visible = false,
+		ClipsDescendants = true,
 		Parent = HudGui,
 	}), Z.stats)
-	C("UICorner", { CornerRadius = UDim.new(0, 10), Parent = CrimEcoPanel })
-	local CrimEcoStroke = C("UIStroke", { Color = ACC, Thickness = 1, Transparency = 0.62, Parent = CrimEcoPanel })
+	C("UICorner", { CornerRadius = UDim.new(0, 12), Parent = CrimEcoPanel })
+	local CrimEcoStroke = C("UIStroke", {
+		Color = Color3.fromRGB(55, 62, 72),
+		Thickness = 1,
+		Transparency = 0.35,
+		Parent = CrimEcoPanel,
+	})
+	-- left accent rail
 	tagZ(C("Frame", {
-		Size = UDim2.new(1, 0, 0, 2),
+		Size = UDim2.new(0, 3, 1, -16),
+		Position = UDim2.new(0, 0, 0, 8),
 		BackgroundColor3 = ACC,
 		BorderSizePixel = 0,
 		Parent = CrimEcoPanel,
 	}), Z.stats + 1)
+	-- header wash
+	local CrimEcoHead = tagZ(C("Frame", {
+		Size = UDim2.new(1, 0, 0, 44),
+		BackgroundColor3 = Color3.fromRGB(18, 22, 28),
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+		Parent = CrimEcoPanel,
+	}), Z.stats + 1)
+	local dollarBadge = tagZ(C("TextLabel", {
+		Name = "DollarBadge",
+		Size = UDim2.new(0, 22, 0, 22),
+		Position = UDim2.new(0, 14, 0, 11),
+		BackgroundColor3 = Color3.fromRGB(28, 36, 32),
+		BorderSizePixel = 0,
+		Text = "$",
+		Font = Enum.Font.GothamBlack,
+		TextSize = 13,
+		TextColor3 = ECO_EARN,
+		Parent = CrimEcoHead,
+	}), Z.stats + 2)
+	C("UICorner", { CornerRadius = UDim.new(0, 6), Parent = dollarBadge })
 	tagZ(C("TextLabel", {
-		Size = UDim2.new(1, -20, 0, 14),
-		Position = UDim2.new(0, 12, 0, 10),
+		Size = UDim2.new(1, -48, 0, 16),
+		Position = UDim2.new(0, 42, 0, 8),
 		BackgroundTransparency = 1,
 		Text = "CRIM ECONOMY",
 		Font = Enum.Font.GothamBlack,
-		TextSize = 10,
-		TextColor3 = Color3.fromRGB(235, 235, 242),
+		TextSize = 12,
+		TextColor3 = Color3.fromRGB(240, 242, 248),
 		TextXAlignment = Enum.TextXAlignment.Left,
-		Parent = CrimEcoPanel,
-	}), Z.stats + 1)
+		Parent = CrimEcoHead,
+	}), Z.stats + 2)
 	tagZ(C("TextLabel", {
-		Size = UDim2.new(1, -20, 0, 10),
-		Position = UDim2.new(0, 12, 0, 24),
+		Size = UDim2.new(1, -48, 0, 12),
+		Position = UDim2.new(0, 42, 0, 24),
 		BackgroundTransparency = 1,
-		Text = "EARNED / SPENT",
+		Text = "SESSION  ·  EARN / SPEND",
 		Font = Enum.Font.GothamMedium,
-		TextSize = 8,
-		TextColor3 = Color3.fromRGB(120, 125, 140),
+		TextSize = 9,
+		TextColor3 = ECO_MUTED,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = CrimEcoHead,
+	}), Z.stats + 2)
+	tagZ(C("Frame", {
+		Size = UDim2.new(1, -24, 0, 1),
+		Position = UDim2.new(0, 12, 0, 44),
+		BackgroundColor3 = Color3.fromRGB(40, 46, 56),
+		BackgroundTransparency = 0.35,
+		BorderSizePixel = 0,
 		Parent = CrimEcoPanel,
 	}), Z.stats + 1)
 	local CrimEcoLines = {}
 	local CRIM_ECO_KEYS = {
-		{ key = "Cash", lab = "Cash ±" },
-		{ key = "XP", lab = "XP ±" },
-		{ key = "Rate", lab = "$ ±/m" },
-		{ key = "Net", lab = "Net $" },
+		{ key = "Cash", lab = "Cash" },
+		{ key = "XP", lab = "XP" },
+		{ key = "Rate", lab = "Rate /m" },
+		{ key = "Net", lab = "Net" },
 		{ key = "Time", lab = "Time" },
 	}
 	for i, row in ipairs(CRIM_ECO_KEYS) do
-		local rowY = 40 + (i - 1) * 20
+		local rowY = 52 + (i - 1) * 22
+		if i > 1 then
+			tagZ(C("Frame", {
+				Size = UDim2.new(1, -28, 0, 1),
+				Position = UDim2.new(0, 14, 0, rowY - 4),
+				BackgroundColor3 = Color3.fromRGB(36, 42, 52),
+				BackgroundTransparency = 0.55,
+				BorderSizePixel = 0,
+				Parent = CrimEcoPanel,
+			}), Z.stats + 1)
+		end
 		tagZ(C("TextLabel", {
-			Size = UDim2.new(0.42, 0, 0, 14),
-			Position = UDim2.new(0, 12, 0, rowY),
+			Size = UDim2.new(0.34, 0, 0, 16),
+			Position = UDim2.new(0, 14, 0, rowY),
 			BackgroundTransparency = 1,
 			Text = row.lab,
 			Font = Enum.Font.GothamMedium,
-			TextSize = 10,
-			TextColor3 = Color3.fromRGB(145, 148, 162),
+			TextSize = 11,
+			TextColor3 = Color3.fromRGB(150, 156, 170),
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Parent = CrimEcoPanel,
 		}), Z.stats + 1)
 		local val = tagZ(C("TextLabel", {
-			Size = UDim2.new(0.55, -12, 0, 14),
-			Position = UDim2.new(0.42, 0, 0, rowY),
+			Size = UDim2.new(0.62, -14, 0, 16),
+			Position = UDim2.new(0.36, 0, 0, rowY),
 			BackgroundTransparency = 1,
 			Text = "—",
 			Font = Enum.Font.GothamBold,
-			TextSize = 11,
+			TextSize = 12,
 			TextColor3 = ACC,
 			TextXAlignment = Enum.TextXAlignment.Right,
+			RichText = true,
 			Parent = CrimEcoPanel,
 		}), Z.stats + 1)
 		CrimEcoLines[row.key] = val
@@ -533,7 +585,11 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		return neg and ("−" .. s) or s
 	end
 	local function fmtEcoPair(earned, spent)
-		return "+" .. fmtEcoAmt(earned) .. " / −" .. fmtEcoAmt(spent)
+		return string.format(
+			'<font color="#6EE696">+%s</font>  <font color="#6A7388">/</font>  <font color="#FF7A8A">−%s</font>',
+			fmtEcoAmt(earned),
+			fmtEcoAmt(spent)
+		)
 	end
 	local function formatCrimEcoTime(startAt)
 		local sec = math.floor(tick() - (startAt or tick()))
@@ -1326,9 +1382,9 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		CrimEcoPanel.Visible = true
 		-- sit under Session Stats when both on, else top-right
 		if S.SessionStats then
-			CrimEcoPanel.Position = UDim2.new(1, -224, 0, 152)
+			CrimEcoPanel.Position = UDim2.new(1, -242, 0, 152)
 		else
-			CrimEcoPanel.Position = UDim2.new(1, -224, 0, 12)
+			CrimEcoPanel.Position = UDim2.new(1, -242, 0, 12)
 		end
 		local snap = ecoMod.snapshot()
 		local cashE = snap.cashEarned or 0
@@ -1338,11 +1394,12 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 		local cashTxt = fmtEcoPair(cashE, cashS)
 		local xpTxt = fmtEcoPair(xpE, xpS)
 		if snap.levels and snap.levels > 0 then
-			xpTxt = xpTxt .. " ·↑" .. tostring(snap.levels)
+			xpTxt = xpTxt .. '  <font color="#C8B4FF">↑' .. tostring(snap.levels) .. "</font>"
 		end
 		local rateTxt = fmtEcoPair(snap.cashPerMin or 0, snap.cashSpentPerMin or 0)
-		local netTxt = fmtEcoAmt(snap.cashNet or (cashE - cashS))
-		local timeTxt = formatCrimEcoTime(snap.start)
+		local netN = snap.cashNet or (cashE - cashS)
+		local netTxt = string.format('<font color="#FFCD5F">%s%s</font>', netN >= 0 and "+" or "", fmtEcoAmt(netN))
+		local timeTxt = string.format('<font color="#A8B0C0">%s</font>', formatCrimEcoTime(snap.start))
 		local changed = snap.dirty
 			or crimEcoDisp.cashE ~= cashE
 			or crimEcoDisp.cashS ~= cashS
@@ -1374,7 +1431,7 @@ function Features.Init(S, _ParentGUI, AntiBypassModule)
 			crimEcoDisp.time = timeTxt
 			CrimEcoLines.Time.Text = timeTxt
 		end
-		local pulse = 0.58 + math.sin(tick() * 2.2) * 0.08
+		local pulse = 0.28 + math.sin(tick() * 1.8) * 0.06
 		CrimEcoStroke.Transparency = pulse
 	end
 

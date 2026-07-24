@@ -9385,8 +9385,7 @@ function Criminality.ScanInventories()
 end
 
 -- ── SESSION ECO (GotCash / GotXP / LevelUp + CharStats deltas — listen only) ─
--- Tracks earned AND spent. CharStats Value.Changed is preferred for cash/XP
--- (catches shop spend). Remotes used as fallback / LevelUp. No Fire, no HB work.
+-- Tracks earned AND spent. ATM deposit/withdraw is NOT spent/earned (transfer).
 misc.sessionEco = {
 	cashEarned = 0,
 	cashSpent = 0,
@@ -9401,11 +9400,37 @@ misc.sessionEco = {
 	cashFromStats = false,
 	xpFromStats = false,
 	lastLevel = nil,
+	suppressCashUntil = 0,
+	wealthBuf = { cashD = 0, bankD = 0, flushTok = 0 },
+	_atmHooked = false,
 }
 
 function misc.sessionEco.isSpendFlag(v)
 	if v == true or v == 1 or v == "spend" or v == "spent" or v == "Spend" or v == "Spent" then
 		return true
+	end
+	return false
+end
+
+function misc.sessionEco.isBankTransferHint(v)
+	if typeof(v) == "string" then
+		local l = string.lower(v)
+		return string.find(l, "bank", 1, true) ~= nil
+			or string.find(l, "deposit", 1, true) ~= nil
+			or string.find(l, "withdraw", 1, true) ~= nil
+			or string.find(l, "atm", 1, true) ~= nil
+			or string.find(l, "transfer", 1, true) ~= nil
+			or string.find(l, "vault", 1, true) ~= nil
+	end
+	if typeof(v) == "table" then
+		for _, k in ipairs({ "Type", "type", "Reason", "reason", "Source", "source", "Action", "action", "From", "from", "Mode", "mode" }) do
+			if misc.sessionEco.isBankTransferHint(v[k]) then
+				return true
+			end
+		end
+		if v.Bank == true or v.ATM == true or v.Deposit == true or v.Withdraw == true or v.IsBank == true then
+			return true
+		end
 	end
 	return false
 end
@@ -9419,6 +9444,9 @@ function misc.sessionEco.extractSigned(v)
 		return tonumber(v)
 	end
 	if t ~= "table" then
+		return nil
+	end
+	if misc.sessionEco.isBankTransferHint(v) then
 		return nil
 	end
 	local amt = nil
@@ -9456,10 +9484,13 @@ function misc.sessionEco.extractSignedFromArgs(...)
 	local n = select("#", ...)
 	local amt = nil
 	local spendHint = false
+	local bankHint = false
 	for i = 1, n do
 		local a = select(i, ...)
 		local t = typeof(a)
-		if t == "boolean" and a == true and i > 1 then
+		if misc.sessionEco.isBankTransferHint(a) then
+			bankHint = true
+		elseif t == "boolean" and a == true and i > 1 then
 			spendHint = true
 		elseif t == "string" and misc.sessionEco.isSpendFlag(a) then
 			spendHint = true
@@ -9469,6 +9500,9 @@ function misc.sessionEco.extractSignedFromArgs(...)
 				amt = s
 			end
 		end
+	end
+	if bankHint then
+		return nil
 	end
 	if amt == nil then
 		return nil
@@ -9488,12 +9522,60 @@ function misc.sessionEco.applyCashDelta(d)
 	if not d or d == 0 then
 		return
 	end
+	-- ATM / bank InvokeServer window — pocket↔bank is not spend/earn
+	if tick() < (misc.sessionEco.suppressCashUntil or 0) then
+		return
+	end
 	if d > 0 then
 		misc.sessionEco.cashEarned += d
 	else
 		misc.sessionEco.cashSpent += -d
 	end
 	misc.sessionEco.mark()
+end
+
+function misc.sessionEco.flushWealthBuf()
+	local buf = misc.sessionEco.wealthBuf
+	local c = buf.cashD
+	local b = buf.bankD
+	buf.cashD = 0
+	buf.bankD = 0
+	if c == 0 and b == 0 then
+		return
+	end
+	-- Opposite moves of similar size = ATM deposit/withdraw
+	if c ~= 0 and b ~= 0 and math.abs(c + b) <= math.max(1, math.abs(c) * 0.02) then
+		return
+	end
+	if c ~= 0 then
+		misc.sessionEco.applyCashDelta(c)
+	end
+end
+
+function misc.sessionEco.scheduleWealthFlush()
+	local buf = misc.sessionEco.wealthBuf
+	buf.flushTok += 1
+	local tok = buf.flushTok
+	task.defer(function()
+		task.wait(0.08)
+		if misc.sessionEco.wealthBuf.flushTok == tok then
+			misc.sessionEco.flushWealthBuf()
+		end
+	end)
+end
+
+function misc.sessionEco.bufferWealth(kind, d)
+	d = tonumber(d)
+	if not d or d == 0 then
+		return
+	end
+	local buf = misc.sessionEco.wealthBuf
+	if kind == "cash" then
+		buf.cashD += d
+	else
+		buf.bankD += d
+	end
+	misc.sessionEco.scheduleWealthFlush()
 end
 
 function misc.sessionEco.applyXpDelta(d)
@@ -9570,7 +9652,47 @@ function misc.sessionEco.disconnect()
 	misc.sessionEco.bound = {}
 	misc.sessionEco.cashFromStats = false
 	misc.sessionEco.xpFromStats = false
+	misc.sessionEco.bankFromStats = false
 	misc.sessionEco.hooked = false
+	misc.sessionEco.wealthBuf.cashD = 0
+	misc.sessionEco.wealthBuf.bankD = 0
+end
+
+function misc.sessionEco.hookAtmSuppress()
+	if misc.sessionEco._atmHooked then
+		return
+	end
+	if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
+		return
+	end
+	misc.sessionEco._atmHooked = true
+	local old
+	local function isAtmRemote(self)
+		local ok, nm = pcall(function()
+			return self.Name
+		end)
+		if not ok or typeof(nm) ~= "string" then
+			return false
+		end
+		local l = string.lower(nm)
+		return nm == "ATM"
+			or l == "atm"
+			or l == "bank"
+			or string.find(l, "deposit", 1, true) ~= nil
+			or string.find(l, "withdraw", 1, true) ~= nil
+	end
+	local function handler(self, ...)
+		local method = getnamecallmethod()
+		if (method == "InvokeServer" or method == "FireServer") and isAtmRemote(self) then
+			misc.sessionEco.suppressCashUntil = tick() + 1.5
+		end
+		return old(self, ...)
+	end
+	if typeof(newcclosure) == "function" then
+		old = hookmetamethod(game, "__namecall", newcclosure(handler))
+	else
+		old = hookmetamethod(game, "__namecall", handler)
+	end
 end
 
 function misc.sessionEco.watchValue(obj, kind)
@@ -9585,8 +9707,8 @@ function misc.sessionEco.watchValue(obj, kind)
 		local now = tonumber(obj.Value) or last
 		local d = now - last
 		last = now
-		if kind == "cash" then
-			misc.sessionEco.applyCashDelta(d)
+		if kind == "cash" or kind == "bank" then
+			misc.sessionEco.bufferWealth(kind, d)
 		else
 			misc.sessionEco.applyXpDelta(d)
 		end
@@ -9600,12 +9722,22 @@ function misc.sessionEco.hookCharStatsFolder(folder)
 		return
 	end
 	local cashNames = { "Cash", "Money", "money", "cash" }
+	local bankNames = { "Bank", "bank", "BankMoney", "BankCash", "SavedCash" }
 	local xpNames = { "XP", "Exp", "Experience", "xp", "exp" }
 	if not misc.sessionEco.cashFromStats then
 		for i = 1, #cashNames do
 			local o = folder:FindFirstChild(cashNames[i])
 			if o and misc.sessionEco.watchValue(o, "cash") then
 				misc.sessionEco.cashFromStats = true
+				break
+			end
+		end
+	end
+	if not misc.sessionEco.bankFromStats then
+		for i = 1, #bankNames do
+			local o = folder:FindFirstChild(bankNames[i])
+			if o and misc.sessionEco.watchValue(o, "bank") then
+				misc.sessionEco.bankFromStats = true
 				break
 			end
 		end
@@ -9721,6 +9853,7 @@ function misc.sessionEco.start()
 	end
 	misc.sessionEco.disconnect()
 	misc.sessionEco.reset()
+	pcall(misc.sessionEco.hookAtmSuppress)
 	pcall(misc.sessionEco.hookCharStats)
 	local hooked = 0
 	local ev = RepSt:FindFirstChild("Events")
