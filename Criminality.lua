@@ -9855,8 +9855,17 @@ misc.sessionEco = {
 	lastLevel = nil,
 	suppressCashUntil = 0,
 	wealthBuf = { cashD = 0, bankD = 0, flushTok = 0 },
-	_atmHooked = false,
+	_atmNamecallHooked = false,
+	_atmListenersBound = false,
 }
+
+function misc.sessionEco.markAtmSuppress(sec)
+	sec = tonumber(sec) or 4
+	local untilT = tick() + sec
+	if untilT > (misc.sessionEco.suppressCashUntil or 0) then
+		misc.sessionEco.suppressCashUntil = untilT
+	end
+end
 
 function misc.sessionEco.isSpendFlag(v)
 	if v == true or v == 1 or v == "spend" or v == "spent" or v == "Spend" or v == "Spent" then
@@ -9975,8 +9984,13 @@ function misc.sessionEco.applyCashDelta(d)
 	if not d or d == 0 then
 		return
 	end
-	-- ATM / bank InvokeServer window — pocket↔bank is not spend/earn
+	-- ATM / bank window — pocket↔bank is not spend/earn
 	if tick() < (misc.sessionEco.suppressCashUntil or 0) then
+		return
+	end
+	-- Fallback: standing at Map.ATMz when cash moves = deposit/withdraw
+	-- (Events.ATM InvokeServer / Events2.ATM may not be hooked on every executor)
+	if misc.sessionEco.nearAtm(22) then
 		return
 	end
 	if d > 0 then
@@ -9985,6 +9999,30 @@ function misc.sessionEco.applyCashDelta(d)
 		misc.sessionEco.cashSpent += -d
 	end
 	misc.sessionEco.mark()
+end
+
+function misc.sessionEco.nearAtm(maxDist)
+	maxDist = tonumber(maxDist) or 22
+	local hrp = getHRP()
+	if not hrp then
+		return false
+	end
+	local map = workspace:FindFirstChild("Map")
+	local folder = map and map:FindFirstChild("ATMz")
+	if not folder then
+		return false
+	end
+	local pos = hrp.Position
+	for _, atm in ipairs(folder:GetChildren()) do
+		local part = atm:FindFirstChild("MainPart", true)
+		if not (part and part:IsA("BasePart")) then
+			part = atm:FindFirstChildWhichIsA("BasePart", true)
+		end
+		if part and (pos - part.Position).Magnitude <= maxDist then
+			return true
+		end
+	end
+	return false
 end
 
 function misc.sessionEco.flushWealthBuf()
@@ -10109,16 +10147,99 @@ function misc.sessionEco.disconnect()
 	misc.sessionEco.hooked = false
 	misc.sessionEco.wealthBuf.cashD = 0
 	misc.sessionEco.wealthBuf.bankD = 0
+	misc.sessionEco._atmListenersBound = false
 end
 
+-- Dump: Events.ATM (RemoteFunction) + Events2.ATM (BindableEvent) + Map.ATMz
 function misc.sessionEco.hookAtmSuppress()
-	if misc.sessionEco._atmHooked then
+	-- 1) Listen-only signals (reliable even when metamethod is busy/patched)
+	if not misc.sessionEco._atmListenersBound then
+		misc.sessionEco._atmListenersBound = true
+		local function bindBe(folder)
+			if not folder then
+				return
+			end
+			local be = folder:FindFirstChild("ATM")
+			if be and be:IsA("BindableEvent") then
+				table.insert(
+					misc.sessionEco.conns,
+					be.Event:Connect(function()
+						misc.sessionEco.markAtmSuppress(5)
+					end)
+				)
+			end
+		end
+		local function bindRf(folder)
+			if not folder then
+				return
+			end
+			local rf = folder:FindFirstChild("ATM")
+			if not rf then
+				return
+			end
+			-- Some builds fire client-side traffic on RF; also ProximityPrompt on ATMz
+			if rf:IsA("RemoteEvent") then
+				table.insert(
+					misc.sessionEco.conns,
+					rf.OnClientEvent:Connect(function()
+						misc.sessionEco.markAtmSuppress(5)
+					end)
+				)
+			end
+		end
+		bindBe(RepSt:FindFirstChild("Events2"))
+		bindRf(RepSt:FindFirstChild("Events"))
+		bindRf(RepSt:FindFirstChild("Events2"))
+
+		local function hookAtmPrompt(prompt)
+			if not prompt or not prompt:IsA("ProximityPrompt") then
+				return
+			end
+			table.insert(
+				misc.sessionEco.conns,
+				prompt.Triggered:Connect(function()
+					misc.sessionEco.markAtmSuppress(8)
+				end)
+			)
+		end
+		local function scanAtmz(folder)
+			if not folder then
+				return
+			end
+			for _, d in ipairs(folder:GetDescendants()) do
+				hookAtmPrompt(d)
+			end
+			table.insert(
+				misc.sessionEco.conns,
+				folder.DescendantAdded:Connect(function(d)
+					hookAtmPrompt(d)
+				end)
+			)
+		end
+		local map = workspace:FindFirstChild("Map")
+		scanAtmz(map and map:FindFirstChild("ATMz"))
+		if not (map and map:FindFirstChild("ATMz")) then
+			table.insert(
+				misc.sessionEco.conns,
+				workspace.ChildAdded:Connect(function(ch)
+					if ch.Name == "Map" then
+						task.defer(function()
+							scanAtmz(ch:FindFirstChild("ATMz"))
+						end)
+					end
+				end)
+			)
+		end
+	end
+
+	-- 2) namecall: Events.ATM:InvokeServer(...)
+	if misc.sessionEco._atmNamecallHooked then
 		return
 	end
 	if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
 		return
 	end
-	misc.sessionEco._atmHooked = true
+	misc.sessionEco._atmNamecallHooked = true
 	local old
 	local function isAtmRemote(self)
 		local ok, nm = pcall(function()
@@ -10128,16 +10249,28 @@ function misc.sessionEco.hookAtmSuppress()
 			return false
 		end
 		local l = string.lower(nm)
-		return nm == "ATM"
-			or l == "atm"
-			or l == "bank"
-			or string.find(l, "deposit", 1, true) ~= nil
-			or string.find(l, "withdraw", 1, true) ~= nil
+		if nm == "ATM" or l == "atm" then
+			return true
+		end
+		if l == "bank" or string.find(l, "deposit", 1, true) or string.find(l, "withdraw", 1, true) then
+			return true
+		end
+		-- Parent folder check: Events.ATM / Events2.ATM
+		local okP, parent = pcall(function()
+			return self.Parent and self.Parent.Name
+		end)
+		if okP and typeof(parent) == "string" then
+			local pl = string.lower(parent)
+			if (pl == "events" or pl == "events2") and l == "atm" then
+				return true
+			end
+		end
+		return false
 	end
 	local function handler(self, ...)
 		local method = getnamecallmethod()
-		if (method == "InvokeServer" or method == "FireServer") and isAtmRemote(self) then
-			misc.sessionEco.suppressCashUntil = tick() + 1.5
+		if (method == "InvokeServer" or method == "FireServer" or method == "Invoke" or method == "Fire") and isAtmRemote(self) then
+			misc.sessionEco.markAtmSuppress(5)
 		end
 		return old(self, ...)
 	end
