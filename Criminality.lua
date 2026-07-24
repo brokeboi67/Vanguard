@@ -6891,12 +6891,24 @@ function misc.skinChanger.applyVariantNameMatch(root, variantModel, skinKey, qui
 				continue
 			end
 			local already = d:GetAttribute("VG_VarSkin") == skinKey and d:GetAttribute("VG_VarMatch") == true
+			if already and allowMeshId then
+				-- Re-fix size if a previous build left MeshId without Size copy
+				local ds = d.Size - src.Size
+				if math.abs(ds.X) + math.abs(ds.Y) + math.abs(ds.Z) > 0.08 then
+					already = false
+				end
+			end
 			if already then
 				n = n + 1
 			else
 				pcall(function()
 					if d:GetAttribute("VG_DefMesh") == nil then
 						d:SetAttribute("VG_DefMesh", d.MeshId or "")
+					end
+					if d:GetAttribute("VG_DefSizeX") == nil then
+						d:SetAttribute("VG_DefSizeX", d.Size.X)
+						d:SetAttribute("VG_DefSizeY", d.Size.Y)
+						d:SetAttribute("VG_DefSizeZ", d.Size.Z)
 					end
 					for _, ch in ipairs(d:GetChildren()) do
 						if ch:IsA("SurfaceAppearance") then
@@ -6908,6 +6920,10 @@ function misc.skinChanger.applyVariantNameMatch(root, variantModel, skinKey, qui
 						if mid ~= "" and not string.find(mid, "ContentId", 1, true) then
 							d.MeshId = src.MeshId
 						end
+						-- SkinVariants mesh is authored at its own Size (ripper Base ~3.7 vs stock ~2.9)
+						pcall(function()
+							d.Size = src.Size
+						end)
 					end
 					local sa = src:FindFirstChildOfClass("SurfaceAppearance")
 					if sa then
@@ -8281,6 +8297,14 @@ function misc.skinChanger.restoreDefaults(root)
 				if typeof(defMesh) == "string" and defMesh ~= "" then
 					pcall(function()
 						d.MeshId = defMesh
+					end)
+				end
+				local sx = d:GetAttribute("VG_DefSizeX")
+				local sy = d:GetAttribute("VG_DefSizeY")
+				local sz = d:GetAttribute("VG_DefSizeZ")
+				if typeof(sx) == "number" and typeof(sy) == "number" and typeof(sz) == "number" then
+					pcall(function()
+						d.Size = Vector3.new(sx, sy, sz)
 					end)
 				end
 				d:SetAttribute("VG_VarSkin", nil)
