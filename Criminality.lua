@@ -5789,8 +5789,101 @@ function misc.skinChanger.attPrimary(inst)
 	return inst:FindFirstChildWhichIsA("BasePart", true)
 end
 
--- Visual-only: clone DisplayWepModels *-X/*-S Attachments into VG_UpgradeAtt as VG_Vis_*.
--- NEVER name them GSight/GLaser — ToolHandler SG_Check FindFirstChild("GSight") → nil.Parent spam.
+-- ToolHandler.SG_Check (line 49): ImageLabel and p10.Parent.Parent:IsA(...)
+-- crashes when Parent is nil — orphaned Reticle/Clip after our duplicate sight clones.
+function misc.skinChanger.patchSGCheck()
+	if misc.skinChanger._sgPatchDone then
+		return true
+	end
+	local hooked = 0
+	pcall(function()
+		if typeof(hookfunction) ~= "function" or typeof(getgc) ~= "function" then
+			return
+		end
+		local function looksLikeSGCheck(fn)
+			if typeof(debug.getconstants) == "function" then
+				local ok, consts = pcall(debug.getconstants, fn)
+				if not ok or typeof(consts) ~= "table" then
+					return false
+				end
+				local hasImage, hasSurf, hasFrame = false, false, false
+				for _, c in pairs(consts) do
+					if c == "ImageLabel" then
+						hasImage = true
+					elseif c == "SurfaceGui" then
+						hasSurf = true
+					elseif c == "Frame" then
+						hasFrame = true
+					end
+				end
+				return hasImage and hasSurf and hasFrame
+			end
+			local okS, s = pcall(debug.info, fn, "s")
+			local okL, l = pcall(debug.info, fn, "l")
+			return okS and typeof(s) == "string" and string.find(s, "ToolHandler", 1, true) and okL and l == 49
+		end
+		local safe = function(p10)
+			if typeof(p10) ~= "Instance" or not p10:IsA("ImageLabel") then
+				return false
+			end
+			local par = p10.Parent
+			if not par then
+				return false
+			end
+			if par:IsA("SurfaceGui") or par:IsA("Frame") or par:IsA("ImageLabel") then
+				return true
+			end
+			local gp = par.Parent
+			return gp ~= nil and gp:IsA("SurfaceGui")
+		end
+		for _, fn in ipairs(getgc(false)) do
+			if typeof(fn) == "function" and looksLikeSGCheck(fn) then
+				local okH = pcall(function()
+					hookfunction(fn, safe)
+				end)
+				if okH then
+					hooked += 1
+				end
+			end
+		end
+	end)
+	if hooked > 0 then
+		misc.skinChanger._sgPatchDone = true
+		misc.skinChanger.log("SG_Check patch ok x" .. tostring(hooked))
+		return true
+	end
+	return false
+end
+
+function misc.skinChanger.restoreAttachmentVisibility(root)
+	if not root then
+		return
+	end
+	local att = root:FindFirstChild("Attachments")
+	if not att then
+		return
+	end
+	for _, ch in ipairs(att:GetDescendants()) do
+		if ch:IsA("BasePart") then
+			if ch:GetAttribute("VG_UpgHidden") == true then
+				local prev = ch:GetAttribute("VG_UpgPrevLTM")
+				if typeof(prev) == "number" then
+					ch.LocalTransparencyModifier = prev
+				else
+					ch.LocalTransparencyModifier = 0
+				end
+				ch:SetAttribute("VG_UpgHidden", nil)
+				ch:SetAttribute("VG_UpgPrevLTM", nil)
+			elseif ch.LocalTransparencyModifier >= 1 and (ch.Name == "GSight" or ch.Name == "GLaser") then
+				ch.LocalTransparencyModifier = 0
+			end
+		end
+	end
+end
+
+-- If tool.Attachments already has GSight/GLaser → just unhide (no clone).
+-- Else clone DisplayWep *-X Attachments into tool.Attachments (real names).
+-- NEVER touch RF.ViewModels.Tool — ToolHandler replicates; our clones orphaned ImageLabels → SG_Check spam.
 function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, quiet)
 	if not root or not upgradeModel then
 		return 0
@@ -5798,7 +5891,13 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	if root.Name == "ViewModel" and not root:IsA("Tool") then
 		return 0
 	end
+	-- never inject into the VM replication tool
+	if root.Parent and root.Parent.Name == "ViewModels" then
+		return 0
+	end
+
 	misc.skinChanger.clearUpgradeExtras(root)
+	misc.skinChanger.patchSGCheck()
 
 	local toolHandle = misc.skinChanger.findUpgradeAnchor(root)
 	local upgHandle = misc.skinChanger.findUpgradeAnchor(upgradeModel)
@@ -5810,27 +5909,37 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	end
 
 	local srcFolder = upgradeModel:FindFirstChild("Attachments")
-	if not srcFolder then
+	if not srcFolder or #srcFolder:GetChildren() == 0 then
 		if not quiet then
 			misc.skinChanger.log("upgrade: no Attachments on " .. tostring(upgName))
 		end
 		return 0
 	end
 
-	local dstFolder = Instance.new("Folder")
-	dstFolder.Name = "VG_UpgradeAtt"
-	dstFolder:SetAttribute("VG_UpgAtt", true)
-	dstFolder.Parent = root
+	local dstFolder = root:FindFirstChild("Attachments")
+	if not dstFolder then
+		dstFolder = Instance.new("Folder")
+		dstFolder.Name = "Attachments"
+		dstFolder.Parent = root
+	end
 
-	-- hide stock iron-sight mesh named GSight (keep instance — SG_Check needs it)
-	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("MeshPart") and d.Name == "GSight" and not d:IsDescendantOf(dstFolder) then
-			if not d:GetAttribute("VG_UpgHidden") then
-				d:SetAttribute("VG_UpgPrevLTM", d.LocalTransparencyModifier)
-				d:SetAttribute("VG_UpgHidden", true)
-			end
-			d.LocalTransparencyModifier = 1
+	-- already present (real or leftover) — unhide only
+	local existing = {}
+	for _, ch in ipairs(dstFolder:GetChildren()) do
+		if ch:GetAttribute("VG_UpgAtt") ~= true then
+			existing[#existing + 1] = ch
 		end
+	end
+	if #existing > 0 then
+		misc.skinChanger.restoreAttachmentVisibility(root)
+		if not quiet then
+			local names = {}
+			for _, ch in ipairs(existing) do
+				names[#names + 1] = ch.Name
+			end
+			misc.skinChanger.log("upgradeLook REUSE Attachments [" .. table.concat(names, ",") .. "] on " .. root.Name)
+		end
+		return #existing
 	end
 
 	local n = 0
@@ -5842,17 +5951,12 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 		local offset = upgHandle.CFrame:ToObjectSpace(srcPrim.CFrame)
 		local ok, clone = pcall(function()
 			local c = src:Clone()
-			-- rename so SG_Check never FindFirstChild("GSight"/"GLaser") on our clone
-			c.Name = "VG_Vis_" .. tostring(src.Name)
 			c:SetAttribute("VG_UpgAtt", true)
 			c:SetAttribute("VG_VarSkin", "U:" .. tostring(upgName))
 			for _, d in ipairs(c:GetDescendants()) do
 				if d:IsA("BaseScript") or d:IsA("ModuleScript") then
 					d:Destroy()
 				elseif d:IsA("BasePart") then
-					if d.Name == "GSight" or d.Name == "GLaser" then
-						d.Name = "VG_Vis_" .. d.Name
-					end
 					d.CanCollide = false
 					d.CanQuery = false
 					d.CanTouch = false
@@ -5903,7 +6007,7 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	end
 
 	if not quiet then
-		misc.skinChanger.log(string.format("upgradeLook VIS %s → %s count=%d", root.Name, tostring(upgName), n))
+		misc.skinChanger.log(string.format("upgradeLook ATTACH %s → %s count=%d", root.Name, tostring(upgName), n))
 	end
 	return n
 end
@@ -5920,12 +6024,15 @@ function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
 	if not upgModel then
 		return 0, "no upgrade model"
 	end
+	-- character/backpack tool ONLY — do not touch ReplicatedFirst.ViewModels.Tool
 	local n = misc.skinChanger.applyUpgradeLookToRoot(tool, upgModel, upgName, quiet)
+	-- still strip any leftover VG_UpgradeAtt we previously put on RF tool
 	local rf = game:GetService("ReplicatedFirst")
 	local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
 	if vmTool then
-		n += misc.skinChanger.applyUpgradeLookToRoot(vmTool, upgModel, upgName, true)
+		misc.skinChanger.clearUpgradeExtras(vmTool)
 	end
+	misc.skinChanger.patchSGCheck()
 	return n, upgName
 end
 
@@ -5962,12 +6069,14 @@ function misc.skinChanger.clearUpgradeHeldGun()
 	local S = _G.__VG_S
 	local function wipe(root)
 		misc.skinChanger.clearUpgradeExtras(root)
+		misc.skinChanger.restoreAttachmentVisibility(root)
 	end
 	wipe(tool)
 	local rf = game:GetService("ReplicatedFirst")
 	wipe(rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool"))
 	local cam = workspace.CurrentCamera
 	wipe(cam and cam:FindFirstChild("ViewModel"))
+	misc.skinChanger.patchSGCheck()
 	if tool and S and S.CrimGunUpgradeLooks then
 		S.CrimGunUpgradeLooks[misc.skinChanger.upgradeStoreKey(tool.Name)] = nil
 	end
@@ -5986,6 +6095,7 @@ function misc.skinChanger.tickUpgradeLooks()
 	if typeof(map) ~= "table" then
 		return
 	end
+	misc.skinChanger.patchSGCheck()
 	local tool = misc.skinChanger.findActiveGun()
 	if not tool then
 		return
@@ -5995,21 +6105,20 @@ function misc.skinChanger.tickUpgradeLooks()
 	if typeof(want) ~= "string" or want == "" then
 		return
 	end
-	if tool:FindFirstChild("VG_UpgradeAtt") then
-		return
+	-- leftover VG_Vis / VG_UpgradeAtt from 2.72.0–2.72.1 → wipe then reuse/reapply
+	if tool:FindFirstChild("VG_UpgradeAtt") or tool:FindFirstChild("VG_UpgradeVisual") then
+		misc.skinChanger.clearUpgradeExtras(tool)
 	end
 	local att = tool:FindFirstChild("Attachments")
-	if att then
-		for _, ch in ipairs(att:GetChildren()) do
-			if ch:GetAttribute("VG_UpgAtt") == true then
-				-- leftover from 2.72.0 real-name Attachments inject — wipe & reapply safe
-				misc.skinChanger.clearUpgradeExtras(tool)
-				break
-			end
+	if att and #att:GetChildren() > 0 then
+		misc.skinChanger.restoreAttachmentVisibility(tool)
+		-- strip RF leftovers
+		local rf = game:GetService("ReplicatedFirst")
+		local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
+		if vmTool then
+			misc.skinChanger.clearUpgradeExtras(vmTool)
 		end
-	end
-	if tool:FindFirstChild("VG_UpgradeVisual") then
-		misc.skinChanger.clearUpgradeExtras(tool)
+		return
 	end
 	misc.skinChanger.applyUpgradeLookToTool(tool, true)
 end
@@ -6993,6 +7102,11 @@ end
 function misc.skinChanger.dumpToolHandler(lp)
 	local lines = {}
 	lines[#lines + 1] = "=== Backpack.VM / ToolHandler (SG_Check source) ==="
+	lines[#lines + 1] = "SG_Check_patched=" .. tostring(misc.skinChanger._sgPatchDone == true)
+	pcall(function()
+		misc.skinChanger.patchSGCheck()
+		lines[#lines + 1] = "SG_Check_patched_after_dump_try=" .. tostring(misc.skinChanger._sgPatchDone == true)
+	end)
 	local bp = lp and lp:FindFirstChild("Backpack")
 	local vm = bp and bp:FindFirstChild("VM")
 	if not vm then
@@ -7074,6 +7188,30 @@ function misc.skinChanger.dumpToolHandler(lp)
 				lines[#lines + 1] = "  ActiveTool=" .. tostring(_G.VM.ActiveTool and _G.VM.ActiveTool:GetFullName())
 			end
 		end
+	end)
+	-- orphan ImageLabels (Parent nil) — exact SG_Check crash cause
+	pcall(function()
+		local rf = game:GetService("ReplicatedFirst")
+		local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
+		local orphanN, directGui = 0, {}
+		local function scan(root, label)
+			if not root then
+				return
+			end
+			for _, d in ipairs(root:GetDescendants()) do
+				if d:IsA("ImageLabel") and d.Parent == nil then
+					orphanN += 1
+				end
+			end
+			for _, ch in ipairs(root:GetChildren()) do
+				if ch:IsA("Frame") or ch:IsA("ImageLabel") or ch:IsA("BillboardGui") or ch:IsA("SurfaceGui") then
+					directGui[#directGui + 1] = label .. "." .. ch.Name .. ":" .. ch.ClassName
+				end
+			end
+		end
+		scan(vmTool, "RF.Tool")
+		lines[#lines + 1] = "orphan ImageLabel Parent=nil count=" .. tostring(orphanN)
+		lines[#lines + 1] = "RF.Tool direct GUI kids: " .. (#directGui > 0 and table.concat(directGui, ", ") or "<none>")
 	end)
 	return lines
 end
@@ -8403,6 +8541,11 @@ end
 function misc.skinChanger.start()
 	misc.skinChanger.clearConns()
 	misc.skinChanger.active = true
+	misc.skinChanger._sgPatchDone = false
+	task.defer(function()
+		task.wait(0.5)
+		misc.skinChanger.patchSGCheck()
+	end)
 	local lp = getLP()
 	if not lp then
 		return
