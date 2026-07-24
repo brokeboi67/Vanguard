@@ -5496,6 +5496,64 @@ function misc.shotTracers.muzzleFromPlayer(plr)
 	return nil
 end
 
+-- Neverlose-style: thin FaceCamera Beams (glow + core) + tiny impact, soft lifetime fade
+function misc.shotTracers.makeAnchor(pos, parent)
+	local p = Instance.new("Part")
+	p.Name = "VG_CrimTraceAnchor"
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Transparency = 1
+	p.Size = Vector3.new(0.05, 0.05, 0.05)
+	p.CFrame = CFrame.new(pos)
+	p.Parent = parent
+	local att = Instance.new("Attachment")
+	att.Parent = p
+	return p, att
+end
+
+function misc.shotTracers.beamTransparency(baseT, tipExtra)
+	baseT = math.clamp(baseT, 0, 1)
+	tipExtra = tipExtra or 0.35
+	local tip = math.clamp(baseT + tipExtra, 0, 1)
+	return NumberSequence.new({
+		NumberSequenceKeypoint.new(0, baseT),
+		NumberSequenceKeypoint.new(0.72, baseT),
+		NumberSequenceKeypoint.new(1, tip),
+	})
+end
+
+function misc.shotTracers.fadeBeam(beam, life, startBase, tipExtra)
+	if not beam then
+		return
+	end
+	startBase = startBase or 0.08
+	tipExtra = tipExtra or 0.35
+	local proxy = Instance.new("NumberValue")
+	proxy.Value = startBase
+	local conn = proxy.Changed:Connect(function(v)
+		if beam.Parent then
+			beam.Transparency = misc.shotTracers.beamTransparency(v, tipExtra)
+		end
+	end)
+	local tw = TS:Create(
+		proxy,
+		TweenInfo.new(life, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		{ Value = 1 }
+	)
+	tw.Completed:Once(function()
+		pcall(function()
+			conn:Disconnect()
+		end)
+		pcall(function()
+			proxy:Destroy()
+		end)
+	end)
+	tw:Play()
+end
+
 function misc.shotTracers.draw(from, to, isOwn)
 	if typeof(from) ~= "Vector3" or typeof(to) ~= "Vector3" then
 		return
@@ -5516,32 +5574,78 @@ function misc.shotTracers.draw(from, to, isOwn)
 		return
 	end
 	local folder = misc.shotTracers.ensureFolder()
-	local mid = from + diff * 0.5
 	local col = isOwn and (S.V or Color3.fromRGB(80, 220, 140)) or Color3.fromRGB(255, 90, 70)
 	local life = tonumber(S.CrimShotTracersLife) or 0.55
 	life = math.clamp(life, 0.2, 2)
-	local width = isOwn and 0.22 or 0.28
 	local Debris = shotTracersDebris()
 
-	local function seg(w, color, transp)
-		local p = Instance.new("Part")
-		p.Name = "VG_CrimTrace"
-		p.Anchored = true
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.CastShadow = false
-		p.Material = Enum.Material.Neon
-		p.Color = color
-		p.Transparency = transp
-		p.Size = Vector3.new(w, w, dist)
-		p.CFrame = CFrame.lookAt(mid, to)
-		p.Parent = folder
-		Debris:AddItem(p, life + 0.15)
-		return p
+	local a0, att0 = misc.shotTracers.makeAnchor(from, folder)
+	local a1, att1 = misc.shotTracers.makeAnchor(to, folder)
+
+	local function mkBeam(name, w0, w1, colorSeq, baseT)
+		local b = Instance.new("Beam")
+		b.Name = name
+		b.Attachment0 = att0
+		b.Attachment1 = att1
+		b.FaceCamera = true
+		b.LightEmission = 1
+		b.LightInfluence = 0
+		b.Width0 = w0
+		b.Width1 = w1
+		b.Segments = 1
+		b.Color = colorSeq
+		b.Transparency = misc.shotTracers.beamTransparency(baseT, 0.35)
+		b.Parent = a0
+		return b
 	end
-	seg(width, col, 0.12)
-	seg(width * 0.45, Color3.new(1, 1, 1), 0.05)
+
+	local glowT, coreT = 0.42, 0.05
+	local glow = mkBeam(
+		"VG_CrimTraceGlow",
+		isOwn and 0.14 or 0.16,
+		isOwn and 0.05 or 0.06,
+		ColorSequence.new(col),
+		glowT
+	)
+	local core = mkBeam(
+		"VG_CrimTraceCore",
+		0.035,
+		0.012,
+		ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+			ColorSequenceKeypoint.new(0.45, col),
+			ColorSequenceKeypoint.new(1, col),
+		}),
+		coreT
+	)
+
+	local impact = Instance.new("Part")
+	impact.Name = "VG_CrimTraceImpact"
+	impact.Shape = Enum.PartType.Ball
+	impact.Anchored = true
+	impact.CanCollide = false
+	impact.CanQuery = false
+	impact.CanTouch = false
+	impact.CastShadow = false
+	impact.Material = Enum.Material.Neon
+	impact.Color = col
+	impact.Transparency = 0.15
+	impact.Size = Vector3.new(0.22, 0.22, 0.22)
+	impact.CFrame = CFrame.new(to)
+	impact.Parent = folder
+	pcall(function()
+		TS:Create(
+			impact,
+			TweenInfo.new(life * 0.85, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Size = Vector3.new(0.08, 0.08, 0.08), Transparency = 1 }
+		):Play()
+	end)
+
+	misc.shotTracers.fadeBeam(glow, life, glowT, 0.4)
+	misc.shotTracers.fadeBeam(core, life, coreT, 0.35)
+	Debris:AddItem(a0, life + 0.2)
+	Debris:AddItem(a1, life + 0.2)
+	Debris:AddItem(impact, life + 0.2)
 end
 
 function misc.shotTracers.resolveLine(vecs, dirs, plrs)
