@@ -5266,29 +5266,36 @@ function misc.shotTracers.toolIsLocal(tool)
 	return char ~= nil and tool:IsDescendantOf(char)
 end
 
-function misc.shotTracers.rayEnd(from, dir, maxDist)
+function misc.shotTracers.selfExcludeList()
+	local list = { misc.shotTracers.ensureFolder() }
+	local lp = getLP()
+	if lp and lp.Character then
+		list[#list + 1] = lp.Character
+	end
+	local cam = workspace.CurrentCamera
+	if cam then
+		-- Entire camera tree (ViewModel / FP arms / gun meshes)
+		list[#list + 1] = cam
+	end
+	return list
+end
+
+function misc.shotTracers.rayEnd(from, dir, maxDist, startNudge)
 	maxDist = maxDist or 1400
 	if typeof(from) ~= "Vector3" or typeof(dir) ~= "Vector3" or dir.Magnitude < 0.01 then
 		return nil
 	end
 	dir = dir.Unit
-	local lp = getLP()
-	local exclude = { misc.shotTracers.ensureFolder() }
-	if lp and lp.Character then
-		exclude[#exclude + 1] = lp.Character
-	end
-	local cam = workspace.CurrentCamera
-	if cam then
-		local vm = cam:FindFirstChild("ViewModel")
-		if vm then
-			exclude[#exclude + 1] = vm
-		end
+	-- Start past local body so the ray never "hits" self / FP meshes
+	local nudge = tonumber(startNudge) or 1.25
+	if nudge > 0 then
+		from = from + dir * nudge
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = exclude
+	params.FilterDescendantsInstances = misc.shotTracers.selfExcludeList()
 	local hit = workspace:Raycast(from, dir * maxDist, params)
-	return hit and hit.Position or (from + dir * math.min(maxDist, 420))
+	return hit and hit.Position or (from + dir * math.min(maxDist, 420)), from
 end
 
 function misc.shotTracers.localMuzzle()
@@ -5343,25 +5350,10 @@ function misc.shotTracers.drawOwnFromAim()
 	if typeof(from) ~= "Vector3" or typeof(dir) ~= "Vector3" or dir.Magnitude < 0.01 then
 		return
 	end
-	dir = dir.Unit
-	local lp = getLP()
-	local exclude = { misc.shotTracers.ensureFolder() }
-	if lp and lp.Character then
-		exclude[#exclude + 1] = lp.Character
+	local to, drawFrom = misc.shotTracers.rayEnd(from, dir, 1400, 1.25)
+	if to and drawFrom then
+		misc.shotTracers.draw(drawFrom, to, true)
 	end
-	local cam = workspace.CurrentCamera
-	if cam then
-		local vm = cam:FindFirstChild("ViewModel")
-		if vm then
-			exclude[#exclude + 1] = vm
-		end
-	end
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = exclude
-	local hit = workspace:Raycast(from, dir * 1400, params)
-	local to = hit and hit.Position or (from + dir * 420)
-	misc.shotTracers.draw(from + dir * 0.8, to, true)
 end
 
 function misc.shotTracers.onTrailPart(inst)
@@ -5756,9 +5748,11 @@ function misc.shotTracers.onShoot(...)
 		for i = 1, #dirs do
 			local d = dirs[i]
 			if d.Magnitude > 0.01 then
-				local to = misc.shotTracers.rayEnd(from, d, 1400)
-				if to then
-					misc.shotTracers.draw(from, to, isOwn)
+				-- Own shots: nudge start past local body; others: tiny nudge only
+				local nudge = isOwn and 1.25 or 0.15
+				local hitPos, drawFrom = misc.shotTracers.rayEnd(from, d, 1400, nudge)
+				if hitPos and drawFrom then
+					misc.shotTracers.draw(drawFrom, hitPos, isOwn)
 				end
 				misc.shotTracers.pushPending(from, d, isOwn)
 			end
@@ -5772,9 +5766,10 @@ function misc.shotTracers.onShoot(...)
 	end
 	if from and #dirs >= 1 then
 		misc.shotTracers.pushPending(from, dirs[1], isOwn)
-		local endPos = misc.shotTracers.rayEnd(from, dirs[1], 1400)
-		if endPos then
-			misc.shotTracers.draw(from, endPos, isOwn)
+		local nudge = isOwn and 1.25 or 0.15
+		local endPos, drawFrom = misc.shotTracers.rayEnd(from, dirs[1], 1400, nudge)
+		if endPos and drawFrom then
+			misc.shotTracers.draw(drawFrom, endPos, isOwn)
 		end
 	elseif #vecs == 1 then
 		misc.shotTracers.pushPending(vecs[1], dirs[1], isOwn)
