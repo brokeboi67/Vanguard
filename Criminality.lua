@@ -5923,12 +5923,257 @@ function misc.skinChanger.listVariantSkinsForGun(gunName)
 	return out
 end
 
+-- Parts/joints the game scripts rely on — never destroy / never overlay-replace.
+function misc.skinChanger.isVariantCriticalName(name)
+	local n = string.lower(tostring(name or ""))
+	return n == "block"
+		or n == "handle"
+		or n == "weaponhandle"
+		or n == "weaponhandle2"
+		or n == "hitbox"
+		or n == "originpart"
+		or n == "handlepart6d"
+		or n == "magpart"
+		or string.find(n, "motor", 1, true) ~= nil
+end
+
+function misc.skinChanger.isVariantCriticalPart(part)
+	if not part then
+		return true
+	end
+	if misc.skinChanger.isVariantCriticalName(part.Name) then
+		return true
+	end
+	if part:FindFirstChild("Block") then
+		return true
+	end
+	return false
+end
+
+-- Strip Guis/scripts/joints from clones (orphaned SurfaceGui → ToolHandler.SG_Check crash).
+function misc.skinChanger.stripVariantCloneJunk(inst)
+	if not inst then
+		return
+	end
+	local kill = {}
+	for _, d in ipairs(inst:GetDescendants()) do
+		if d:IsA("SurfaceGui")
+			or d:IsA("BillboardGui")
+			or d:IsA("ScreenGui")
+			or d:IsA("Script")
+			or d:IsA("LocalScript")
+			or d:IsA("ProximityPrompt")
+			or d:IsA("ClickDetector")
+			or d:IsA("Weld")
+			or d:IsA("ManualWeld")
+			or d:IsA("WeldConstraint")
+			or d:IsA("Motor6D")
+			or d:IsA("RigidConstraint")
+		then
+			kill[#kill + 1] = d
+		end
+	end
+	for _, d in ipairs(kill) do
+		pcall(function()
+			d:Destroy()
+		end)
+	end
+end
+
+function misc.skinChanger.clearVariantOverlay(root)
+	if not root then
+		return 0
+	end
+	local n = 0
+	local kill = {}
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:GetAttribute("VG_VarOverlay") == true or d.Name == "VG_VarVisual" then
+			kill[#kill + 1] = d
+		elseif d:IsA("BasePart") and d:GetAttribute("VG_VarHidden") == true then
+			pcall(function()
+				local prev = d:GetAttribute("VG_VarPrevLTM")
+				if typeof(prev) == "number" then
+					d.LocalTransparencyModifier = prev
+				else
+					d.LocalTransparencyModifier = 0
+				end
+				d:SetAttribute("VG_VarHidden", nil)
+				d:SetAttribute("VG_VarPrevLTM", nil)
+				n = n + 1
+			end)
+		end
+	end
+	for _, d in ipairs(kill) do
+		pcall(function()
+			d:Destroy()
+			n = n + 1
+		end)
+	end
+	return n
+end
+
+function misc.skinChanger.findVariantWeaponHandle(model)
+	if not model then
+		return nil
+	end
+	return model:FindFirstChild("WeaponHandle", true) or model:FindFirstChild("WeaponHandle2", true)
+end
+
+-- SkinVariants (cashcane / heritage…): clone visuals under live WeaponHandle.
+-- Never touches MeshId / Block — Melee.Equip stays intact.
+function misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey, quiet)
+	if not root or not variantModel then
+		return 0
+	end
+	local liveWH = misc.skinChanger.findVariantWeaponHandle(root)
+	local srcWH = misc.skinChanger.findVariantWeaponHandle(variantModel)
+	if not liveWH or not liveWH:IsA("BasePart") or not srcWH or not srcWH:IsA("BasePart") then
+		return 0
+	end
+	local existing = liveWH:FindFirstChild("VG_VarVisual")
+	if existing and existing:GetAttribute("VG_VarSkin") == skinKey then
+		return 1
+	end
+	misc.skinChanger.clearVariantOverlay(root)
+	misc.skinChanger.captureDefaults(root)
+
+	-- Hide original visual meshes under live handle (keep handle + Block / joints).
+	for _, d in ipairs(liveWH:GetDescendants()) do
+		if d:IsA("BasePart") and d ~= liveWH and not misc.skinChanger.isVariantCriticalPart(d) then
+			pcall(function()
+				if d:GetAttribute("VG_VarHidden") ~= true then
+					d:SetAttribute("VG_VarPrevLTM", d.LocalTransparencyModifier)
+					d:SetAttribute("VG_VarHidden", true)
+				end
+				d.LocalTransparencyModifier = 1
+			end)
+		elseif (d:IsA("SpecialMesh") or d:IsA("FileMesh")) and d.Parent and d.Parent:IsA("BasePart") then
+			local p = d.Parent
+			if p ~= liveWH and not misc.skinChanger.isVariantCriticalPart(p) then
+				pcall(function()
+					if p:GetAttribute("VG_VarHidden") ~= true then
+						p:SetAttribute("VG_VarPrevLTM", p.LocalTransparencyModifier)
+						p:SetAttribute("VG_VarHidden", true)
+					end
+					p.LocalTransparencyModifier = 1
+				end)
+			end
+		end
+	end
+
+	local folder = Instance.new("Folder")
+	folder.Name = "VG_VarVisual"
+	folder:SetAttribute("VG_VarOverlay", true)
+	folder:SetAttribute("VG_VarSkin", skinKey)
+	folder.Parent = liveWH
+
+	local srcCF = srcWH.CFrame
+	local n = 0
+	for _, src in ipairs(srcWH:GetDescendants()) do
+		if src:IsA("BasePart") and src ~= srcWH and not misc.skinChanger.isVariantCriticalPart(src) then
+			local ok, clone = pcall(function()
+				return src:Clone()
+			end)
+			if ok and clone then
+				pcall(function()
+					misc.skinChanger.stripVariantCloneJunk(clone)
+					local rel = srcCF:ToObjectSpace(src.CFrame)
+					clone.Name = "VG_" .. src.Name
+					clone.Anchored = false
+					clone.CanCollide = false
+					clone.CanQuery = false
+					clone.CanTouch = false
+					clone.Massless = true
+					clone.CastShadow = src.CastShadow
+					clone:SetAttribute("VG_VarOverlay", true)
+					clone:SetAttribute("VG_VarSkin", skinKey)
+					clone.CFrame = liveWH.CFrame * rel
+					clone.Parent = folder
+					local w = Instance.new("WeldConstraint")
+					w.Part0 = liveWH
+					w.Part1 = clone
+					w.Parent = clone
+				end)
+				n = n + 1
+			end
+		end
+	end
+
+	-- Single-mesh variants where the only mesh is WeaponHandle itself (e.g. bat_cricket).
+	if n == 0 and srcWH:IsA("MeshPart") then
+		local meshId = tostring(srcWH.MeshId or "")
+		if meshId ~= "" and not string.find(meshId, "ContentId", 1, true) then
+			local ok, clone = pcall(function()
+				return srcWH:Clone()
+			end)
+			if ok and clone then
+				pcall(function()
+					misc.skinChanger.stripVariantCloneJunk(clone)
+					clone:ClearAllChildren()
+					-- re-copy SA only
+					local sa = srcWH:FindFirstChildOfClass("SurfaceAppearance")
+					if sa then
+						local neo = sa:Clone()
+						neo.Parent = clone
+					end
+					clone.Name = "VG_HandleMesh"
+					clone.Anchored = false
+					clone.CanCollide = false
+					clone.CanQuery = false
+					clone.CanTouch = false
+					clone.Massless = true
+					clone.CFrame = liveWH.CFrame
+					clone:SetAttribute("VG_VarOverlay", true)
+					clone:SetAttribute("VG_VarSkin", skinKey)
+					clone.Parent = folder
+					local w = Instance.new("WeldConstraint")
+					w.Part0 = liveWH
+					w.Part1 = clone
+					w.Parent = clone
+					-- hide live handle mesh visually (keep part for welds/Block)
+					if liveWH:IsA("MeshPart") then
+						liveWH:SetAttribute("VG_VarPrevLTM", liveWH.LocalTransparencyModifier)
+						liveWH:SetAttribute("VG_VarHidden", true)
+						liveWH.LocalTransparencyModifier = 1
+					end
+				end)
+				n = n + 1
+			end
+		end
+	end
+
+	pcall(function()
+		liveWH:SetAttribute("VG_VarSkin", skinKey)
+	end)
+	if not quiet then
+		misc.skinChanger.log(string.format(
+			"variantOverlay root=%s wh=%s parts=%d key=%s",
+			root.Name,
+			liveWH.Name,
+			n,
+			tostring(skinKey)
+		))
+	end
+	return n
+end
+
 function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, quiet)
 	if not root or not variantModel then
 		return 0
 	end
 	misc.skinChanger.captureDefaults(root)
 	local melee = misc.skinChanger.isMeleeRoot(root)
+	local srcWH = misc.skinChanger.findVariantWeaponHandle(variantModel)
+
+	-- Melee mesh skins (cashcane…): WeaponHandle overlay only — never MeshId.
+	if melee and srcWH then
+		local over = misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey, quiet)
+		if over > 0 then
+			return over
+		end
+	end
+
+	-- Guns: name-matched MeshId/SA (keeps Motor6D bolt etc.).
 	local byName = {}
 	local srcList = {}
 	for _, d in ipairs(variantModel:GetDescendants()) do
@@ -5937,17 +6182,14 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 			srcList[#srcList + 1] = d
 		end
 	end
-	if #srcList == 0 then
+	if #srcList == 0 and not srcWH then
 		return 0
 	end
 	local targets = {}
-	if melee then
-		targets = misc.skinChanger.collectMeleeMeshParts(root)
-	else
+	if not melee then
 		for _, d in ipairs(root:GetDescendants()) do
 			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
 				local ln = string.lower(d.Name)
-				-- never touch hitbox / block / handle roots (Melee.Equip uses .Block)
 				if ln ~= "block" and ln ~= "handle" and ln ~= "weaponhandle" and ln ~= "hitbox"
 					and not d:FindFirstChild("Block") then
 					targets[#targets + 1] = d
@@ -5957,8 +6199,11 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 	end
 	local n, patched = 0, 0
 	for i, d in ipairs(targets) do
-		local src = byName[string.lower(d.Name)] or srcList[((i - 1) % #srcList) + 1]
-		if src then
+		local src = byName[string.lower(d.Name)]
+		if not src then
+			src = srcList[((i - 1) % math.max(#srcList, 1)) + 1]
+		end
+		if src and #srcList > 0 then
 			local already = d:GetAttribute("VG_VarSkin") == skinKey
 			if already then
 				n = n + 1
@@ -5972,11 +6217,8 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 							ch:Destroy()
 						end
 					end
-					-- Melee: NEVER swap MeshId — breaks Melee.Equip (... .Block = nil)
-					if not melee then
-						if src.MeshId and tostring(src.MeshId) ~= "" and not string.find(tostring(src.MeshId), "ContentId", 1, true) then
-							d.MeshId = src.MeshId
-						end
+					if src.MeshId and tostring(src.MeshId) ~= "" and not string.find(tostring(src.MeshId), "ContentId", 1, true) then
+						d.MeshId = src.MeshId
 					end
 					local sa = src:FindFirstChildOfClass("SurfaceAppearance")
 					if sa then
@@ -5997,8 +6239,19 @@ function misc.skinChanger.applyVariantToInstance(root, variantModel, skinKey, qu
 			end
 		end
 	end
-	if not quiet and patched > 0 then
-		misc.skinChanger.log(string.format("applyVariant root=%s n=%d patched=%d melee=%s key=%s", root.Name, n, patched, tostring(melee), tostring(skinKey)))
+	if patched > 0 then
+		if not quiet then
+			misc.skinChanger.log(string.format("applyVariant root=%s n=%d patched=%d melee=%s key=%s", root.Name, n, patched, tostring(melee), tostring(skinKey)))
+		end
+		return n
+	end
+
+	-- Gun fallback when names don't match: handle overlay.
+	if not melee and srcWH then
+		local over = misc.skinChanger.applyVariantHandleOverlay(root, variantModel, skinKey, quiet)
+		if over > 0 then
+			return over
+		end
 	end
 	return n
 end
@@ -6056,17 +6309,36 @@ function misc.skinChanger.applyVariantToTool(tool, skinKey, quiet)
 	if not tool or not skinKey then
 		return 0
 	end
-	-- Safe path: Bat Cash Cane etc. exist as RepPBR — don't mesh-swap (breaks Melee.Block)
+	local model = misc.skinChanger.findVariantModel(skinKey)
+	-- Mesh SkinVariants (WeaponHandle overlay) — do NOT fall back to RepPBR texture-only.
+	if model and misc.skinChanger.findVariantWeaponHandle(model) then
+		misc.skinChanger.indexMeshes(tool, tool.Name)
+		local n = misc.skinChanger.applyVariantToInstance(tool, model, skinKey, quiet)
+		local cam = workspace.CurrentCamera
+		local vm = cam and cam:FindFirstChild("ViewModel")
+		if vm then
+			n = n + misc.skinChanger.applyVariantToInstance(vm, model, skinKey, true)
+		end
+		local rf = game:GetService("ReplicatedFirst")
+		local folder = rf:FindFirstChild("ViewModels")
+		if folder then
+			for _, ch in ipairs(folder:GetChildren()) do
+				n = n + misc.skinChanger.applyVariantToInstance(ch, model, skinKey, quiet)
+			end
+		end
+		if n > 0 then
+			return n
+		end
+	end
+	-- Texture-only SkinVariants / aliases that exist in RepPBR
 	local tmpl = misc.skinChanger.resolveVariantAsTemplate(skinKey, tool.Name)
 	if tmpl then
 		misc.skinChanger.log(string.format("variant→RepPBR %s → %s", tostring(skinKey), tmpl.Name))
 		return misc.skinChanger.applyToTool(tool, tmpl, quiet)
 	end
-	local model = misc.skinChanger.findVariantModel(skinKey)
 	if not model then
 		return 0
 	end
-	-- Melee without RepPBR: texture/SA only (no MeshId) inside applyVariantToInstance
 	misc.skinChanger.indexMeshes(tool, tool.Name)
 	local n = misc.skinChanger.applyVariantToInstance(tool, model, skinKey, quiet)
 	local cam = workspace.CurrentCamera
@@ -7035,7 +7307,7 @@ function misc.skinChanger.restoreDefaults(root)
 	if not root then
 		return 0
 	end
-	local n = 0
+	local n = misc.skinChanger.clearVariantOverlay(root)
 	for _, d in ipairs(root:GetDescendants()) do
 		if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
 			pcall(function()
@@ -7149,6 +7421,13 @@ function misc.skinChanger.toolAlreadyHasSkin(tool, skinKey)
 		return false
 	end
 	if misc.skinChanger.isVariantSkinKey(skinKey) then
+		local wh = misc.skinChanger.findVariantWeaponHandle(tool)
+		if wh then
+			local folder = wh:FindFirstChild("VG_VarVisual")
+			if folder and folder:GetAttribute("VG_VarSkin") == skinKey then
+				return true
+			end
+		end
 		local any = false
 		for _, d in ipairs(tool:GetDescendants()) do
 			if d:IsA("MeshPart") and misc.skinChanger.shouldSkinMesh(d) then
@@ -7398,11 +7677,16 @@ function misc.skinChanger.applyNamed(gunName, skinKey)
 			or misc.skinChanger.lookupMeshVariantByTexId(gunName, texId)
 		if meshVar then
 			variantKeyFromMesh = misc.skinChanger.meshVariantToSkinKey(meshVar)
-			local fromMesh = variantKeyFromMesh and misc.skinChanger.resolveVariantAsTemplate(variantKeyFromMesh, gunName)
-			if fromMesh then
-				tmpl = fromMesh
-				texId = nil
-				misc.skinChanger.log(string.format("MeshVariant %s → RepPBR %s", tostring(meshVar), tmpl.Name))
+			-- Prefer real SkinVariants WeaponHandle overlay over RepPBR texture-only
+			if variantKeyFromMesh and misc.skinChanger.findVariantModel(variantKeyFromMesh) then
+				-- keep texId + variantKeyFromMesh for combined apply below
+			else
+				local fromMesh = variantKeyFromMesh and misc.skinChanger.resolveVariantAsTemplate(variantKeyFromMesh, gunName)
+				if fromMesh then
+					tmpl = fromMesh
+					texId = nil
+					misc.skinChanger.log(string.format("MeshVariant %s → RepPBR %s", tostring(meshVar), tmpl.Name))
+				end
 			end
 		end
 		if not tmpl then
@@ -7657,15 +7941,18 @@ function misc.skinChanger.applyToDroppedModel(model)
 	end
 	local n = 0
 	if misc.skinChanger.isVariantSkinKey(key) then
-		local tmpl = misc.skinChanger.resolveVariantAsTemplate(key, gunName)
-		if tmpl then
-			n = misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+		local variant = misc.skinChanger.findVariantModel(key)
+		if variant and misc.skinChanger.findVariantWeaponHandle(variant) then
+			n = misc.skinChanger.applyVariantToInstance(model, variant, key, true)
 		else
-			local variant = misc.skinChanger.findVariantModel(key)
-			if not variant then
+			local tmpl = misc.skinChanger.resolveVariantAsTemplate(key, gunName)
+			if tmpl then
+				n = misc.skinChanger.applyTemplateToInstance(model, tmpl, true)
+			elseif variant then
+				n = misc.skinChanger.applyVariantToInstance(model, variant, key, true)
+			else
 				return 0
 			end
-			n = misc.skinChanger.applyVariantToInstance(model, variant, key, true)
 		end
 	elseif misc.skinChanger.isTexSkinKey(key) then
 		local texId = misc.skinChanger.texIdFromKey(key)
@@ -8197,20 +8484,34 @@ function misc.skinChanger.bindUi(S)
 		end
 		for _, var in ipairs(misc.skinChanger.listVariantSkinsForGun(gunName)) do
 			local labKey = string.lower(string.gsub(var.label, "%s+", ""))
-			local skip = saLabels[string.lower(var.label)] or saLabels[labKey]
+			local model = misc.skinChanger.findVariantModel(var.full)
+			local hasWh = model and misc.skinChanger.findVariantWeaponHandle(model) ~= nil
+			-- Mesh variants always listed (even if a TextureID/RepPBR shares the name).
+			local skip = (not hasWh) and (saLabels[string.lower(var.label)] or saLabels[labKey])
 			if not skip then
-				-- Prefer showing RepPBR name if we can resolve it (Cashcane → Cash Cane)
-				local tmpl = misc.skinChanger.resolveVariantAsTemplate(var.full, gunName)
-				local lab = tmpl and misc.skinChanger.skinLabel(tmpl.Name) or (var.label .. " ★")
+				local lab = var.label .. " ★"
+				local full = var.full
+				if not hasWh then
+					local tmpl = misc.skinChanger.resolveVariantAsTemplate(var.full, gunName)
+					if tmpl then
+						full = tmpl.Name
+						lab = misc.skinChanger.skinLabel(tmpl.Name)
+					end
+				end
 				saLabels[string.lower(lab)] = true
 				saLabels[labKey] = true
+				local preview = var.preview
+				if preview == "" then
+					local tmpl = misc.skinChanger.resolveVariantAsTemplate(var.full, gunName)
+					preview = tmpl and misc.skinChanger.contentId(tmpl.ColorMap) or ""
+				end
 				rows[#rows + 1] = attachRarity({
-					full = tmpl and tmpl.Name or var.full,
+					full = full,
 					label = lab,
-					selected = misc.skinChanger.getSavedSkinKey(gunName) == (tmpl and tmpl.Name or var.full)
+					selected = misc.skinChanger.getSavedSkinKey(gunName) == full
 						or misc.skinChanger.getSavedSkinKey(gunName) == var.full,
-					preview = tmpl and misc.skinChanger.contentId(tmpl.ColorMap) or var.preview,
-				}, tmpl and misc.skinChanger.skinLabel(tmpl.Name) or var.label)
+					preview = preview,
+				}, var.label)
 			end
 		end
 		return rows
