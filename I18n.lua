@@ -418,7 +418,7 @@ local STR = {
 		hint_crim_skinchanger_vault = "Inventory = RepPBR skins · rarity colors from GC (getgc) · Exotic/Legendary filters.",
 		btn_crim_upgrade_held = "Upgrade look (held gun)",
 		btn_crim_upgrade_clear = "Clear upgrade look",
-		hint_crim_upgrade_look = "Visually applies -X/-S model (e.g. AKS-74U → AKS-74U-X with sight/laser). Tool Name unchanged — server still sees base.",
+		hint_crim_upgrade_look = "Clones Attachments from DisplayWepModels *-X/*-S (GSight/GLaser) into tool.Attachments. Base mesh untouched — no full-gun clone.",
 		btn_crim_skin_refresh = "Refresh Skin List",
 		btn_crim_skin_clear = "Clear Skin (selected)",
 		btn_crim_skin_dump = "Dump Skin Debug",
