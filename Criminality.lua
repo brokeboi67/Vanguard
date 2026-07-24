@@ -5131,7 +5131,8 @@ local function stopFullBright()
 	end
 end
 
--- ── CRIM SHOT TRACERS (listen Gun_Shoot / Gun_Hit — dedicated, not Visuals→ShotTracers) ──
+-- ── CRIM SHOT TRACERS (GNX_S FireServer: origin + {dir…} — dedicated, not Visuals→ShotTracers) ──
+-- Cobalt: Events.GNX_S:FireServer(time, token, Tool, id, Vector3 origin, { Vector3 dir }, bool)
 misc.shotTracers = {
 	conns = {},
 	active = false,
@@ -5166,19 +5167,27 @@ function misc.shotTracers.ensureFolder()
 	return f
 end
 
-function misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth, v)
+function misc.shotTracers.collectArgs(outVec, outDir, outPlr, outTool, outNum, depth, v, asDir)
 	if depth > 4 or v == nil then
 		return
 	end
 	local t = typeof(v)
 	if t == "Vector3" then
-		outVec[#outVec + 1] = v
+		-- Unit-ish vectors are aim dirs (GNX_S packs dirs in a table); world positions are large
+		local mag = v.Magnitude
+		if asDir or (mag > 0.05 and mag < 1.75) then
+			outDir[#outDir + 1] = v
+		else
+			outVec[#outVec + 1] = v
+		end
 	elseif t == "CFrame" then
 		outVec[#outVec + 1] = v.Position
 		outDir[#outDir + 1] = v.LookVector
 	elseif t == "Instance" then
 		if v:IsA("Player") then
 			outPlr[#outPlr + 1] = v
+		elseif v:IsA("Tool") then
+			outTool[#outTool + 1] = v
 		elseif v:IsA("BasePart") then
 			outVec[#outVec + 1] = v.Position
 		elseif v:IsA("Model") then
@@ -5199,32 +5208,87 @@ function misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth, v)
 		for i = 1, #keys do
 			local x = v[keys[i]]
 			if x ~= nil then
-				misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth + 1, x)
+				local key = keys[i]
+				local dirKey = key == "Direction" or key == "direction" or key == "Dir" or key == "dir"
+					or key == "Look" or key == "look" or key == "Normal" or key == "normal"
+				misc.shotTracers.collectArgs(outVec, outDir, outPlr, outTool, outNum, depth + 1, x, dirKey)
+			end
+		end
+		-- Array tables in GNX_S are direction lists: { Vector3.new(...) }
+		local arrayOnly = true
+		local any = false
+		for k, x in pairs(v) do
+			any = true
+			if typeof(k) ~= "number" then
+				arrayOnly = false
+				break
 			end
 		end
 		for k, x in pairs(v) do
 			if typeof(k) == "number" then
-				misc.shotTracers.collectArgs(outVec, outDir, outPlr, outNum, depth + 1, x)
+				misc.shotTracers.collectArgs(outVec, outDir, outPlr, outTool, outNum, depth + 1, x, arrayOnly and any)
 			end
 		end
 	end
 end
 
 function misc.shotTracers.parseArgs(...)
-	local vecs, dirs, plrs, nums = {}, {}, {}, {}
+	local vecs, dirs, plrs, tools, nums = {}, {}, {}, {}, {}
 	local n = select("#", ...)
 	for i = 1, n do
-		misc.shotTracers.collectArgs(vecs, dirs, plrs, nums, 0, select(i, ...))
+		misc.shotTracers.collectArgs(vecs, dirs, plrs, tools, nums, 0, select(i, ...), false)
 	end
 	-- Packed floats: x,y,z,x,y,z → Vector3s (common Crim remote style)
 	if #vecs == 0 and #nums >= 6 then
 		for i = 1, #nums - 2, 3 do
-			vecs[#vecs + 1] = Vector3.new(nums[i], nums[i + 1], nums[i + 2])
+			local cand = Vector3.new(nums[i], nums[i + 1], nums[i + 2])
+			if cand.Magnitude > 0.05 and cand.Magnitude < 1.75 then
+				dirs[#dirs + 1] = cand
+			else
+				vecs[#vecs + 1] = cand
+			end
 		end
 	elseif #vecs == 1 and #nums >= 3 and #dirs == 0 then
 		dirs[#dirs + 1] = Vector3.new(nums[1], nums[2], nums[3])
 	end
-	return vecs, dirs, plrs, nums, n
+	return vecs, dirs, plrs, tools, nums, n
+end
+
+function misc.shotTracers.toolIsLocal(tool)
+	local lp = getLP()
+	if not lp or not tool then
+		return false
+	end
+	if tool:IsDescendantOf(lp) then
+		return true
+	end
+	local char = lp.Character
+	return char ~= nil and tool:IsDescendantOf(char)
+end
+
+function misc.shotTracers.rayEnd(from, dir, maxDist)
+	maxDist = maxDist or 1400
+	if typeof(from) ~= "Vector3" or typeof(dir) ~= "Vector3" or dir.Magnitude < 0.01 then
+		return nil
+	end
+	dir = dir.Unit
+	local lp = getLP()
+	local exclude = { misc.shotTracers.ensureFolder() }
+	if lp and lp.Character then
+		exclude[#exclude + 1] = lp.Character
+	end
+	local cam = workspace.CurrentCamera
+	if cam then
+		local vm = cam:FindFirstChild("ViewModel")
+		if vm then
+			exclude[#exclude + 1] = vm
+		end
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = exclude
+	local hit = workspace:Raycast(from, dir * maxDist, params)
+	return hit and hit.Position or (from + dir * math.min(maxDist, 420))
 end
 
 function misc.shotTracers.localMuzzle()
@@ -5560,11 +5624,42 @@ function misc.shotTracers.onShoot(...)
 	if not S or not S.CrimShotTracers then
 		return
 	end
-	misc.shotTracers.maybeLog("Gun_Shoot", ...)
-	local vecs, dirs, plrs = misc.shotTracers.parseArgs(...)
+	misc.shotTracers.maybeLog("GNX_S", ...)
+	local vecs, dirs, plrs, tools = misc.shotTracers.parseArgs(...)
 	local isOwn = misc.shotTracers.isOwnShot(plrs)
-	if #plrs == 0 then
+	if not isOwn then
+		for i = 1, #tools do
+			if misc.shotTracers.toolIsLocal(tools[i]) then
+				isOwn = true
+				break
+			end
+		end
+	end
+	-- FireServer from this client has no Player arg — treat as own
+	if #plrs == 0 and (#tools == 0 or isOwn) then
 		isOwn = true
+	end
+	-- GNX_S primary shape: origin + one or more dirs
+	if #vecs >= 1 and #dirs >= 1 then
+		local from = vecs[1]
+		if #plrs >= 1 then
+			local m = misc.shotTracers.muzzleFromPlayer(plrs[1])
+			if m and (from - m).Magnitude > 80 then
+				-- Prefer player muzzle if remote origin is nonsense
+				from = m
+			end
+		end
+		for i = 1, #dirs do
+			local d = dirs[i]
+			if d.Magnitude > 0.01 then
+				local to = misc.shotTracers.rayEnd(from, d, 1400)
+				if to then
+					misc.shotTracers.draw(from, to, isOwn)
+				end
+				misc.shotTracers.pushPending(from, d, isOwn)
+			end
+		end
+		return
 	end
 	local from, to = misc.shotTracers.resolveLine(vecs, dirs, plrs)
 	if from and to then
@@ -5573,12 +5668,12 @@ function misc.shotTracers.onShoot(...)
 	end
 	if from and #dirs >= 1 then
 		misc.shotTracers.pushPending(from, dirs[1], isOwn)
-		misc.shotTracers.draw(from, from + dirs[1].Unit * 350, isOwn)
+		local endPos = misc.shotTracers.rayEnd(from, dirs[1], 1400)
+		if endPos then
+			misc.shotTracers.draw(from, endPos, isOwn)
+		end
 	elseif #vecs == 1 then
 		misc.shotTracers.pushPending(vecs[1], dirs[1], isOwn)
-	elseif isOwn then
-		-- Remote fired but no usable vectors — still show aim line
-		misc.shotTracers.drawOwnFromAim()
 	elseif #plrs >= 1 then
 		local m = misc.shotTracers.muzzleFromPlayer(plrs[1])
 		if m then
@@ -5592,9 +5687,17 @@ function misc.shotTracers.onHit(...)
 	if not S or not S.CrimShotTracers then
 		return
 	end
-	misc.shotTracers.maybeLog("Gun_Hit", ...)
-	local vecs, dirs, plrs = misc.shotTracers.parseArgs(...)
+	misc.shotTracers.maybeLog("GNX_H", ...)
+	local vecs, dirs, plrs, tools = misc.shotTracers.parseArgs(...)
 	local isOwn = misc.shotTracers.isOwnShot(plrs)
+	if not isOwn then
+		for i = 1, #tools do
+			if misc.shotTracers.toolIsLocal(tools[i]) then
+				isOwn = true
+				break
+			end
+		end
+	end
 	local from, to = misc.shotTracers.resolveLine(vecs, dirs, plrs)
 	if from and to then
 		if #plrs == 0 then
@@ -5605,9 +5708,6 @@ function misc.shotTracers.onHit(...)
 	end
 	local hit = vecs[1]
 	if not hit then
-		if isOwn or #plrs == 0 then
-			misc.shotTracers.drawOwnFromAim()
-		end
 		return
 	end
 	local pend = misc.shotTracers.matchPending(hit)
@@ -5641,6 +5741,9 @@ function misc.shotTracers.bindRemote(ev, handler)
 end
 
 local SHOT_REMOTE_NAMES = {
+	GNX_S = true,
+	GNX_H = true,
+	GNX_U = true,
 	Gun_Shoot = true,
 	Gun_Hit = true,
 	Gun_Update = true,
@@ -5648,7 +5751,6 @@ local SHOT_REMOTE_NAMES = {
 	GZ_S = true,
 	GZ_H = true,
 	GZ_U = true,
-	FD = true,
 }
 
 function misc.shotTracers.start()
@@ -5662,6 +5764,10 @@ function misc.shotTracers.start()
 
 	local events = RepSt:FindFirstChild("Events")
 	if events then
+		-- Criminality live shoot remote (Cobalt)
+		misc.shotTracers.bindRemote(events:FindFirstChild("GNX_S"), misc.shotTracers.onShoot)
+		misc.shotTracers.bindRemote(events:FindFirstChild("GNX_H"), misc.shotTracers.onHit)
+		misc.shotTracers.bindRemote(events:FindFirstChild("GNX_U"), misc.shotTracers.onShoot)
 		misc.shotTracers.bindRemote(events:FindFirstChild("Gun_Shoot"), misc.shotTracers.onShoot)
 		misc.shotTracers.bindRemote(events:FindFirstChild("Gun_Hit"), misc.shotTracers.onHit)
 		misc.shotTracers.bindRemote(events:FindFirstChild("Gun_Update"), function(...)
@@ -5677,7 +5783,7 @@ function misc.shotTracers.start()
 		misc.shotTracers.bindRemote(events:FindFirstChild("GZ_U"), misc.shotTracers.onShoot)
 	end
 
-	-- Game BulletTrail clones (works for other players when remotes are opaque)
+	-- Game BulletTrail clones (other players when remotes are opaque)
 	table.insert(
 		misc.shotTracers.conns,
 		workspace.DescendantAdded:Connect(function(inst)
@@ -5685,28 +5791,7 @@ function misc.shotTracers.start()
 		end)
 	)
 
-	-- Own shots: LMB while holding a gun (always works even if remotes are silent)
-	if UIS then
-		table.insert(
-			misc.shotTracers.conns,
-			UIS.InputBegan:Connect(function(input, gp)
-				if gp then
-					return
-				end
-				if input.UserInputType ~= Enum.UserInputType.MouseButton1
-					and input.UserInputType ~= Enum.UserInputType.Touch
-				then
-					return
-				end
-				if not misc.shotTracers.holdingGun() then
-					return
-				end
-				misc.shotTracers.drawOwnFromAim()
-			end)
-		)
-	end
-
-	-- FireServer namecall (own / any client-sent gun remotes)
+	-- FireServer namecall — GNX_S is client→server (own shots land here)
 	if not misc.shotTracers._ncHooked
 		and typeof(hookmetamethod) == "function"
 		and typeof(getnamecallmethod) == "function"
@@ -5726,6 +5811,7 @@ function misc.shotTracers.start()
 			local l = string.lower(nm)
 			return string.find(l, "shoot", 1, true) ~= nil
 				or string.find(l, "gun_", 1, true) ~= nil
+				or string.sub(l, 1, 4) == "gnx_"
 				or l == "gz_s"
 				or l == "gz_h"
 		end
@@ -5734,7 +5820,7 @@ function misc.shotTracers.start()
 			if (method == "FireServer" or method == "InvokeServer") and isGunRemote(self) then
 				local nm = self.Name
 				misc.shotTracers.maybeLog("FS:" .. tostring(nm), ...)
-				if nm == "Gun_Hit" or nm == "GZ_H" then
+				if nm == "Gun_Hit" or nm == "GZ_H" or nm == "GNX_H" then
 					task.defer(misc.shotTracers.onHit, ...)
 				else
 					task.defer(misc.shotTracers.onShoot, ...)
@@ -5751,10 +5837,10 @@ function misc.shotTracers.start()
 
 	pcall(function()
 		if typeof(_G.__VG_LOG_FILE) == "function" then
-			_G.__VG_LOG_FILE("INFO", "[VG:shotTrace] active: remotes+LMB+BulletTrail")
+			_G.__VG_LOG_FILE("INFO", "[VG:shotTrace] active: GNX_S FireServer + BulletTrail")
 		end
 	end)
-	print("[VG:shotTrace] active: remotes + LMB aim + BulletTrail")
+	print("[VG:shotTrace] active: GNX_S FireServer + BulletTrail")
 end
 
 function misc.shotTracers.stop()
