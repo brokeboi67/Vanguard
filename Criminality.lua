@@ -1555,7 +1555,21 @@ local function dealerEspMeta(shop, S)
 	return col, "DEALER", false
 end
 
--- Workspace.Map.Shopz.*.CurrentStocks children = item names in stock
+-- Workspace.Map.Shopz.*.CurrentStocks = IntConstrainedValue (Name=item, Value=qty)
+-- Existence alone ≠ in stock — Value must be > 0.
+local function dealerStockQty(obj)
+	if not obj then
+		return 0
+	end
+	local ok, v = pcall(function()
+		return obj.Value
+	end)
+	if not ok or typeof(v) ~= "number" then
+		return 0
+	end
+	return v
+end
+
 local function matchDealerStock(shop, query)
 	query = tostring(query or "")
 	query = string.lower((string.gsub(query, "^%s+", "")))
@@ -1569,15 +1583,20 @@ local function matchDealerStock(shop, query)
 	end
 	local hits = {}
 	for _, ch in ipairs(stocks:GetChildren()) do
-		local n = ch.Name
-		if string.find(string.lower(n), query, 1, true) then
-			hits[#hits + 1] = n
+		local qty = dealerStockQty(ch)
+		if qty > 0 then
+			local n = ch.Name
+			if string.find(string.lower(n), query, 1, true) then
+				hits[#hits + 1] = { name = n, qty = qty }
+			end
 		end
 	end
 	if #hits == 0 then
 		return false, nil
 	end
-	table.sort(hits)
+	table.sort(hits, function(a, b)
+		return a.name < b.name
+	end)
 	return true, hits
 end
 
@@ -1694,7 +1713,11 @@ local function refreshDealerStockLabels(S)
 			e.stockMatch = ok and hits or nil
 			if e.stockMatch then
 				matchN += 1
-				local show = e.stockMatch[1]
+				local first = e.stockMatch[1]
+				local show = first.name
+				if typeof(first.qty) == "number" and first.qty > 0 then
+					show = show .. "×" .. tostring(math.floor(first.qty))
+				end
 				if #e.stockMatch > 1 then
 					show = show .. " +" .. tostring(#e.stockMatch - 1)
 				end
@@ -1704,7 +1727,7 @@ local function refreshDealerStockLabels(S)
 					e.lbl.Text = txt
 				end
 				if alive(e.bg) then
-					e.bg.Size = UDim2.new(0, math.clamp(#txt * 7 + 24, 90, 200), 0, 22)
+					e.bg.Size = UDim2.new(0, math.clamp(#txt * 7 + 24, 90, 220), 0, 22)
 				end
 				styleStockMatchEntry(e, stockColor)
 			else
