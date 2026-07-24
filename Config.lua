@@ -407,6 +407,9 @@ function Config.EnforceRules(S)
 	if S.InvisResolver == nil then
 		S.InvisResolver = false
 	end
+	if S.InvisResolverTag == nil then
+		S.InvisResolverTag = true
+	end
 	if S.NoFog == nil then
 		S.NoFog = false
 	end

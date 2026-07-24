@@ -529,10 +529,67 @@ function Invisibility.Init(S, ParentGUI)
 		return st and st.on == true
 	end
 
+	local TAG_NAME = "VG_InvisTag"
+	local TAG_TEXT = "⚠  INVISIBLE  ⚠"
+
+	local function destroyTag(st)
+		if st and st.tag then
+			pcall(function()
+				st.tag:Destroy()
+			end)
+			st.tag = nil
+		end
+	end
+
+	local function ensureTag(st, root, char)
+		if not root or not st then
+			return
+		end
+		local adornee = (char and char:FindFirstChild("Head")) or root
+		local tag = st.tag
+		if tag and tag.Parent and tag.Adornee == adornee then
+			return
+		end
+		destroyTag(st)
+		local ok, bb = pcall(function()
+			local gui = Instance.new("BillboardGui")
+			gui.Name = TAG_NAME
+			gui.AlwaysOnTop = true
+			gui.Size = UDim2.new(0, 160, 0, 28)
+			gui.StudsOffset = Vector3.new(0, 3.1, 0)
+			gui.MaxDistance = 400
+			gui.Adornee = adornee
+			gui.Parent = root
+
+			local lbl = Instance.new("TextLabel")
+			lbl.Name = "Label"
+			lbl.BackgroundTransparency = 1
+			lbl.Size = UDim2.new(1, 0, 1, 0)
+			lbl.Font = Enum.Font.GothamBlack
+			lbl.TextSize = 15
+			lbl.TextColor3 = Color3.fromRGB(255, 210, 40)
+			lbl.TextStrokeTransparency = 0.35
+			lbl.TextStrokeColor3 = Color3.fromRGB(40, 20, 0)
+			lbl.Text = TAG_TEXT
+			lbl.Parent = gui
+			return gui
+		end)
+		if ok then
+			st.tag = bb
+		end
+	end
+
+	local function clearAllResolve()
+		for _, st in pairs(resolveState) do
+			destroyTag(st)
+		end
+		table.clear(resolveState)
+	end
+
 	RS.RenderStepped:Connect(perfWrap("Invis.Resolver", function(dt)
 		if S.Unloaded or not S.InvisResolver then
 			if next(resolveState) then
-				table.clear(resolveState)
+				clearAllResolve()
 			end
 			return
 		end
@@ -540,6 +597,7 @@ function Invisibility.Init(S, ParentGUI)
 		dt = math.clamp(typeof(dt) == "number" and dt or 0.016, 0.001, 0.05)
 		local now = tick()
 		local alpha = 1 - math.exp(-RESOLVE_FOLLOW * dt)
+		local wantTag = S.InvisResolverTag ~= false
 		local seen = {}
 
 		for _, plr in ipairs(Players:GetPlayers()) do
@@ -559,13 +617,13 @@ function Invisibility.Init(S, ParentGUI)
 							targetPos = nil,
 							lastVel = Vector3.zero,
 							look = Vector3.new(0, 0, -1),
+							tag = nil,
 						}
 						resolveState[plr.UserId] = st
 					end
 
 					local tilted = isDesyncPose(root)
 					if tilted then
-						-- Fresh (or still) network desync frame — safe to read Position/Velocity
 						st.hit += 1
 						st.lastDesync = now
 						st.targetPos = root.Position
@@ -581,8 +639,6 @@ function Invisibility.Init(S, ParentGUI)
 							st.visPos = st.targetPos
 						end
 					elseif st.on then
-						-- We own the visual CFrame — don't treat Position as network.
-						-- Extrapolate walk with last horizontal velocity between packets.
 						if st.targetPos then
 							st.targetPos = st.targetPos + st.lastVel * dt
 						end
@@ -592,13 +648,14 @@ function Invisibility.Init(S, ParentGUI)
 							st.hit = 0
 							st.visPos = nil
 							st.targetPos = nil
+							destroyTag(st)
 						end
 					else
 						st.hit = 0
+						destroyTag(st)
 					end
 
 					if st.on and st.targetPos then
-						-- Light prediction toward movement direction
 						local predicted = st.targetPos + st.lastVel * (dt * RESOLVE_VEL_BLEND)
 						if not st.visPos then
 							st.visPos = predicted
@@ -609,13 +666,30 @@ function Invisibility.Init(S, ParentGUI)
 							root.CFrame = uprightAt(st.visPos, st.look)
 							root.AssemblyAngularVelocity = Vector3.zero
 						end)
+						if wantTag then
+							ensureTag(st, root, c)
+							-- blink warning accent
+							if st.tag then
+								local lbl = st.tag:FindFirstChild("Label")
+								if lbl then
+									local pulse = 0.55 + 0.45 * math.abs(math.sin(now * 6))
+									lbl.TextTransparency = 1 - pulse
+									lbl.TextColor3 = Color3.fromRGB(255, 200 + math.floor(40 * pulse), 30)
+								end
+							end
+						else
+							destroyTag(st)
+						end
+					else
+						destroyTag(st)
 					end
 				end
 			end
 		end
 
-		for uid in pairs(resolveState) do
+		for uid, st in pairs(resolveState) do
 			if not seen[uid] then
+				destroyTag(st)
 				resolveState[uid] = nil
 			end
 		end
