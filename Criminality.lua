@@ -5789,67 +5789,147 @@ function misc.skinChanger.attPrimary(inst)
 	return inst:FindFirstChildWhichIsA("BasePart", true)
 end
 
--- ToolHandler.SG_Check (line 49): ImageLabel and p10.Parent.Parent:IsA(...)
--- crashes when Parent is nil — orphaned Reticle/Clip after our duplicate sight clones.
-function misc.skinChanger.patchSGCheck()
-	if misc.skinChanger._sgPatchDone then
+-- Safe SG_Check: never index nil.Parent (orphaned Reticle/Clip ImageLabels).
+function misc.skinChanger.safeSGCheck(p10)
+	if typeof(p10) ~= "Instance" or not p10:IsA("ImageLabel") then
+		return false
+	end
+	local par = p10.Parent
+	if not par then
+		return false
+	end
+	if par:IsA("SurfaceGui") or par:IsA("Frame") or par:IsA("ImageLabel") then
 		return true
 	end
-	local hooked = 0
-	pcall(function()
-		if typeof(hookfunction) ~= "function" or typeof(getgc) ~= "function" then
-			return
-		end
-		local function looksLikeSGCheck(fn)
-			if typeof(debug.getconstants) == "function" then
-				local ok, consts = pcall(debug.getconstants, fn)
-				if not ok or typeof(consts) ~= "table" then
-					return false
+	local gp = par.Parent
+	return gp ~= nil and gp:IsA("SurfaceGui")
+end
+
+function misc.skinChanger.looksLikeSGCheck(fn)
+	if typeof(fn) ~= "function" then
+		return false
+	end
+	if typeof(debug.getconstants) == "function" then
+		local ok, consts = pcall(debug.getconstants, fn)
+		if ok and typeof(consts) == "table" then
+			local hasImage, hasSurf, hasFrame = false, false, false
+			for _, c in pairs(consts) do
+				if c == "ImageLabel" then
+					hasImage = true
+				elseif c == "SurfaceGui" then
+					hasSurf = true
+				elseif c == "Frame" then
+					hasFrame = true
 				end
-				local hasImage, hasSurf, hasFrame = false, false, false
-				for _, c in pairs(consts) do
-					if c == "ImageLabel" then
-						hasImage = true
-					elseif c == "SurfaceGui" then
-						hasSurf = true
-					elseif c == "Frame" then
-						hasFrame = true
-					end
-				end
-				return hasImage and hasSurf and hasFrame
 			end
-			local okS, s = pcall(debug.info, fn, "s")
-			local okL, l = pcall(debug.info, fn, "l")
-			return okS and typeof(s) == "string" and string.find(s, "ToolHandler", 1, true) and okL and l == 49
-		end
-		local safe = function(p10)
-			if typeof(p10) ~= "Instance" or not p10:IsA("ImageLabel") then
-				return false
-			end
-			local par = p10.Parent
-			if not par then
-				return false
-			end
-			if par:IsA("SurfaceGui") or par:IsA("Frame") or par:IsA("ImageLabel") then
+			if hasImage and hasSurf and hasFrame then
 				return true
 			end
-			local gp = par.Parent
-			return gp ~= nil and gp:IsA("SurfaceGui")
+		end
+	end
+	local okS, s = pcall(debug.info, fn, "s")
+	local okL, l = pcall(debug.info, fn, "l")
+	return okS and typeof(s) == "string" and string.find(s, "ToolHandler", 1, true) and okL and l == 49
+end
+
+function misc.skinChanger.looksLikeUpdtReplicate(fn)
+	if typeof(fn) ~= "function" or typeof(debug.getupvalues) ~= "function" then
+		return false
+	end
+	local ok, uvs = pcall(debug.getupvalues, fn)
+	if not ok or typeof(uvs) ~= "table" then
+		return false
+	end
+	local hasRepTable, hasSG = false, false
+	for _, uv in pairs(uvs) do
+		if typeof(uv) == "table" and typeof(uv.ReplicationParts) == "table" then
+			hasRepTable = true
+		elseif typeof(uv) == "function" and misc.skinChanger.looksLikeSGCheck(uv) then
+			hasSG = true
+		end
+	end
+	return hasRepTable and hasSG
+end
+
+-- Patch the LIVE SG_Check upvalue inside updtReplicate (hookfunction(getgc) missed it).
+function misc.skinChanger.patchSGCheck()
+	if misc.skinChanger._sgPatchDone and misc.skinChanger._sgSetupvalue then
+		return true
+	end
+	local setupN, hookN = 0, 0
+	misc.skinChanger._sgSetupvalue = false
+	pcall(function()
+		if typeof(getgc) ~= "function" then
+			return
+		end
+		local safe = misc.skinChanger.safeSGCheck
+		local function trySetupOn(fn)
+			if typeof(debug.getupvalue) ~= "function" or typeof(debug.setupvalue) ~= "function" then
+				return
+			end
+			local hasRep = false
+			for i = 1, 32 do
+				local okN, name, val = pcall(debug.getupvalue, fn, i)
+				if not okN or name == nil then
+					break
+				end
+				if typeof(val) == "table" and typeof(val.ReplicationParts) == "table" then
+					hasRep = true
+					break
+				end
+			end
+			if not hasRep and typeof(debug.getupvalues) == "function" then
+				local okU, uvs = pcall(debug.getupvalues, fn)
+				if okU and typeof(uvs) == "table" then
+					for _, uv in pairs(uvs) do
+						local v = uv
+						if typeof(uv) == "table" and uv.value ~= nil then
+							v = uv.value
+						end
+						if typeof(v) == "table" and typeof(v.ReplicationParts) == "table" then
+							hasRep = true
+							break
+						end
+					end
+				end
+			end
+			if not hasRep then
+				return
+			end
+			for i = 1, 32 do
+				local okN, name, val = pcall(debug.getupvalue, fn, i)
+				if not okN or name == nil then
+					break
+				end
+				if typeof(val) == "function" and misc.skinChanger.looksLikeSGCheck(val) then
+					local okS = pcall(debug.setupvalue, fn, i, safe)
+					if okS then
+						setupN += 1
+						misc.skinChanger._sgSetupvalue = true
+					end
+				end
+			end
 		end
 		for _, fn in ipairs(getgc(false)) do
-			if typeof(fn) == "function" and looksLikeSGCheck(fn) then
+			if typeof(fn) ~= "function" then
+				continue
+			end
+			trySetupOn(fn)
+			if typeof(hookfunction) == "function" and misc.skinChanger.looksLikeSGCheck(fn) then
 				local okH = pcall(function()
 					hookfunction(fn, safe)
 				end)
 				if okH then
-					hooked += 1
+					hookN += 1
 				end
 			end
 		end
 	end)
-	if hooked > 0 then
+	if setupN > 0 or hookN > 0 then
 		misc.skinChanger._sgPatchDone = true
-		misc.skinChanger.log("SG_Check patch ok x" .. tostring(hooked))
+		misc.skinChanger.log(
+			string.format("SG_Check patch setupvalue=%d hook=%d setupOk=%s", setupN, hookN, tostring(misc.skinChanger._sgSetupvalue))
+		)
 		return true
 	end
 	return false
@@ -5881,9 +5961,124 @@ function misc.skinChanger.restoreAttachmentVisibility(root)
 	end
 end
 
--- If tool.Attachments already has GSight/GLaser → just unhide (no clone).
--- Else clone DisplayWep *-X Attachments into tool.Attachments (real names).
--- NEVER touch RF.ViewModels.Tool — ToolHandler replicates; our clones orphaned ImageLabels → SG_Check spam.
+-- Strip everything ToolHandler SG_Check can choke on (SurfaceGui/BillboardGui/ImageLabel…).
+function misc.skinChanger.stripUpgradeGui(inst)
+	if not inst then
+		return
+	end
+	local kill = {}
+	for _, d in ipairs(inst:GetDescendants()) do
+		if
+			d:IsA("LayerCollector")
+			or d:IsA("GuiObject")
+			or d:IsA("BaseScript")
+			or d:IsA("ModuleScript")
+			or d:IsA("Beam")
+			or d:IsA("Trail")
+			or d:IsA("ParticleEmitter")
+			or d:IsA("PointLight")
+			or d:IsA("BillboardGui")
+			or d:IsA("SurfaceGui")
+		then
+			kill[#kill + 1] = d
+		end
+	end
+	for _, d in ipairs(kill) do
+		pcall(function()
+			d:Destroy()
+		end)
+	end
+end
+
+function misc.skinChanger.clearOrphanVmToolGui(vmTool)
+	if not vmTool then
+		return 0
+	end
+	local n = 0
+	for _, ch in ipairs(vmTool:GetChildren()) do
+		if ch:IsA("Frame") or ch:IsA("ImageLabel") or ch:IsA("BillboardGui") or ch:IsA("SurfaceGui") then
+			pcall(function()
+				ch:Destroy()
+			end)
+			n += 1
+		end
+	end
+	return n
+end
+
+-- Emergency: wipe all upgrade junk, clear saved map, scrub RF.Tool orphan GUI, re-equip.
+function misc.skinChanger.repairViewModel()
+	misc.skinChanger._sgPatchDone = false
+	misc.skinChanger._sgSetupvalue = false
+	misc.skinChanger._updtHooked = false
+	misc.skinChanger.patchSGCheck()
+
+	local lp = getLP()
+	local wipedTools = 0
+	local function wipeAll(container)
+		if not container then
+			return
+		end
+		for _, ch in ipairs(container:GetChildren()) do
+			if misc.skinChanger.isGunTool(ch) then
+				misc.skinChanger.clearUpgradeExtras(ch)
+				misc.skinChanger.restoreAttachmentVisibility(ch)
+				wipedTools += 1
+			end
+		end
+	end
+	wipeAll(lp and lp:FindFirstChild("Backpack"))
+	wipeAll(lp and lp.Character)
+
+	local rf = game:GetService("ReplicatedFirst")
+	local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
+	if vmTool then
+		misc.skinChanger.clearUpgradeExtras(vmTool)
+		misc.skinChanger.clearOrphanVmToolGui(vmTool)
+	end
+
+	local S = _G.__VG_S
+	if S then
+		S.CrimGunUpgradeLooks = {}
+		if typeof(_G.__VG_CONFIG) == "table" and typeof(_G.__VG_CONFIG.SaveGlobals) == "function" then
+			pcall(_G.__VG_CONFIG.SaveGlobals, S)
+		end
+	end
+
+	-- re-equip held gun so ToolHandler rebuilds ReplicationParts
+	local held = misc.skinChanger.findActiveGun()
+	local heldName = held and held.Name
+	pcall(function()
+		local char = lp and lp.Character
+		local hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum:UnequipTools()
+		end
+	end)
+	if heldName and lp then
+		task.defer(function()
+			task.wait(0.05)
+			local bp = lp:FindFirstChild("Backpack")
+			local t = bp and bp:FindFirstChild(heldName)
+			local char = lp.Character
+			if t and char then
+				pcall(function()
+					t.Parent = char
+				end)
+			end
+			if misc.skinChanger.active and t then
+				misc.skinChanger.applySavedForTool(t, true)
+			end
+			misc.skinChanger.patchSGCheck()
+		end)
+	end
+
+	misc.skinChanger.log(string.format("repairViewModel tools=%d setupvalue=%s", wipedTools, tostring(misc.skinChanger._sgSetupvalue)))
+	return true, "VM repaired (wiped upgrades)"
+end
+
+-- Mesh/Part only from DisplayWep *-X Attachments — NO GuiObject (SG_Check safe).
+-- NEVER touch RF.ViewModels.Tool.
 function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, quiet)
 	if not root or not upgradeModel then
 		return 0
@@ -5891,7 +6086,6 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	if root.Name == "ViewModel" and not root:IsA("Tool") then
 		return 0
 	end
-	-- never inject into the VM replication tool
 	if root.Parent and root.Parent.Name == "ViewModels" then
 		return 0
 	end
@@ -5923,23 +6117,15 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 		dstFolder.Parent = root
 	end
 
-	-- already present (real or leftover) — unhide only
-	local existing = {}
+	-- real (non-VG) attachments already on tool — leave them, don't double-inject
 	for _, ch in ipairs(dstFolder:GetChildren()) do
 		if ch:GetAttribute("VG_UpgAtt") ~= true then
-			existing[#existing + 1] = ch
-		end
-	end
-	if #existing > 0 then
-		misc.skinChanger.restoreAttachmentVisibility(root)
-		if not quiet then
-			local names = {}
-			for _, ch in ipairs(existing) do
-				names[#names + 1] = ch.Name
+			misc.skinChanger.restoreAttachmentVisibility(root)
+			if not quiet then
+				misc.skinChanger.log("upgradeLook SKIP — real Attachments present on " .. root.Name)
 			end
-			misc.skinChanger.log("upgradeLook REUSE Attachments [" .. table.concat(names, ",") .. "] on " .. root.Name)
+			return 0
 		end
-		return #existing
 	end
 
 	local n = 0
@@ -5953,10 +6139,9 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 			local c = src:Clone()
 			c:SetAttribute("VG_UpgAtt", true)
 			c:SetAttribute("VG_VarSkin", "U:" .. tostring(upgName))
+			misc.skinChanger.stripUpgradeGui(c)
 			for _, d in ipairs(c:GetDescendants()) do
-				if d:IsA("BaseScript") or d:IsA("ModuleScript") then
-					d:Destroy()
-				elseif d:IsA("BasePart") then
+				if d:IsA("BasePart") then
 					d.CanCollide = false
 					d.CanQuery = false
 					d.CanTouch = false
@@ -6007,7 +6192,7 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 	end
 
 	if not quiet then
-		misc.skinChanger.log(string.format("upgradeLook ATTACH %s → %s count=%d", root.Name, tostring(upgName), n))
+		misc.skinChanger.log(string.format("upgradeLook MESH %s → %s count=%d", root.Name, tostring(upgName), n))
 	end
 	return n
 end
@@ -6024,13 +6209,12 @@ function misc.skinChanger.applyUpgradeLookToTool(tool, quiet)
 	if not upgModel then
 		return 0, "no upgrade model"
 	end
-	-- character/backpack tool ONLY — do not touch ReplicatedFirst.ViewModels.Tool
 	local n = misc.skinChanger.applyUpgradeLookToRoot(tool, upgModel, upgName, quiet)
-	-- still strip any leftover VG_UpgradeAtt we previously put on RF tool
 	local rf = game:GetService("ReplicatedFirst")
 	local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
 	if vmTool then
 		misc.skinChanger.clearUpgradeExtras(vmTool)
+		misc.skinChanger.clearOrphanVmToolGui(vmTool)
 	end
 	misc.skinChanger.patchSGCheck()
 	return n, upgName
@@ -6047,80 +6231,28 @@ function misc.skinChanger.upgradeHeldGun()
 	end
 	local S = _G.__VG_S
 	if S then
+		-- do NOT persist auto-reapply — user must click Upgrade again after reinject
 		S.CrimGunUpgradeLooks = S.CrimGunUpgradeLooks or {}
 		local key = misc.skinChanger.upgradeStoreKey(tool.Name)
-		if n > 0 then
-			S.CrimGunUpgradeLooks[key] = typeof(info) == "string" and info or misc.skinChanger.resolveUpgradeModelName(tool.Name)
-		else
-			S.CrimGunUpgradeLooks[key] = nil
-		end
+		-- keep map empty so tick never re-injects; session only via existing parts
+		S.CrimGunUpgradeLooks[key] = nil
 		if typeof(_G.__VG_CONFIG) == "table" and typeof(_G.__VG_CONFIG.SaveGlobals) == "function" then
 			pcall(_G.__VG_CONFIG.SaveGlobals, S)
 		end
 	end
 	if n <= 0 then
-		return false, "no Attachments on upgrade model"
+		return false, typeof(info) == "string" and info or "no Attachments on upgrade model"
 	end
-	return true, "attach → " .. tostring(info) .. " (" .. tostring(n) .. ")"
+	return true, "mesh → " .. tostring(info) .. " (" .. tostring(n) .. ")"
 end
 
 function misc.skinChanger.clearUpgradeHeldGun()
-	local tool = misc.skinChanger.findActiveGun()
-	local S = _G.__VG_S
-	local function wipe(root)
-		misc.skinChanger.clearUpgradeExtras(root)
-		misc.skinChanger.restoreAttachmentVisibility(root)
-	end
-	wipe(tool)
-	local rf = game:GetService("ReplicatedFirst")
-	wipe(rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool"))
-	local cam = workspace.CurrentCamera
-	wipe(cam and cam:FindFirstChild("ViewModel"))
-	misc.skinChanger.patchSGCheck()
-	if tool and S and S.CrimGunUpgradeLooks then
-		S.CrimGunUpgradeLooks[misc.skinChanger.upgradeStoreKey(tool.Name)] = nil
-	end
-	if S and typeof(_G.__VG_CONFIG) == "table" and typeof(_G.__VG_CONFIG.SaveGlobals) == "function" then
-		pcall(_G.__VG_CONFIG.SaveGlobals, S)
-	end
-	if tool and misc.skinChanger.active then
-		misc.skinChanger.applySavedForTool(tool, true)
-	end
-	return true, "upgrade look cleared"
+	return misc.skinChanger.repairViewModel()
 end
 
+-- Auto-reapply disabled — it kept re-injecting broken Attachments and killing VM.
 function misc.skinChanger.tickUpgradeLooks()
-	local S = _G.__VG_S
-	local map = S and S.CrimGunUpgradeLooks
-	if typeof(map) ~= "table" then
-		return
-	end
 	misc.skinChanger.patchSGCheck()
-	local tool = misc.skinChanger.findActiveGun()
-	if not tool then
-		return
-	end
-	local key = misc.skinChanger.upgradeStoreKey(tool.Name)
-	local want = map[key]
-	if typeof(want) ~= "string" or want == "" then
-		return
-	end
-	-- leftover VG_Vis / VG_UpgradeAtt from 2.72.0–2.72.1 → wipe then reuse/reapply
-	if tool:FindFirstChild("VG_UpgradeAtt") or tool:FindFirstChild("VG_UpgradeVisual") then
-		misc.skinChanger.clearUpgradeExtras(tool)
-	end
-	local att = tool:FindFirstChild("Attachments")
-	if att and #att:GetChildren() > 0 then
-		misc.skinChanger.restoreAttachmentVisibility(tool)
-		-- strip RF leftovers
-		local rf = game:GetService("ReplicatedFirst")
-		local vmTool = rf:FindFirstChild("ViewModels") and rf.ViewModels:FindFirstChild("Tool")
-		if vmTool then
-			misc.skinChanger.clearUpgradeExtras(vmTool)
-		end
-		return
-	end
-	misc.skinChanger.applyUpgradeLookToTool(tool, true)
 end
 
 function misc.skinChanger.isVariantSkinKey(skinKey)
@@ -7103,9 +7235,11 @@ function misc.skinChanger.dumpToolHandler(lp)
 	local lines = {}
 	lines[#lines + 1] = "=== Backpack.VM / ToolHandler (SG_Check source) ==="
 	lines[#lines + 1] = "SG_Check_patched=" .. tostring(misc.skinChanger._sgPatchDone == true)
+	lines[#lines + 1] = "SG_Check_setupvalue=" .. tostring(misc.skinChanger._sgSetupvalue == true)
 	pcall(function()
 		misc.skinChanger.patchSGCheck()
 		lines[#lines + 1] = "SG_Check_patched_after_dump_try=" .. tostring(misc.skinChanger._sgPatchDone == true)
+		lines[#lines + 1] = "SG_Check_setupvalue_after_dump_try=" .. tostring(misc.skinChanger._sgSetupvalue == true)
 	end)
 	local bp = lp and lp:FindFirstChild("Backpack")
 	local vm = bp and bp:FindFirstChild("VM")
@@ -8542,9 +8676,11 @@ function misc.skinChanger.start()
 	misc.skinChanger.clearConns()
 	misc.skinChanger.active = true
 	misc.skinChanger._sgPatchDone = false
+	misc.skinChanger._sgSetupvalue = false
+	misc.skinChanger._updtHooked = false
 	task.defer(function()
-		task.wait(0.5)
-		misc.skinChanger.patchSGCheck()
+		task.wait(0.35)
+		misc.skinChanger.repairViewModel()
 	end)
 	local lp = getLP()
 	if not lp then
@@ -8559,6 +8695,7 @@ function misc.skinChanger.start()
 				misc.skinChanger.hookContainer(char)
 				task.wait(0.3)
 				misc.skinChanger.tick()
+				misc.skinChanger.repairViewModel()
 			end)
 		end)
 	)
