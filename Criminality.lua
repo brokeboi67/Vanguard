@@ -5697,16 +5697,17 @@ function misc.skinChanger.clearUpgradeExtras(root)
 		return
 	end
 	for _, ch in ipairs(root:GetChildren()) do
-		if ch.Name == "VG_UpgradeVisual" or string.sub(ch.Name, 1, 7) == "VG_Upg_" then
+		if ch.Name == "VG_UpgradeVisual" or ch.Name == "VG_UpgradeAtt" or string.sub(ch.Name, 1, 7) == "VG_Upg_" then
 			pcall(function()
 				ch:Destroy()
 			end)
 		end
 	end
+	-- wipe our tags even if left under real Attachments (old 2.72.0 mistake)
 	local att = root:FindFirstChild("Attachments")
 	if att then
 		for _, ch in ipairs(att:GetChildren()) do
-			if ch:GetAttribute("VG_UpgAtt") == true then
+			if ch:GetAttribute("VG_UpgAtt") == true or string.sub(ch.Name, 1, 7) == "VG_Vis_" then
 				pcall(function()
 					ch:Destroy()
 				end)
@@ -5714,7 +5715,7 @@ function misc.skinChanger.clearUpgradeExtras(root)
 		end
 	end
 	for _, d in ipairs(root:GetDescendants()) do
-		if d:IsA("BasePart") and d:GetAttribute("VG_UpgExtra") == true then
+		if d:GetAttribute("VG_UpgAtt") == true or d:GetAttribute("VG_UpgExtra") == true then
 			pcall(function()
 				d:Destroy()
 			end)
@@ -5788,8 +5789,8 @@ function misc.skinChanger.attPrimary(inst)
 	return inst:FindFirstChildWhichIsA("BasePart", true)
 end
 
--- ONLY Attachments (GSight / GLaser …) from DisplayWepModels *-X/*-S.
--- Full-model overlay broke scale + ToolHandler SG_Check.
+-- Visual-only: clone DisplayWepModels *-X/*-S Attachments into VG_UpgradeAtt as VG_Vis_*.
+-- NEVER name them GSight/GLaser — ToolHandler SG_Check FindFirstChild("GSight") → nil.Parent spam.
 function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, quiet)
 	if not root or not upgradeModel then
 		return 0
@@ -5816,25 +5817,24 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 		return 0
 	end
 
-	local dstFolder = root:FindFirstChild("Attachments")
-	if not dstFolder then
-		dstFolder = Instance.new("Folder")
-		dstFolder.Name = "Attachments"
-		dstFolder.Parent = root
+	local dstFolder = Instance.new("Folder")
+	dstFolder.Name = "VG_UpgradeAtt"
+	dstFolder:SetAttribute("VG_UpgAtt", true)
+	dstFolder.Parent = root
+
+	-- hide stock iron-sight mesh named GSight (keep instance — SG_Check needs it)
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("MeshPart") and d.Name == "GSight" and not d:IsDescendantOf(dstFolder) then
+			if not d:GetAttribute("VG_UpgHidden") then
+				d:SetAttribute("VG_UpgPrevLTM", d.LocalTransparencyModifier)
+				d:SetAttribute("VG_UpgHidden", true)
+			end
+			d.LocalTransparencyModifier = 1
+		end
 	end
 
 	local n = 0
 	for _, src in ipairs(srcFolder:GetChildren()) do
-		-- skip if already present (real unlock) without our tag
-		local existing = dstFolder:FindFirstChild(src.Name)
-		if existing and existing:GetAttribute("VG_UpgAtt") ~= true then
-			continue
-		end
-		if existing then
-			pcall(function()
-				existing:Destroy()
-			end)
-		end
 		local srcPrim = misc.skinChanger.attPrimary(src)
 		if not srcPrim then
 			continue
@@ -5842,12 +5842,17 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 		local offset = upgHandle.CFrame:ToObjectSpace(srcPrim.CFrame)
 		local ok, clone = pcall(function()
 			local c = src:Clone()
+			-- rename so SG_Check never FindFirstChild("GSight"/"GLaser") on our clone
+			c.Name = "VG_Vis_" .. tostring(src.Name)
 			c:SetAttribute("VG_UpgAtt", true)
 			c:SetAttribute("VG_VarSkin", "U:" .. tostring(upgName))
 			for _, d in ipairs(c:GetDescendants()) do
 				if d:IsA("BaseScript") or d:IsA("ModuleScript") then
 					d:Destroy()
 				elseif d:IsA("BasePart") then
+					if d.Name == "GSight" or d.Name == "GLaser" then
+						d.Name = "VG_Vis_" .. d.Name
+					end
 					d.CanCollide = false
 					d.CanQuery = false
 					d.CanTouch = false
@@ -5865,7 +5870,6 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 			c.Parent = dstFolder
 			local prim = misc.skinChanger.attPrimary(c)
 			if prim then
-				-- move model/part so primary matches toolHandle * offset
 				if c:IsA("Model") then
 					pcall(function()
 						c.PrimaryPart = prim
@@ -5893,11 +5897,13 @@ function misc.skinChanger.applyUpgradeLookToRoot(root, upgradeModel, upgName, qu
 		end)
 		if ok and clone then
 			n += 1
+		elseif not ok and not quiet then
+			misc.skinChanger.log("upgrade clone fail " .. tostring(src.Name) .. ": " .. tostring(clone))
 		end
 	end
 
 	if not quiet then
-		misc.skinChanger.log(string.format("upgradeLook ATTACH %s → %s count=%d", root.Name, tostring(upgName), n))
+		misc.skinChanger.log(string.format("upgradeLook VIS %s → %s count=%d", root.Name, tostring(upgName), n))
 	end
 	return n
 end
@@ -5989,15 +5995,19 @@ function misc.skinChanger.tickUpgradeLooks()
 	if typeof(want) ~= "string" or want == "" then
 		return
 	end
+	if tool:FindFirstChild("VG_UpgradeAtt") then
+		return
+	end
 	local att = tool:FindFirstChild("Attachments")
 	if att then
 		for _, ch in ipairs(att:GetChildren()) do
 			if ch:GetAttribute("VG_UpgAtt") == true then
-				return
+				-- leftover from 2.72.0 real-name Attachments inject — wipe & reapply safe
+				misc.skinChanger.clearUpgradeExtras(tool)
+				break
 			end
 		end
 	end
-	-- clear leftover broken overlay from older versions
 	if tool:FindFirstChild("VG_UpgradeVisual") then
 		misc.skinChanger.clearUpgradeExtras(tool)
 	end
@@ -6837,10 +6847,288 @@ function misc.skinChanger.dumpRepPBR(gunName)
 	return lines
 end
 
+function misc.skinChanger.dumpFolderTree(folder, label, maxDepth, maxLines)
+	maxDepth = maxDepth or 4
+	maxLines = maxLines or 80
+	local lines = {}
+	if not folder then
+		lines[#lines + 1] = (label or "folder") .. ": <nil>"
+		return lines
+	end
+	lines[#lines + 1] = string.format(
+		"%s: %s (%s) kids=%d path=%s",
+		label or "folder",
+		folder.Name,
+		folder.ClassName,
+		#folder:GetChildren(),
+		folder:GetFullName()
+	)
+	local function walk(inst, depth)
+		if #lines >= maxLines or depth > maxDepth then
+			return
+		end
+		for _, ch in ipairs(inst:GetChildren()) do
+			if #lines >= maxLines then
+				return
+			end
+			local extra = ""
+			pcall(function()
+				if ch:IsA("BasePart") then
+					extra = string.format(
+						" size=%s LTM=%.2f mesh=%s",
+						tostring(ch.Size),
+						ch.LocalTransparencyModifier,
+						ch:IsA("MeshPart") and tostring(ch.MeshId) or "-"
+					)
+				elseif ch:IsA("WeldConstraint") or ch:IsA("Weld") or ch:IsA("Motor6D") then
+					local p0 = ch.Part0 and ch.Part0.Name or "?"
+					local p1 = ch.Part1 and ch.Part1.Name or "?"
+					extra = string.format(" %s↔%s", p0, p1)
+				end
+			end)
+			local tags = {}
+			pcall(function()
+				for an, av in pairs(ch:GetAttributes()) do
+					if string.sub(an, 1, 3) == "VG_" or an == "VG_UpgAtt" then
+						tags[#tags + 1] = an .. "=" .. tostring(av)
+					end
+				end
+			end)
+			local tagStr = #tags > 0 and (" [" .. table.concat(tags, ",") .. "]") or ""
+			lines[#lines + 1] = string.format(
+				"%s%s:%s%s%s",
+				string.rep("  ", depth + 1),
+				ch.Name,
+				ch.ClassName,
+				extra,
+				tagStr
+			)
+			if #ch:GetChildren() > 0 and depth < maxDepth then
+				walk(ch, depth + 1)
+			end
+		end
+	end
+	walk(folder, 0)
+	return lines
+end
+
+function misc.skinChanger.dumpNamedHits(root, names, label)
+	local lines = {}
+	lines[#lines + 1] = "=== FindFirstChild hits (" .. (label or "?") .. ") ==="
+	if not root then
+		lines[#lines + 1] = "  root=<nil>"
+		return lines
+	end
+	for _, name in ipairs(names) do
+		local hits = {}
+		for _, d in ipairs(root:GetDescendants()) do
+			if d.Name == name then
+				hits[#hits + 1] = d
+			end
+		end
+		local direct = root:FindFirstChild(name)
+		local deep = root:FindFirstChild(name, true)
+		lines[#lines + 1] = string.format(
+			"  '%s' count=%d direct=%s deep=%s",
+			name,
+			#hits,
+			direct and (direct:GetFullName() .. ":" .. direct.ClassName) or "nil",
+			deep and (deep:GetFullName() .. ":" .. deep.ClassName) or "nil"
+		)
+		for i, h in ipairs(hits) do
+			if i > 8 then
+				lines[#lines + 1] = "    ... +" .. tostring(#hits - 8) .. " more"
+				break
+			end
+			local parentOk = h.Parent ~= nil
+			lines[#lines + 1] = string.format(
+				"    [%d] %s parent=%s parentOk=%s",
+				i,
+				h:GetFullName(),
+				h.Parent and h.Parent:GetFullName() or "NIL",
+				tostring(parentOk)
+			)
+		end
+	end
+	return lines
+end
+
+function misc.skinChanger.dumpDisplayUpgradeCompare(gunName)
+	local lines = {}
+	lines[#lines + 1] = "=== DisplayWepModels base vs upgrade ==="
+	local display = misc.skinChanger.getDisplayWepModels()
+	if not display then
+		lines[#lines + 1] = "DisplayWepModels: NOT FOUND"
+		return lines
+	end
+	local base = display:FindFirstChild(gunName)
+	local upgModel, upgName = misc.skinChanger.getUpgradeDisplayModel(gunName)
+	lines[#lines + 1] = "base=" .. tostring(gunName) .. " found=" .. tostring(base ~= nil)
+	lines[#lines + 1] = "upgradeName=" .. tostring(upgName) .. " found=" .. tostring(upgModel ~= nil)
+	if base then
+		for _, l in ipairs(misc.skinChanger.dumpFolderTree(base:FindFirstChild("Attachments"), "base.Attachments", 3, 40)) do
+			lines[#lines + 1] = l
+		end
+		local kids = {}
+		for _, ch in ipairs(base:GetChildren()) do
+			kids[#kids + 1] = ch.Name .. ":" .. ch.ClassName
+		end
+		lines[#lines + 1] = "base children: " .. table.concat(kids, ", ")
+	end
+	if upgModel then
+		for _, l in ipairs(misc.skinChanger.dumpFolderTree(upgModel:FindFirstChild("Attachments"), "upgrade.Attachments", 4, 60)) do
+			lines[#lines + 1] = l
+		end
+		local kids = {}
+		for _, ch in ipairs(upgModel:GetChildren()) do
+			kids[#kids + 1] = ch.Name .. ":" .. ch.ClassName
+		end
+		lines[#lines + 1] = "upgrade children: " .. table.concat(kids, ", ")
+		local uh = misc.skinChanger.findUpgradeAnchor(upgModel)
+		lines[#lines + 1] = "upgrade WeaponHandle=" .. tostring(uh and uh:GetFullName())
+	end
+	return lines
+end
+
+function misc.skinChanger.dumpToolHandler(lp)
+	local lines = {}
+	lines[#lines + 1] = "=== Backpack.VM / ToolHandler (SG_Check source) ==="
+	local bp = lp and lp:FindFirstChild("Backpack")
+	local vm = bp and bp:FindFirstChild("VM")
+	if not vm then
+		lines[#lines + 1] = "Backpack.VM: NOT FOUND"
+		return lines
+	end
+	lines[#lines + 1] = "VM=" .. vm:GetFullName() .. " class=" .. vm.ClassName
+	local kids = {}
+	for _, ch in ipairs(vm:GetChildren()) do
+		kids[#kids + 1] = ch.Name .. ":" .. ch.ClassName
+	end
+	lines[#lines + 1] = "VM children: " .. table.concat(kids, ", ")
+
+	local th = vm:FindFirstChild("ToolHandler")
+	if not th then
+		lines[#lines + 1] = "ToolHandler: NOT FOUND under VM"
+		return lines
+	end
+	lines[#lines + 1] = "ToolHandler=" .. th:GetFullName() .. " class=" .. th.ClassName
+	pcall(function()
+		lines[#lines + 1] = "  Disabled=" .. tostring(th.Disabled)
+	end)
+
+	-- try pull source / decompile around SG_Check line 50
+	local src = nil
+	pcall(function()
+		if typeof(th.Source) == "string" and #th.Source > 0 then
+			src = th.Source
+		end
+	end)
+	if not src then
+		pcall(function()
+			if typeof(decompile) == "function" then
+				src = decompile(th)
+			end
+		end)
+	end
+	if not src then
+		pcall(function()
+			if typeof(getscriptbytecode) == "function" and typeof(getscriptclosure) == "function" then
+				-- no full source; mark available APIs
+			end
+			lines[#lines + 1] = "  decompile/Source: unavailable (has decompile="
+				.. tostring(typeof(decompile) == "function")
+				.. " SourceLen="
+				.. tostring(typeof(th.Source) == "string" and #th.Source or 0)
+				.. ")"
+		end)
+	else
+		lines[#lines + 1] = "  sourceLen=" .. tostring(#src)
+		local numbered = {}
+		local i = 0
+		for line in string.gmatch(src .. "\n", "([^\n]*)\n") do
+			i += 1
+			numbered[i] = line
+		end
+		lines[#lines + 1] = "  --- ToolHandler lines 35-70 ---"
+		for ln = 35, math.min(70, #numbered) do
+			lines[#lines + 1] = string.format("  L%03d|%s", ln, numbered[ln] or "")
+		end
+		-- also find SG_Check function body start
+		for ln = 1, #numbered do
+			if numbered[ln] and string.find(numbered[ln], "SG_Check", 1, true) then
+				lines[#lines + 1] = string.format("  hit SG_Check @ L%d: %s", ln, numbered[ln])
+				for j = ln, math.min(ln + 40, #numbered) do
+					lines[#lines + 1] = string.format("  L%03d|%s", j, numbered[j] or "")
+				end
+				break
+			end
+		end
+	end
+
+	-- module fields if require works / or _G
+	pcall(function()
+		if typeof(_G.VM) == "table" then
+			lines[#lines + 1] = "_G.VM keys/Enabled/Tool:"
+			lines[#lines + 1] = "  Enabled=" .. tostring(_G.VM.Enabled) .. " Tool=" .. tostring(_G.VM.Tool and _G.VM.Tool:GetFullName())
+			if typeof(_G.VM.ToolHandler) == "table" or typeof(_G.VM.ActiveTool) ~= "nil" then
+				lines[#lines + 1] = "  ActiveTool=" .. tostring(_G.VM.ActiveTool and _G.VM.ActiveTool:GetFullName())
+			end
+		end
+	end)
+	return lines
+end
+
+function misc.skinChanger.dumpUpgradeState(tool)
+	local lines = {}
+	lines[#lines + 1] = "=== VG upgrade state ==="
+	local S = _G.__VG_S
+	local map = S and S.CrimGunUpgradeLooks
+	lines[#lines + 1] = "CrimGunUpgradeLooks=" .. (typeof(map) == "table" and "table" or tostring(map))
+	if typeof(map) == "table" then
+		local pairs_ = {}
+		for k, v in pairs(map) do
+			pairs_[#pairs_ + 1] = tostring(k) .. "=" .. tostring(v)
+		end
+		lines[#lines + 1] = "  map: " .. (#pairs_ > 0 and table.concat(pairs_, ", ") or "<empty>")
+		if tool then
+			local key = misc.skinChanger.upgradeStoreKey(tool.Name)
+			lines[#lines + 1] = "  keyForHeld=" .. tostring(key) .. " want=" .. tostring(map[key])
+		end
+	end
+	if tool then
+		lines[#lines + 1] = "tool.VG_UpgradeAtt=" .. tostring(tool:FindFirstChild("VG_UpgradeAtt") ~= nil)
+		lines[#lines + 1] = "tool.VG_UpgradeVisual=" .. tostring(tool:FindFirstChild("VG_UpgradeVisual") ~= nil)
+		local vgCount = 0
+		for _, d in ipairs(tool:GetDescendants()) do
+			if d:GetAttribute("VG_UpgAtt") or d:GetAttribute("VG_UpgExtra") or d:GetAttribute("VG_UpgHidden") or d:GetAttribute("VG_DefMesh") then
+				vgCount += 1
+				if vgCount <= 25 then
+					local bits = {}
+					for _, an in ipairs({ "VG_UpgAtt", "VG_UpgExtra", "VG_UpgHidden", "VG_DefMesh", "VG_VarSkin" }) do
+						local av = d:GetAttribute(an)
+						if av ~= nil then
+							bits[#bits + 1] = an .. "=" .. tostring(av)
+						end
+					end
+					lines[#lines + 1] = "  VG " .. d:GetFullName() .. " " .. table.concat(bits, " ")
+				end
+			end
+		end
+		lines[#lines + 1] = "  VG-tagged descendants=" .. tostring(vgCount)
+	end
+	return lines
+end
+
 function misc.skinChanger.dump()
 	local lines = {}
 	local stamp = os.date("%Y-%m-%d %H:%M:%S")
 	lines[#lines + 1] = "======== VG SKIN DUMP " .. stamp .. " ========"
+	lines[#lines + 1] = "VG.Version=" .. tostring(_G.__VG_S and _G.__VG_S.Version or "?")
+	pcall(function()
+		if typeof(getgenv) == "function" and getgenv().VG_VERSION then
+			lines[#lines + 1] = "getgenv.VG_VERSION=" .. tostring(getgenv().VG_VERSION)
+		end
+	end)
 	local lp = getLP()
 	lines[#lines + 1] = "LocalPlayer=" .. tostring(lp and lp.Name)
 	lines[#lines + 1] = "Character=" .. tostring(lp and lp.Character and lp.Character:GetFullName())
@@ -6869,14 +7157,35 @@ function misc.skinChanger.dump()
 		for _, l in ipairs(misc.skinChanger.dumpMeshTree(tool, "TOOL", 100)) do
 			lines[#lines + 1] = l
 		end
+		for _, l in ipairs(misc.skinChanger.dumpFolderTree(tool:FindFirstChild("Attachments"), "TOOL.Attachments", 4, 60)) do
+			lines[#lines + 1] = l
+		end
+		for _, l in ipairs(misc.skinChanger.dumpFolderTree(tool:FindFirstChild("VG_UpgradeAtt"), "TOOL.VG_UpgradeAtt", 4, 40)) do
+			lines[#lines + 1] = l
+		end
+		for _, l in ipairs(misc.skinChanger.dumpNamedHits(tool, { "GSight", "GLaser", "WeaponHandle", "VG_UpgradeAtt", "VG_UpgradeVisual" }, "TOOL")) do
+			lines[#lines + 1] = l
+		end
+		for _, l in ipairs(misc.skinChanger.dumpUpgradeState(tool)) do
+			lines[#lines + 1] = l
+		end
+		for _, l in ipairs(misc.skinChanger.dumpDisplayUpgradeCompare(tool.Name)) do
+			lines[#lines + 1] = l
+		end
 		for _, l in ipairs(misc.skinChanger.dumpRepPBR(tool.Name)) do
 			lines[#lines + 1] = l
 		end
 	else
 		lines[#lines + 1] = "ActiveGun=<none> — hold a gun then dump again"
+		for _, l in ipairs(misc.skinChanger.dumpUpgradeState(nil)) do
+			lines[#lines + 1] = l
+		end
 		for _, l in ipairs(misc.skinChanger.dumpRepPBR(nil)) do
 			lines[#lines + 1] = l
 		end
+	end
+	for _, l in ipairs(misc.skinChanger.dumpToolHandler(lp)) do
+		lines[#lines + 1] = l
 	end
 	-- backpack tools list
 	local bp = lp and lp:FindFirstChild("Backpack")
@@ -6885,6 +7194,8 @@ function misc.skinChanger.dump()
 		for _, ch in ipairs(bp:GetChildren()) do
 			if ch:IsA("Tool") then
 				bt[#bt + 1] = ch.Name .. (misc.skinChanger.isGunTool(ch) and "[GUN]" or "")
+			elseif ch.Name == "VM" then
+				bt[#bt + 1] = "VM:" .. ch.ClassName
 			end
 		end
 		lines[#lines + 1] = "Backpack tools: " .. table.concat(bt, ", ")
@@ -6912,6 +7223,15 @@ function misc.skinChanger.dump()
 		lines[#lines + 1] = "ReplicatedFirst.ViewModels children=" .. #vmFolder:GetChildren()
 		for _, ch in ipairs(vmFolder:GetChildren()) do
 			for _, l in ipairs(misc.skinChanger.dumpMeshTree(ch, "RF.ViewModels." .. ch.Name, 40)) do
+				lines[#lines + 1] = l
+			end
+			for _, l in ipairs(misc.skinChanger.dumpFolderTree(ch:FindFirstChild("Attachments"), "RF." .. ch.Name .. ".Attachments", 3, 40)) do
+				lines[#lines + 1] = l
+			end
+			for _, l in ipairs(misc.skinChanger.dumpFolderTree(ch:FindFirstChild("VG_UpgradeAtt"), "RF." .. ch.Name .. ".VG_UpgradeAtt", 3, 30)) do
+				lines[#lines + 1] = l
+			end
+			for _, l in ipairs(misc.skinChanger.dumpNamedHits(ch, { "GSight", "GLaser" }, "RF." .. ch.Name)) do
 				lines[#lines + 1] = l
 			end
 		end
