@@ -38,7 +38,6 @@ local GLOBAL_KEYS = {
 -- Skin prefs live ONLY in globals.json (never overwrite named Legit/Crim profiles).
 local SKIN_PREF_KEYS = {
 	"CrimGunSkins",
-	"CrimGunUpgradeLooks",
 	"CrimSkinUiWeapon",
 	"CrimSkinChanger",
 	"CrimSkinDropped",
@@ -46,7 +45,6 @@ local SKIN_PREF_KEYS = {
 
 local SKIN_PREF_SET = {
 	CrimGunSkins = true,
-	CrimGunUpgradeLooks = true,
 	CrimSkinUiWeapon = true,
 	CrimSkinChanger = true,
 	CrimSkinDropped = true,
@@ -796,9 +794,7 @@ function Config.EnforceRules(S)
 	if typeof(S.CrimGunSkins) ~= "table" then
 		S.CrimGunSkins = {}
 	end
-	if typeof(S.CrimGunUpgradeLooks) ~= "table" then
-		S.CrimGunUpgradeLooks = {}
-	end
+	S.CrimGunUpgradeLooks = nil
 	if S.CrimSkinUiWeapon == nil then
 		S.CrimSkinUiWeapon = "Mare"
 	end
