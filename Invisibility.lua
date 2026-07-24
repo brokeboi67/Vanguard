@@ -476,14 +476,17 @@ function Invisibility.Init(S, ParentGUI)
 	end
 
 	-- ── Invis Resolver (others using same R6 desync / ~90° tilt) ─────────────
-	-- ONLY upright on frames where network pose is still tilted.
-	-- Writing CFrame every frame while "on" freezes them (blocks replication).
+	-- Network packets arrive tilted every ~50–100ms. Snapping upright to raw
+	-- Position each packet looks like teleporting. Instead: capture net pose only
+	-- while still tilted, then smooth-lerp + velocity extrapolate between packets.
 	local RESOLVE_PITCH_MIN = math.rad(65)
 	local RESOLVE_PITCH_MAX = math.rad(125)
 	local RESOLVE_LOOK_Y = 0.82
-	local RESOLVE_SUSTAIN = 4
-	local RESOLVE_HOLD = 0.75
-	local resolveState = {} -- [userId] = { hit, on, lastDesync }
+	local RESOLVE_SUSTAIN = 3
+	local RESOLVE_HOLD = 1.1
+	local RESOLVE_FOLLOW = 18 -- higher = snappier follow of net target
+	local RESOLVE_VEL_BLEND = 0.45
+	local resolveState = {} -- [userId] = { hit, on, lastDesync, visPos, targetPos, lastVel, look }
 
 	local function isDesyncPose(root)
 		local pitch = select(1, root.CFrame:ToOrientation())
@@ -494,11 +497,9 @@ function Invisibility.Init(S, ParentGUI)
 		return math.abs(root.CFrame.LookVector.Y) >= RESOLVE_LOOK_Y
 	end
 
-	local function uprightCF(root)
-		local pos = root.Position
+	local function flatLookFromRoot(root)
 		local up = root.CFrame.UpVector
 		local look = root.CFrame.LookVector
-		-- After +90° pitch, original forward is roughly in UpVector XZ
 		local flat = Vector3.new(up.X, 0, up.Z)
 		if flat.Magnitude < 0.15 then
 			flat = Vector3.new(look.X, 0, look.Z)
@@ -508,9 +509,16 @@ function Invisibility.Init(S, ParentGUI)
 			flat = Vector3.new(r.Z, 0, -r.X)
 		end
 		if flat.Magnitude < 0.05 then
+			return Vector3.new(0, 0, -1)
+		end
+		return flat.Unit
+	end
+
+	local function uprightAt(pos, lookFlat)
+		if typeof(lookFlat) ~= "Vector3" or lookFlat.Magnitude < 0.05 then
 			return CFrame.new(pos)
 		end
-		return CFrame.lookAt(pos, pos + flat.Unit)
+		return CFrame.lookAt(pos, pos + lookFlat.Unit)
 	end
 
 	S.IsInvisResolved = function(plr)
@@ -521,7 +529,7 @@ function Invisibility.Init(S, ParentGUI)
 		return st and st.on == true
 	end
 
-	RS.RenderStepped:Connect(perfWrap("Invis.Resolver", function()
+	RS.RenderStepped:Connect(perfWrap("Invis.Resolver", function(dt)
 		if S.Unloaded or not S.InvisResolver then
 			if next(resolveState) then
 				table.clear(resolveState)
@@ -529,8 +537,11 @@ function Invisibility.Init(S, ParentGUI)
 			return
 		end
 
+		dt = math.clamp(typeof(dt) == "number" and dt or 0.016, 0.001, 0.05)
 		local now = tick()
+		local alpha = 1 - math.exp(-RESOLVE_FOLLOW * dt)
 		local seen = {}
+
 		for _, plr in ipairs(Players:GetPlayers()) do
 			if plr ~= LP then
 				local c = plr.Character
@@ -540,28 +551,64 @@ function Invisibility.Init(S, ParentGUI)
 					seen[plr.UserId] = true
 					local st = resolveState[plr.UserId]
 					if not st then
-						st = { hit = 0, on = false, lastDesync = 0 }
+						st = {
+							hit = 0,
+							on = false,
+							lastDesync = 0,
+							visPos = nil,
+							targetPos = nil,
+							lastVel = Vector3.zero,
+							look = Vector3.new(0, 0, -1),
+						}
 						resolveState[plr.UserId] = st
 					end
 
-					if isDesyncPose(root) then
+					local tilted = isDesyncPose(root)
+					if tilted then
+						-- Fresh (or still) network desync frame — safe to read Position/Velocity
 						st.hit += 1
 						st.lastDesync = now
+						st.targetPos = root.Position
+						local vel = root.AssemblyLinearVelocity
+						if typeof(vel) == "Vector3" then
+							st.lastVel = Vector3.new(vel.X, 0, vel.Z)
+						end
+						st.look = flatLookFromRoot(root)
 						if st.hit >= RESOLVE_SUSTAIN then
 							st.on = true
 						end
-						-- Correct pose only while tilted — then stop writing so
-						-- the next replication packet can move them.
-						if st.on then
-							pcall(function()
-								root.CFrame = uprightCF(root)
-							end)
+						if not st.visPos then
+							st.visPos = st.targetPos
+						end
+					elseif st.on then
+						-- We own the visual CFrame — don't treat Position as network.
+						-- Extrapolate walk with last horizontal velocity between packets.
+						if st.targetPos then
+							st.targetPos = st.targetPos + st.lastVel * dt
+						end
+						st.lastVel = st.lastVel * math.max(0, 1 - 2.5 * dt)
+						if (now - st.lastDesync) > RESOLVE_HOLD then
+							st.on = false
+							st.hit = 0
+							st.visPos = nil
+							st.targetPos = nil
 						end
 					else
 						st.hit = 0
-						if st.on and (now - st.lastDesync) > RESOLVE_HOLD then
-							st.on = false
+					end
+
+					if st.on and st.targetPos then
+						-- Light prediction toward movement direction
+						local predicted = st.targetPos + st.lastVel * (dt * RESOLVE_VEL_BLEND)
+						if not st.visPos then
+							st.visPos = predicted
+						else
+							st.visPos = st.visPos:Lerp(predicted, alpha)
 						end
+						pcall(function()
+							root.CFrame = uprightAt(st.visPos, st.look)
+							root.AssemblyAngularVelocity = Vector3.zero
+						end)
 					end
 				end
 			end
